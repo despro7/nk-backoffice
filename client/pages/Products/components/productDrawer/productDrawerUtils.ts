@@ -47,6 +47,7 @@ export const emptyForm = (): DrawerForm => ({
   productIngredientsJson: [],
   productNutritionJson: null,
   storefrontDescriptionDoc: '',
+  mainProductWeight: '',
   grossWeight: '',
 });
 

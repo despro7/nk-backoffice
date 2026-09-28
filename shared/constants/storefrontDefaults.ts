@@ -25,6 +25,7 @@ const DEFAULT_TEMPLATES = {
   heating: HEATING_TEMPLATE_HTML,
   natural: 'Приготований з натуральних інгредієнтів без штучних барвників та консервантів.',
   netWeight: 'Маса нетто: {{netWeight}}',
+  mainProductWeight: 'Маса осн. продукту: {{mainProductWeight}}',
   grossWeight: 'Маса брутто: {{grossWeight}}',
   ingredients: 'Склад: {{ingredients}}',
   nutrition: `<p>Енергетична цінність:</p>
@@ -36,7 +37,7 @@ const DEFAULT_TEMPLATES = {
 </ul>`,
   kitComponents: `{{#kitGroups}}
 {{#if groupTotalQty > 1 || groupItemCount > 1}}
-<h3>{{groupTotalQty}} {{groupTotalQtyLabel}} {{groupLabelGenitive}}{{groupWeightSuffix}}:</h3>
+<h4>{{groupTotalQty}} {{groupTotalQtyLabel}} {{groupLabelGenitive}}{{groupWeightSuffix}}:</h4>
 {{/if}}
 <ul>
 {{#kitItems}}
@@ -75,6 +76,11 @@ export const STOREFRONT_DEFAULT_META_KEYS: StorefrontMetaKeyConfig[] = [
   { id: 'meta-nutrition', label: 'КБЖВ', key: STOREFRONT_WC_META.nutrition },
   { id: 'meta-storage', label: 'Зберігання', key: STOREFRONT_WC_META.storage },
   { id: 'meta-gross-weight', label: 'Маса брутто', key: STOREFRONT_WC_META.grossWeight },
+  {
+    id: 'meta-main-product-weight',
+    label: 'Маса осн. продукту',
+    key: STOREFRONT_WC_META.mainProductWeight,
+  },
 ];
 
 type BuiltinDefaults = {
@@ -107,6 +113,12 @@ export const STOREFRONT_BUILTIN_DEFAULTS: Record<StorefrontBlockId, BuiltinDefau
   },
   heating: { label: 'Розігрів', resolver: 'heating', template: DEFAULT_TEMPLATES.heating },
   netWeight: { label: 'Маса нетто', resolver: 'netWeight', template: DEFAULT_TEMPLATES.netWeight },
+  mainProductWeight: {
+    label: 'Маса осн. продукту',
+    resolver: 'mainProductWeight',
+    template: DEFAULT_TEMPLATES.mainProductWeight,
+    metaKeyId: 'meta-main-product-weight',
+  },
   grossWeight: {
     label: 'Маса брутто',
     resolver: 'grossWeight',
@@ -134,11 +146,11 @@ function buildBuiltinBlock(id: StorefrontBlockId, enabled: boolean): StorefrontB
 
 /** Default block order for new presets */
 export const STOREFRONT_DEFAULT_BLOCKS: StorefrontBlockConfig[] = STOREFRONT_BLOCK_IDS.map((id) =>
-  buildBuiltinBlock(id, id !== 'kitComponents'),
+  buildBuiltinBlock(id, id !== 'kitComponents' && id !== 'grossWeight'),
 );
 
 export const STOREFRONT_RESOLVER_HINTS: Record<StorefrontBlockResolver, string> = {
-  template: 'Вільний текст; доступні {{netWeight}} та {{grossWeight}}',
+  template: 'Вільний текст; доступні {{netWeight}}, {{mainProductWeight}} та {{grossWeight}}',
   ingredients:
     'Плейсхолдер {{ingredients}} або {{_nk_ingredients}} — теги складу на вкладці «Контент»',
   nutrition:
@@ -146,8 +158,9 @@ export const STOREFRONT_RESOLVER_HINTS: Record<StorefrontBlockResolver, string> 
   storage: 'Шаблон нижче; можна override у редакторі опису',
   heating: 'Шаблон нижче; можна override у редакторі опису',
   salt: 'Шаблон нижче; можна override у редакторі опису',
-  netWeight: 'Плейсхолдер {{netWeight}} — маса нетто з основної вкладки',
-  grossWeight: 'Плейсхолдер {{grossWeight}} — маса брутто з основної вкладки',
+  netWeight: 'Плейсхолдер {{netWeight}} — маса нетто з блоку «Упаковка»',
+  mainProductWeight: 'Плейсхолдер {{mainProductWeight}} — маса осн. продукту з блоку «Упаковка»',
+  grossWeight: 'Плейсхолдер {{grossWeight}} — маса брутто (legacy, auto з BOM)',
   kitComponents:
     'Шаблон з циклами та плейсхолдерами для групування компонентів комплекту за категоріями BOM',
 };
@@ -391,6 +404,27 @@ export const STOREFRONT_SETTINGS_KEYS = {
     mediaPublicBaseUrl: 'storefront.woo.mediaPublicBaseUrl',
   },
 } as const;
+
+export function getStorefrontDefaultKitComponentsTemplate(): string {
+  return STOREFRONT_BUILTIN_DEFAULTS.kitComponents.template ?? '{{kitComponents}}';
+}
+
+export function hasStorefrontDefaultBlockTemplate(
+  block: Pick<StorefrontBlockConfig, 'id' | 'resolver'>,
+): boolean {
+  if (block.resolver === 'kitComponents') return true;
+  return Object.prototype.hasOwnProperty.call(STOREFRONT_BUILTIN_DEFAULTS, block.id);
+}
+
+export function getStorefrontDefaultBlockTemplate(
+  block: Pick<StorefrontBlockConfig, 'id' | 'resolver'>,
+): string {
+  if (block.resolver === 'kitComponents') {
+    return getStorefrontDefaultKitComponentsTemplate();
+  }
+  const defaults = STOREFRONT_BUILTIN_DEFAULTS[block.id as StorefrontBlockId];
+  return defaults?.template ?? '';
+}
 
 export function metaKeysEqual(a: StorefrontMetaKeyConfig[], b: StorefrontMetaKeyConfig[]): boolean {
   return JSON.stringify(a) === JSON.stringify(b);

@@ -30,6 +30,7 @@ import { STOREFRONT_BUILTIN_DEFAULTS } from '../constants/storefrontDefaults.js'
 import {
   buildKitComponentsLegacyHtml,
   renderKitComponentsTemplate,
+  resolveKitComponentsBlockTemplate,
   type KitComponentRow,
 } from './kitComponentsTemplate.js';
 
@@ -37,6 +38,7 @@ export {
   renderKitComponentsTemplate,
   groupKitComponents,
   hasKitComponentLoops,
+  resolveKitComponentsBlockTemplate,
 } from './kitComponentsTemplate.js';
 export type { KitComponentRow } from './kitComponentsTemplate.js';
 
@@ -50,6 +52,7 @@ export type StorefrontRenderOptions = {
 
 export type StorefrontPlaceholderValues = {
   netWeight?: string;
+  mainProductWeight?: string;
   grossWeight?: string;
   ingredients?: string;
   /** Повний КБЖВ-блок (legacy {{nutrition}}) */
@@ -67,6 +70,7 @@ export type StorefrontPlaceholderValues = {
 
 const STOREFRONT_SEMANTIC_PLACEHOLDERS: Array<keyof StorefrontPlaceholderValues> = [
   'netWeight',
+  'mainProductWeight',
   'grossWeight',
   'ingredients',
   'nutrition',
@@ -96,6 +100,7 @@ const EMPTY_BOUND_VALUES: StorefrontBoundBlockValues = {
   energy: '',
   nutritionSalt: '',
   netWeight: '',
+  mainProductWeight: '',
   grossWeight: '',
   storage: '',
   heating: '',
@@ -205,6 +210,7 @@ export function getStorefrontResolverPrimaryPlaceholder(
   const map: Partial<Record<StorefrontBlockResolver, keyof StorefrontPlaceholderValues>> = {
     ingredients: 'ingredients',
     netWeight: 'netWeight',
+    mainProductWeight: 'mainProductWeight',
     grossWeight: 'grossWeight',
     kitComponents: 'kitComponents',
     salt: 'salt',
@@ -226,10 +232,16 @@ export function isStorefrontTemplateBoundBlock(resolver: string): boolean {
   return isStorefrontProtectedBoundResolver(resolver) || resolver === 'kitComponents';
 }
 
+/** WYSIWYG mini-editor in product drawer — not for loop-based kitComponents templates. */
+export function isStorefrontDrawerTemplateEditable(resolver: string): boolean {
+  return isStorefrontTemplateBoundBlock(resolver) && resolver !== 'kitComponents';
+}
+
 const STOREFRONT_BOUND_EMPTY_LABELS: Partial<Record<StorefrontBlockResolver, string>> = {
   ingredients: 'складу',
   nutrition: 'КБЖВ',
   netWeight: 'маси нетто',
+  mainProductWeight: 'маси осн. продукту',
   grossWeight: 'маси брутто',
   kitComponents: 'складу комплекту',
 };
@@ -607,11 +619,13 @@ type BlockMetaContext = {
     productIngredientsJson: string | null;
     productNutritionJson: string | null;
     grossWeight: number | null;
+    mainProductWeight: number | null;
     weight: number | null;
   };
   nutrition: ProductNutritionJson | null;
   ingredientRows: Array<{ componentName: string; qty: number }>;
   grossLabel: string;
+  mainProductLabel: string;
 };
 
 /** Value for WC meta field based on block resolver */
@@ -624,6 +638,12 @@ export function extractBlockMetaValue(
 
   if (resolved.wcMetaKey === STOREFRONT_WC_META.grossWeight) {
     return ctx.good.grossWeight != null ? String(ctx.good.grossWeight) : ctx.grossLabel || null;
+  }
+
+  if (resolved.wcMetaKey === STOREFRONT_WC_META.mainProductWeight) {
+    return ctx.good.mainProductWeight != null
+      ? String(ctx.good.mainProductWeight)
+      : ctx.mainProductLabel || null;
   }
 
   switch (block.resolver) {
@@ -677,18 +697,60 @@ export function stringifyStorefrontDescriptionDoc(doc: StorefrontDescriptionDoc)
   return JSON.stringify(doc);
 }
 
-function blockNodeFromPreset(block: StorefrontBlockConfig): StorefrontDescriptionNode {
+export function createStorefrontBlockNodeAttrsFromPreset(
+  block: StorefrontBlockConfig,
+  opts?: { manualInclude?: boolean },
+): StorefrontBlockNodeAttrs {
   const defaults = STOREFRONT_BUILTIN_DEFAULTS[block.id as keyof typeof STOREFRONT_BUILTIN_DEFAULTS];
-  const template = block.template || defaults?.template || '';
+  const rawTemplate = block.template || defaults?.template || '';
+  const template =
+    block.resolver === 'kitComponents'
+      ? resolveKitComponentsBlockTemplate(rawTemplate)
+      : rawTemplate;
+  return {
+    blockId: block.id,
+    resolver: block.resolver,
+    template,
+    overrideContent: null,
+    manualInclude: opts?.manualInclude ? true : null,
+    manualExclude: null,
+  };
+}
+
+/** Чи показувати блок у товарі: увімкнений у preset або явно доданий через пікер. */
+export function isStorefrontBlockActiveInProduct(
+  attrs: StorefrontBlockNodeAttrs,
+  renderOptions?: StorefrontRenderOptions,
+): boolean {
+  const enabledIds = renderOptions?.enabledBlockIds;
+  if (!enabledIds?.size) return true;
+  if (enabledIds.has(attrs.blockId)) return true;
+  return attrs.manualInclude === true;
+}
+
+export function createStorefrontBlockNodeFromPreset(
+  block: StorefrontBlockConfig,
+): StorefrontDescriptionNode {
   return {
     type: 'storefrontBlock',
-    attrs: {
-      blockId: block.id,
-      resolver: block.resolver,
-      template,
-      overrideContent: null,
-    },
+    attrs: createStorefrontBlockNodeAttrsFromPreset(block),
   };
+}
+
+/** Preset blocks available in product drawer block picker (includes disabled). */
+export function getStorefrontPickerPresetBlocks(
+  presetBlocks: StorefrontBlockConfig[],
+  opts?: { isKit?: boolean },
+): StorefrontBlockConfig[] {
+  return presetBlocks.filter((block) => {
+    if (opts?.isKit && block.resolver === 'ingredients') return false;
+    if (!opts?.isKit && block.resolver === 'kitComponents') return false;
+    return true;
+  });
+}
+
+function blockNodeFromPreset(block: StorefrontBlockConfig): StorefrontDescriptionNode {
+  return createStorefrontBlockNodeFromPreset(block);
 }
 
 /** Id блоків preset, які мають бути в doc (лише enabled). */
@@ -707,62 +769,138 @@ export function getStorefrontEnabledBlockIds(
   return ids;
 }
 
+function resolveStorefrontPresetBlockTemplate(block: StorefrontBlockConfig): string {
+  if (block.resolver === 'kitComponents') {
+    return resolveKitComponentsBlockTemplate(block.template);
+  }
+  return block.template ?? '';
+}
+
+function shouldSyncBlockTemplateFromPreset(resolver: StorefrontBlockResolver): boolean {
+  return resolver === 'kitComponents';
+}
+
+function docBlockTemplateMatchesPreset(
+  attrs: StorefrontBlockNodeAttrs,
+  presetBlock: StorefrontBlockConfig,
+): boolean {
+  const presetTemplate = resolveStorefrontPresetBlockTemplate(presetBlock);
+  if (attrs.resolver === 'kitComponents') {
+    return resolveKitComponentsBlockTemplate(attrs.template) === presetTemplate;
+  }
+  return attrs.template === presetTemplate;
+}
+
 export function storefrontDescriptionNeedsPresetSync(
   doc: StorefrontDescriptionDoc,
   presetBlocks: StorefrontBlockConfig[],
   opts?: { isKit?: boolean },
 ): boolean {
-  const expected = [...getStorefrontEnabledBlockIds(presetBlocks, opts)];
-  const actual = walkStorefrontDescriptionBlocks(doc).map((block) => block.blockId);
-  if (expected.length !== actual.length) return true;
-  if (actual.some((id) => !expected.includes(id))) return true;
-  return expected.some((id, index) => actual[index] !== id);
+  const enabledIds = getStorefrontEnabledBlockIds(presetBlocks, opts);
+  const renderOptions: StorefrontRenderOptions = { enabledBlockIds: enabledIds, isKit: opts?.isKit };
+  const blocks = walkStorefrontDescriptionBlocks(doc);
+  const presetById = new Map(presetBlocks.map((block) => [block.id, block]));
+
+  for (const attrs of blocks) {
+    if (!isStorefrontBlockActiveInProduct(attrs, renderOptions)) return true;
+    const presetBlock = presetById.get(attrs.blockId);
+    if (
+      presetBlock &&
+      shouldSyncBlockTemplateFromPreset(attrs.resolver) &&
+      !docBlockTemplateMatchesPreset(attrs, presetBlock)
+    ) {
+      return true;
+    }
+  }
+
+  const actualIds = new Set(blocks.map((block) => block.blockId));
+  for (const id of enabledIds) {
+    if (!actualIds.has(id)) return true;
+  }
+  return false;
 }
 
-function isStorefrontBlockEnabledInPreset(
-  blockId: string,
-  renderOptions?: StorefrontRenderOptions,
-): boolean {
-  if (!renderOptions?.enabledBlockIds?.size) return true;
-  return renderOptions.enabledBlockIds.has(blockId);
-}
-
-/** Вирівнює порядок і склад блоків у збереженому doc за поточним preset. */
+/** Додає відсутні увімкнені блоки; прибирає вимкнені без manualInclude. */
 export function syncStorefrontDescriptionDocWithPreset(
   doc: StorefrontDescriptionDoc,
   presetBlocks: StorefrontBlockConfig[],
   opts?: { isKit?: boolean },
 ): StorefrontDescriptionDoc {
-  const marketingNodes = (doc.content || []).filter((node) => node.type !== 'storefrontBlock');
-  const existingBlocks = new Map<string, StorefrontBlockNodeAttrs>();
+  const enabledIds = getStorefrontEnabledBlockIds(presetBlocks, opts);
+  const renderOptions: StorefrontRenderOptions = { enabledBlockIds: enabledIds, isKit: opts?.isKit };
+  const presetById = new Map(presetBlocks.map((block) => [block.id, block]));
+  const filteredContent = (doc.content || [])
+    .filter((node) => {
+      const attrs = getBlockNodeAttrs(node);
+      if (!attrs) return true;
+      return isStorefrontBlockActiveInProduct(attrs, renderOptions);
+    })
+    .map((node) => {
+      const attrs = getBlockNodeAttrs(node);
+      if (!attrs) return node;
+      const presetBlock = presetById.get(attrs.blockId);
+      if (
+        !presetBlock ||
+        !shouldSyncBlockTemplateFromPreset(attrs.resolver) ||
+        docBlockTemplateMatchesPreset(attrs, presetBlock)
+      ) {
+        return node;
+      }
+      const nextTemplate = resolveStorefrontPresetBlockTemplate(presetBlock);
+      return {
+        ...node,
+        attrs: {
+          ...node.attrs,
+          template: nextTemplate,
+        },
+      };
+    });
 
-  for (const node of doc.content || []) {
-    const attrs = getBlockNodeAttrs(node);
-    if (attrs) existingBlocks.set(attrs.blockId, attrs);
-  }
+  const existingBlockIds = new Set(
+    walkStorefrontDescriptionBlocks({ type: 'doc', content: filteredContent }).map(
+      (block) => block.blockId,
+    ),
+  );
+  const blocksToAdd: StorefrontDescriptionNode[] = [];
 
-  const blockNodes: StorefrontDescriptionNode[] = [];
   for (const block of presetBlocks) {
     if (opts?.isKit && block.resolver === 'ingredients') continue;
     if (!opts?.isKit && block.resolver === 'kitComponents') continue;
     const forceKitComponents = Boolean(opts?.isKit && block.resolver === 'kitComponents');
     if (!block.enabled && !forceKitComponents) continue;
-
-    const existing = existingBlocks.get(block.id);
-    if (existing) {
-      blockNodes.push({
-        type: 'storefrontBlock',
-        attrs: existing,
-      });
-      continue;
-    }
-    blockNodes.push(blockNodeFromPreset(block));
+    if (existingBlockIds.has(block.id)) continue;
+    blocksToAdd.push(blockNodeFromPreset(block));
   }
+
+  const nextContent = blocksToAdd.length > 0
+    ? [...filteredContent, ...blocksToAdd]
+    : filteredContent;
 
   return normalizeStorefrontDescriptionDoc({
     type: 'doc',
-    content: [...marketingNodes, ...blockNodes],
+    content: nextContent,
   });
+}
+
+function normalizeKitComponentsTemplatesInDoc(doc: StorefrontDescriptionDoc): StorefrontDescriptionDoc {
+  let changed = false;
+  const content = (doc.content || []).map((node) => {
+    if (node.type !== 'storefrontBlock' || !node.attrs) return node;
+    const attrs = node.attrs as Partial<StorefrontBlockNodeAttrs>;
+    if (attrs.resolver !== 'kitComponents') return node;
+    const nextTemplate = resolveKitComponentsBlockTemplate(String(attrs.template ?? ''));
+    if (nextTemplate === String(attrs.template ?? '')) return node;
+    changed = true;
+    return {
+      ...node,
+      attrs: {
+        ...attrs,
+        template: nextTemplate,
+      },
+    };
+  });
+  if (!changed) return doc;
+  return { ...doc, content };
 }
 
 export function buildStorefrontDescriptionDocFromPreset(
@@ -785,7 +923,7 @@ export function buildStorefrontDescriptionDocFromPreset(
     content.push(blockNodeFromPreset(block));
   }
 
-  return { type: 'doc', content };
+  return normalizeKitComponentsTemplatesInDoc({ type: 'doc', content });
 }
 
 export function ensureStorefrontDescriptionDoc(
@@ -794,7 +932,11 @@ export function ensureStorefrontDescriptionDoc(
   opts?: { isKit?: boolean },
 ): StorefrontDescriptionDoc {
   const parsed = parseStorefrontDescriptionDoc(raw);
-  if (parsed) return syncStorefrontDescriptionDocWithPreset(parsed, presetBlocks, opts);
+  if (parsed) {
+    return normalizeKitComponentsTemplatesInDoc(
+      syncStorefrontDescriptionDocWithPreset(parsed, presetBlocks, opts),
+    );
+  }
   return buildStorefrontDescriptionDocFromPreset(presetBlocks, opts);
 }
 
@@ -807,6 +949,8 @@ function getBlockNodeAttrs(node: StorefrontDescriptionNode): StorefrontBlockNode
     resolver: attrs.resolver as StorefrontBlockResolver,
     template: String(attrs.template ?? ''),
     overrideContent: attrs.overrideContent != null ? String(attrs.overrideContent) : null,
+    manualInclude: attrs.manualInclude === true ? true : null,
+    manualExclude: attrs.manualExclude === true ? true : null,
   };
 }
 
@@ -816,7 +960,8 @@ function resolveBlockNodeHtml(
   metaKeys: StorefrontMetaKeyConfig[],
   renderOptions?: StorefrontRenderOptions,
 ): string | null {
-  if (!isStorefrontBlockEnabledInPreset(attrs.blockId, renderOptions)) return null;
+  if (attrs.manualExclude) return null;
+  if (!isStorefrontBlockActiveInProduct(attrs, renderOptions)) return null;
   if (renderOptions?.isKit && attrs.resolver === 'ingredients') return null;
 
   if (attrs.resolver === 'kitComponents') {
@@ -957,6 +1102,7 @@ export function buildStorefrontBoundValues(input: {
   ingredientsJson: string[];
   nutrition: ProductNutritionJson | null;
   netLabel: string;
+  mainProductLabel: string;
   grossLabel: string;
   storageTemplate: string;
   heatingTemplate: string;
@@ -984,6 +1130,7 @@ export function buildStorefrontBoundValues(input: {
     energy: nutritionParts.energy,
     nutritionSalt: nutritionParts.nutritionSalt,
     netWeight: input.netLabel,
+    mainProductWeight: input.mainProductLabel,
     grossWeight: input.grossLabel,
     storage: input.storageTemplate,
     heating: input.heatingTemplate,

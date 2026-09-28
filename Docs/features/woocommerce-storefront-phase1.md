@@ -1,6 +1,6 @@
 # WooCommerce Storefront — Фаза 1 (backoffice)
 
-**Дата:** 2026-09-26 (оновлено 2026-09-28)  
+**Дата:** 2026-09-26 (оновлено 2026-09-29)  
 **Маршрут налаштувань:** `/settings/storefront` (`page.settings.storefront`)  
 **API:** `/api/storefront/*`  
 **Повʼязаний домен:** [Products 2.0](./products-catalog-2.0.md) — вкладки «Контент» і «Основні дані» у `ProductDrawer`  
@@ -68,7 +68,7 @@ Assembly (server)
 | Product UI | `client/pages/Products/components/productDrawer/ProductContentTab.tsx` |
 | Ingredients tags | `client/pages/Products/components/productDrawer/ProductIngredientsTags.tsx` |
 | Client API | `client/services/StorefrontService.ts` |
-| Prisma | `prisma/migrations/20260925180000_catalog_storefront_phase1/`, `20260927120000_storefront_description_refactor/` |
+| Prisma | `prisma/migrations/20260925180000_catalog_storefront_phase1/`, `20260927120000_storefront_description_refactor/`, `20260928190000_catalog_main_product_weight/` |
 
 ---
 
@@ -84,6 +84,7 @@ Assembly (server)
 | `productIngredientsJson` | JSON-масив тегів складу (lowercase), редагується через `ProductIngredientsTags` |
 | `productNutritionJson` | КБЖВ (JSON) |
 | `grossWeight` | Ручна маса брутто, кг |
+| `mainProductWeight` | Маса осн. продукту, кг (bound-блок `mainProductWeight`) |
 | `weight` | Маса нетто, кг (загальне поле каталогу) |
 | `wooProductId` | ID товару WC (Phase 2) |
 | `wooLastSyncedAt` | Час останнього sync (Phase 2) |
@@ -138,7 +139,8 @@ Seed preset «Стандарт»: `00000000-0000-4000-8000-000000000001`.
 | `storage` | шаблон preset + override у `storefrontDescriptionDoc` |
 | `heating` | шаблон preset + override у `storefrontDescriptionDoc` |
 | `salt` | шаблон preset + override у `storefrontDescriptionDoc` |
-| `netWeight` | `weight` / `grossWeight` → `{{netWeight}}`, `{{grossWeight}}` |
+| `netWeight` | `weight` → `{{netWeight}}` |
+| `mainProductWeight` | `mainProductWeight` → `{{mainProductWeight}}` |
 | `grossWeight` | `grossWeight` або BOM → `{{grossWeight}}` |
 | `kitComponents` | HTML `<ul>` з BOM; **лише kits** (`accPolicy` набору) |
 
@@ -208,7 +210,7 @@ Layout **1/3 + 2/3**:
 
 ### Конструктор блоків
 
-- **Preset:** select, create, delete, «Зберегти дефолт»
+- **Preset:** select, create (клон поточного), delete, «Зберегти дефолт», **«Скинути до типового»** для шаблону блоку
 - **Блок:** switch, inline-edit назви (клік → input), meta-ключ, шаблон (WYSIWYG)
 - **Кастомні блоки:** `resolver: template`, можна додавати / видаляти (double-click delete)
 - **Захищені від видалення** (🔒): `ingredients`, `nutrition`, `kitComponents` — привʼязані до структурованих даних товару; вимкнути можна switch-ем
@@ -235,7 +237,7 @@ Layout **1/3 + 2/3**:
 TipTap JSON (`StorefrontDescriptionDoc`):
 
 1. **Маркетинговий абзац** — звичайний `paragraph` з `class: storefront-marketing` (вільний текст).
-2. **Atom-блоки** — `storefrontBlock` nodes з attrs `{ blockId, resolver, template, overrideContent? }`, зібрані з preset при першому відкритті або зміні preset.
+2. **Atom-блоки** — `storefrontBlock` nodes з attrs `{ blockId, resolver, template, overrideContent? }`, зібрані з preset при першому відкритті або зміні preset (`syncStorefrontDescriptionDocWithPreset` зберігає маркетинговий абзац).
 
 HTML для WC збирає `StorefrontDescriptionBuilder.resolveDescriptionDocHtml()` — той сам pipeline, що preview у редакторі.
 
@@ -301,7 +303,7 @@ HTML для WC збирає `StorefrontDescriptionBuilder.resolveDescriptionDocH
 | Upload зображень | `ProductImageUpload` + push | `POST /woo/media/upload` |
 | Inspect WC | Admin drawer | `POST /woo/inspect` |
 
-Pull парсить WC HTML/meta через `storefrontDescriptionParser` → `storefrontDescriptionDoc`, склад, КБЖВ, ціни. Після sync оновлюються `wooProductId`, `wooLastSyncedAt`; зображення — `catalog_good_images.wooMediaId`.
+Pull парсить WC HTML/meta через `storefrontDescriptionParser` → `storefrontDescriptionDoc`, склад, КБЖВ, **назва**, ціни. Push відправляє **назву**, опис, meta, status. Після sync оновлюються `wooProductId`, `wooLastSyncedAt`; зображення — `catalog_good_images.wooMediaId`.
 
 ---
 
@@ -339,6 +341,7 @@ Pull парсить WC HTML/meta через `storefrontDescriptionParser` → `s
 ```ts
 {
   goodId: string;
+  name: string | null;
   status: 'publish' | 'draft';
   shortDescription: string | null;
   descriptionHtml: string;

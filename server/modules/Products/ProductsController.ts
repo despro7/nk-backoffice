@@ -659,6 +659,27 @@ router.delete('/images/staging/:sessionId', ...authOnly, async (req, res) => {
   }
 });
 
+// PATCH /api/catalog/images/staging/:sessionId/:fileName — { originalName }
+router.patch('/images/staging/:sessionId/:fileName', ...authOnly, async (req, res) => {
+  try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    if (!assertHasAnyFolderEdit(res, perms)) return;
+    if (typeof req.body?.originalName !== 'string') {
+      res.status(400).json({ success: false, error: 'originalName обовʼязковий' });
+      return;
+    }
+    const data = await catalogMediaService.renameStagingFile(
+      req.params.sessionId,
+      req.params.fileName,
+      req.body.originalName,
+    );
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'PATCH /images/staging/:sessionId/:fileName');
+  }
+});
+
 // DELETE /api/catalog/images/staging/:sessionId/:fileName
 router.delete('/images/staging/:sessionId/:fileName', ...authOnly, async (req, res) => {
   try {
@@ -743,7 +764,12 @@ router.patch('/images/:imageId', ...authOnly, async (req, res) => {
       res.json({ success: true, data });
       return;
     }
-    res.status(400).json({ success: false, error: 'Підтримується лише isPrimary: true' });
+    if (typeof req.body?.originalName === 'string') {
+      const data = await catalogMediaService.renameImage(imageId, req.body.originalName);
+      res.json({ success: true, data });
+      return;
+    }
+    res.status(400).json({ success: false, error: 'Підтримується isPrimary або originalName' });
   } catch (error) {
     handleError(res, error, 'PATCH /images/:imageId');
   }

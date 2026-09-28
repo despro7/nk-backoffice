@@ -4,6 +4,8 @@ import {
   STOREFRONT_DEFAULT_META_KEYS,
   createCustomStorefrontBlock,
   createCustomStorefrontMetaKey,
+  getStorefrontDefaultBlockTemplate,
+  hasStorefrontDefaultBlockTemplate,
   isStorefrontProtectedBlockId,
   normalizeStorefrontBlocks,
   normalizeStorefrontMetaKeys,
@@ -113,6 +115,30 @@ describe('createCustomStorefrontMetaKey', () => {
     const row = createCustomStorefrontMetaKey('Meta');
     expect(row.label).toBe('Meta');
     expect(row.key).toBe('');
+  });
+});
+
+describe('getStorefrontDefaultBlockTemplate', () => {
+  it('returns built-in template for known block ids', () => {
+    const template = getStorefrontDefaultBlockTemplate({ id: 'ingredients', resolver: 'ingredients' });
+    expect(template).toContain('{{ingredients}}');
+  });
+
+  it('returns loop template for kitComponents', () => {
+    const template = getStorefrontDefaultBlockTemplate({
+      id: 'kitComponents',
+      resolver: 'kitComponents',
+    });
+    expect(template).toContain('{{#kitGroups}}');
+  });
+
+  it('returns empty string for custom blocks', () => {
+    expect(
+      getStorefrontDefaultBlockTemplate({ id: 'custom-block', resolver: 'template' }),
+    ).toBe('');
+    expect(
+      hasStorefrontDefaultBlockTemplate({ id: 'custom-block', resolver: 'template' }),
+    ).toBe(false);
   });
 });
 

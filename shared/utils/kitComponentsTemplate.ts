@@ -1,4 +1,5 @@
 import {
+  STOREFRONT_BUILTIN_DEFAULTS,
   STOREFRONT_DEFAULT_KIT_COMPONENT_SETTINGS,
   normalizeStorefrontKitComponentSettings,
 } from '../constants/storefrontDefaults.js';
@@ -361,6 +362,15 @@ export function hasKitComponentLoops(template: string): boolean {
   );
 }
 
+/** Legacy `{{kitComponents}}` or empty templates render a flat list — upgrade to grouped default. */
+export function resolveKitComponentsBlockTemplate(template: string | null | undefined): string {
+  const trimmed = template?.trim() || '';
+  if (!trimmed || trimmed === '{{kitComponents}}' || !hasKitComponentLoops(trimmed)) {
+    return STOREFRONT_BUILTIN_DEFAULTS.kitComponents.template || '{{kitComponents}}';
+  }
+  return trimmed;
+}
+
 export function buildKitComponentsLegacyHtml(
   components: Array<{ componentName: string; qty: number }>,
 ): string {
@@ -451,9 +461,9 @@ export function renderKitComponentsTemplate(
   components: KitComponentRow[],
   settings?: StorefrontKitComponentSettings,
 ): string {
+  const normalizedTemplate = resolveKitComponentsBlockTemplate(template);
   if (!components.length) return '';
 
-  const normalizedTemplate = template.trim();
   if (!normalizedTemplate || normalizedTemplate === '{{kitComponents}}') {
     return buildKitComponentsLegacyHtml(components);
   }

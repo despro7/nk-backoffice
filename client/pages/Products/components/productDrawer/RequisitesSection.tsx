@@ -13,6 +13,9 @@ interface RequisitesSectionProps {
   isGood: boolean;
   isKit: boolean;
   isOther: boolean;
+  /** Од. виміру в рядку реквізитів (продукція, набори, інший обʼєкт) */
+  showMainUnit: boolean;
+  units: CatalogDictItemDto[];
   showPrintName: boolean;
   nameHasWeight: boolean;
   skuGenerating: boolean;
@@ -35,6 +38,8 @@ export function RequisitesSection({
   isGood,
   isKit,
   isOther,
+  showMainUnit,
+  units,
   showPrintName,
   nameHasWeight,
   skuGenerating,
@@ -145,7 +150,9 @@ export function RequisitesSection({
         />
       )}
 
-      <div className={`grid grid-cols-2 gap-3 ${isOther ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
+      <div
+        className={`grid grid-cols-2 gap-3 ${isOther ? 'md:grid-cols-5' : 'md:grid-cols-3'}`}
+      >
         <Select
           label="Тип обʼєкта"
           placeholder="Оберіть тип"
@@ -234,6 +241,22 @@ export function RequisitesSection({
             </Tooltip>
           }
         />
+        {showMainUnit && (
+          <Select
+            label="Од. виміру"
+            selectedKeys={form.mainUnitId ? [form.mainUnitId] : []}
+            classNames={{ popoverContent: 'bg-default-100' }}
+            isDisabled={saving}
+            onSelectionChange={(keys) => {
+              const v = Array.from(keys)[0];
+              if (v) patchForm({ mainUnitId: String(v) });
+            }}
+          >
+            {units.map((u) => (
+              <SelectItem key={u.id}>{u.name}</SelectItem>
+            ))}
+          </Select>
+        )}
         {isOther && (
           <NumberInput
             label="Вага, кг"

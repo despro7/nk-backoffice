@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { STOREFRONT_DEFAULT_BLOCKS, STOREFRONT_DEFAULT_META_KEYS } from '../constants/storefrontDefaults.js';
 import type { WooCommerceProduct } from '../types/storefront.js';
 import {
+  extractMarketingPlainFromHtml,
   isEffectivelyEmptyHtml,
   parseWcDescription,
   summarizeWcProduct,
@@ -29,6 +30,111 @@ describe('isEffectivelyEmptyHtml', () => {
     expect(isEffectivelyEmptyHtml('<p></p>')).toBe(true);
     expect(isEffectivelyEmptyHtml('<p><br></p>')).toBe(true);
     expect(isEffectivelyEmptyHtml('<p>Текст</p>')).toBe(false);
+  });
+});
+
+describe('extractMarketingPlainFromHtml', () => {
+  it('skips salt service paragraph and stops before storage marker', () => {
+    const html = `<p>Наші страви готуються з помірною кількістю солі. За бажанням ви можете додати сіль на свій смак.</p>
+<p>Готовий набір домашніх страв на будь-який смак: перші та другі страви, салати й м'ясні позиції. Різноманітне меню з м'яса, овочів і круп — зручно для щоденного харчування без зайвого клопоту. Достатньо лише розігріти та насолоджуватись. Термін зберігання — до 11 місяців.</p>
+<p>Склад набору:</p>
+<p>Перші страви</p>`;
+
+    expect(extractMarketingPlainFromHtml(html)).toBe(
+      "Готовий набір домашніх страв на будь-який смак: перші та другі страви, салати й м'ясні позиції. Різноманітне меню з м'яса, овочів і круп — зручно для щоденного харчування без зайвого клопоту. Достатньо лише розігріти та насолоджуватись.",
+    );
+  });
+
+  it('extracts text before ingredients block for simple products', () => {
+    const html = `<p>Смачний суп для всієї родини.</p>
+<p>Склад: вода, картопля, морква, цибуля.</p>`;
+
+    expect(extractMarketingPlainFromHtml(html)).toBe('Смачний суп для всієї родини.');
+  });
+
+  it('returns null when description contains only bound blocks', () => {
+    expect(extractMarketingPlainFromHtml('<p>Склад: вода.</p>')).toBeNull();
+  });
+
+  it('prefers explicit storefront-marketing paragraph', () => {
+    const html = `<p class="storefront-marketing">Явний маркетинг.</p>
+<p>Інший текст до складу.</p>
+<p>Склад: вода.</p>`;
+
+    expect(extractMarketingPlainFromHtml(html)).toBe('Явний маркетинг.');
+  });
+
+  it('strips inline salt intro from single legacy paragraph', () => {
+    const html = `<p>Наші страви готуються з помірною кількістю солі. За бажанням ви можете додати сіль на свій смак. Готовий набір домашніх страв. Термін зберігання — до 11 місяців. Склад набору: …</p>`;
+
+    expect(extractMarketingPlainFromHtml(html)).toBe('Готовий набір домашніх страв.');
+  });
+});
+
+describe('parseWcDescription marketing extraction', () => {
+  it('stores unique marketing text in storefront doc', () => {
+    const product = sampleProduct({
+      description: `<p>Наші страви готуються з помірною кількістю солі. За бажанням ви можете додати сіль на свій смак.</p>
+<p>Унікальний опис набору без службових блоків. Термін зберігання — до 11 місяців.</p>
+<p>Склад набору:</p>`,
+    });
+
+    const result = parseWcDescription({
+      product,
+      presetBlocks: STOREFRONT_DEFAULT_BLOCKS,
+      metaKeys: STOREFRONT_DEFAULT_META_KEYS,
+      isKit: true,
+    });
+
+    const marketingNode = result.storefrontDescriptionDoc.content.find(
+      (node) =>
+        node.type === 'paragraph' &&
+        (node.attrs as { class?: string } | undefined)?.class === 'storefront-marketing',
+    );
+    const marketingText = marketingNode?.content?.[0]?.type === 'text' ? marketingNode.content[0].text : '';
+    const kitBlock = result.storefrontDescriptionDoc.content.find(
+      (node) =>
+        node.type === 'storefrontBlock' &&
+        (node.attrs as { resolver?: string } | undefined)?.resolver === 'kitComponents',
+    );
+
+    expect(marketingText).toBe('Унікальний опис набору без службових блоків.');
+    expect(result.marketingText).toBe('Унікальний опис набору без службових блоків.');
+    expect(result.parseWarnings).not.toContain('Маркетинговий абзац не розпізнано');
+    expect(String((kitBlock?.attrs as { template?: string } | undefined)?.template || '')).toContain(
+      '{{#kitGroups}}',
+    );
+  });
+
+  it('does not parse service blocks from legacy HTML', () => {
+    const product = sampleProduct({
+      description: `<p>Унікальний опис набору. Термін зберігання — до 11 місяців.</p>
+<p>Зберігати за температури від 0°С до 25°С.</p>
+<p>3 способи розігріти: Спосіб 1…</p>
+<p>Способи розігріву:</p><ol><li>Мікрохвильовка</li></ol>`,
+    });
+
+    const result = parseWcDescription({
+      product,
+      presetBlocks: STOREFRONT_DEFAULT_BLOCKS,
+      metaKeys: STOREFRONT_DEFAULT_META_KEYS,
+      isKit: true,
+    });
+
+    const storageBlock = result.storefrontDescriptionDoc.content.find(
+      (node) =>
+        node.type === 'storefrontBlock' &&
+        (node.attrs as { blockId?: string } | undefined)?.blockId === 'storage',
+    );
+    const heatingBlock = result.storefrontDescriptionDoc.content.find(
+      (node) =>
+        node.type === 'storefrontBlock' &&
+        (node.attrs as { blockId?: string } | undefined)?.blockId === 'heating',
+    );
+
+    expect((storageBlock?.attrs as { overrideContent?: string | null } | undefined)?.overrideContent).toBeNull();
+    expect((heatingBlock?.attrs as { overrideContent?: string | null } | undefined)?.overrideContent).toBeNull();
+    expect(result.marketingText).toBe('Унікальний опис набору.');
   });
 });
 

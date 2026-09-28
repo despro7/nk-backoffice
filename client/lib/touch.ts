@@ -28,6 +28,14 @@
  */
 export const TOUCH_GESTURE_CLASS = "select-none [-webkit-touch-callout:none]";
 
+/** Apply touch-gesture Tailwind classes via classList (space-separated string is invalid as one token). */
+export function applyTouchGestureClasses(
+  element: HTMLElement,
+  className: string = TOUCH_GESTURE_CLASS,
+): void {
+  className.split(/\s+/).filter(Boolean).forEach((token) => element.classList.add(token));
+}
+
 /**
  * The same opt-out for a gesture surface that wraps content the consumer owns:
  * a scroller, a context-menu trigger, a sheet header, a list row. Selection is

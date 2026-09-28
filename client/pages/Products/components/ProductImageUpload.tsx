@@ -24,7 +24,9 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Button, Chip, Progress, Spinner } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { ImagePreviewModal } from '@/components/modals/ImagePreviewModal';
 import { ToastService } from '@/services/ToastService';
+import { InlineImageName } from './InlineImageName';
 import type { CatalogGoodImageDto } from '../ProductsTypes';
 
 const ACCEPT = 'image/jpeg,image/png,image/webp,image/gif';
@@ -53,6 +55,7 @@ export interface ProductImageUploadProps {
   /** Збережені зображення з detail (edit) */
   images?: CatalogGoodImageDto[];
   isDisabled?: boolean;
+  overlayZClassName?: string;
   onImagesChange?: (images: CatalogGoodImageDto[]) => void;
 }
 
@@ -78,6 +81,9 @@ interface SortableSavedImageProps {
   isDisabled?: boolean;
   isSorting: boolean;
   onDelete: () => void;
+  onPreview: () => void;
+  onRename: (originalName: string) => Promise<void>;
+  overlayZClassName?: string;
 }
 
 function SortableSavedImage({
@@ -86,6 +92,9 @@ function SortableSavedImage({
   isDisabled,
   isSorting,
   onDelete,
+  onPreview,
+  onRename,
+  overlayZClassName,
 }: SortableSavedImageProps) {
   const {
     attributes,
@@ -128,12 +137,22 @@ function SortableSavedImage({
         aria-label="Перетягнути зображення"
         {...dragProps}
       >
-        <img
-          src={image.url}
-          alt={image.originalName}
-          draggable={false}
-          className="pointer-events-none aspect-square w-full select-none object-cover"
-        />
+        <button
+          type="button"
+          className="block w-full"
+          aria-label="Відкрити зображення у повному розмірі"
+          onClick={(event) => {
+            event.stopPropagation();
+            onPreview();
+          }}
+        >
+          <img
+            src={image.url}
+            alt={image.originalName}
+            draggable={false}
+            className="aspect-square w-full select-none object-cover"
+          />
+        </button>
         {isPrimary && (
           <Chip
             size="sm"
@@ -146,7 +165,13 @@ function SortableSavedImage({
         )}
       </div>
       <div className="relative z-10 flex items-center justify-between gap-1 bg-black/55 px-1.5 py-1">
-        <span className="truncate text-[10px] text-white">{image.originalName}</span>
+        <InlineImageName
+          value={image.originalName}
+          isDisabled={isDisabled}
+          className="min-w-0 flex-1"
+          overlayZClassName={overlayZClassName}
+          onSave={onRename}
+        />
         <Button
           isIconOnly
           size="sm"
@@ -182,6 +207,7 @@ export function ProductImageUpload({
   stagingSessionId,
   images = [],
   isDisabled,
+  overlayZClassName,
   onImagesChange,
 }: ProductImageUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -201,6 +227,7 @@ export function ProductImageUpload({
   const [loadingList, setLoadingList] = useState(false);
   const [activeImageId, setActiveImageId] = useState<number | null>(null);
   const [isReordering, setIsReordering] = useState(false);
+  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -366,6 +393,81 @@ export function ProductImageUpload({
     setIsDragging(false);
     if (isDisabled) return;
     if (e.dataTransfer.files?.length) validateAndEnqueue(e.dataTransfer.files);
+  };
+
+  const handleRenameSaved = async (image: CatalogGoodImageDto, originalName: string) => {
+    try {
+      const res = await fetch(`/api/catalog/images/${image.id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ originalName }),
+      });
+      const json = (await res.json()) as {
+        success?: boolean;
+        data?: CatalogGoodImageDto;
+        error?: string;
+      };
+      if (!res.ok || !json.success || !json.data) {
+        throw new Error(json.error || 'Не вдалося перейменувати зображення');
+      }
+      setSaved((prev) => {
+        const next = prev.map((item) => (item.id === image.id ? json.data! : item));
+        onImagesChange?.(next);
+        return next;
+      });
+      setPreviewImage((current) =>
+        current && current.url === image.url ? { ...current, name: json.data!.originalName } : current,
+      );
+    } catch (err) {
+      ToastService.show({
+        title: 'Помилка перейменування',
+        description: err instanceof Error ? err.message : 'Unknown',
+        color: 'danger',
+      });
+      throw err;
+    }
+  };
+
+  const handleRenameStaging = async (
+    fileName: string,
+    originalName: string,
+  ): Promise<void> => {
+    if (!stagingSessionId) return;
+    try {
+      const res = await fetch(
+        `/api/catalog/images/staging/${encodeURIComponent(stagingSessionId)}/${encodeURIComponent(fileName)}`,
+        {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ originalName }),
+        },
+      );
+      const json = (await res.json()) as {
+        success?: boolean;
+        data?: {
+          fileName: string;
+          originalName: string;
+        };
+        error?: string;
+      };
+      if (!res.ok || !json.success || !json.data) {
+        throw new Error(json.error || 'Не вдалося перейменувати зображення');
+      }
+      setStagingItems((prev) =>
+        prev.map((item) =>
+          item.fileName === fileName ? { ...item, originalName: json.data!.originalName } : item,
+        ),
+      );
+    } catch (err) {
+      ToastService.show({
+        title: 'Помилка перейменування',
+        description: err instanceof Error ? err.message : 'Unknown',
+        color: 'danger',
+      });
+      throw err;
+    }
   };
 
   const handleDeleteSaved = async (image: CatalogGoodImageDto) => {
@@ -616,7 +718,10 @@ export function ProductImageUpload({
                   isPrimary={idx === 0}
                   isDisabled={isDisabled || isReordering}
                   isSorting={activeImageId != null}
+                  overlayZClassName={overlayZClassName}
                   onDelete={() => void handleDeleteSaved(img)}
+                  onPreview={() => setPreviewImage({ url: img.url, name: img.originalName })}
+                  onRename={(originalName) => handleRenameSaved(img, originalName)}
                 />
               ))}
             </div>
@@ -632,9 +737,27 @@ export function ProductImageUpload({
               key={img.fileName}
               className="group relative overflow-hidden rounded-xl border border-default-200 bg-default-50"
             >
-              <img src={img.url} alt={img.originalName} className="aspect-square w-full object-cover" />
+              <button
+                type="button"
+                className="block w-full"
+                aria-label="Відкрити зображення у повному розмірі"
+                onClick={() => setPreviewImage({ url: img.url, name: img.originalName })}
+              >
+                <img
+                  src={img.url}
+                  alt={img.originalName}
+                  draggable={false}
+                  className="aspect-square w-full object-cover"
+                />
+              </button>
               <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-black/55 px-1.5 py-1">
-                <span className="truncate text-[10px] text-white">{img.originalName}</span>
+                <InlineImageName
+                  value={img.originalName}
+                  isDisabled={isDisabled}
+                  className="min-w-0 flex-1"
+                  overlayZClassName={overlayZClassName}
+                  onSave={(originalName) => handleRenameStaging(img.fileName, originalName)}
+                />
                 <Button
                   isIconOnly
                   size="sm"
@@ -651,6 +774,13 @@ export function ProductImageUpload({
           ))}
         </div>
       )}
+
+      <ImagePreviewModal
+        isOpen={previewImage != null}
+        imageUrl={previewImage?.url ?? null}
+        imageName={previewImage?.name}
+        onClose={() => setPreviewImage(null)}
+      />
     </div>
   );
 }

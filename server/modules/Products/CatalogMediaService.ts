@@ -382,6 +382,51 @@ export class CatalogMediaService {
     }
   }
 
+  async renameImage(imageId: number, originalName: string): Promise<CatalogGoodImageDto> {
+    const trimmed = originalName.trim();
+    if (!trimmed) throw new Error('Назва не може бути порожньою');
+    if (trimmed.length > 512) throw new Error('Назва занадто довга');
+
+    const updated = await prisma.catalogGoodImage.update({
+      where: { id: imageId },
+      data: { originalName: trimmed },
+    });
+    return toDto(updated);
+  }
+
+  async renameStagingFile(
+    sessionId: string,
+    fileName: string,
+    originalName: string,
+  ): Promise<{
+    id: string;
+    fileName: string;
+    originalName: string;
+    mimeType: string;
+    size: number;
+    url: string;
+  }> {
+    const trimmed = originalName.trim();
+    if (!trimmed) throw new Error('Назва не може бути порожньою');
+    if (trimmed.length > 512) throw new Error('Назва занадто довга');
+
+    const meta = await this.readStagingMeta(sessionId);
+    const entry = meta[fileName];
+    if (!entry) throw new Error('Файл не знайдено у staging');
+
+    meta[fileName] = { ...entry, originalName: trimmed };
+    await this.writeStagingMeta(sessionId, meta);
+
+    return {
+      id: fileName,
+      fileName,
+      originalName: trimmed,
+      mimeType: entry.mimeType,
+      size: entry.size,
+      url: `/uploads/catalog/_staging/${encodeURIComponent(sessionId)}/${encodeURIComponent(fileName)}`,
+    };
+  }
+
   async setPrimary(imageId: number): Promise<CatalogGoodImageDto> {
     const row = await prisma.catalogGoodImage.findUnique({ where: { id: imageId } });
     if (!row) throw new Error('Зображення не знайдено');

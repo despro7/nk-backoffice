@@ -139,6 +139,7 @@ function mapGoodDto(
     productNutritionJson?: string | null;
     storefrontDescriptionDoc?: string | null;
     grossWeight?: number | null;
+    mainProductWeight?: number | null;
     wooProductId?: number | null;
     wooLastSyncedAt?: Date | null;
     _count?: { components?: number };

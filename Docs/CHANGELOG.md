@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-09-29 — Storefront: mainProductWeight, preset UX, WC name sync
+
+**Files:** `prisma/migrations/20260928190000_catalog_main_product_weight/`, `shared/constants/storefrontDefaults.ts`, `shared/utils/storefrontDescription*.ts`, `server/modules/Storefront/WooCommerceSyncService.ts`, `client/pages/SettingsStorefront.tsx`, `client/pages/Products/components/productDrawer/*`, `client/components/storefront/KitComponentsTemplateEditor.tsx`, `client/components/modals/ImagePreviewModal.tsx`, `Docs/features/woocommerce-storefront-phase1.md`
+
+### Дані та блоки опису
+
+- **`mainProductWeight`** — нове поле товару (кг) і bound-блок `{{mainProductWeight}}` у preset «Стандарт».
+- Парсинг WC HTML: надійніше витягування маркетингового тексту (`storefront-marketing`, fallback з legacy HTML).
+- Синхронізація doc з preset (`syncStorefrontDescriptionDocWithPreset`) — без втрати маркетингового абзаца при зміні шаблону в картці товару.
+
+### Конструктор preset (`/settings/storefront`)
+
+- Новий preset **копіює блоки поточного** (не дефолтні з нуля).
+- Кнопка **«Скинути до типового»** для шаблонів блоків (як у `kitComponents`).
+
+### WooCommerce pull/push
+
+- **Назва товару** — нове поле sync: pull (вибір у модалці) + push (оновлення існуючого WC-товару, не лише create).
+
+### UX редактора та медіа
+
+- Drag-and-drop блоків у `StorefrontDescriptionEditor`; окремий редактор шаблону `kitComponents`.
+- Зображення: inline-редагування назви, preview у модалці; touch-friendly drag на планшетах.
+
+**Документація:** [`Docs/features/woocommerce-storefront-phase1.md`](features/woocommerce-storefront-phase1.md).
+
+---
+
 ## 2026-09-28 — Storefront: WooCommerce sync (Phase 2) + редактор «Повний опис»
 
 **Files:** `server/modules/Storefront/WooCommerce*.ts`, `server/routes/storefront.ts`, `shared/utils/storefrontDescriptionParser.ts`, `shared/utils/kitComponentsTemplate.ts`, `client/pages/SettingsStorefront.tsx`, `client/pages/Products/components/productDrawer/StorefrontDescriptionEditor.tsx`, `client/pages/Products/components/productDrawer/StorefrontPullConfirmModal.tsx`, `client/pages/Products/components/productDrawer/ProductDrawer.tsx`, `client/pages/Products/index.tsx`, `client/components/editor/*`, `prisma/migrations/20260927140000_catalog_good_image_woo_media_id/`, `Docs/features/woocommerce-storefront-phase1.md`

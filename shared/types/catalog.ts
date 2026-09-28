@@ -99,6 +99,8 @@ export interface CatalogGoodDto {
   storefrontDescriptionDoc?: StorefrontDescriptionDoc | null;
   /** Брутто, кг; null → computed з BOM */
   grossWeight?: number | null;
+  /** Маса осн. продукту, кг (ручне поле упаковки) */
+  mainProductWeight?: number | null;
   wooProductId?: number | null;
   wooLastSyncedAt?: string | null;
   /** Локальний порядок siblings (інтервал крок 10) */
@@ -242,6 +244,7 @@ export interface CatalogCreateGoodInput {
   productNutritionJson?: ProductNutritionJson | null;
   storefrontDescriptionDoc?: StorefrontDescriptionDoc | null;
   grossWeight?: number | null;
+  mainProductWeight?: number | null;
   unitRatio?: number | null;
   /** Staging-сесія зображень — commit після create */
   stagingSessionId?: string | null;
@@ -282,6 +285,7 @@ export interface CatalogUpdateGoodInput {
   productNutritionJson?: ProductNutritionJson | null;
   storefrontDescriptionDoc?: StorefrontDescriptionDoc | null;
   grossWeight?: number | null;
+  mainProductWeight?: number | null;
   unitRatio?: number | null;
   components?: Array<{
     componentGoodId: string;

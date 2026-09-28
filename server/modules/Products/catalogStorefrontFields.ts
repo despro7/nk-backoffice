@@ -21,6 +21,7 @@ export type CatalogStorefrontDbFields = {
   productNutritionJson: string | null;
   storefrontDescriptionDoc: string | null;
   grossWeight: number | null;
+  mainProductWeight: number | null;
   wooProductId: number | null;
   wooLastSyncedAt: Date | null;
 };
@@ -35,6 +36,7 @@ export function mapStorefrontFieldsToDto(
   | 'productNutritionJson'
   | 'storefrontDescriptionDoc'
   | 'grossWeight'
+  | 'mainProductWeight'
   | 'wooProductId'
   | 'wooLastSyncedAt'
 > {
@@ -48,6 +50,7 @@ export function mapStorefrontFieldsToDto(
     productNutritionJson: nutrition,
     storefrontDescriptionDoc: descriptionDoc,
     grossWeight: row.grossWeight ?? null,
+    mainProductWeight: row.mainProductWeight ?? null,
     wooProductId: row.wooProductId ?? null,
     wooLastSyncedAt: row.wooLastSyncedAt?.toISOString() ?? null,
   };
@@ -80,6 +83,12 @@ export function buildStorefrontPatchFromInput(
     data.grossWeight =
       input.grossWeight != null && Number.isFinite(input.grossWeight) ? input.grossWeight : null;
   }
+  if (input.mainProductWeight !== undefined) {
+    data.mainProductWeight =
+      input.mainProductWeight != null && Number.isFinite(input.mainProductWeight)
+        ? input.mainProductWeight
+        : null;
+  }
 
   return data;
 }
@@ -91,6 +100,7 @@ export function hasStorefrontInput(input: CatalogCreateGoodInput | CatalogUpdate
     input.productIngredientsJson !== undefined ||
     input.productNutritionJson !== undefined ||
     input.storefrontDescriptionDoc !== undefined ||
-    input.grossWeight !== undefined
+    input.grossWeight !== undefined ||
+    input.mainProductWeight !== undefined
   );
 }

@@ -246,6 +246,7 @@ export class WooCommerceSyncService {
     const localImageCount = good.images.length;
 
     const conflicts = [
+      fieldConflict('name', good.name, product.name),
       fieldConflict('fullDescription', good.fullDescription, product.description),
       descriptionFieldConflict(good.description, proposedShortDescription),
       fieldConflict('weight', good.weight, proposedWeight),
@@ -277,6 +278,8 @@ export class WooCommerceSyncService {
       wooProductId: product.id,
       wcRaw: product,
       local: {
+        name: good.name?.trim() || null,
+        description: good.description,
         weight: good.weight,
         regularPrice: localRegularPrice,
         doNotPublish: good.doNotPublish,
@@ -286,6 +289,7 @@ export class WooCommerceSyncService {
         productNutritionJson: good.productNutritionJson,
       },
       proposed: {
+        name: product.name?.trim() || null,
         fullDescription: product.description || null,
         shortDescription: proposedShortDescription,
         weight: proposedWeight,
@@ -305,13 +309,13 @@ export class WooCommerceSyncService {
     const appliedFields: string[] = [];
     const patch: Record<string, unknown> = {};
 
+    if (input.apply.name && preview.proposed.name) {
+      patch.name = preview.proposed.name;
+      appliedFields.push('name');
+    }
     if (input.apply.fullDescription) {
       patch.fullDescription = preview.proposed.fullDescription;
       appliedFields.push('fullDescription');
-    }
-    if (input.apply.shortDescription && preview.proposed.shortDescription) {
-      patch.description = preview.proposed.shortDescription;
-      appliedFields.push('shortDescription');
     }
     if (input.apply.doNotPublish) {
       patch.doNotPublish = preview.proposed.doNotPublish;
@@ -334,6 +338,18 @@ export class WooCommerceSyncService {
         preview.proposed.parsed.storefrontDescriptionDoc,
       );
       appliedFields.push('storefrontDescriptionDoc');
+    }
+    if (preview.proposed.shortDescription) {
+      const shouldApplyShortDescription =
+        input.apply.shortDescription ||
+        (input.apply.storefrontDescriptionDoc &&
+          isEffectivelyEmptyHtml(preview.local.description));
+      if (shouldApplyShortDescription) {
+        patch.description = preview.proposed.shortDescription;
+        if (!appliedFields.includes('shortDescription')) {
+          appliedFields.push('shortDescription');
+        }
+      }
     }
     if (input.apply.productIngredientsJson) {
       patch.productIngredientsJson = stringifyProductIngredientsJson(
@@ -412,6 +428,7 @@ export class WooCommerceSyncService {
   private buildWcPayload(payload: StorefrontDryRunPushPayload): Record<string, unknown> {
     const meta_data = Object.entries(payload.meta).map(([key, value]) => ({ key, value }));
     return {
+      name: payload.name || '',
       status: payload.status,
       short_description: payload.shortDescription || '',
       description: payload.descriptionHtml,
@@ -430,17 +447,12 @@ export class WooCommerceSyncService {
     let wooProductId = preview.wooProductId;
     let created = false;
 
-    const goodName = await prisma.catalogGood.findUnique({
-      where: { id: goodId },
-      select: { name: true },
-    });
-
     if (wooProductId) {
       await client.updateProduct(wooProductId, wcPayload);
     } else {
       const createdProduct = await client.createProduct({
         ...wcPayload,
-        name: goodName?.name || preview.sku,
+        name: preview.payload.name?.trim() || preview.sku,
         sku: preview.sku,
         type: 'simple',
       });

@@ -4,6 +4,10 @@ import {
   buildKitComponentsHtml,
   buildStorefrontBoundValues,
   buildStorefrontDescriptionDocFromPreset,
+  createStorefrontBlockNodeAttrsFromPreset,
+  createStorefrontBlockNodeFromPreset,
+  getStorefrontPickerPresetBlocks,
+  isStorefrontBlockActiveInProduct,
   storefrontDescriptionNeedsPresetSync,
   syncStorefrontDescriptionDocWithPreset,
   formatIngredientsList,
@@ -11,6 +15,7 @@ import {
   ingredientsListsEqual,
   isArchiveFolderName,
   isStorefrontProtectedBoundResolver,
+  isStorefrontDrawerTemplateEditable,
   isStorefrontTemplateBoundBlock,
   getStorefrontBoundBlockEmptyMessage,
   normalizeIngredientTag,
@@ -28,7 +33,11 @@ import {
   normalizeStorefrontDescriptionDoc,
   walkStorefrontDescriptionBlocks,
 } from './storefrontDescription.js';
-import { STOREFRONT_DEFAULT_BLOCKS, STOREFRONT_DEFAULT_META_KEYS } from '../constants/storefrontDefaults.js';
+import {
+  STOREFRONT_BUILTIN_DEFAULTS,
+  STOREFRONT_DEFAULT_BLOCKS,
+  STOREFRONT_DEFAULT_META_KEYS,
+} from '../constants/storefrontDefaults.js';
 
 describe('resolveStorefrontPublishStatus', () => {
   it('returns draft when doNotPublish', () => {
@@ -126,6 +135,13 @@ describe('protected bound resolvers', () => {
     expect(isStorefrontTemplateBoundBlock('heating')).toBe(false);
   });
 
+  it('excludes kitComponents from drawer WYSIWYG editing', () => {
+    expect(isStorefrontDrawerTemplateEditable('ingredients')).toBe(true);
+    expect(isStorefrontDrawerTemplateEditable('nutrition')).toBe(true);
+    expect(isStorefrontDrawerTemplateEditable('kitComponents')).toBe(false);
+    expect(isStorefrontDrawerTemplateEditable('heating')).toBe(false);
+  });
+
   it('returns specific empty-state messages', () => {
     expect(getStorefrontBoundBlockEmptyMessage('nutrition')).toBe(
       'Дані КБЖВ ще не заповнені у полях товару',
@@ -136,8 +152,48 @@ describe('protected bound resolvers', () => {
   });
 });
 
+describe('storefront block picker helpers', () => {
+  it('builds preset block node attrs with cleared override', () => {
+    const attrs = createStorefrontBlockNodeAttrsFromPreset({
+      id: 'heating',
+      label: 'Розігрів',
+      enabled: false,
+      resolver: 'heating',
+      template: '<p>Custom heating</p>',
+      metaKeyId: null,
+    });
+
+    expect(attrs).toEqual({
+      blockId: 'heating',
+      resolver: 'heating',
+      template: '<p>Custom heating</p>',
+      overrideContent: null,
+      manualInclude: null,
+      manualExclude: null,
+    });
+    expect(createStorefrontBlockNodeFromPreset({
+      id: 'heating',
+      label: 'Розігрів',
+      enabled: false,
+      resolver: 'heating',
+      template: '<p>Custom heating</p>',
+      metaKeyId: null,
+    })).toEqual({
+      type: 'storefrontBlock',
+      attrs,
+    });
+  });
+
+  it('lists picker blocks including disabled and excludes kit-specific mismatches', () => {
+    const blocks = getStorefrontPickerPresetBlocks(STOREFRONT_DEFAULT_BLOCKS, { isKit: true });
+    expect(blocks.some((block) => block.resolver === 'kitComponents')).toBe(true);
+    expect(blocks.some((block) => block.resolver === 'ingredients')).toBe(false);
+    expect(blocks.some((block) => block.id === 'grossWeight')).toBe(true);
+  });
+});
+
 describe('storefront description doc', () => {
-  it('removes disabled preset blocks from saved doc on sync', () => {
+  it('removes disabled preset blocks without manualInclude on sync', () => {
     const presetBlocks = [
       { id: 'netWeight', label: 'Net', enabled: true, resolver: 'netWeight' as const, template: '{{netWeight}}', metaKeyId: null },
       { id: 'grossWeight', label: 'Gross', enabled: false, resolver: 'grossWeight' as const, template: '{{grossWeight}}', metaKeyId: null },
@@ -155,7 +211,102 @@ describe('storefront description doc', () => {
     expect(walkStorefrontDescriptionBlocks(synced).map((block) => block.blockId)).toEqual(['netWeight']);
   });
 
-  it('syncs saved doc block order with preset', () => {
+  it('keeps manually excluded enabled preset blocks out of html and preset sync', () => {
+    const presetBlocks = [
+      { id: 'salt', label: 'Salt', enabled: true, resolver: 'salt' as const, template: 'salt text', metaKeyId: null },
+      { id: 'storage', label: 'Storage', enabled: true, resolver: 'storage' as const, template: 'storage text', metaKeyId: null },
+    ];
+    const doc = {
+      type: 'doc' as const,
+      content: [
+        {
+          type: 'storefrontBlock',
+          attrs: {
+            blockId: 'salt',
+            resolver: 'salt',
+            template: 'salt text',
+            overrideContent: null,
+            manualExclude: true,
+          },
+        },
+      ],
+    };
+
+    expect(storefrontDescriptionNeedsPresetSync(doc, presetBlocks)).toBe(true);
+    const synced = syncStorefrontDescriptionDocWithPreset(doc, presetBlocks);
+    expect(walkStorefrontDescriptionBlocks(synced).map((block) => block.blockId)).toEqual([
+      'salt',
+      'storage',
+    ]);
+    expect(
+      walkStorefrontDescriptionBlocks(synced).filter((block) => !block.manualExclude).map((block) => block.blockId),
+    ).toEqual(['storage']);
+    expect(resolveStorefrontDescriptionDocHtml(synced, {}, [])).toContain('storage text');
+    expect(resolveStorefrontDescriptionDocHtml(synced, {}, [])).not.toContain('salt text');
+  });
+
+  it('preserves disabled blocks explicitly added via picker', () => {
+    const presetBlocks = [
+      { id: 'netWeight', label: 'Net', enabled: true, resolver: 'netWeight' as const, template: '{{netWeight}}', metaKeyId: null },
+      { id: 'grossWeight', label: 'Gross', enabled: false, resolver: 'grossWeight' as const, template: '{{grossWeight}}', metaKeyId: null },
+    ];
+    const doc = {
+      type: 'doc' as const,
+      content: [
+        { type: 'storefrontBlock', attrs: { blockId: 'netWeight', resolver: 'netWeight', template: '{{netWeight}}', overrideContent: null } },
+        {
+          type: 'storefrontBlock',
+          attrs: {
+            blockId: 'grossWeight',
+            resolver: 'grossWeight',
+            template: '{{grossWeight}}',
+            overrideContent: null,
+            manualInclude: true,
+          },
+        },
+      ],
+    };
+    const enabledIds = new Set(['netWeight']);
+    const grossAttrs = walkStorefrontDescriptionBlocks(doc)[1];
+
+    expect(isStorefrontBlockActiveInProduct(grossAttrs, { enabledBlockIds: enabledIds })).toBe(true);
+    expect(storefrontDescriptionNeedsPresetSync(doc, presetBlocks)).toBe(false);
+    const synced = syncStorefrontDescriptionDocWithPreset(doc, presetBlocks);
+    expect(walkStorefrontDescriptionBlocks(synced).map((block) => block.blockId)).toEqual([
+      'netWeight',
+      'grossWeight',
+    ]);
+  });
+
+  it('preserves marketing paragraph when syncing with a different preset', () => {
+    const presetBlocks = [
+      { id: 'natural', label: 'A', enabled: true, resolver: 'template' as const, template: 'a', metaKeyId: null },
+      { id: 'storage', label: 'Storage', enabled: true, resolver: 'storage' as const, template: 'storage text', metaKeyId: null },
+    ];
+    const doc = {
+      type: 'doc' as const,
+      content: [
+        {
+          type: 'paragraph',
+          attrs: { class: 'storefront-marketing' },
+          content: [{ type: 'text', text: 'Унікальний маркетинговий текст.' }],
+        },
+        {
+          type: 'storefrontBlock',
+          attrs: { blockId: 'natural', resolver: 'template', template: 'a', overrideContent: null },
+        },
+      ],
+    };
+
+    const synced = syncStorefrontDescriptionDocWithPreset(doc, presetBlocks);
+    expect(synced.content?.[0]).toEqual(doc.content[0]);
+    expect(walkStorefrontDescriptionBlocks(synced).map((block) => block.blockId)).toEqual([
+      'natural',
+      'storage',
+    ]);
+  });
+
+  it('adds missing enabled preset blocks without reordering existing doc', () => {
     const presetBlocks = [
       { id: 'natural', label: 'A', enabled: true, resolver: 'template' as const, template: 'a', metaKeyId: null },
       { id: 'kitComponents', label: 'Kit', enabled: true, resolver: 'kitComponents' as const, template: '{{kitComponents}}', metaKeyId: null },
@@ -166,14 +317,65 @@ describe('storefront description doc', () => {
       content: [
         { type: 'storefrontBlock', attrs: { blockId: 'natural', resolver: 'template', template: 'a', overrideContent: null } },
         { type: 'storefrontBlock', attrs: { blockId: 'nutrition', resolver: 'nutrition', template: '{{nutrition}}', overrideContent: null } },
-        { type: 'storefrontBlock', attrs: { blockId: 'kitComponents', resolver: 'kitComponents', template: '{{kitComponents}}', overrideContent: null } },
       ],
     };
 
     expect(storefrontDescriptionNeedsPresetSync(doc, presetBlocks, { isKit: true })).toBe(true);
     const synced = syncStorefrontDescriptionDocWithPreset(doc, presetBlocks, { isKit: true });
     const order = walkStorefrontDescriptionBlocks(synced).map((block) => block.resolver);
-    expect(order).toEqual(['template', 'kitComponents', 'nutrition']);
+    expect(order).toEqual(['template', 'nutrition', 'kitComponents']);
+  });
+
+  it('syncs kitComponents template from preset without touching other block templates', () => {
+    const groupedTemplate = STOREFRONT_BUILTIN_DEFAULTS.kitComponents.template ?? '';
+    const flatPresetTemplate = `{{#kitItemsAll}}<li>{{name}} – {{qty}}</li>{{/kitItemsAll}}`;
+    const presetBlocks = [
+      {
+        id: 'kitComponents',
+        label: 'Kit',
+        enabled: true,
+        resolver: 'kitComponents' as const,
+        template: groupedTemplate,
+        metaKeyId: null,
+      },
+      {
+        id: 'storage',
+        label: 'Storage',
+        enabled: true,
+        resolver: 'storage' as const,
+        template: 'preset storage',
+        metaKeyId: null,
+      },
+    ];
+    const doc = {
+      type: 'doc' as const,
+      content: [
+        {
+          type: 'storefrontBlock',
+          attrs: {
+            blockId: 'kitComponents',
+            resolver: 'kitComponents',
+            template: flatPresetTemplate,
+            overrideContent: null,
+          },
+        },
+        {
+          type: 'storefrontBlock',
+          attrs: {
+            blockId: 'storage',
+            resolver: 'storage',
+            template: 'product storage override',
+            overrideContent: null,
+          },
+        },
+      ],
+    };
+
+    expect(storefrontDescriptionNeedsPresetSync(doc, presetBlocks, { isKit: true })).toBe(true);
+    const synced = syncStorefrontDescriptionDocWithPreset(doc, presetBlocks, { isKit: true });
+    const blocks = walkStorefrontDescriptionBlocks(synced);
+    expect(blocks.find((block) => block.blockId === 'kitComponents')?.template).toBe(groupedTemplate);
+    expect(blocks.find((block) => block.blockId === 'storage')?.template).toBe('product storage override');
   });
 
   it('builds kit doc with kitComponents and without ingredients', () => {
@@ -368,6 +570,7 @@ describe('nutrition split placeholders', () => {
       ingredientsJson: [],
       nutrition: { proteins: '4,4', fats: '3,1', carbs: '5,0', energy: '68' },
       netLabel: '',
+      mainProductLabel: '',
       grossLabel: '',
       storageTemplate: '',
       heatingTemplate: '',
@@ -386,6 +589,7 @@ describe('nutrition split placeholders', () => {
       ingredientsJson: [],
       nutrition: { proteins: '2,5', fats: '1,2', carbs: '8,0', energy: '55' },
       netLabel: '',
+      mainProductLabel: '',
       grossLabel: '',
       storageTemplate: '',
       heatingTemplate: '',
@@ -408,6 +612,7 @@ describe('nutrition split placeholders', () => {
       ingredientsJson: [],
       nutrition: { proteins: '2,5', fats: '1,2', carbs: '8,0', energy: '55' },
       netLabel: '',
+      mainProductLabel: '',
       grossLabel: '',
       storageTemplate: '',
       heatingTemplate: '',
@@ -416,7 +621,7 @@ describe('nutrition split placeholders', () => {
     });
     const html = resolveStorefrontDescriptionDocHtml(doc, placeholders, STOREFRONT_DEFAULT_META_KEYS);
     expect(html).toContain('Білки 2,5 г');
-    expect(html).toContain('Енергетична цінність 55 ккал');
+    expect(html).toContain('Калорійність 55 ккал');
   });
 });
 
@@ -433,7 +638,8 @@ describe('storefront template editor html', () => {
         ingredientsJson: ['борошно', 'вода'],
         nutrition: null,
         netLabel: '',
-        grossLabel: '',
+        mainProductLabel: '',
+      grossLabel: '',
         storageTemplate: '',
         heatingTemplate: '',
         saltTemplate: '',
@@ -451,7 +657,8 @@ describe('storefront template editor html', () => {
         ingredientsJson: [],
         nutrition: null,
         netLabel: '',
-        grossLabel: '',
+        mainProductLabel: '',
+      grossLabel: '',
         storageTemplate: '',
         heatingTemplate: '',
         saltTemplate: '',
@@ -468,7 +675,8 @@ describe('storefront template editor html', () => {
         ingredientsJson: [],
         nutrition: null,
         netLabel: '250 г',
-        grossLabel: '',
+        mainProductLabel: '',
+      grossLabel: '',
         storageTemplate: '',
         heatingTemplate: '',
         saltTemplate: '',

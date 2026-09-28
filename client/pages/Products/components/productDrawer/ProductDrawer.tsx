@@ -14,6 +14,10 @@ import {
   DropdownMenu,
   DropdownTrigger,
   Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
   Spinner,
   Tab,
   Tabs,
@@ -56,6 +60,7 @@ import { ProductLabelsTab } from './ProductLabelsTab';
 import { ProductContentTab } from './ProductContentTab';
 import { StorefrontPullConfirmModal } from './StorefrontPullConfirmModal';
 import { storefrontApi } from '@/services/StorefrontService';
+import type { WooInspectResult } from '@shared/types/storefront';
 import { StockBadge } from '@/components/StockBadge';
 import {
   areRequiredCatalogPricesFilled,
@@ -108,6 +113,8 @@ import MetaLogJsonView from '@/components/MetaLogJsonView';
 const TechCardModal = lazy(() =>
   import('./TechCardModal').then((module) => ({ default: module.TechCardModal }))
 );
+
+type InspectViewTab = 'summary' | 'raw';
 
 async function fetchCatalogGoodDetail(
   id: string,
@@ -234,7 +241,9 @@ export function ProductDrawer({
   const [techCardOpen, setTechCardOpen] = useState(false);
   const [pullModalOpen, setPullModalOpen] = useState(false);
   const [inspectModalOpen, setInspectModalOpen] = useState(false);
-  const [inspectResult, setInspectResult] = useState<string | null>(null);
+  const [inspectData, setInspectData] = useState<WooInspectResult | null>(null);
+  const [inspectError, setInspectError] = useState<string | null>(null);
+  const [inspectViewTab, setInspectViewTab] = useState<InspectViewTab>('summary');
   const [inspectLoading, setInspectLoading] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
   const [pushConfirmOpen, setPushConfirmOpen] = useState(false);
@@ -243,6 +252,8 @@ export function ProductDrawer({
   const [baselineVersion, setBaselineVersion] = useState(0);
   /** Порції після зміни складу набору — щоб не перезаписувати військову ціну при гідрації drawer */
   const pendingMilitarySyncRef = useRef<number | null>(null);
+  /** Ключ сесії drawer — скидаємо вкладку лише при відкритті іншого товару/режиму, не після keepOpen save */
+  const cardTabScopeRef = useRef<string | null>(null);
 
   /** Тип обрано (або вже заданий у edit / create-folder) */
   const hasObjectKind = objectKind != null;
@@ -420,16 +431,26 @@ export function ProductDrawer({
   useEffect(() => {
     if (!open) {
       setNestedGoodId(null);
+      cardTabScopeRef.current = null;
       return;
     }
     // Поки live-pull/кеш не віддав detail — не гідратимо як «створення».
     // Інакше snapshot без parentId ≠ baseline і isDirty спалахує на першому відкритті.
     if (isEdit && !detail) return;
+    const tabScopeKey = isEdit
+      ? `edit:${detail.id}`
+      : `create:${mode ?? ''}:${parentFolderId ?? ''}`;
+    const isNewDrawerScope = cardTabScopeRef.current !== tabScopeKey;
+    if (isNewDrawerScope) {
+      setCardTab('main');
+      cardTabScopeRef.current = tabScopeKey;
+    }
     const kind = resolveObjectKind(mode, detail);
     setObjectKind(kind);
-    setCardTab('main');
-    setRowDeleteConfirm(null);
-    setNoteDeleteConfirmIdx(null);
+    if (isNewDrawerScope) {
+      setRowDeleteConfirm(null);
+      setNoteDeleteConfirmIdx(null);
+    }
 
     if (isEdit && detail) {
       // kind у edit завжди визначений через detail
@@ -457,6 +478,10 @@ export function ProductDrawer({
           : '',
         grossWeight:
           detail.grossWeight != null ? formatWeightKg(Number(detail.grossWeight), 3) : '',
+        mainProductWeight:
+          detail.mainProductWeight != null
+            ? formatWeightKg(Number(detail.mainProductWeight), 3)
+            : '',
         accPolicyId:
           resolvedKind === 'kit'
             ? CATALOG_ACC_POLICY_KIT
@@ -532,7 +557,7 @@ export function ProductDrawer({
       setBarcodes([]);
       commitBaseline(nextForm, [], [], [], kind, nextParent);
     }
-  }, [open, isEdit, detail, mode, commitBaseline, dictionaries.accPolicies]);
+  }, [open, isEdit, detail, mode, parentFolderId, commitBaseline, dictionaries.accPolicies]);
 
   useEffect(() => {
     if (bomQuery.trim().length < 2) {
@@ -565,14 +590,16 @@ export function ProductDrawer({
   const handleStorefrontInspect = useCallback(async () => {
     if (!detail?.sku) return;
     setInspectLoading(true);
-    setInspectResult(null);
+    setInspectData(null);
+    setInspectError(null);
+    setInspectViewTab('summary');
     setInspectModalOpen(true);
     try {
       const result = await storefrontApi.inspectWooProduct(detail.sku);
-      setInspectResult(JSON.stringify(result.summary, null, 2));
+      setInspectData(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setInspectResult(message);
+      setInspectError(message);
       ToastService.show({ title: 'Помилка inspect', description: message, color: 'danger' });
     } finally {
       setInspectLoading(false);
@@ -653,7 +680,7 @@ export function ProductDrawer({
         : form.storefrontDescriptionDoc.trim()
           ? (JSON.parse(form.storefrontDescriptionDoc) as CatalogUpdateGoodInput['storefrontDescriptionDoc'])
           : null,
-      grossWeight: isFolder ? undefined : parseNumberInput(form.grossWeight),
+      mainProductWeight: isFolder ? undefined : parseNumberInput(form.mainProductWeight),
     };
 
     if (!isFolder) {
@@ -1176,6 +1203,8 @@ export function ProductDrawer({
                       isGood={isGood}
                       isKit={isKit}
                       isOther={isOther}
+                      showMainUnit={isGood || isKit || isOther}
+                      units={units}
                       showPrintName={showPrintName}
                       nameHasWeight={nameHasWeight}
                       skuGenerating={skuGenerating}
@@ -1383,7 +1412,7 @@ export function ProductDrawer({
                         key="legacyUpdate"
                         className={
                           isEdit && !isFolder && detail?.sku && onLegacyUpdate
-                            ? 'text-lime-600'
+                            ? 'text-slate-600 data-[hover=true]:text-slate-700 data-[hover=true]:bg-slate-600/10'
                             : 'hidden'
                         }
                         isDisabled={saving || legacyUpdating}
@@ -1401,7 +1430,7 @@ export function ProductDrawer({
                         key="storefrontInspect"
                         className={
                           canPullStorefront && isEdit && !isFolder && detail?.sku
-                            ? 'text-primary'
+                            ? 'text-blue-600 data-[hover=true]:text-blue-700 data-[hover=true]:bg-blue-600/10'
                             : 'hidden'
                         }
                         startContent={<DynamicIcon name="search" size={16} className="shrink-0" />}
@@ -1412,7 +1441,7 @@ export function ProductDrawer({
                         key="storefrontPull"
                         className={
                           canPullStorefront && isEdit && !isFolder && detail?.sku
-                            ? 'text-primary'
+                            ? 'text-blue-600 data-[hover=true]:text-blue-700 data-[hover=true]:bg-blue-600/10'
                             : 'hidden'
                         }
                         startContent={<DynamicIcon name="cloud-download" size={16} className="shrink-0" />}
@@ -1423,7 +1452,7 @@ export function ProductDrawer({
                         key="storefrontPush"
                         className={
                           canPushStorefront && isEdit && !isFolder && detail?.sku
-                            ? 'text-success'
+                            ? 'text-lime-600 data-[hover=true]:text-lime-700 data-[hover=true]:bg-lime-600/10'
                             : 'hidden'
                         }
                         isDisabled={pushLoading}
@@ -1598,6 +1627,7 @@ export function ProductDrawer({
         isOpen={pullModalOpen}
         goodId={detail?.id ?? null}
         sku={detail?.sku ?? null}
+        localName={form.name}
         localFullDescription={form.fullDescription}
         localShortDescription={form.description}
         onApplied={() => {
@@ -1608,6 +1638,7 @@ export function ProductDrawer({
             setForm((f) => {
               const nextForm = {
                 ...f,
+                name: fresh.name?.trim() || f.name,
                 fullDescription: fresh.fullDescription || '',
                 description:
                   fresh.description === '[object Object]' ? '' : fresh.description || '',
@@ -1640,33 +1671,61 @@ export function ProductDrawer({
         }}
         onClose={() => setPullModalOpen(false)}
       />
-      <ConfirmModal
+      <Modal
         isOpen={inspectModalOpen}
-        title={`Inspect WC — ${detail?.sku || ''}`}
-        message={
-          inspectLoading ? (
-            <div className="flex items-center gap-2">
-              <DynamicIcon name="loader-2" className="animate-spin" size={16} />
-              Завантаження…
-            </div>
-          ) : (
-            <MetaLogJsonView
-              value={inspectResult}
-              className="h-full min-h-0"
-            />
-          )
-        }
-        confirmText="Закрити"
-        confirmColor="primary"
-        cancelText="Скасувати"
-        onConfirm={() => setInspectModalOpen(false)}
-        onCancel={() => setInspectModalOpen(false)}
-        overlayZClassName={overlayZ}
-      />
+        onClose={() => setInspectModalOpen(false)}
+        size="3xl"
+        scrollBehavior="inside"
+        classNames={{
+          wrapper: overlayZ,
+          backdrop: overlayZ,
+        }}
+      >
+        <ModalContent>
+          <ModalHeader>Inspect WC — {detail?.sku || ''}</ModalHeader>
+          <ModalBody className="gap-4">
+            {inspectLoading ? (
+              <div className="flex items-center gap-2">
+                <DynamicIcon name="loader-2" className="animate-spin" size={16} />
+                Завантаження…
+              </div>
+            ) : inspectError != null ? (
+              <p className="text-sm text-danger">{inspectError}</p>
+            ) : inspectData != null ? (
+              <div className="flex flex-col gap-2">
+                <Tabs
+                  size="sm"
+                  color="primary"
+                  aria-label="Режим перегляду inspect"
+                  selectedKey={inspectViewTab}
+                  onSelectionChange={(key) => setInspectViewTab(String(key) as InspectViewTab)}
+                >
+                  <Tab key="summary" title="Summary" />
+                  <Tab key="raw" title="Raw" />
+                </Tabs>
+                <div
+                  className="resize-y overflow-hidden min-h-40 h-52 max-h-[75vh] rounded-sm border border-gray-200 bg-gray-100 p-1"
+                  title="Потягніть за нижній край, щоб змінити висоту"
+                >
+                  <MetaLogJsonView
+                    value={inspectViewTab === 'summary' ? inspectData.summary : inspectData.raw}
+                    className="h-full min-h-0"
+                  />
+                </div>
+              </div>
+            ) : null}
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="light" onPress={() => setInspectModalOpen(false)}>
+              Закрити
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
       <ConfirmModal
         isOpen={pushConfirmOpen}
         title="Синхронізувати з сайтом?"
-        message="Опис, meta та статус публікації будуть відправлені на WooCommerce. Переконайтесь, що дані коректні."
+        message="Назва, опис, meta та статус публікації будуть відправлені на WooCommerce. Переконайтесь, що дані коректні."
         confirmText="Синхронізувати"
         confirmColor="primary"
         confirmLoading={pushLoading}

@@ -85,29 +85,89 @@ function parseIngredientsFromHtml(html: string): string | null {
   return match?.[1]?.trim() || null;
 }
 
-function extractSection(html: string, keywords: string[]): string | null {
-  const plain = stripHtml(html);
-  for (const keyword of keywords) {
-    const re = new RegExp(
-      `${keyword}[:\\s]*(.+?)(?=(?:Умови зберігання|Способи розігріву|Маса нетто|Маса брутто|Склад:|Білки|Жири|Вуглеводи|Енергетична|$))`,
-      'i',
-    );
-    const match = plain.match(re);
-    if (match?.[1]?.trim()) return match[1].trim();
-  }
-  const htmlRe = new RegExp(`<p[^>]*>[^<]*(?:${keywords.join('|')})[:\\s]*([^<]+)`, 'i');
-  const htmlMatch = html.match(htmlRe);
-  return htmlMatch?.[1]?.trim() || null;
+/** Маркери bound-блоків WooCommerce legacy — зупиняємо витяг унікального тексту перед ними. */
+const MARKETING_BOUND_STOP_MARKERS = [
+  'Склад набору',
+  'Склад\\s*:',
+  'Термін зберігання',
+  'Термін придатності',
+  'Зберігати за температури',
+  'Умови зберігання',
+  'Способи розігріву',
+  '3\\s+способи\\s+розігр',
+  'Маса нетто',
+  'Маса брутто',
+  'Маса осн\\. продукту',
+  'Білки',
+  'Жири',
+  'Вуглеводи',
+  'Енергетична',
+  'Калорійність',
+  'Приготований з натуральних',
+] as const;
+
+const SERVICE_INTRO_PATTERNS = [
+  /^Наші страви готуються з помірною кількістю солі[^.!?]*[.!?]\s*(?:За бажанням ви можете додати сіль на свій смак[^.!?]*[.!?]\s*)?/i,
+  /^Містить сіль[^.!?]*[.!?]\s*(?:Рекомендована добова норма(?:\s+споживання)?\s+солі[^.!?]*[.!?]\s*)?/i,
+  /^Приготований з натуральних[^.!?]*[.!?]\s*/i,
+] as const;
+
+/** Службові абзаци на початку (сіль, natural тощо), які не входять до унікального маркетингового тексту. */
+function isSkippableServiceParagraph(text: string): boolean {
+  const normalized = text.trim();
+  if (!normalized) return true;
+  return (
+    /^(?:Містить сіль|Наші страви готуються з помірною кількістю солі|Приготований з натуральних)/i.test(
+      normalized,
+    ) ||
+    /добова норма(?:\s+споживання)?\s+солі/i.test(normalized) ||
+    /додати сіль на свій смак/i.test(normalized)
+  );
 }
 
-function extractHeatingHtml(html: string): string | null {
-  const idx = html.search(/Способи розігріву/i);
-  if (idx < 0) return null;
-  const slice = html.slice(idx);
-  const endIdx = slice.search(/<p[^>]*>[^<]*Маса (?:нетто|брутто)/i);
-  const chunk = endIdx > 0 ? slice.slice(0, endIdx) : slice;
-  if (!chunk.trim()) return null;
-  return chunk.trim();
+function stripLeadingServiceContent(text: string): string {
+  let result = text.trim();
+  if (!result) return '';
+  for (const pattern of SERVICE_INTRO_PATTERNS) {
+    const next = result.replace(pattern, '').trim();
+    if (next !== result) {
+      result = next;
+    }
+  }
+  return result;
+}
+
+function resolveUniqueParagraphText(text: string): string | null {
+  const normalized = text.trim();
+  if (!normalized) return null;
+
+  if (isSkippableServiceParagraph(normalized)) {
+    const stripped = stripLeadingServiceContent(normalized);
+    return stripped || null;
+  }
+
+  return normalized;
+}
+
+function findEarliestStopMarkerIndex(text: string): number {
+  let earliest = -1;
+  for (const pattern of MARKETING_BOUND_STOP_MARKERS) {
+    const match = new RegExp(pattern, 'i').exec(text);
+    if (match?.index == null) continue;
+    if (earliest < 0 || match.index < earliest) {
+      earliest = match.index;
+    }
+  }
+  return earliest;
+}
+
+function extractHtmlParagraphTexts(html: string): string[] {
+  const matches = html.match(/<p[^>]*>[\s\S]*?<\/p>/gi);
+  if (matches?.length) {
+    return matches.map((paragraph) => stripHtml(paragraph)).filter(Boolean);
+  }
+  const plain = stripHtml(html);
+  return plain ? [plain] : [];
 }
 
 export function extractMarketingPlainFromHtml(html: string): string | null {
@@ -120,19 +180,34 @@ function extractMarketingHtml(html: string): string {
   const classMatch = html.match(/<p[^>]*class="[^"]*storefront-marketing[^"]*"[^>]*>([\s\S]*?)<\/p>/i);
   if (classMatch?.[1]) return classMatch[1].trim();
 
-  const beforeIngredients = html.split(/<p[^>]*>[^<]*Склад:/i)[0] || '';
-  const firstP = beforeIngredients.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-  if (firstP?.[1]) return firstP[1].trim();
+  const paragraphs = extractHtmlParagraphTexts(html);
+  if (!paragraphs.length) return '';
 
-  const plain = stripHtml(html);
-  const line = plain.split(/Склад:/i)[0]?.trim();
-  return line || '';
-}
+  const fullPlain = paragraphs.join('\n\n');
+  const stopIdx = findEarliestStopMarkerIndex(fullPlain);
+  const beforeMarkers = (stopIdx >= 0 ? fullPlain.slice(0, stopIdx) : fullPlain).trim();
+  if (!beforeMarkers) return '';
 
-function parseWeightFromHtml(html: string, label: 'нетто' | 'брутто'): string | null {
-  const re = new RegExp(`Маса ${label}:\\s*([\\d,.]+)\\s*(?:кг|г)?`, 'i');
-  const match = stripHtml(html).match(re);
-  return match?.[1]?.trim() || null;
+  const sourceParagraphs =
+    paragraphs.length > 1 ? beforeMarkers.split(/\n\n+/).map((line) => line.trim()).filter(Boolean) : [beforeMarkers];
+
+  const marketingParagraphs: string[] = [];
+
+  for (const paragraph of sourceParagraphs) {
+    const uniqueText = resolveUniqueParagraphText(paragraph);
+    if (!uniqueText) continue;
+
+    const localStopIdx = findEarliestStopMarkerIndex(uniqueText);
+    if (localStopIdx >= 0) {
+      const content = uniqueText.slice(0, localStopIdx).trim();
+      if (content) marketingParagraphs.push(content);
+      break;
+    }
+
+    marketingParagraphs.push(uniqueText);
+  }
+
+  return marketingParagraphs.join('\n\n').trim();
 }
 
 function nutritionFromMeta(meta: Record<string, string>): ProductNutritionJson | null {
@@ -257,47 +332,30 @@ export function parseWcDescription(input: ParseWcDescriptionInput): StorefrontPu
     }
   }
 
-  const storageText =
-    nkMeta[STOREFRONT_WC_META.storage] ||
-    extractSection(html, ['Умови зберігання', 'Зберігання']) ||
-    '';
-  if (storageText) {
-    setBlockOverride(doc, 'storage', storageText);
+  const storageFromMeta = nkMeta[STOREFRONT_WC_META.storage]?.trim() || '';
+  if (storageFromMeta) {
+    setBlockOverride(doc, 'storage', storageFromMeta);
   }
 
-  const heatingHtml = extractHeatingHtml(html);
-  if (heatingHtml) {
-    setBlockOverride(doc, 'heating', heatingHtml);
-  }
-
-  const grossFromMeta = nkMeta[STOREFRONT_WC_META.grossWeight];
-  const grossFromHtml = parseWeightFromHtml(html, 'брутто');
-  if (grossFromMeta || grossFromHtml) {
-    const label = grossFromMeta || grossFromHtml || '';
+  const grossFromMeta = nkMeta[STOREFRONT_WC_META.grossWeight]?.trim() || '';
+  if (grossFromMeta) {
     setBlockOverride(
       doc,
       'grossWeight',
-      STOREFRONT_BUILTIN_DEFAULTS.grossWeight.template.replace('{{grossWeight}}', label),
-    );
-  }
-
-  const netFromHtml = parseWeightFromHtml(html, 'нетто');
-  if (netFromHtml) {
-    setBlockOverride(
-      doc,
-      'netWeight',
-      STOREFRONT_BUILTIN_DEFAULTS.netWeight.template.replace('{{netWeight}}', netFromHtml),
+      STOREFRONT_BUILTIN_DEFAULTS.grossWeight.template.replace('{{grossWeight}}', grossFromMeta),
     );
   }
 
   const ingredientTags = ingredientsText ? splitIngredientsText(ingredientsText) : [];
+  const marketingText = marketing ? stripHtml(marketing) || null : null;
 
-  if (!ingredientsText && !nutrition && !storageText && !heatingHtml && html.trim()) {
+  if (!marketingText && !ingredientsText && !nutrition && html.trim()) {
     unparsed.push(html.slice(0, 500));
   }
 
   return {
     storefrontDescriptionDoc: doc,
+    marketingText,
     productIngredientsJson: ingredientTags,
     productNutritionJson: nutrition,
     parseWarnings: warnings,

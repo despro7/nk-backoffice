@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useRef, useState, useCallback, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './auth-context';
-import { RolePreviewContext } from './role-preview-context';
+import { RolePreviewContext, useRolePreview } from './role-preview-context';
 import { ROLES } from '@shared/constants/roles';
+import { canAccessRoute } from '@shared/constants/permissions';
 import { installRolePreviewFetch, setRolePreviewFetchRole } from '@/lib/rolePreviewFetch';
 import { PERMISSIONS_REVISION_EVENT } from '@/lib/notifyPermissionsChanged';
+import { findAppRouteByPath } from '@/routes.config';
+import { ToastService } from '@/services/ToastService';
 import type { RoleDto } from '@shared/types/role';
 
 const STORAGE_KEY = 'rolePreview';
@@ -20,6 +24,63 @@ function readStoredPreview(): string | null {
 
 interface RolePreviewProviderProps {
   children: ReactNode;
+}
+
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+}
+
+function RolePreviewHotkeyListener() {
+  const { isRealAdmin, effectiveRole, setPreviewRole, previewRoles } = useRolePreview();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!isRealAdmin || previewRoles.length === 0) return;
+
+    const options = [...previewRoles].sort((a, b) => b.rank - a.rank);
+
+    const applyPreviewRole = (slug: string) => {
+      setPreviewRole(slug === ROLES.ADMIN ? null : slug);
+
+      const selected = options.find((option) => option.slug === slug);
+      const currentRoute = findAppRouteByPath(location.pathname);
+      if (currentRoute && !canAccessRoute(selected?.permissions, currentRoute, slug)) {
+        navigate('/', { replace: true });
+      }
+
+      ToastService.show({
+        title: `Перегляд: ${selected?.name ?? slug}`,
+        color: slug === ROLES.ADMIN ? 'default' : 'warning',
+      });
+    };
+
+    const cyclePreviewRole = (direction: 'forward' | 'backward') => {
+      const currentSlug = effectiveRole || ROLES.ADMIN;
+      const currentIndex = options.findIndex((option) => option.slug === currentSlug);
+      if (currentIndex === -1) return;
+
+      const delta = direction === 'forward' ? 1 : -1;
+      const nextIndex = (currentIndex + delta + options.length) % options.length;
+      applyPreviewRole(options[nextIndex].slug);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'F2' && event.key !== 'F3') return;
+      if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      if (isEditableKeyboardTarget(event.target)) return;
+
+      event.preventDefault();
+      cyclePreviewRole(event.key === 'F3' ? 'forward' : 'backward');
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [effectiveRole, isRealAdmin, location.pathname, navigate, previewRoles, setPreviewRole]);
+
+  return null;
 }
 
 export function RolePreviewProvider({ children }: RolePreviewProviderProps) {
@@ -144,6 +205,7 @@ export function RolePreviewProvider({ children }: RolePreviewProviderProps) {
         isAdminView,
       }}
     >
+      <RolePreviewHotkeyListener />
       {children}
     </RolePreviewContext.Provider>
   );

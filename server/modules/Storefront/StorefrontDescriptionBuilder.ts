@@ -48,6 +48,7 @@ type GoodRow = {
   description: string | null;
   weight: number | null;
   grossWeight: number | null;
+  mainProductWeight: number | null;
   specQty: number | null;
   accPolicyId: string | null;
   parentId: string | null;
@@ -71,6 +72,7 @@ type ResolveCtx = {
   metaKeys: StorefrontMetaKeyConfig[];
   presetBlocks: StorefrontBlockConfig[];
   netLabel: string;
+  mainProductLabel: string;
   grossLabel: string;
   nutrition: ReturnType<typeof parseProductNutritionJson>;
   ingredientRows: Array<{ componentName: string; qty: number }>;
@@ -131,6 +133,7 @@ export class StorefrontDescriptionBuilder {
 
     return {
       goodId: loaded.good.id,
+      name: loaded.good.name?.trim() || null,
       status: resolveStorefrontPublishStatus({
         doNotPublish: resolveCtx.good.doNotPublish,
         parentFolderName: loaded.parentFolderName,
@@ -247,6 +250,7 @@ export class StorefrontDescriptionBuilder {
       metaKeys: loaded.metaKeys,
       presetBlocks: loaded.presetBlocks,
       netLabel: formatNetWeightLabel(loaded.good.weight),
+      mainProductLabel: formatGrossWeightLabel(loaded.good.mainProductWeight),
       grossLabel: formatGrossWeightLabel(gross.kg),
       nutrition: parseProductNutritionJson(loaded.good.productNutritionJson),
       ingredientRows: loaded.ingredientRows,
@@ -269,6 +273,7 @@ export class StorefrontDescriptionBuilder {
     const { text: ingredientsText } = resolveIngredientsText(ingredients, ctx.ingredientRows);
     return {
       netWeight: ctx.netLabel,
+      mainProductWeight: ctx.mainProductLabel,
       grossWeight: ctx.grossLabel,
       ingredients: ingredientsText,
       ...buildNutritionPlaceholderValues(ctx.nutrition),
@@ -329,7 +334,7 @@ export class StorefrontDescriptionBuilder {
         if (!hasNutritionPlaceholderValues(placeholders)) continue;
         html = toHtmlBlock(substituteStorefrontPlaceholders(attrs.template, placeholders, ctx.metaKeys));
         source = 'product';
-      } else if (primaryKey === 'netWeight' || primaryKey === 'grossWeight') {
+      } else if (primaryKey === 'netWeight' || primaryKey === 'mainProductWeight' || primaryKey === 'grossWeight') {
         const value = placeholders[primaryKey] || '';
         if (!value) continue;
         html = toHtmlBlock(
@@ -410,6 +415,7 @@ export class StorefrontDescriptionBuilder {
         };
       }
       case 'netWeight':
+      case 'mainProductWeight':
       case 'grossWeight': {
         const value = placeholders[block.resolver] || '';
         if (!value) return null;

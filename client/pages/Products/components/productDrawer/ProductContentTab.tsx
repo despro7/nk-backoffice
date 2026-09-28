@@ -16,7 +16,7 @@ import type { CatalogGoodImageDto } from '@shared/types/catalog';
 import { StorefrontNutritionFields } from './StorefrontNutritionFields';
 import { ProductIngredientsTags } from './ProductIngredientsTags';
 import { StorefrontDescriptionEditor } from './StorefrontDescriptionEditor';
-import { storefrontApi } from '@/services/StorefrontService';
+import { storefrontApi, STOREFRONT_SETTINGS_UPDATED_EVENT } from '@/services/StorefrontService';
 import type { StorefrontKitComponentSettings, StorefrontPresetDto } from '@shared/types/storefront';
 import {
   STOREFRONT_BUILTIN_DEFAULTS,
@@ -29,6 +29,7 @@ import {
   buildStorefrontDescriptionDocFromPreset,
   getStorefrontEnabledBlockIds,
   parseStorefrontDescriptionDoc,
+  resolveKitComponentsBlockTemplate,
   storefrontDescriptionNeedsPresetSync,
   syncStorefrontDescriptionDocWithPreset,
   formatGrossWeightLabel,
@@ -37,7 +38,6 @@ import {
   type KitComponentRow,
 } from '@shared/utils/storefrontDescription';
 import { formatNetWeightLabel } from '@shared/utils/productLabel';
-import { buildTechCardRows } from '../../ProductsUtils';
 
 interface ProductContentTabProps {
   form: DrawerForm;
@@ -82,13 +82,24 @@ export function ProductContentTab({
 
   useEffect(() => {
     if (!canReadStorefront) return;
-    void Promise.all([storefrontApi.listPresets(), storefrontApi.getSettings()])
-      .then(([presetRows, settings]) => {
-        setPresets(presetRows);
-        setDefaultPresetId(settings.defaultPresetId);
-        setKitComponentSettings(settings.kitComponentSettings);
-      })
-      .catch(() => undefined);
+
+    const loadStorefrontSettings = () => {
+      void Promise.all([storefrontApi.listPresets(), storefrontApi.getSettings()])
+        .then(([presetRows, settings]) => {
+          setPresets(presetRows);
+          setDefaultPresetId(settings.defaultPresetId);
+          setKitComponentSettings(settings.kitComponentSettings);
+        })
+        .catch(() => undefined);
+    };
+
+    loadStorefrontSettings();
+    window.addEventListener('focus', loadStorefrontSettings);
+    window.addEventListener(STOREFRONT_SETTINGS_UPDATED_EVENT, loadStorefrontSettings);
+    return () => {
+      window.removeEventListener('focus', loadStorefrontSettings);
+      window.removeEventListener(STOREFRONT_SETTINGS_UPDATED_EVENT, loadStorefrontSettings);
+    };
   }, [canReadStorefront]);
 
   const offlinePreset = useMemo<StorefrontPresetDto>(
@@ -109,30 +120,17 @@ export function ProductContentTab({
   const publishLocked = form.doNotPublish || fieldsLocked || !canEditStorefront;
   const storefrontFieldsLocked = fieldsLocked || !canEditStorefront;
 
-  const autoGrossKg = useMemo(() => {
-    if (!components.length) return null;
-    const rows = buildTechCardRows(
-      components.map((c) => ({
-        componentName: c.componentName,
-        qty: c.qty,
-        unitId: c.unitId,
-        componentWeight: c.componentWeight,
-        note: c.note,
-        cookingLossPercent: isKit ? 0 : c.cookingLossPercent,
-      })),
-      units,
-      Number(form.specQty) || 1,
-      1,
-    );
-    return rows.totalGrossMassKg;
-  }, [components, units, form.specQty, isKit]);
+  const mainProductLabel = useMemo(() => {
+    const manual = Number(String(form.mainProductWeight).replace(',', '.'));
+    if (Number.isFinite(manual) && manual > 0) return formatGrossWeightLabel(manual);
+    return '';
+  }, [form.mainProductWeight]);
 
   const grossLabel = useMemo(() => {
     const manual = Number(String(form.grossWeight).replace(',', '.'));
     if (Number.isFinite(manual) && manual > 0) return formatGrossWeightLabel(manual);
-    if (autoGrossKg != null) return formatGrossWeightLabel(autoGrossKg);
     return '';
-  }, [form.grossWeight, autoGrossKg]);
+  }, [form.grossWeight]);
 
   const netLabel = useMemo(() => {
     const manual = Number(String(form.weight).replace(',', '.'));
@@ -155,10 +153,10 @@ export function ProductContentTab({
 
   const kitComponentsTemplate = useMemo(() => {
     const presetBlock = activePreset.blocks.find((block) => block.resolver === 'kitComponents');
-    return (
+    return resolveKitComponentsBlockTemplate(
       presetBlock?.template ||
-      STOREFRONT_BUILTIN_DEFAULTS.kitComponents.template ||
-      '{{kitComponents}}'
+        STOREFRONT_BUILTIN_DEFAULTS.kitComponents.template ||
+        '{{kitComponents}}',
     );
   }, [activePreset.blocks]);
 
@@ -183,6 +181,7 @@ export function ProductContentTab({
         ingredientsJson: form.productIngredientsJson,
         nutrition: form.productNutritionJson,
         netLabel,
+        mainProductLabel,
         grossLabel,
         storageTemplate: STOREFRONT_BUILTIN_DEFAULTS.storage.template,
         heatingTemplate: STOREFRONT_BUILTIN_DEFAULTS.heating.template,
@@ -195,6 +194,7 @@ export function ProductContentTab({
       form.productIngredientsJson,
       form.productNutritionJson,
       netLabel,
+      mainProductLabel,
       grossLabel,
       kitComponentRows,
       kitComponentsTemplate,
@@ -290,7 +290,7 @@ export function ProductContentTab({
           <Select
             size="sm"
             labelPlacement="outside-left"
-            label="Шаблон"
+            label="Шаблон опису"
             classNames={{
               base: 'w-auto max-w-xs ml-auto',
               trigger: 'w-auto min-w-46',
@@ -304,16 +304,9 @@ export function ProductContentTab({
             onSelectionChange={(keys) => {
               const id = Array.from(keys)[0] as string;
               if (!id) return;
-              const preset = presets.find((p) => p.id === id);
-              const doc = preset
-                ? buildStorefrontDescriptionDocFromPreset(preset.blocks, { isKit })
-                : parseStorefrontDescriptionDoc(form.storefrontDescriptionDoc);
               setForm((f) => ({
                 ...f,
                 storefrontPresetId: id === defaultPresetId ? '' : id,
-                storefrontDescriptionDoc: doc
-                  ? stringifyStorefrontDescriptionDoc(doc)
-                  : f.storefrontDescriptionDoc,
               }));
             }}
           >
@@ -328,6 +321,7 @@ export function ProductContentTab({
         <StorefrontDescriptionEditor
           value={storefrontDocValue}
           boundValues={resolvedBoundValues}
+          presetBlocks={activePreset.blocks}
           renderOptions={storefrontRenderOptions}
           isDisabled={publishLocked}
           onChange={(json) => setForm((f) => ({ ...f, storefrontDescriptionDoc: json }))}
@@ -359,6 +353,7 @@ export function ProductContentTab({
           stagingSessionId={!isEdit ? stagingSessionId : null}
           images={images}
           isDisabled={fieldsLocked}
+          overlayZClassName={overlayZClassName}
           onImagesChange={onImagesChange}
         />
       </div>

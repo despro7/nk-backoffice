@@ -489,6 +489,8 @@ model CatalogGood {
   storefrontDescriptionDoc String? @db.Text
   /// Брутто, кг; null → computed з BOM/tech card
   grossWeight     Float?
+  /// Маса осн. продукту, кг (ручне поле упаковки)
+  mainProductWeight Float?
   /// Phase 2: WooCommerce product id
   wooProductId    Int?
   wooLastSyncedAt DateTime?

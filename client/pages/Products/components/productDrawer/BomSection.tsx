@@ -25,10 +25,8 @@ import type { CatalogDictItemDto } from '../../ProductsTypes';
 import {
   hasParenthesizedTextInName,
   isSuspiciousBomIngredientQty,
-  weightsAlmostEqual,
   type ExpectedBomWeight,
 } from '../../ProductsUtils';
-import { parseNumberInput } from '@/lib/numberInput';
 import type { BomRow, CatalogSearchHit, DrawerForm, RowDeleteKind } from './productDrawerTypes';
 import {
   formatWeightKg,
@@ -171,7 +169,7 @@ export function BomSection({
   isReadOnly = false,
   canEditSpec = false,
 }: BomSectionProps) {
-  const packCols = isAdmin ? (isKit ? '4' : '5') : isKit ? '3' : '4';
+  const packCols = isAdmin ? (isKit ? '3' : '4') : isKit ? '2' : '3';
   const isSpecReadOnly = isReadOnly || !canEditSpec;
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>(BOM_MANUAL_SORT);
   const [listSortEnabled, setListSortEnabled] = useState(false);
@@ -184,12 +182,6 @@ export function BomSection({
   const listSortDisabled = !isManualSort;
   const canManualReorder = isManualSort && listSortEnabled && !isSpecReadOnly;
   const showDragHandle = canManualReorder;
-  const showExpectedWeightHint = useMemo(() => {
-    if (!bomWeightExpected || bomWeightExpected.kg <= 0) return false;
-    const currentWeightKg = parseNumberInput(form.weight);
-    return currentWeightKg == null || !weightsAlmostEqual(currentWeightKg, bomWeightExpected.kg);
-  }, [bomWeightExpected, form.weight]);
-
   const handleSortColumn = useCallback((column: Exclude<BomSortColumn, 'sortOrder'>) => {
     setSortDescriptor((prev) => nextBomSortDescriptor(prev, column));
   }, []);
@@ -558,19 +550,6 @@ export function BomSection({
           <span>Упаковка</span>
         </h3>
         <div className={`grid gap-3 grid-cols-2 md:grid-cols-${packCols}`}>
-          <Select
-            label="Од. виміру"
-            selectedKeys={form.mainUnitId ? [form.mainUnitId] : []}
-            classNames={{ popoverContent: 'bg-default-100' }}
-            onSelectionChange={(keys) => {
-              const v = Array.from(keys)[0];
-              if (v) onFormChange((f) => ({ ...f, mainUnitId: String(v) }));
-            }}
-          >
-            {units.map((u) => (
-              <SelectItem key={u.id}>{u.name}</SelectItem>
-            ))}
-          </Select>
           {isGood && (
             <NumberInput
               label="Порцій в коробці"
@@ -584,7 +563,7 @@ export function BomSection({
               onValueChange={(v) => onFormChange((f) => ({ ...f, packageRatio: v }))}
             />
           )}
-          <div className="min-w-0">
+          <div className="min-w-0 space-y-1">
             <NumberInput
               label="Маса нетто, кг"
               value={form.weight}
@@ -598,18 +577,6 @@ export function BomSection({
               errorMessage={weightFieldInvalid ? 'Має бути більше 0' : undefined}
               onValueChange={(v) => onFormChange((f) => ({ ...f, weight: v }))}
             />
-          </div>
-          <div className="min-w-0 space-y-1">
-            <NumberInput
-              label="Маса брутто, кг"
-              value={form.grossWeight}
-              decimalPlaces={3}
-              min={0}
-              max={20}
-              step={0.01}
-              isDisabled={isReadOnly}
-              onValueChange={(v) => onFormChange((f) => ({ ...f, grossWeight: v }))}
-            />
             {bomWeightExpected && bomWeightExpected.missingCount > 0 ? (
               <span className="block text-xs text-warning-700/90 px-3">
                 У деяких позицій не вказано вагу
@@ -618,11 +585,23 @@ export function BomSection({
               <span className="block text-xs text-warning-700/90 px-3">
                 Приблизно {formatWeightKg(autoGrossKg, 2)} кг
               </span>
-            ) : (
+            ) : components.length > 0 ? (
               <span className="block text-xs text-danger px-3">
                 Помилка розрахунку
               </span>
-            )}
+            ) : null}
+          </div>
+          <div className="min-w-0">
+            <NumberInput
+              label="Маса осн. продукту"
+              value={form.mainProductWeight}
+              decimalPlaces={3}
+              min={0}
+              max={20}
+              step={0.01}
+              isDisabled={isReadOnly}
+              onValueChange={(v) => onFormChange((f) => ({ ...f, mainProductWeight: v }))}
+            />
           </div>
           {isAdmin && (
             <NumberInput
@@ -657,7 +636,7 @@ export function BomSection({
             {components.length > 0 && (
               <span className="font-normal text-default-400">
                 {isKit
-                  ? `(${components.length} поз. / ${kitPortionCount} ${pluralize(kitPortionCount, 'порція', 'порції', 'порцій')})`
+                  ? `(${components.length} поз. / ${kitPortionCount} ${pluralize(kitPortionCount, 'страва', 'страви', 'страв')})`
                   : `(${components.length} поз.)`}
               </span>
             )}

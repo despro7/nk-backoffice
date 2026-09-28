@@ -8,6 +8,7 @@ export const STOREFRONT_WC_META = {
   nutrition: '_nk_nutrition',
   storage: '_nk_storage',
   grossWeight: '_nk_gross_weight',
+  mainProductWeight: '_nk_main_product_weight',
 } as const;
 
 /** Built-in block ids for default preset seed */
@@ -20,6 +21,7 @@ export const STOREFRONT_BLOCK_IDS = [
   'storage',
   'heating',
   'netWeight',
+  'mainProductWeight',
   'grossWeight',
 ] as const;
 
@@ -30,6 +32,7 @@ export const STOREFRONT_PROTECTED_BOUND_RESOLVERS = [
   'ingredients',
   'nutrition',
   'netWeight',
+  'mainProductWeight',
   'grossWeight',
 ] as const;
 
@@ -44,6 +47,7 @@ export type StorefrontBlockResolver =
   | 'heating'
   | 'salt'
   | 'netWeight'
+  | 'mainProductWeight'
   | 'grossWeight'
   | 'kitComponents';
 
@@ -108,6 +112,10 @@ export interface StorefrontBlockNodeAttrs {
   template: string;
   /** Plain/HTML override for overridable blocks only */
   overrideContent?: string | null;
+  /** Явно доданий у товарі, коли блок вимкнено в preset */
+  manualInclude?: boolean | null;
+  /** Явно прибраний з опису, щоб preset sync не повертав увімкнений блок */
+  manualExclude?: boolean | null;
 }
 
 export interface StorefrontDescriptionInlineNode {
@@ -149,6 +157,7 @@ export interface StorefrontPreviewResult {
 /** Phase 2 stub — payload that would be sent to WC REST */
 export interface StorefrontDryRunPushPayload {
   goodId: string;
+  name: string | null;
   status: StorefrontPublishStatus;
   shortDescription: string | null;
   descriptionHtml: string;
@@ -245,6 +254,8 @@ export interface WooInspectResult {
 
 export interface StorefrontPullParseResult {
   storefrontDescriptionDoc: StorefrontDescriptionDoc;
+  /** Унікальний маркетинговий текст, витягнутий з legacy HTML (без службових блоків). */
+  marketingText: string | null;
   productIngredientsJson: string[];
   productNutritionJson: ProductNutritionJson | null;
   parseWarnings: string[];
@@ -258,6 +269,8 @@ export interface WooPullConflict {
 }
 
 export interface WooPullLocalSnapshot {
+  name: string | null;
+  description: string | null;
   weight: number | null;
   regularPrice: string | null;
   doNotPublish: boolean;
@@ -274,6 +287,7 @@ export interface WooPullPreviewResult {
   wcRaw: WooCommerceProduct;
   local: WooPullLocalSnapshot;
   proposed: {
+    name: string | null;
     fullDescription: string | null;
     shortDescription: string | null;
     weight: number | null;
@@ -289,6 +303,7 @@ export interface WooPullPreviewResult {
 export interface WooPullApplyInput {
   goodId: string;
   apply: {
+    name?: boolean;
     fullDescription?: boolean;
     shortDescription?: boolean;
     storefrontDescriptionDoc?: boolean;
@@ -415,6 +430,7 @@ export interface StorefrontBoundBlockValues {
   /** Сіль з productNutritionJson, г/100г */
   nutritionSalt: string;
   netWeight: string;
+  mainProductWeight: string;
   grossWeight: string;
   storage: string;
   heating: string;

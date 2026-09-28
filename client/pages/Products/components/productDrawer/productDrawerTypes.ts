@@ -101,6 +101,9 @@ export interface DrawerForm {
   productNutritionJson: ProductNutritionJson | null;
   /** TipTap JSON string */
   storefrontDescriptionDoc: string;
+  /** Маса осн. продукту, кг */
+  mainProductWeight: string;
+  /** Брутто, кг (legacy; не редагується у формі) */
   grossWeight: string;
 }
 

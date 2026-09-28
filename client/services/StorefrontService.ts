@@ -18,6 +18,9 @@ import type {
   WooPushPreviewResult,
 } from '@shared/types/storefront';
 
+/** Fired after storefront preset/settings are saved in SettingsStorefront. */
+export const STOREFRONT_SETTINGS_UPDATED_EVENT = 'storefront-settings-updated';
+
 async function parseJson<T>(res: Response): Promise<T> {
   const data = await res.json();
   if (!res.ok || data.success === false) {

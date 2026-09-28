@@ -12,7 +12,17 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import type { NodeViewRenderer } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { StorefrontListItem } from './StorefrontListItem';
-import { Button, Divider, Select, SelectItem, Tooltip } from '@heroui/react';
+import {
+  Button,
+  Divider,
+  Dropdown,
+  DropdownItem,
+  DropdownMenu,
+  DropdownTrigger,
+  Select,
+  SelectItem,
+  Tooltip,
+} from '@heroui/react';
 import type { SharedSelection } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
@@ -41,13 +51,19 @@ import {
   isStorefrontBubbleToolbarTarget,
   promptStorefrontEditorLink,
 } from './storefrontEditorBubbleToolbar.lib';
+import { attachStorefrontBlockLongPressDrag } from './storefrontBlockDrag.lib';
 import type {
+  StorefrontBlockConfig,
   StorefrontBlockNodeAttrs,
   StorefrontBoundBlockValues,
   StorefrontDescriptionDoc,
 } from '@shared/types/storefront';
 import {
+  createStorefrontBlockNodeAttrsFromPreset,
   getStorefrontBoundBlockEmptyMessage,
+  getStorefrontPickerPresetBlocks,
+  isStorefrontBlockActiveInProduct,
+  isStorefrontDrawerTemplateEditable,
   isStorefrontTemplateBoundBlock,
   normalizeStorefrontBlockHtml,
   normalizeStorefrontDescriptionDoc,
@@ -58,6 +74,7 @@ import {
   resolveStorefrontDescriptionDocHtml,
   templateFromStorefrontEditorHtml,
   templateHtmlForStorefrontEditorLive,
+  walkStorefrontDescriptionBlocks,
   type StorefrontRenderOptions,
 } from '@shared/utils/storefrontDescription';
 import { prettifyHtml } from '@shared/utils/prettifyHtml';
@@ -65,11 +82,51 @@ import { prettifyHtml } from '@shared/utils/prettifyHtml';
 interface StorefrontDescriptionEditorProps {
   value: string;
   boundValues: StorefrontBoundBlockValues;
+  presetBlocks: StorefrontBlockConfig[];
   renderOptions?: StorefrontRenderOptions;
   onChange: (json: string) => void;
   isDisabled?: boolean;
   minHeightClass?: string;
   overlayZClassName?: string;
+}
+
+function findStorefrontBlockPos(editor: TipTapCoreEditor, blockId: string): number | null {
+  let found: number | null = null;
+  editor.state.doc.descendants((node, pos) => {
+    if (found != null) return false;
+    if (node.type.name === 'storefrontBlock' && node.attrs.blockId === blockId) {
+      found = pos;
+      return false;
+    }
+    return true;
+  });
+  return found;
+}
+
+function applyStorefrontBlockFromPreset(
+  editor: TipTapCoreEditor,
+  block: StorefrontBlockConfig,
+  enabledBlockIds?: ReadonlySet<string>,
+): void {
+  const manualInclude = Boolean(enabledBlockIds?.size && !enabledBlockIds.has(block.id));
+  const attrs = createStorefrontBlockNodeAttrsFromPreset(block, { manualInclude });
+  const existingPos = findStorefrontBlockPos(editor, block.id);
+
+  if (existingPos != null) {
+    const tr = editor.state.tr.setNodeMarkup(existingPos, undefined, {
+      ...attrs,
+      manualExclude: null,
+    });
+    editor.view.dispatch(tr);
+    editor.commands.setNodeSelection(existingPos);
+    const nodeDom = editor.view.nodeDOM(existingPos);
+    if (nodeDom instanceof HTMLElement) {
+      nodeDom.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+    return;
+  }
+
+  editor.chain().focus().insertContent({ type: 'storefrontBlock', attrs }).run();
 }
 
 type StorefrontBlockDeleteRequest = {
@@ -92,6 +149,8 @@ const BOUND_BLOCK_CLICK_HINT =
   'Клікніть, щоб редагувати обрамлення блоку. Продуктові дані (склад, вага тощо) змінюються в окремих блоках форми, не тут.';
 const OVERRIDE_BLOCK_CLICK_HINT =
   'Клікніть, щоб відкрити редагування тексту цього блоку';
+const KIT_COMPONENTS_BLOCK_HINT =
+  'Оформлення списку складників комплекту можна змінити, обравши інший Шаблон опису ↗';
 const FROZEN_PLACEHOLDER_HINT =
   'Це значення береться з окремого блоку форми. Змініть його у «Склад», «Харчова цінність» тощо.';
 
@@ -117,10 +176,11 @@ function useStorefrontEditorFloatingHints(
 
     const showHint = (element: Element, text: string) => {
       const rect = element.getBoundingClientRect();
+      
       setHint({
         text,
-        x: rect.left - 8,
-        y: rect.top - 8,
+        x: rect.left - 10,
+        y: rect.top + rect.height / 2,
       });
     };
 
@@ -134,6 +194,12 @@ function useStorefrontEditorFloatingHints(
         return;
       }
 
+      const kitBlock = target.closest('.storefront-block--kit-components');
+      if (kitBlock) {
+        showHint(kitBlock, KIT_COMPONENTS_BLOCK_HINT);
+        return;
+      }
+
       const preview = target.closest('.storefront-block__preview--editable');
       if (!preview) return;
 
@@ -144,7 +210,11 @@ function useStorefrontEditorFloatingHints(
     const onMouseOut = (event: MouseEvent) => {
       const related = event.relatedTarget;
       if (related instanceof Element) {
-        if (related.closest('.storefront-ph-atom, .storefront-block__preview--editable')) {
+        if (
+          related.closest(
+            '.storefront-ph-atom, .storefront-block__preview--editable, .storefront-block--kit-components',
+          )
+        ) {
           return;
         }
       }
@@ -410,9 +480,7 @@ function resolveBlockPreviewInnerHtml(
   boundValues: StorefrontBoundBlockValues,
   renderOptions?: StorefrontRenderOptions,
 ): string {
-  if (renderOptions?.enabledBlockIds?.size && !renderOptions.enabledBlockIds.has(attrs.blockId)) {
-    return '';
-  }
+  if (attrs.manualExclude || !isStorefrontBlockActiveInProduct(attrs, renderOptions)) return '';
   const previewHtml = resolveStorefrontBlockPreviewHtml(attrs, boundValues, [], renderOptions);
   const templateBound = isStorefrontTemplateBoundBlock(attrs.resolver);
   return normalizeStorefrontBlockHtml(
@@ -436,7 +504,7 @@ function refreshAllStorefrontBlockViews(
     const nodeDom = editor.view.nodeDOM(pos);
     if (!(nodeDom instanceof HTMLElement)) return;
 
-    if (renderOptions?.enabledBlockIds?.size && !renderOptions.enabledBlockIds.has(attrs.blockId)) {
+    if (attrs.manualExclude || !isStorefrontBlockActiveInProduct(attrs, renderOptions)) {
       nodeDom.style.display = 'none';
       return;
     }
@@ -500,6 +568,7 @@ function createStorefrontBlockNodeView(
     let detachMiniEditorBubble: (() => void) | null = null;
     let lastBoundRevision = getOptions().getBoundRevision();
     let lastInteractiveRevision = getOptions().getInteractiveRevision();
+    let detachBlockDrag: (() => void) | null = null;
 
     const dom = document.createElement('div');
     dom.dataset.storefrontBlock = '';
@@ -548,14 +617,18 @@ function createStorefrontBlockNodeView(
       editor.view.dispatch(tr);
     };
 
+    const createBlockWysiwygHost = () => {
+      const editorHost = document.createElement('div');
+      editorHost.className =
+        'storefront-block__wysiwyg px-0 py-0 text-sm leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-primary [&_a]:underline [&_li>p]:m-0 [&_li>p]:contents';
+      return editorHost;
+    };
+
     const renderTemplateWysiwygEditor = (attrs: StorefrontBlockNodeAttrs) => {
       dom.className =
         'storefront-block storefront-block--protected storefront-block--editing text-sm leading-relaxed';
 
-      const editorHost = document.createElement('div');
-      editorHost.className =
-        'storefront-block__wysiwyg px-0 py-0 text-sm leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-primary [&_a]:underline [&_li>p]:m-0 [&_li>p]:contents';
-
+      const editorHost = createBlockWysiwygHost();
       dom.replaceChildren(editorHost);
       destroyMiniEditor();
 
@@ -593,10 +666,7 @@ function createStorefrontBlockNodeView(
       dom.className =
         'storefront-block storefront-block--override storefront-block--editing text-sm leading-relaxed';
 
-      const editorHost = document.createElement('div');
-      editorHost.className =
-        'storefront-block__wysiwyg px-0 py-0 text-sm leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-primary [&_a]:underline [&_li>p]:m-0 [&_li>p]:contents';
-
+      const editorHost = createBlockWysiwygHost();
       dom.replaceChildren(editorHost);
       destroyMiniEditor();
 
@@ -636,13 +706,26 @@ function createStorefrontBlockNodeView(
     const deleteBlock = () => {
       const pos = posOrNull();
       if (pos == null) return;
+      const attrs = currentNode.attrs as StorefrontBlockNodeAttrs;
+      const enabledIds = getRenderOptions()?.enabledBlockIds;
+      const keepExcludedInDoc = Boolean(enabledIds?.size && enabledIds.has(attrs.blockId));
+
+      if (keepExcludedInDoc) {
+        const tr = editor.state.tr.setNodeMarkup(pos, undefined, {
+          ...attrs,
+          manualExclude: true,
+        });
+        editor.view.dispatch(tr);
+        return;
+      }
+
       const tr = editor.state.tr.delete(pos, pos + currentNode.nodeSize);
       editor.view.dispatch(tr);
     };
 
     const renderPreview = (attrs: StorefrontBlockNodeAttrs) => {
       const renderOptions = getRenderOptions();
-      if (renderOptions?.enabledBlockIds?.size && !renderOptions.enabledBlockIds.has(attrs.blockId)) {
+      if (attrs.manualExclude || !isStorefrontBlockActiveInProduct(attrs, renderOptions)) {
         dom.style.display = 'none';
         dom.innerHTML = '';
         return;
@@ -652,15 +735,23 @@ function createStorefrontBlockNodeView(
       const boundValues = getBoundValues();
       const templateBound = isStorefrontTemplateBoundBlock(attrs.resolver);
       const interactive = getOptions().getIsInteractive();
-      const canEditTemplate = templateBound && interactive;
+      const canEditTemplate = isStorefrontDrawerTemplateEditable(attrs.resolver) && interactive;
       const canEditOverride = !templateBound && interactive;
+      const isKitComponents = attrs.resolver === 'kitComponents';
 
       dom.className = `storefront-block text-sm leading-relaxed ${
         templateBound ? 'storefront-block--protected' : 'storefront-block--overridable'
-      }`;
+      }${isKitComponents ? ' storefront-block--kit-components' : ''}`;
 
       const shell = document.createElement('div');
       shell.className = 'storefront-block__shell';
+
+      const dragHandle = document.createElement('button');
+      dragHandle.type = 'button';
+      dragHandle.className = 'storefront-block__drag-handle';
+      dragHandle.setAttribute('aria-label', 'Перетягніть для зміни порядку блоку');
+      dragHandle.innerHTML =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>';
 
       const preview = document.createElement('div');
       preview.className = 'storefront-block__preview';
@@ -687,7 +778,21 @@ function createStorefrontBlockNodeView(
         });
       }
 
+      shell.appendChild(dragHandle);
       shell.appendChild(preview);
+
+      detachBlockDrag?.();
+      if (interactive) {
+        detachBlockDrag = attachStorefrontBlockLongPressDrag({
+          handle: dragHandle,
+          shell: dom,
+          editor,
+          getPos: posOrNull,
+          isEnabled: () => getOptions().getIsInteractive() && !templateEdit && !overrideEdit,
+        });
+      } else {
+        detachBlockDrag = null;
+      }
 
       if (interactive) {
         const deleteBtn = document.createElement('button');
@@ -715,7 +820,7 @@ function createStorefrontBlockNodeView(
       const attrs = currentNode.attrs as StorefrontBlockNodeAttrs;
       const templateBound = isStorefrontTemplateBoundBlock(attrs.resolver);
 
-      if (templateBound && templateEdit) {
+      if (isStorefrontDrawerTemplateEditable(attrs.resolver) && templateEdit) {
         renderTemplateWysiwygEditor(attrs);
         return;
       }
@@ -773,6 +878,8 @@ function createStorefrontBlockNodeView(
         editor.off('transaction', handleInteractiveChange);
         editor.off('focus', handleMainEditorActive);
         editor.off('selectionUpdate', handleMainEditorActive);
+        detachBlockDrag?.();
+        detachBlockDrag = null;
         destroyMiniEditor();
       },
       stopEvent(event) {
@@ -812,6 +919,8 @@ const StorefrontBlockExtension = Node.create<StorefrontBlockExtensionOptions>({
       resolver: { default: 'template' },
       template: { default: '' },
       overrideContent: { default: null },
+      manualInclude: { default: null },
+      manualExclude: { default: null },
     };
   },
   parseHTML() {
@@ -842,6 +951,7 @@ const MarketingParagraph = Paragraph.extend({
 export function StorefrontDescriptionEditor({
   value,
   boundValues,
+  presetBlocks,
   renderOptions,
   onChange,
   isDisabled,
@@ -852,7 +962,7 @@ export function StorefrontDescriptionEditor({
   const [showHtmlPreview, setShowHtmlPreview] = useState(false);
   const [sourceText, setSourceText] = useState('');
   const [deleteRequest, setDeleteRequest] = useState<StorefrontBlockDeleteRequest | null>(null);
-  const [, setToolbarTick] = useState(0);
+  const [toolbarTick, setToolbarTick] = useState(0);
   const skipUpdateRef = useRef(true);
   const [editorShellEl, setEditorShellEl] = useState<HTMLDivElement | null>(null);
   const [editorScrollEl, setEditorScrollEl] = useState<HTMLDivElement | null>(null);
@@ -928,7 +1038,7 @@ export function StorefrontDescriptionEditor({
     },
     editorProps: {
       attributes: {
-        class: `${minHeightClass} bg-white px-3 py-2 focus:outline-none text-sm leading-relaxed storefront-description-editor [&_h2]:text-xl [&_h2]:font-bold [&_h3]:text-lg [&_h3]:font-bold [&_h4]:text-base [&_h4]:font-bold [&_h5]:text-sm [&_h5]:font-bold [&_h6]:text-xs [&_h6]:font-bold [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-primary [&_a]:underline [&_li>p]:m-0 [&_li>p]:contents`,
+        class: `${minHeightClass} bg-white pe-3 py-2 focus:outline-none text-sm leading-relaxed storefront-description-editor [&_h2]:text-xl [&_h2]:font-bold [&_h3]:text-lg [&_h3]:font-bold [&_h4]:text-base [&_h4]:font-bold [&_h5]:text-sm [&_h5]:font-bold [&_h6]:text-xs [&_h6]:font-bold [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-primary [&_a]:underline [&_li>p]:m-0 [&_li>p]:contents`,
       },
     },
   });
@@ -1049,6 +1159,38 @@ export function StorefrontDescriptionEditor({
     const raw = resolveStorefrontDescriptionDocHtml(doc, boundValues, [], renderOptions);
     return prettifyHtml(raw);
   }, [value, boundValues, renderOptions]);
+
+  const pickerBlocks = useMemo(
+    () => getStorefrontPickerPresetBlocks(presetBlocks, { isKit: renderOptions?.isKit }),
+    [presetBlocks, renderOptions?.isKit],
+  );
+
+  const existingBlockIds = useMemo(() => {
+    let doc: StorefrontDescriptionDoc | null = null;
+    if (editor && !showSource && !editor.isDestroyed) {
+      doc = normalizeStorefrontDescriptionDoc(editor.getJSON() as StorefrontDescriptionDoc);
+    } else {
+      doc = parseStorefrontDescriptionDoc(value);
+    }
+    if (!doc) return new Set<string>();
+    return new Set(
+      walkStorefrontDescriptionBlocks(doc)
+        .filter((block) => !block.manualExclude)
+        .map((block) => block.blockId),
+    );
+  }, [editor, value, showSource, renderOptions, toolbarTick]);
+
+  const insertPresetBlock = useCallback(
+    (blockId: string) => {
+      if (!editor || fmtDisabled) return;
+      const block = pickerBlocks.find((item) => item.id === blockId);
+      if (!block) return;
+      setOpenSubEditor(null);
+      closeAllStorefrontBubbleToolbars();
+      applyStorefrontBlockFromPreset(editor, block, renderOptions?.enabledBlockIds);
+    },
+    [editor, fmtDisabled, pickerBlocks, renderOptions?.enabledBlockIds, setOpenSubEditor],
+  );
 
   return (
     <div className="relative flex flex-col gap-1.5">
@@ -1212,6 +1354,55 @@ export function StorefrontDescriptionEditor({
               <DynamicIcon name="remove-formatting" size={14} />
             </Button>
           </EditorToolbarTooltip>
+          {pickerBlocks.length > 0 ? (
+            <>
+              <Divider orientation="vertical" className="mx-1 h-5" />
+              <Dropdown placement="bottom-start">
+                <DropdownTrigger>
+                  <Button
+                    size="sm"
+                    variant="light"
+                    aria-label="Додати блок з шаблону"
+                    isDisabled={fmtDisabled}
+                    className="h-8 min-h-8 px-2 text-xs"
+                    startContent={<DynamicIcon name="layout-template" size={14} />}
+                  >
+                    Блок
+                  </Button>
+                </DropdownTrigger>
+                <DropdownMenu
+                  aria-label="Блоки шаблону опису"
+                  className="max-h-80 overflow-y-auto"
+                  onAction={(key) => insertPresetBlock(String(key))}
+                >
+                  {pickerBlocks.map((block) => {
+                    const inDoc = existingBlockIds.has(block.id);
+                    const descriptionParts = [
+                      inDoc ? 'Скинути до початкового шаблону' : 'Вставити в позицію курсора',
+                      // !block.enabled ? 'Вимкнено в шаблоні' : null,
+                    ].filter(Boolean);
+
+                    return (
+                      <DropdownItem
+                        key={block.id}
+                        textValue={block.label}
+                        description={descriptionParts.join(' · ')}
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="truncate">{block.label}</span>
+                          {inDoc ? (
+                            <span className="shrink-0 text-[9px] uppercase tracking-wide leading-none text-lime-600 border border-lime-600/40 rounded-full px-1 py-0.5">
+                              додано
+                            </span>
+                          ) : null}
+                        </span>
+                      </DropdownItem>
+                    );
+                  })}
+                </DropdownMenu>
+              </Dropdown>
+            </>
+          ) : null}
           <Divider orientation="vertical" className="mx-1 h-5" />
           <EditorToolbarTooltip content={showSource ? 'Візуальний редактор' : 'JSON source'}>
             <Button
@@ -1279,6 +1470,7 @@ export function StorefrontDescriptionEditor({
           closeDelay={0}
           content={floatingHint.text}
           size="sm"
+          crossOffset={-20}
           classNames={{
             content: 'max-w-sm text-center leading-snug bg-default-700 text-default-50 px-3 py-2 rounded-medium',
             arrow: 'bg-default-800',

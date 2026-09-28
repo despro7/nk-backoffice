@@ -16,8 +16,9 @@ import {
 import { ToastService } from '@/services/ToastService';
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { storefrontApi } from '../services/StorefrontService';
+import { storefrontApi, STOREFRONT_SETTINGS_UPDATED_EVENT } from '../services/StorefrontService';
 import { DescriptionEditor } from './Products/components/DescriptionEditor';
+import { KitComponentsTemplateEditor } from '@/components/storefront/KitComponentsTemplateEditor';
 import { BTN_PRIMARY_BLUE } from '@/lib/buttonStyles';
 import type {
   StorefrontBlockConfig,
@@ -34,6 +35,8 @@ import {
   createCustomKitComponentCategory,
   createCustomStorefrontBlock,
   createCustomStorefrontMetaKey,
+  getStorefrontDefaultBlockTemplate,
+  hasStorefrontDefaultBlockTemplate,
   kitComponentSettingsEqual,
   metaKeysEqual,
   normalizeStorefrontBlocks,
@@ -94,6 +97,7 @@ const SettingsStorefront: React.FC = () => {
   const [deleteMetaKeyConfirmId, setDeleteMetaKeyConfirmId] = useState<string | null>(null);
   const [editingBlockLabelId, setEditingBlockLabelId] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
+  const [blocksRevision, setBlocksRevision] = useState(0);
   const [wooSiteUrl, setWooSiteUrl] = useState('');
   const [wooMediaPublicBaseUrl, setWooMediaPublicBaseUrl] = useState('');
   const [wooConsumerKey, setWooConsumerKey] = useState('');
@@ -306,14 +310,14 @@ const SettingsStorefront: React.FC = () => {
     markDirty();
   };
 
-  const handleSelectPreset = (id: string) => {
+  const handleSelectPreset = (id: string, presetOverride?: StorefrontPresetDto) => {
     setDeletePresetConfirm(false);
     setAddPresetConfirm(false);
     setDeleteBlockConfirmId(null);
     setIsAddingPreset(false);
     setNewPresetName('');
     setSelectedPresetId(id);
-    const preset = presets.find((p) => p.id === id);
+    const preset = presetOverride ?? presets.find((p) => p.id === id);
     const blocks = normalizeStorefrontBlocks(
       preset?.blocks || [...STOREFRONT_DEFAULT_BLOCKS],
       editMetaKeys,
@@ -401,12 +405,12 @@ const SettingsStorefront: React.FC = () => {
     try {
       const created = await storefrontApi.createPreset({
         name,
-        blocks: normalizeStorefrontBlocks([...STOREFRONT_DEFAULT_BLOCKS], editMetaKeys),
+        blocks: normalizeStorefrontBlocks([...editBlocks], editMetaKeys),
       });
       setPresets((rows) => [...rows, created]);
       setIsAddingPreset(false);
       setNewPresetName('');
-      handleSelectPreset(created.id);
+      handleSelectPreset(created.id, created);
       ToastService.show({ title: 'Preset створено', color: 'success' });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -627,9 +631,11 @@ const SettingsStorefront: React.FC = () => {
           storefrontApi
             .updatePreset(selectedPreset.id, { blocks: normalizedBlocks })
             .then((updated) => {
+              const blocks = normalizeStorefrontBlocks(updated.blocks, normalizedMetaKeys);
               setPresets((rows) => rows.map((p) => (p.id === updated.id ? updated : p)));
-              setEditBlocks(normalizedBlocks);
-              setSavedBlocks(normalizedBlocks);
+              setEditBlocks(blocks);
+              setSavedBlocks(blocks);
+              setBlocksRevision((revision) => revision + 1);
             }),
         );
       }
@@ -647,6 +653,7 @@ const SettingsStorefront: React.FC = () => {
       }
 
       await Promise.all(tasks);
+      window.dispatchEvent(new Event(STOREFRONT_SETTINGS_UPDATED_EVENT));
       setJustSaved(true);
       setTimeout(() => setJustSaved(false), 3000);
     } catch (err) {
@@ -1199,7 +1206,7 @@ const SettingsStorefront: React.FC = () => {
                       {presets.map((p) => (
                         <SelectItem key={p.id} textValue={p.name}>
                           {p.name}
-                          {p.id === pendingDefaultPresetId ? ' (дефолт)' : ''}
+                          {p.id === pendingDefaultPresetId ? <span className="text-[10px] uppercase tracking-wide text-blue-500 bg-blue-500/10 border border-blue-500/20 px-1 py-0.5 ml-2 rounded">типовий</span> : ''}
                         </SelectItem>
                       ))}
                     </Select>
@@ -1216,7 +1223,7 @@ const SettingsStorefront: React.FC = () => {
                         onPress={() => handleSetDefaultPreset(selectedPreset.id)}
                         isDisabled={isDefaultPending}
                       >
-                        Зберегти дефолт
+                        Зберегти як типовий
                       </Button>
                       <Button
                         size="md"
@@ -1442,30 +1449,60 @@ const SettingsStorefront: React.FC = () => {
                                         <>
                                           <p className="text-xs font-semibold text-gray-700">Шаблон</p>
                                           {block.resolver === 'kitComponents' ? (
-                                            <KitComponentsTemplateHelp />
+                                            <>
+                                              <KitComponentsTemplateHelp />
+                                              <KitComponentsTemplateEditor
+                                                key={`${block.id}-${blocksRevision}`}
+                                                value={block.template}
+                                                onChange={(template) => updateBlock(block.id, { template })}
+                                                isDisabled={!block.enabled || !canManage}
+                                              />
+                                            </>
                                           ) : (
                                             <>
-                                              {primaryPlaceholder && (
-                                                <p className="text-xs text-gray-500">
-                                                  {sourceHint}. Основний плейсхолдер:{' '}
-                                                  <code className="bg-gray-100 px-1 rounded">
-                                                    {primaryPlaceholder}
-                                                  </code>
-                                                </p>
-                                              )}
-                                              {!primaryPlaceholder && (
-                                                <p className="text-xs text-gray-500">{sourceHint}</p>
-                                              )}
+                                              <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0 flex-1">
+                                                  {primaryPlaceholder && (
+                                                    <p className="text-xs text-gray-500">
+                                                      {sourceHint}. Основний плейсхолдер:{' '}
+                                                      <code className="bg-gray-100 px-1 rounded">
+                                                        {primaryPlaceholder}
+                                                      </code>
+                                                    </p>
+                                                  )}
+                                                  {!primaryPlaceholder && (
+                                                    <p className="text-xs text-gray-500">{sourceHint}</p>
+                                                  )}
+                                                </div>
+                                                {hasStorefrontDefaultBlockTemplate(block) && (
+                                                  <Button
+                                                    size="sm"
+                                                    variant="flat"
+                                                    isDisabled={!block.enabled || !canManage}
+                                                    onPress={() =>
+                                                      updateBlock(block.id, {
+                                                        template: getStorefrontDefaultBlockTemplate(block),
+                                                      })
+                                                    }
+                                                    startContent={
+                                                      <DynamicIcon name="rotate-ccw" size={14} />
+                                                    }
+                                                  >
+                                                    Скинути до типового
+                                                  </Button>
+                                                )}
+                                              </div>
+                                              <DescriptionEditor
+                                                key={`${block.id}-${blocksRevision}`}
+                                                value={block.template}
+                                                onChange={(template) => updateBlock(block.id, { template })}
+                                                isDisabled={!block.enabled}
+                                                minHeightClass={
+                                                  block.resolver === 'heating' ? 'min-h-[120px]' : 'min-h-[72px]'
+                                                }
+                                              />
                                             </>
                                           )}
-                                          <DescriptionEditor
-                                            value={block.template}
-                                            onChange={(template) => updateBlock(block.id, { template })}
-                                            isDisabled={!block.enabled}
-                                            minHeightClass={
-                                              block.resolver === 'heating' ? 'min-h-[120px]' : 'min-h-[72px]'
-                                            }
-                                          />
                                         </>
                                       )}
                                     </div>

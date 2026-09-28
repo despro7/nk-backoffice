@@ -180,11 +180,15 @@ describe('renderKitComponentsTemplate', () => {
     expect(html).not.toContain('порцій перших страв');
   });
 
-  it('falls back to legacy ul for {{kitComponents}} only', () => {
+  it('upgrades legacy {{kitComponents}} template to grouped output', () => {
     const html = renderKitComponentsTemplate('{{kitComponents}}', [
       { componentName: 'Борщ', qty: 2, componentCategoryName: 'Перші страви' },
+      { componentName: 'Плов', qty: 1, componentCategoryName: 'Другі страви' },
     ]);
-    expect(html).toBe(buildKitComponentsLegacyHtml([{ componentName: 'Борщ', qty: 2 }]));
+    expect(html).toContain('перших страв');
+    expect(html).toContain('Плов');
+    expect(html).toContain('<h3>');
+    expect(html).not.toBe(buildKitComponentsLegacyHtml([{ componentName: 'Борщ', qty: 2 }]));
   });
 
   it('returns empty string for empty BOM', () => {

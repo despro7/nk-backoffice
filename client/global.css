@@ -483,6 +483,13 @@ html.report-capture-ui-hidden [data-report-capture-chrome="true"] {
   background-color: #fff;
 }
 
+/* Shared left gutter: base px-3 (0.75rem) + drag-handle column (1.25rem) */
+.storefront-description-editor {
+  --storefront-block-gutter: 1.25rem;
+  --storefront-editor-pad-x: 0.75rem;
+  padding-left: var(--storefront-block-gutter);
+}
+
 /* ProseMirror root carries storefront-description-editor; use direct child selectors */
 .storefront-description-editor > p,
 .storefront-description-editor > h2,
@@ -504,7 +511,7 @@ html.report-capture-ui-hidden [data-report-capture-chrome="true"] {
 .storefront-description-editor .ProseMirror > ol,
 .storefront-description-editor .ProseMirror > div[data-storefront-block],
 .storefront-description-editor .ProseMirror > .storefront-block {
-  margin-bottom: 1rem;
+  margin-bottom: 0.8rem;
 }
 
 .storefront-description-editor > h2,
@@ -602,8 +609,7 @@ html.report-capture-ui-hidden [data-report-capture-chrome="true"] {
 .storefront-block--protected::before {
   content: '';
   position: absolute;
-  /* px-3 on editor — sit in left gutter without shifting text */
-  left: -0.75rem;
+  left: calc(-1 * var(--storefront-block-gutter));
   top: 0;
   bottom: 0;
   width: 3px;
@@ -615,7 +621,7 @@ html.report-capture-ui-hidden [data-report-capture-chrome="true"] {
 .storefront-block--overridable:not(.storefront-block--editing)::before {
   content: '';
   position: absolute;
-  left: -0.75rem;
+  left: calc(-1 * var(--storefront-block-gutter));
   top: 0;
   bottom: 0;
   width: 3px;
@@ -640,6 +646,70 @@ html.report-capture-ui-hidden [data-report-capture-chrome="true"] {
 
 .storefront-block__shell {
   position: relative;
+  display: block;
+}
+
+.storefront-block__drag-handle {
+  position: absolute;
+  left: calc(-1.05rem);
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  margin-top: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: rgb(156 163 175);
+  opacity: 0;
+  cursor: grab;
+  touch-action: none;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.storefront-block:hover .storefront-block__drag-handle,
+.storefront-block--drag-ready .storefront-block__drag-handle,
+.storefront-block--dragging .storefront-block__drag-handle {
+  opacity: 1;
+}
+
+.storefront-block__drag-handle:hover,
+.storefront-block--drag-ready .storefront-block__drag-handle {
+  background: rgba(226, 229, 236, 0.8);
+  color: rgb(75 85 99);
+}
+
+.storefront-block--dragging {
+  opacity: 0.45;
+}
+
+.storefront-block--press-pending {
+  outline: 1px dashed rgb(59 130 246 / 0.55);
+  outline-offset: 2px;
+}
+
+.storefront-block__ghost {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  opacity: 0.92;
+  box-shadow: 0 16px 32px rgb(15 23 42 / 0.18);
+  transition: top 0.12s ease;
+}
+
+.storefront-block-drop-indicator {
+  position: fixed;
+  z-index: 9999;
+  height: 2px;
+  border-radius: 9999px;
+  background: rgb(59 130 246);
+  box-shadow: 0 0 0 1px rgb(59 130 246 / 0.25);
+  pointer-events: none;
+  transition: top 0.12s ease;
 }
 
 .storefront-block__delete {
@@ -674,6 +744,8 @@ html.report-capture-ui-hidden [data-report-capture-chrome="true"] {
 }
 
 .storefront-block__preview {
+  flex: 1 1 auto;
+  min-width: 0;
   border-radius: 0.25rem;
   transition: background-color 0.15s ease, outline-color 0.15s ease;
 }

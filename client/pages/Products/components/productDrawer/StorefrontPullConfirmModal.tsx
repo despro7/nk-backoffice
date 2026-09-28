@@ -21,6 +21,7 @@ import type { WooPullApplyInput, WooPullPreviewResult } from '@shared/types/stor
 import { isEffectivelyEmptyHtml } from '@shared/utils/storefrontDescriptionParser';
 
 export interface StorefrontPullApplyFlags {
+  name: boolean;
   fullDescription: boolean;
   shortDescription: boolean;
   storefrontDescriptionDoc: boolean;
@@ -38,6 +39,7 @@ interface StorefrontPullConfirmModalProps {
   isOpen: boolean;
   goodId: string | null;
   sku: string | null;
+  localName: string;
   localFullDescription: string;
   localShortDescription: string;
   onApplied: () => void;
@@ -61,6 +63,12 @@ const PULL_FIELD_OPTIONS: Array<{
   hint: string;
   conflictField?: string;
 }> = [
+  {
+    key: 'name',
+    label: 'Назва товару',
+    hint: 'name з WooCommerce',
+    conflictField: 'name',
+  },
   {
     key: 'fullDescription',
     label: 'Legacy опис',
@@ -152,6 +160,7 @@ function countLocalIngredients(raw: string | null | undefined): number {
 
 function defaultFlags(
   preview: WooPullPreviewResult,
+  localName: string,
   localFullDescription: string,
   localShortDescription: string,
 ): StorefrontPullApplyFlags {
@@ -159,8 +168,11 @@ function defaultFlags(
   const hasRemoteImages = preview.proposed.imageCount > 0;
 
   return {
+    name: Boolean(preview.proposed.name) && (!localName.trim() || !hasConflict(preview, 'name')),
     fullDescription: !hasConflict(preview, 'fullDescription') && isEmpty(localFullDescription),
-    shortDescription: Boolean(preview.proposed.shortDescription),
+    shortDescription:
+      Boolean(preview.proposed.shortDescription) &&
+      (isEmpty(localShortDescription) || !hasConflict(preview, 'description')),
     storefrontDescriptionDoc: !hasConflict(preview, 'storefrontDescriptionDoc'),
     productIngredientsJson: !hasConflict(preview, 'productIngredientsJson'),
     productNutritionJson: !hasConflict(preview, 'productNutritionJson'),
@@ -185,21 +197,54 @@ function formatPreviewValue(value: string | number | null | undefined): string {
   return String(value);
 }
 
+function countParsedUniqueFields(parsed: WooPullPreviewResult['proposed']['parsed']): number {
+  let count = 0;
+  if (parsed.marketingText?.trim()) count += 1;
+  if (parsed.productIngredientsJson.length > 0) count += 1;
+  if (parsed.productNutritionJson) count += 1;
+  return count;
+}
+
+function buildParsedUniquePreview(parsed: WooPullPreviewResult['proposed']['parsed']) {
+  return {
+    marketingText: parsed.marketingText,
+    ingredients: parsed.productIngredientsJson,
+    nutrition: parsed.productNutritionJson,
+    warnings: parsed.parseWarnings,
+    unparsed: parsed.unparsedHtmlChunks,
+    uniqueFieldCount: countParsedUniqueFields(parsed),
+  };
+}
+
 function countChars(value: string): string {
   if (!value.trim()) return 'порожньо';
   return `${value.length} симв.`;
 }
 
+function formatParsedUniqueSummary(parsed: WooPullPreviewResult['proposed']['parsed']): string {
+  const count = countParsedUniqueFields(parsed);
+  if (count === 0) return 'немає унікальних даних';
+  return `${count} унік. ${count === 1 ? 'поле' : count < 5 ? 'поля' : 'полів'}`;
+}
+
 function buildAllImportRows(
   preview: WooPullPreviewResult,
+  localName: string,
   localFullDescription: string,
   localShortDescription: string,
   flags: StorefrontPullApplyFlags,
 ): ComparisonRow[] {
   const ingredients = preview.proposed.parsed.productIngredientsJson;
-  const blocks = preview.proposed.parsed.storefrontDescriptionDoc?.content?.length ?? 0;
 
   return [
+    {
+      key: 'name',
+      label: 'Назва товару',
+      local: truncateValue(localName, 80),
+      remote: truncateValue(preview.proposed.name, 80),
+      conflict: hasConflict(preview, 'name'),
+      willApply: flags.name,
+    },
     {
       key: 'fullDescription',
       label: 'Legacy опис',
@@ -222,7 +267,7 @@ function buildAllImportRows(
       local: truncateValue(preview.local.storefrontDescriptionDoc, 80),
       remote: hasConflict(preview, 'storefrontDescriptionDoc')
         ? truncateValue(conflictValue(preview, 'storefrontDescriptionDoc', 'remote'), 80)
-        : `${blocks} блоків`,
+        : formatParsedUniqueSummary(preview.proposed.parsed),
       conflict: hasConflict(preview, 'storefrontDescriptionDoc'),
       willApply: flags.storefrontDescriptionDoc,
     },
@@ -377,6 +422,7 @@ export function StorefrontPullConfirmModal({
   isOpen,
   goodId,
   sku,
+  localName,
   localFullDescription,
   localShortDescription,
   onApplied,
@@ -398,6 +444,7 @@ export function StorefrontPullConfirmModal({
     isDisabled: !allFieldsOpen,
   });
   const [flags, setFlags] = useState<StorefrontPullApplyFlags>({
+    name: false,
     fullDescription: false,
     shortDescription: false,
     storefrontDescriptionDoc: false,
@@ -437,11 +484,11 @@ export function StorefrontPullConfirmModal({
       .pullPreview(goodId)
       .then((data) => {
         setPreview(data);
-        setFlags(defaultFlags(data, localFullDescription, localShortDescription));
+        setFlags(defaultFlags(data, localName, localFullDescription, localShortDescription));
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false));
-  }, [isOpen, goodId, localFullDescription, localShortDescription]);
+  }, [isOpen, goodId, localName, localFullDescription, localShortDescription]);
 
   const hasChecked = useMemo(
     () => PULL_FIELD_OPTIONS.some((field) => flags[field.key]),
@@ -454,18 +501,22 @@ export function StorefrontPullConfirmModal({
   );
 
   const allImportRows = useMemo(
-    () => (preview ? buildAllImportRows(preview, localFullDescription, localShortDescription, flags) : []),
-    [preview, localFullDescription, localShortDescription, flags],
+    () =>
+      preview
+        ? buildAllImportRows(preview, localName, localFullDescription, localShortDescription, flags)
+        : [],
+    [preview, localName, localFullDescription, localShortDescription, flags],
   );
 
   const summaryRows = useMemo(
     () => allImportRows.filter((row) =>
-      ['Legacy опис', 'Короткий опис', 'Ціна', 'Вага, кг'].includes(row.label),
+      ['Назва товару', 'Legacy опис', 'Короткий опис', 'Ціна', 'Вага, кг'].includes(row.label),
     ),
     [allImportRows],
   );
 
   const buildApplyPayload = (): WooPullApplyInput['apply'] => ({
+    name: flags.name,
     fullDescription: flags.fullDescription,
     shortDescription: flags.shortDescription,
     storefrontDescriptionDoc: flags.storefrontDescriptionDoc,
@@ -537,18 +588,10 @@ export function StorefrontPullConfirmModal({
 
   const selectSafeFields = () => {
     if (!preview) return;
-    setFlags(defaultFlags(preview, localFullDescription, localShortDescription));
+    setFlags(defaultFlags(preview, localName, localFullDescription, localShortDescription));
   };
 
-  const parsedPreview = preview
-    ? {
-        ingredients: preview.proposed.parsed.productIngredientsJson,
-        nutrition: preview.proposed.parsed.productNutritionJson,
-        warnings: preview.proposed.parsed.parseWarnings,
-        unparsed: preview.proposed.parsed.unparsedHtmlChunks,
-        blocks: preview.proposed.parsed.storefrontDescriptionDoc?.content?.length ?? 0,
-      }
-    : null;
+  const parsedPreview = preview ? buildParsedUniquePreview(preview.proposed.parsed) : null;
 
   return (
     <>
@@ -699,7 +742,9 @@ export function StorefrontPullConfirmModal({
                         <div className="flex flex-wrap items-center gap-2">
                           <span>Parsed blocks preview</span>
                           <Chip size="sm" variant="flat">
-                            {parsedPreview.blocks} блоків
+                            {parsedPreview.uniqueFieldCount > 0
+                              ? `${parsedPreview.uniqueFieldCount} унік. полів`
+                              : 'без унікальних даних'}
                           </Chip>
                           {parsedPreview.warnings.length > 0 ? (
                             <Chip size="sm" color="warning" variant="flat">
@@ -724,6 +769,15 @@ export function StorefrontPullConfirmModal({
                           </div>
                         )}
 
+                        {parsedPreview.marketingText && (
+                          <div>
+                            <p className="mb-1.5 text-xs font-medium text-default-600">Унікальний текст</p>
+                            <p className="rounded-md bg-default-50 px-3 py-2 text-sm text-default-700 whitespace-pre-wrap">
+                              {parsedPreview.marketingText}
+                            </p>
+                          </div>
+                        )}
+
                         {parsedPreview.ingredients.length > 0 && (
                           <div>
                             <p className="mb-1.5 text-xs font-medium text-default-600">Інгредієнти</p>
@@ -737,8 +791,46 @@ export function StorefrontPullConfirmModal({
                           </div>
                         )}
 
+                        {parsedPreview.nutrition && (
+                          <div>
+                            <p className="mb-1.5 text-xs font-medium text-default-600">КБЖВ</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {parsedPreview.nutrition.proteins && (
+                                <Chip size="sm" variant="flat">
+                                  Білки {parsedPreview.nutrition.proteins}
+                                </Chip>
+                              )}
+                              {parsedPreview.nutrition.fats && (
+                                <Chip size="sm" variant="flat">
+                                  Жири {parsedPreview.nutrition.fats}
+                                </Chip>
+                              )}
+                              {parsedPreview.nutrition.carbs && (
+                                <Chip size="sm" variant="flat">
+                                  Вуглеводи {parsedPreview.nutrition.carbs}
+                                </Chip>
+                              )}
+                              {parsedPreview.nutrition.energy && (
+                                <Chip size="sm" variant="flat">
+                                  {parsedPreview.nutrition.energy} ккал
+                                </Chip>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {!parsedPreview.marketingText &&
+                          parsedPreview.ingredients.length === 0 &&
+                          !parsedPreview.nutrition && (
+                            <p className="text-sm text-default-500">
+                              Службові блоки (зберігання, розігрів, сіль тощо) з legacy HTML не
+                              імпортуються — залишаться шаблони preset.
+                            </p>
+                          )}
+
                         <MetaLogJsonView
                           value={{
+                            marketingText: parsedPreview.marketingText,
                             ingredients: parsedPreview.ingredients,
                             nutrition: parsedPreview.nutrition,
                             unparsedHtmlChunks: parsedPreview.unparsed,
