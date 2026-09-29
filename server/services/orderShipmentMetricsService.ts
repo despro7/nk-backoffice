@@ -1,4 +1,6 @@
+import { prisma } from '../lib/utils.js';
 import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
+import { ordersCacheService } from './ordersCacheService.js';
 
 type ShipmentItem = {
   sku?: string;
@@ -417,6 +419,138 @@ export function computeRegularShippedQuantityForSku(
   return Math.max(
     0,
     breakdown.cacheQuantity - breakdown.monolithicComponentQuantity - breakdown.monolithicSetQuantity,
+  );
+}
+
+type OpenOrderRow = {
+  externalId: string;
+  items: unknown;
+};
+
+type AggregatedPortionStat = {
+  orderedQuantity: number;
+  isMonolithicSet: boolean;
+  monolithicComponentQuantity: number;
+};
+
+/**
+ * Агрегує порції по SKU для відкритих замовлень.
+ * splitMonolithic=true — як у таблиці каталогу (В замовленнях): віднімає порції компонентів,
+ * що вже враховані через монолітні комплекти в рядках замовлення.
+ */
+export function aggregateOpenOrderPortionsBySku(
+  orders: OpenOrderRow[],
+  processedItemsByOrder: Map<string, ShipmentItem[]>,
+  descriptors: Map<string, ReportProductDescriptor>,
+  options: { splitMonolithic?: boolean } = {},
+): Map<string, number> {
+  const splitMonolithic = options.splitMonolithic === true;
+  const productStats: Record<string, AggregatedPortionStat> = {};
+
+  for (const order of orders) {
+    const cachedStats = processedItemsByOrder.get(order.externalId);
+    const kitItems = splitMonolithic ? extractOrderedSetItems(order, descriptors) : [];
+    const kitSkuSet = new Set(
+      kitItems.map((item) => String(item.sku ?? '').trim()).filter(Boolean),
+    );
+
+    for (const item of [...(cachedStats ?? []), ...kitItems]) {
+      if (!item?.sku) continue;
+      const sku = String(item.sku).trim();
+      const orderedQuantity = getOrderedQuantity(item.orderedQuantity ?? item.quantity);
+      const isMonolithicSet = kitSkuSet.has(sku);
+      const existing = productStats[sku];
+      if (existing) {
+        existing.orderedQuantity += orderedQuantity;
+        existing.isMonolithicSet = existing.isMonolithicSet || isMonolithicSet;
+      } else {
+        productStats[sku] = {
+          orderedQuantity,
+          isMonolithicSet,
+          monolithicComponentQuantity: 0,
+        };
+      }
+    }
+
+    if (splitMonolithic) {
+      for (const monoItem of kitItems) {
+        const monoQty = getOrderedQuantity(monoItem.orderedQuantity ?? monoItem.quantity);
+        if (monoQty <= 0) continue;
+        const leaves = expandSetToLeaves(monoItem.sku ?? '', monoQty, descriptors);
+        for (const [leafSku, leafQty] of leaves) {
+          if (!productStats[leafSku]) continue;
+          productStats[leafSku].monolithicComponentQuantity += leafQty;
+        }
+      }
+    }
+  }
+
+  const portionsMap = new Map<string, number>();
+  for (const [sku, stat] of Object.entries(productStats)) {
+    if (splitMonolithic) {
+      if (stat.isMonolithicSet) {
+        if (stat.orderedQuantity > 0) portionsMap.set(sku, stat.orderedQuantity);
+        continue;
+      }
+      const qty = Math.max(0, stat.orderedQuantity - stat.monolithicComponentQuantity);
+      if (qty > 0) portionsMap.set(sku, qty);
+      continue;
+    }
+    if (stat.orderedQuantity > 0) portionsMap.set(sku, stat.orderedQuantity);
+  }
+
+  return portionsMap;
+}
+
+/** Завантажує порції з активних замовлень (статуси 1, 2, 9) з кешу orders_cache. */
+export async function loadOpenOrderPortionsBySku(
+  options: { splitMonolithic?: boolean; statuses?: string[] } = {},
+): Promise<Map<string, number>> {
+  const statuses = options.statuses ?? ['1', '2', '9'];
+  const activeOrders = await prisma.order.findMany({
+    where: { status: { in: statuses } },
+    select: { externalId: true, items: true },
+  });
+
+  if (activeOrders.length === 0) {
+    return new Map();
+  }
+
+  const cacheMap = await ordersCacheService.getMultipleOrderCaches(
+    activeOrders.map((order) => order.externalId),
+  );
+
+  const processedItemsByOrder = new Map<string, ShipmentItem[]>();
+  const allSkus = new Set<string>();
+
+  for (const order of activeOrders) {
+    const cacheData = cacheMap.get(order.externalId);
+    if (cacheData?.processedItems) {
+      try {
+        const parsedItems = JSON.parse(cacheData.processedItems);
+        if (Array.isArray(parsedItems)) {
+          processedItemsByOrder.set(order.externalId, parsedItems);
+          for (const item of parsedItems) {
+            if (item?.sku) allSkus.add(String(item.sku).trim());
+          }
+        }
+      } catch {
+        // ignore malformed cache
+      }
+    }
+    for (const item of normalizeOrderItems(order.items)) {
+      if (item.sku) allSkus.add(String(item.sku).trim());
+    }
+  }
+
+  const descriptors = await getReportProductDescriptors(allSkus);
+  recomputeSetPortions(descriptors);
+
+  return aggregateOpenOrderPortionsBySku(
+    activeOrders,
+    processedItemsByOrder,
+    descriptors,
+    { splitMonolithic: options.splitMonolithic },
   );
 }
 

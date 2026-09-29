@@ -8,6 +8,7 @@ import {
   STOREFRONT_DEFAULT_KIT_COMPONENT_SETTINGS,
   STOREFRONT_DEFAULT_META_KEYS,
   STOREFRONT_DEFAULT_PRESET_NAME,
+  STOREFRONT_DEFAULT_STOCK_VIA_WC,
   STOREFRONT_SETTINGS_KEYS,
   normalizeStorefrontBlocks,
   normalizeStorefrontKitComponentSettings,
@@ -20,6 +21,8 @@ import type {
   StorefrontPresetDto,
   StorefrontPresetInput,
   StorefrontSettingsDto,
+  StorefrontStockViaWcMode,
+  StorefrontSyncSettingsDto,
   StorefrontWooSettingsInput,
   WooConnectionTestResult,
 } from '../../../shared/types/storefront.js';
@@ -96,6 +99,20 @@ function maskConsumerSecret(secret: string): string {
 async function readWooEnabled(): Promise<boolean> {
   const raw = await readSetting(STOREFRONT_SETTINGS_KEYS.woo.enabled);
   return raw === 'true' || raw === '1';
+}
+
+function parseStockViaWcMode(raw: string | null | undefined): StorefrontStockViaWcMode {
+  if (raw === 'parallel' || raw === 'wc_only') return raw;
+  return STOREFRONT_DEFAULT_STOCK_VIA_WC;
+}
+
+async function readSyncSettings(): Promise<StorefrontSyncSettingsDto> {
+  const autoPushRaw = await readSetting(STOREFRONT_SETTINGS_KEYS.sync.autoPushOnSave);
+  const stockViaWcRaw = await readSetting(STOREFRONT_SETTINGS_KEYS.sync.stockViaWc);
+  return {
+    autoPushOnSave: autoPushRaw === 'true' || autoPushRaw === '1',
+    stockViaWc: parseStockViaWcMode(stockViaWcRaw),
+  };
 }
 
 export async function readWooCredentialsRaw(): Promise<WooCommerceCredentials | null> {
@@ -340,11 +357,13 @@ export class StorefrontService {
     const consumerSecretRaw =
       (await readSetting(STOREFRONT_SETTINGS_KEYS.woo.consumerSecret))?.trim() || '';
     const enabled = await readWooEnabled();
+    const sync = await readSyncSettings();
 
     return {
       defaultPresetId: defaultPresetId?.trim() || null,
       metaKeys,
       kitComponentSettings,
+      sync,
       wooCommerce: {
         enabled,
         siteUrl,
@@ -401,11 +420,36 @@ export class StorefrontService {
     return this.getSettings();
   }
 
+  async updateSyncSettings(input: Partial<StorefrontSyncSettingsDto>): Promise<StorefrontSettingsDto> {
+    if (input.autoPushOnSave !== undefined) {
+      await writeSetting(
+        STOREFRONT_SETTINGS_KEYS.sync.autoPushOnSave,
+        String(Boolean(input.autoPushOnSave)),
+        'Автопуш на WooCommerce після збереження товару',
+      );
+    }
+    if (input.stockViaWc !== undefined) {
+      const mode = parseStockViaWcMode(input.stockViaWc);
+      await writeSetting(
+        STOREFRONT_SETTINGS_KEYS.sync.stockViaWc,
+        mode,
+        'Режим синхронізації залишків WooCommerce',
+      );
+    }
+    return this.getSettings();
+  }
+
+  async getStockViaWcMode(): Promise<StorefrontStockViaWcMode> {
+    const sync = await readSyncSettings();
+    return sync.stockViaWc;
+  }
+
   async updateSettings(input: {
     defaultPresetId?: string | null;
     metaKeys?: StorefrontMetaKeyConfig[];
     kitComponentSettings?: StorefrontKitComponentSettings;
     wooCommerce?: StorefrontWooSettingsInput;
+    sync?: Partial<StorefrontSyncSettingsDto>;
   }): Promise<StorefrontSettingsDto> {
     if (input.defaultPresetId) {
       const preset = await prisma.catalogStorefrontPreset.findUnique({
@@ -435,6 +479,10 @@ export class StorefrontService {
 
     if (input.wooCommerce) {
       await this.updateWooSettings(input.wooCommerce);
+    }
+
+    if (input.sync) {
+      await this.updateSyncSettings(input.sync);
     }
 
     return this.getSettings();

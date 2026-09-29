@@ -31,6 +31,11 @@ export type StockSyncReportData = {
   adjustedCount?: number;
   wpTriggered?: boolean;
   wpStatus?: number | null;
+  wcDirectUpdated?: number;
+  wcDirectSkipped?: number;
+  wcDirectErrors?: number;
+  wcDiscrepancies?: number;
+  stockViaWcMode?: 'legacy' | 'parallel' | 'wc_only';
   errors?: string[];
   alreadyRunning?: boolean;
 };
@@ -136,8 +141,16 @@ export function CatalogSyncReportModal({ report, onClose }: CatalogSyncReportMod
   ].filter((v, i, arr) => arr.indexOf(v) === i);
 
   const stock = report.stock;
+  const stockMode = stock?.stockViaWcMode ?? 'legacy';
   const wpOk = Boolean(stock?.wpTriggered);
-  const wpWarn = Boolean(stock?.exported) && !wpOk;
+  const wpWarn = Boolean(stock?.exported) && !wpOk && stockMode !== 'wc_only';
+  const wcDirectOk =
+    (stock?.wcDirectErrors ?? 0) === 0 &&
+    ((stock?.wcDirectUpdated ?? 0) > 0 || (stock?.wcDirectSkipped ?? 0) > 0);
+  const wcDirectWarn =
+    (stock?.wcDirectSkipped ?? 0) > 0 ||
+    (stock?.wcDiscrepancies ?? 0) > 0 ||
+    (stock?.wcDirectErrors ?? 0) > 0;
 
   return (
     <Modal
@@ -249,31 +262,46 @@ export function CatalogSyncReportModal({ report, onClose }: CatalogSyncReportMod
                     : 'не експортовано'
                 }
               />
-              <StepRow
-                ok={wpOk}
-                warn={wpWarn}
-                label={
-                  <>
-                    WooCommerce{' '}
-                    {wpOk ? (
-                      <span className="text-gray-500 text-xs">
-                        ({`HTTP ${stock.wpStatus ?? '—'}`})
-                      </span>
-                    ) : stock.exported ? (
-                      <>
-                        помилка
+              {stockMode !== 'wc_only' ? (
+                <StepRow
+                  ok={wpOk}
+                  warn={wpWarn}
+                  label={
+                    <>
+                      WooCommerce (syncStock.php){' '}
+                      {wpOk ? (
                         <span className="text-gray-500 text-xs">
-                          {stock.wpStatus ? ` (HTTP ${stock.wpStatus})` : ''}
+                          ({`HTTP ${stock.wpStatus ?? '—'}`})
                         </span>
-                      </>
-                    ) : (
-                      <span className="text-gray-500 text-xs">(пропущено)</span>
-                    )}
-                  </>
-                }
-           
-                detail={wpOk ? "Залишки на сайті оновлено" : undefined}
-              />
+                      ) : stock.exported ? (
+                        <>
+                          помилка
+                          <span className="text-gray-500 text-xs">
+                            {stock.wpStatus ? ` (HTTP ${stock.wpStatus})` : ''}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-gray-500 text-xs">(пропущено)</span>
+                      )}
+                    </>
+                  }
+                  detail={wpOk ? 'Залишки на сайті оновлено через legacy' : undefined}
+                />
+              ) : null}
+              {stockMode === 'parallel' || stockMode === 'wc_only' ? (
+                <StepRow
+                  ok={wcDirectOk}
+                  warn={wcDirectWarn}
+                  label="WooCommerce (WC REST)"
+                  detail={joinParts([
+                    stock.wcDirectUpdated ? `${stock.wcDirectUpdated} оновлено` : null,
+                    stock.wcDirectSkipped ? `${stock.wcDirectSkipped} пропущено (немає в WC)` : null,
+                    stock.wcDirectErrors ? `${stock.wcDirectErrors} помилок` : null,
+                    stock.wcDiscrepancies ? `${stock.wcDiscrepancies} розбіжностей` : null,
+                    !stock.wcDirectUpdated && !stock.exported ? 'пропущено' : null,
+                  ])}
+                />
+              ) : null}
               <ErrorList items={stockErrors} />
             </div>
           )}

@@ -142,6 +142,7 @@ export class StorefrontDescriptionBuilder {
       descriptionHtml: html,
       weight: resolveCtx.good.weight,
       grossWeightKg: gross.kg,
+      categoryName: loaded.parentFolderName,
       meta,
     };
   }

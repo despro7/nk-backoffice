@@ -1,6 +1,6 @@
 # WooCommerce Storefront — Фаза 1 (backoffice)
 
-**Дата:** 2026-09-26 (оновлено 2026-09-29)  
+**Дата:** 2026-09-26 (оновлено 2026-09-29, фаза 2–3)  
 **Маршрут налаштувань:** `/settings/storefront` (`page.settings.storefront`)  
 **API:** `/api/storefront/*`  
 **Повʼязаний домен:** [Products 2.0](./products-catalog-2.0.md) — вкладки «Контент» і «Основні дані» у `ProductDrawer`  
@@ -18,8 +18,10 @@
 | Конструктор блоків / preset | ✅ | — |
 | Реєстр WC meta-ключів | ✅ CRUD у settings | ✅ запис у `post_meta` |
 | WooCommerce REST | заглушка в UI | ✅ credentials, test, pull/push |
-| Preview / dry-run | ✅ API | ✅ live sync + bulk push |
-| Медіа товару | локально в BO | ✅ upload у WC + `wooMediaId` |
+| Preview / dry-run | ✅ API | ✅ live sync + bulk push/pull |
+| Медіа товару | локально в BO | ✅ upload/pull у WC + `wooMediaId` |
+| Категорія WC | — | ✅ група BO → категорія WC (pull/push) |
+| Залишки WC | legacy `syncStock.php` | ✅ REST stock sync + режим cutover |
 
 ---
 
@@ -54,7 +56,13 @@ Assembly (server)
 | Editor shared utils | `client/components/editor/editorFormatting.ts`, `HtmlCodeMirror.tsx` |
 | Bubble toolbar | `client/pages/Products/components/productDrawer/storefrontEditorBubbleToolbar.lib.ts` |
 | WC pull modal | `client/pages/Products/components/productDrawer/StorefrontPullConfirmModal.tsx` |
+| Bulk pull wizard | `client/pages/Products/components/StorefrontBulkPullWizard.tsx` |
+| Pull field matrix | `client/pages/Products/components/productDrawer/storefrontPullFields.ts` |
+| Sync reports | `client/pages/Products/components/StorefrontSyncReportModal.tsx` |
+| Conflict tooltip BO↔WC | `client/pages/Products/components/PullFieldConflictTooltip.tsx` |
 | WC description parser | `shared/utils/storefrontDescriptionParser.ts` |
+| WC category resolver | `server/modules/Storefront/WooCommerceCategoryService.ts` |
+| WC stock sync | `server/modules/Storefront/WooCommerceStockService.ts` |
 | Kit components template | `shared/utils/kitComponentsTemplate.ts` |
 | API routes | `server/routes/storefront.ts` |
 | Presets & settings | `server/modules/Storefront/StorefrontService.ts` |
@@ -101,6 +109,8 @@ Preset = упорядкований список блоків у `blocksJson` (�
 |-----|----------|
 | `storefront.metaKeys` | JSON-масив `StorefrontMetaKeyConfig[]` |
 | `storefront.defaultPresetId` | UUID preset за замовчуванням |
+| `storefront.sync.autoPushOnSave` | Push на WC після збереження картки товару |
+| `storefront.sync.stockViaWc` | Режим синхронізації залишків: `legacy` / `parallel` / `wc_only` |
 
 Seed preset «Стандарт»: `00000000-0000-4000-8000-000000000001`.
 
@@ -298,12 +308,24 @@ HTML для WC збирає `StorefrontDescriptionBuilder.resolveDescriptionDocH
 
 | Дія | UI | API |
 |-----|-----|-----|
-| Pull з WC | `StorefrontPullConfirmModal` — preview полів, вибір що застосувати | `POST /woo/pull-preview`, `/woo/pull-apply` |
+| Pull з WC (один) | `StorefrontPullConfirmModal` — preview полів, вибір що застосувати | `POST /woo/pull-preview`, `/woo/pull-apply` |
+| **Pull з WC (bulk)** | `StorefrontBulkPullWizard` — матриця полів, конфлікти, прогрес | `POST /woo/pull-bulk-preview`, `/woo/pull-bulk-apply` |
 | Push на WC | Меню drawer / bulk у каталозі | `POST /woo/push-preview`, `/woo/push-apply`, `/woo/push-bulk` |
-| Upload зображень | `ProductImageUpload` + push | `POST /woo/media/upload` |
+| Upload/pull зображень | `ProductImageUpload` + push; bulk pull — опція «Замінити існуючі» | `POST /woo/media/upload` |
+| Категорія WC | Матриця pull / single pull | push/pull через `WooCommerceCategoryService` |
+| Залишки WC | `/settings/storefront` → режим stock sync; cron | `POST /woo/stock/sync` |
 | Inspect WC | Admin drawer | `POST /woo/inspect` |
+| Звіти sync | `StorefrontSyncReportModal` | після bulk push/pull |
 
-Pull парсить WC HTML/meta через `storefrontDescriptionParser` → `storefrontDescriptionDoc`, склад, КБЖВ, **назва**, ціни. Push відправляє **назву**, опис, meta, status. Після sync оновлюються `wooProductId`, `wooLastSyncedAt`; зображення — `catalog_good_images.wooMediaId`.
+**Bulk pull** — до 50 товарів: матриця полів (`name`, короткий опис, storefront doc, склад, КБЖВ, вага, ціна, не публікувати, **категорія**, **зображення**), tooltip конфліктів BO↔WC, дії `pull` / `skip` / `create_on_wc`.
+
+Pull парсить WC HTML/meta через `storefrontDescriptionParser` → `storefrontDescriptionDoc`, склад, КБЖВ, **назва**, ціни; короткий опис — з `short_description` або маркетингового абзаца. Push відправляє **назву**, опис, meta, status, **категорію** (група BO). Після sync оновлюються `wooProductId`, `wooLastSyncedAt`; зображення — `catalog_good_images.wooMediaId`.
+
+> **Короткий опис при pull:** поле `description` — SoT Dilovod. Після pull значення пишеться в Prisma **і** в Dilovod (`saveObject`), інакше live-pull з ERP затирає імпорт.
+
+**Auto-push:** налаштування `storefront.sync.autoPushOnSave` — після збереження картки товару (якщо є `wooProductId`).
+
+**Stock sync (Phase 3):** `stockViaWc` у settings — `legacy` (лише `syncStock.php`), `parallel` (обидва канали), `wc_only` (лише WooCommerce REST). Cron після SalesDrive export використовує обраний режим.
 
 ---
 
@@ -325,7 +347,10 @@ Pull парсить WC HTML/meta через `storefrontDescriptionParser` → `s
 | POST | `/woo/inspect` | `action.storefront.pull` | summary WC product за SKU |
 | POST | `/woo/pull-preview` | `action.storefront.pull` | порівняння local vs WC |
 | POST | `/woo/pull-apply` | `action.storefront.pull` | застосувати вибрані поля |
+| POST | `/woo/pull-bulk-preview` | `action.storefront.pull` | bulk preview + конфлікти |
+| POST | `/woo/pull-bulk-apply` | `action.storefront.pull` | bulk apply (матриця полів) |
 | POST | `/woo/push-preview` | `action.storefront.push` | preview push |
+| POST | `/woo/stock/sync` | `action.storefront.push` | синхронізація залишків WC REST |
 | POST | `/woo/push-apply` | `action.storefront.push` | push одного товару |
 | POST | `/woo/push-bulk` | `action.storefront.push` | bulk push |
 | POST | `/woo/media/upload` | `action.storefront.push` | upload зображень товару |
@@ -373,7 +398,7 @@ Status `draft`: `doNotPublish` або товар у папці «Архів – 
 - `shared/utils/storefrontDescription.spec.ts` — placeholders, gross, nutrition, inline list items, template editor
 - `shared/utils/storefrontDescriptionParser.spec.ts` — парсинг WC HTML/meta при pull
 - `shared/utils/kitComponentsTemplate.spec.ts` — шаблон `{{kitComponents}}`
-- `server/modules/Storefront/WooCommerceSyncService.spec.ts`, `WooCommerceApiClient.spec.ts`
+- `server/modules/Storefront/WooCommerceSyncService.spec.ts`, `WooCommerceCategoryService.spec.ts`, `WooCommerceStockService.spec.ts`, `WooCommerceApiClient.spec.ts`
 - `shared/utils/catalogProductFieldAccess.spec.ts` — detect spec/storefront field changes
 - `shared/constants/permissions.spec.ts` — seed для `storefront.*`, `products.editSpec`
 
@@ -392,5 +417,5 @@ npm run test -- shared/utils/storefrontDescription.spec.ts shared/utils/storefro
 | **Картка товару** — UX редактора (hover, tooltips, strike, ingredients confirm) | ✅ (2026-09-27) |
 | **RBAC** — storefront read/edit/manage + `products.editSpec` | ✅ (2026-09-27) |
 | **Редактор «Повний опис»** — toolbar, bubble menu, JSON source, lists, WC HTML preview | ✅ (2026-09-28) |
-| **Фаза 2** — WooCommerce REST pull/push, media, bulk | ✅ (2026-09-28) |
-| **Фаза 2** — ціни Dilovod→WC, cron sync, conflict UX | 🔜 |
+| **Фаза 2** — WooCommerce REST pull/push, media, bulk push | ✅ (2026-09-28) |
+| **Фаза 2–3** — bulk pull wizard, звіти, auto-push, категорія WC, stock REST | ✅ (2026-09-29) |

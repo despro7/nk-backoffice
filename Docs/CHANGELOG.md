@@ -5,6 +5,36 @@
 
 ---
 
+## 2026-09-29 — Storefront Phase 2–3: bulk pull, категорія WC, stock sync, auto-push
+
+**Files:** `client/pages/Products/components/StorefrontBulkPullWizard.tsx`, `StorefrontSyncReportModal.tsx`, `PullFieldConflictTooltip.tsx`, `storefrontPullFields.ts`, `server/modules/Storefront/WooCommerceSyncService.ts`, `WooCommerceCategoryService.ts`, `WooCommerceStockService.ts`, `client/pages/SettingsStorefront.tsx`, `client/pages/Products/index.tsx`, `server/routes/storefront.ts`, `server/services/cronService.ts`, `shared/types/storefront.ts`, `Docs/features/woocommerce-storefront-phase1.md`
+
+### Bulk pull з WooCommerce
+
+- **`StorefrontBulkPullWizard`** — матриця полів (до 50 товарів), конфлікти з tooltip BO↔WC, прогрес завантаження/застосування, звіт `StorefrontSyncReportModal`.
+- Поля матриці: назва, короткий опис, storefront doc, склад, КБЖВ, вага, ціна, не публікувати, **категорія**, **зображення** (з опцією заміни локальних).
+- API: `POST /woo/pull-bulk-preview`, `/woo/pull-bulk-apply`.
+- **Короткий опис:** fallback з маркетингового тексту WC; після pull — запис у Prisma **і Dilovod** (інакше live-pull затирає значення).
+
+### Категорія та push/pull
+
+- **`WooCommerceCategoryService`** — група BO → категорія WC (resolve/create, push і pull).
+- Категорія в payload push (`categoryName` у `dryRunPush`).
+
+### Налаштування sync
+
+- **`autoPushOnSave`** — push на WC після збереження картки товару.
+- **`stockViaWc`** — режим залишків: `legacy` / `parallel` / `wc_only`; cron після SalesDrive export + `POST /woo/stock/sync`.
+
+### Інше
+
+- Bulk push/pull звіти в каталозі; `StorefrontPushRetryModal` для повтору failed push.
+- Рефакторинг підрахунку порцій у відкритих замовленнях (`orderShipmentMetricsService`) — узгоджено з колонкою «В замовленнях» для stock sync.
+
+**Документація:** [`Docs/features/woocommerce-storefront-phase1.md`](features/woocommerce-storefront-phase1.md).
+
+---
+
 ## 2026-09-29 — Storefront: mainProductWeight, preset UX, WC name sync
 
 **Files:** `prisma/migrations/20260928190000_catalog_main_product_weight/`, `shared/constants/storefrontDefaults.ts`, `shared/utils/storefrontDescription*.ts`, `server/modules/Storefront/WooCommerceSyncService.ts`, `client/pages/SettingsStorefront.tsx`, `client/pages/Products/components/productDrawer/*`, `client/components/storefront/KitComponentsTemplateEditor.tsx`, `client/components/modals/ImagePreviewModal.tsx`, `Docs/features/woocommerce-storefront-phase1.md`

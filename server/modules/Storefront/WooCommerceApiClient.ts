@@ -5,6 +5,7 @@
 import { logServer } from '../../lib/utils.js';
 import type {
   WooCommerceProduct,
+  WooCommerceProductCategory,
   WooConnectionTestResult,
 } from '../../../shared/types/storefront.js';
 
@@ -137,6 +138,34 @@ export class WooCommerceApiClient {
     return fetchWc<WooCommerceProduct>(this.creds, '/products', {
       method: 'POST',
       body: payload,
+    });
+  }
+
+  async findProductCategoryByName(name: string): Promise<WooCommerceProductCategory | null> {
+    const rows = await fetchWc<WooCommerceProductCategory[]>(this.creds, '/products/categories', {
+      query: { search: name.trim(), per_page: '100' },
+    });
+    const normalized = name.trim().toLowerCase();
+    return rows.find((row) => row.name.trim().toLowerCase() === normalized) ?? null;
+  }
+
+  async createProductCategory(payload: {
+    name: string;
+    parent?: number;
+  }): Promise<WooCommerceProductCategory> {
+    return fetchWc<WooCommerceProductCategory>(this.creds, '/products/categories', {
+      method: 'POST',
+      body: payload,
+    });
+  }
+
+  async batchUpdateProducts(
+    updates: Array<{ id: number; manage_stock: boolean; stock_quantity: number; stock_status: 'instock' | 'outofstock' }>,
+  ): Promise<{ update?: WooCommerceProduct[] }> {
+    if (updates.length === 0) return { update: [] };
+    return fetchWc<{ update?: WooCommerceProduct[] }>(this.creds, '/products/batch', {
+      method: 'POST',
+      body: { update: updates },
     });
   }
 

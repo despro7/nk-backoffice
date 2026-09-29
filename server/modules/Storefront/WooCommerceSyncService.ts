@@ -13,10 +13,17 @@ import { productsDilovodGateway } from '../Products/ProductsDilovodGateway.js';
 import type {
   StorefrontDescriptionDoc,
   StorefrontDryRunPushPayload,
+  StorefrontPullApplyFlags,
   WooInspectResult,
   WooInspectSummary,
   WooPullApplyInput,
   WooPullApplyResult,
+  WooPullBulkApplyItem,
+  WooPullBulkApplyResult,
+  WooPullBulkFieldKey,
+  WooPullBulkPreviewItem,
+  WooPullBulkPreviewResult,
+  WooPullConflict,
   WooPullPreviewResult,
   WooPushApplyResult,
   WooPushBulkResult,
@@ -35,8 +42,26 @@ import {
 } from '../../../shared/utils/storefrontDescriptionParser.js';
 import { storefrontDescriptionBuilder } from './StorefrontDescriptionBuilder.js';
 import { storefrontService } from './StorefrontService.js';
-import { createWooCommerceClient } from './WooCommerceApiClient.js';
+import { createWooCommerceClient, type WooCommerceApiClient } from './WooCommerceApiClient.js';
+import {
+  categoryFieldConflict,
+  resolveWcPrimaryCategoryName,
+  wooCommerceCategoryService,
+} from './WooCommerceCategoryService.js';
 import { wooCommerceMediaService } from './WooCommerceMediaService.js';
+
+function boolFieldConflict(
+  field: string,
+  local: boolean | null | undefined,
+  remote: boolean | null | undefined,
+): { field: string; localValue: string | null; remoteValue: string | null } | null {
+  return fieldConflict(field, local == null ? null : String(local), remote == null ? null : String(remote));
+}
+
+function sanitizeCatalogDescription(value: string | null | undefined): string | null {
+  if (!value || value === '[object Object]') return null;
+  return value;
+}
 
 function fieldConflict(
   field: string,
@@ -53,9 +78,10 @@ function descriptionFieldConflict(
   local: string | null | undefined,
   remote: string | null | undefined,
 ): { field: string; localValue: string | null; remoteValue: string | null } | null {
-  if (isEffectivelyEmptyHtml(local)) return null;
+  const sanitizedLocal = sanitizeCatalogDescription(local);
+  if (isEffectivelyEmptyHtml(sanitizedLocal)) return null;
   if (!remote?.trim()) return null;
-  const localStr = String(local).trim();
+  const localStr = String(sanitizedLocal).trim();
   const remoteStr = remote.trim();
   if (localStr === remoteStr) return null;
   return { field: 'description', localValue: localStr, remoteValue: remoteStr };
@@ -142,6 +168,121 @@ function resolveStorefrontRegularPrice(
   const regular = prices.find((row) => row.priceType === CATALOG_PRICE_TYPE_REGULAR_ID);
   if (regular != null && regular.price > 0) return String(regular.price);
   return null;
+}
+
+const BULK_PULL_MAX_ITEMS = 50;
+const BULK_PULL_CONCURRENCY = 4;
+
+const BULK_PULL_FIELD_CONFLICTS: Record<WooPullBulkFieldKey, string> = {
+  name: 'name',
+  shortDescription: 'description',
+  storefrontDescriptionDoc: 'storefrontDescriptionDoc',
+  productIngredientsJson: 'productIngredientsJson',
+  productNutritionJson: 'productNutritionJson',
+  weight: 'weight',
+  regularPrice: 'regularPrice',
+  doNotPublish: 'doNotPublish',
+  category: 'category',
+  images: 'images',
+};
+
+function buildDefaultImagesApply(
+  conflicts: WooPullConflict[],
+  localImageCount: number,
+  proposedImageCount: number,
+): boolean {
+  const hasConflict = conflicts.some((row) => row.field === 'images');
+  return !hasConflict && proposedImageCount > 0 && localImageCount === 0;
+}
+
+function buildDefaultShortDescriptionApply(
+  conflicts: WooPullConflict[],
+  localDescription: string | null | undefined,
+  proposedShortDescription: string | null | undefined,
+): boolean {
+  const hasConflict = conflicts.some((row) => row.field === 'description');
+  const hasProposed = Boolean(proposedShortDescription?.trim());
+  const localEmpty = isEffectivelyEmptyHtml(sanitizeCatalogDescription(localDescription));
+  return hasProposed && (localEmpty || !hasConflict);
+}
+
+function toDilovodMultilang(value: string | null | undefined): { uk: string; ru: string } {
+  const text = String(value || '').trim();
+  return { uk: text, ru: text };
+}
+
+/** Короткий опис — поле Dilovod; без запису в ERP live-pull затирає локальне значення. */
+async function syncPulledShortDescriptionToDilovod(
+  goodId: string,
+  description: string,
+): Promise<void> {
+  const good = await prisma.catalogGood.findUnique({
+    where: { id: goodId },
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      parentId: true,
+      isGroup: true,
+      mainUnitId: true,
+      accPolicyId: true,
+    },
+  });
+  if (!good || good.isGroup) return;
+
+  await productsDilovodGateway.saveObject({
+    header: {
+      id: good.id,
+      name: { uk: good.name, ru: good.name },
+      parent: good.parentId,
+      isGroup: good.isGroup ? 1 : 0,
+      ...(good.sku ? { productNum: good.sku } : {}),
+      ...(good.mainUnitId ? { mainUnit: good.mainUnitId } : {}),
+      ...(good.accPolicyId ? { accPolicy: good.accPolicyId } : {}),
+      description: toDilovodMultilang(description),
+    },
+  });
+}
+
+async function resolveParentGroupName(parentId: string | null | undefined): Promise<string | null> {
+  if (!parentId) return null;
+  const parent = await prisma.catalogGood.findUnique({
+    where: { id: parentId },
+    select: { name: true, isGroup: true },
+  });
+  if (!parent?.isGroup) return null;
+  return parent.name?.trim() || null;
+}
+
+function buildDefaultBulkApply(conflicts: WooPullConflict[]): StorefrontPullApplyFlags {
+  const conflictFields = new Set(conflicts.map((row) => row.field));
+  const flags: StorefrontPullApplyFlags = {};
+  for (const [field, conflictField] of Object.entries(BULK_PULL_FIELD_CONFLICTS) as Array<
+    [WooPullBulkFieldKey, string]
+  >) {
+    flags[field] = !conflictFields.has(conflictField);
+  }
+  return flags;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
 }
 
 async function upsertPulledRegularPrice(goodId: string, price: number): Promise<void> {
@@ -244,14 +385,16 @@ export class WooCommerceSyncService {
     const proposedShortDescription = resolveProposedShortDescription(product, parsed.storefrontDescriptionDoc);
     const proposedImageCount = product.images?.length ?? 0;
     const localImageCount = good.images.length;
+    const groupName = await resolveParentGroupName(good.parentId);
+    const wcCategoryName = resolveWcPrimaryCategoryName(product);
 
     const conflicts = [
       fieldConflict('name', good.name, product.name),
       fieldConflict('fullDescription', good.fullDescription, product.description),
-      descriptionFieldConflict(good.description, proposedShortDescription),
+      descriptionFieldConflict(sanitizeCatalogDescription(good.description), proposedShortDescription),
       fieldConflict('weight', good.weight, proposedWeight),
       priceFieldConflict(localRegularPrice, resolveWooRegularPrice(product)),
-      fieldConflict('doNotPublish', good.doNotPublish, proposedDoNotPublish),
+      boolFieldConflict('doNotPublish', good.doNotPublish, proposedDoNotPublish),
       localImageCount > 0 && proposedImageCount > 0
         ? fieldConflict('images', localImageCount, proposedImageCount)
         : null,
@@ -270,6 +413,7 @@ export class WooCommerceSyncService {
         good.productNutritionJson,
         stringifyProductNutritionJson(parsed.productNutritionJson),
       ),
+      categoryFieldConflict(groupName, wcCategoryName),
     ].filter(Boolean) as WooPullPreviewResult['conflicts'];
 
     return {
@@ -284,6 +428,7 @@ export class WooCommerceSyncService {
         regularPrice: localRegularPrice,
         doNotPublish: good.doNotPublish,
         imageCount: localImageCount,
+        groupName,
         storefrontDescriptionDoc: good.storefrontDescriptionDoc,
         productIngredientsJson: good.productIngredientsJson,
         productNutritionJson: good.productNutritionJson,
@@ -296,6 +441,7 @@ export class WooCommerceSyncService {
         regularPrice: resolveWooRegularPrice(product),
         doNotPublish: proposedDoNotPublish,
         imageCount: proposedImageCount,
+        categoryName: wcCategoryName,
         meta: nkMeta,
         parsed,
       },
@@ -303,11 +449,27 @@ export class WooCommerceSyncService {
     };
   }
 
+  private async applyCategoryToWc(
+    client: WooCommerceApiClient,
+    wooProductId: number,
+    groupName: string | null,
+  ): Promise<void> {
+    if (!groupName) {
+      throw new Error('Товар без групи в каталозі — категорію WooCommerce оновити неможливо');
+    }
+    const categoryId = await wooCommerceCategoryService.resolveCategoryId(client, groupName);
+    if (!categoryId) {
+      throw new Error(`Не вдалося визначити категорію WooCommerce для групи «${groupName}»`);
+    }
+    await client.updateProduct(wooProductId, { categories: [{ id: categoryId }] });
+  }
+
   async pullApply(input: WooPullApplyInput): Promise<WooPullApplyResult> {
     await storefrontService.getWooCredentialsInternal();
     const preview = await this.pullPreview(input.goodId);
     const appliedFields: string[] = [];
     const patch: Record<string, unknown> = {};
+    let appliedShortDescription: string | null = null;
 
     if (input.apply.name && preview.proposed.name) {
       patch.name = preview.proposed.name;
@@ -343,9 +505,10 @@ export class WooCommerceSyncService {
       const shouldApplyShortDescription =
         input.apply.shortDescription ||
         (input.apply.storefrontDescriptionDoc &&
-          isEffectivelyEmptyHtml(preview.local.description));
+          isEffectivelyEmptyHtml(sanitizeCatalogDescription(preview.local.description)));
       if (shouldApplyShortDescription) {
         patch.description = preview.proposed.shortDescription;
+        appliedShortDescription = preview.proposed.shortDescription;
         if (!appliedFields.includes('shortDescription')) {
           appliedFields.push('shortDescription');
         }
@@ -384,6 +547,12 @@ export class WooCommerceSyncService {
       }
       appliedFields.push('images');
     }
+    if (input.apply.category) {
+      const creds = await storefrontService.getWooCredentialsInternal();
+      const client = createWooCommerceClient(creds);
+      await this.applyCategoryToWc(client, preview.wooProductId, preview.local.groupName);
+      appliedFields.push('category');
+    }
 
     if (appliedFields.length === 0) {
       throw new Error('Не обрано жодного поля для застосування');
@@ -398,6 +567,17 @@ export class WooCommerceSyncService {
         where: { id: input.goodId },
         data: patch,
       });
+    }
+
+    if (appliedShortDescription) {
+      try {
+        await syncPulledShortDescriptionToDilovod(input.goodId, appliedShortDescription);
+      } catch (err) {
+        logServer(
+          `[WooCommerceSyncService] Dilovod description sync failed for ${input.goodId}`,
+          err,
+        );
+      }
     }
 
     logServer(`[WooCommerceSyncService] pull applied for ${input.goodId}: ${appliedFields.join(', ')}`);
@@ -425,9 +605,12 @@ export class WooCommerceSyncService {
     };
   }
 
-  private buildWcPayload(payload: StorefrontDryRunPushPayload): Record<string, unknown> {
+  private async buildWcPayload(
+    payload: StorefrontDryRunPushPayload,
+    client: WooCommerceApiClient,
+  ): Promise<Record<string, unknown>> {
     const meta_data = Object.entries(payload.meta).map(([key, value]) => ({ key, value }));
-    return {
+    const result: Record<string, unknown> = {
       name: payload.name || '',
       status: payload.status,
       short_description: payload.shortDescription || '',
@@ -435,13 +618,18 @@ export class WooCommerceSyncService {
       weight: payload.weight != null ? String(payload.weight) : '',
       meta_data,
     };
+    const categoryId = await wooCommerceCategoryService.resolveCategoryId(client, payload.categoryName);
+    if (categoryId != null) {
+      result.categories = [{ id: categoryId }];
+    }
+    return result;
   }
 
   async pushApply(goodId: string): Promise<WooPushApplyResult> {
     const preview = await this.pushPreview(goodId);
     const creds = await storefrontService.getWooCredentialsInternal();
     const client = createWooCommerceClient(creds);
-    const wcPayload = this.buildWcPayload(preview.payload);
+    const wcPayload = await this.buildWcPayload(preview.payload, client);
     const now = new Date();
 
     let wooProductId = preview.wooProductId;
@@ -496,30 +684,253 @@ export class WooCommerceSyncService {
     };
   }
 
+  async pullBulkPreview(goodIds: string[]): Promise<WooPullBulkPreviewResult> {
+    if (goodIds.length > BULK_PULL_MAX_ITEMS) {
+      throw new Error(`Максимум ${BULK_PULL_MAX_ITEMS} товарів за операцію`);
+    }
+
+    const uniqueIds = [...new Set(goodIds.map((id) => id.trim()).filter(Boolean))];
+    const goods = await prisma.catalogGood.findMany({
+      where: { id: { in: uniqueIds }, isGroup: false },
+      select: { id: true, sku: true, name: true },
+    });
+    const goodsById = new Map(goods.map((row) => [row.id, row]));
+
+    const items = await mapWithConcurrency(uniqueIds, BULK_PULL_CONCURRENCY, async (goodId) => {
+      const good = goodsById.get(goodId);
+      if (!good) {
+        return {
+          goodId,
+          sku: '',
+          name: '—',
+          wcStatus: 'not_found' as const,
+          conflicts: [],
+          proposed: {
+            name: null,
+            shortDescription: null,
+            weight: null,
+            regularPrice: null,
+            doNotPublish: false,
+            storefrontDescriptionDoc: null,
+            productIngredientsJson: null,
+            productNutritionJson: null,
+            categoryName: null,
+          },
+          defaultApply: {},
+        };
+      }
+      if (!good.sku?.trim()) {
+        return {
+          goodId,
+          sku: '',
+          name: good.name?.trim() || '—',
+          wcStatus: 'not_found' as const,
+          conflicts: [],
+          proposed: {
+            name: null,
+            shortDescription: null,
+            weight: null,
+            regularPrice: null,
+            doNotPublish: false,
+            storefrontDescriptionDoc: null,
+            productIngredientsJson: null,
+            productNutritionJson: null,
+            categoryName: null,
+          },
+          defaultApply: {},
+        };
+      }
+
+      try {
+        const preview = await this.pullPreview(goodId);
+        const bulkConflicts = preview.conflicts.filter((row) =>
+          Object.values(BULK_PULL_FIELD_CONFLICTS).includes(row.field),
+        );
+        const defaultApply = buildDefaultBulkApply(bulkConflicts);
+        defaultApply.images = buildDefaultImagesApply(
+          bulkConflicts,
+          preview.local.imageCount,
+          preview.proposed.imageCount,
+        );
+        defaultApply.shortDescription = buildDefaultShortDescriptionApply(
+          bulkConflicts,
+          preview.local.description,
+          preview.proposed.shortDescription,
+        );
+        return {
+          goodId,
+          sku: good.sku,
+          name: good.name?.trim() || good.sku,
+          wcStatus: 'found' as const,
+          conflicts: bulkConflicts,
+          proposed: {
+            name: preview.proposed.name,
+            shortDescription: preview.proposed.shortDescription,
+            weight: preview.proposed.weight,
+            regularPrice: preview.proposed.regularPrice,
+            doNotPublish: preview.proposed.doNotPublish,
+            storefrontDescriptionDoc: stringifyStorefrontDescriptionDoc(
+              preview.proposed.parsed.storefrontDescriptionDoc,
+            ),
+            productIngredientsJson: stringifyProductIngredientsJson(
+              preview.proposed.parsed.productIngredientsJson,
+            ),
+            productNutritionJson: stringifyProductNutritionJson(
+              preview.proposed.parsed.productNutritionJson,
+            ),
+            categoryName: preview.proposed.categoryName,
+          },
+          defaultApply,
+        } satisfies WooPullBulkPreviewItem;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes('не знайдено на WooCommerce')) {
+          return {
+            goodId,
+            sku: good.sku,
+            name: good.name?.trim() || good.sku,
+            wcStatus: 'not_found' as const,
+            conflicts: [],
+            proposed: {
+              name: null,
+              shortDescription: null,
+              weight: null,
+              regularPrice: null,
+              doNotPublish: false,
+              storefrontDescriptionDoc: null,
+              productIngredientsJson: null,
+              productNutritionJson: null,
+              categoryName: null,
+            },
+            defaultApply: {},
+          };
+        }
+        throw err;
+      }
+    });
+
+    return { items };
+  }
+
+  async pullBulkApply(items: WooPullBulkApplyItem[]): Promise<WooPullBulkApplyResult> {
+    if (items.length > BULK_PULL_MAX_ITEMS) {
+      throw new Error(`Максимум ${BULK_PULL_MAX_ITEMS} товарів за операцію`);
+    }
+
+    const results: WooPullBulkApplyResult['results'] = [];
+
+    for (const item of items) {
+      const good = await prisma.catalogGood.findUnique({
+        where: { id: item.goodId },
+        select: { id: true, sku: true, name: true },
+      });
+      const sku = good?.sku?.trim() || '';
+      const name = good?.name?.trim() || sku || '—';
+
+      if (!good) {
+        results.push({
+          goodId: item.goodId,
+          sku,
+          name,
+          ok: false,
+          action: item.action,
+          error: 'Товар не знайдено',
+        });
+        continue;
+      }
+
+      if (item.action === 'skip') {
+        results.push({
+          goodId: item.goodId,
+          sku,
+          name,
+          ok: true,
+          action: 'skip',
+          skipped: true,
+        });
+        continue;
+      }
+
+      if (item.action === 'create_on_wc') {
+        try {
+          const pushResult = await this.pushApply(item.goodId);
+          results.push({
+            goodId: item.goodId,
+            sku,
+            name,
+            ok: true,
+            action: 'create_on_wc',
+            created: pushResult.created,
+            wooProductId: pushResult.wooProductId,
+            warnings: pushResult.imageErrors,
+          });
+        } catch (err) {
+          results.push({
+            goodId: item.goodId,
+            sku,
+            name,
+            ok: false,
+            action: 'create_on_wc',
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        continue;
+      }
+
+      try {
+        const applyResult = await this.pullApply({
+          goodId: item.goodId,
+          apply: item.apply || {},
+        });
+        results.push({
+          goodId: item.goodId,
+          sku,
+          name,
+          ok: true,
+          action: 'pull',
+          appliedFields: applyResult.appliedFields,
+          wooProductId: applyResult.wooProductId,
+        });
+      } catch (err) {
+        results.push({
+          goodId: item.goodId,
+          sku,
+          name,
+          ok: false,
+          action: 'pull',
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return { results };
+  }
+
   async pushBulk(goodIds: string[]): Promise<WooPushBulkResult> {
     const results: WooPushBulkResult['results'] = [];
     for (const goodId of goodIds) {
+      const good = await prisma.catalogGood.findUnique({
+        where: { id: goodId },
+        select: { sku: true, name: true },
+      });
+      const sku = good?.sku?.trim() || '';
+      const name = good?.name?.trim() || sku || '—';
       try {
         const result = await this.pushApply(goodId);
-        const good = await prisma.catalogGood.findUnique({
-          where: { id: goodId },
-          select: { sku: true },
-        });
         results.push({
           goodId,
-          sku: good?.sku || '',
+          sku,
+          name,
           ok: true,
           wooProductId: result.wooProductId,
           created: result.created,
+          warnings: result.imageErrors,
         });
       } catch (err) {
-        const good = await prisma.catalogGood.findUnique({
-          where: { id: goodId },
-          select: { sku: true },
-        });
         results.push({
           goodId,
-          sku: good?.sku || '',
+          sku,
+          name,
           ok: false,
           error: err instanceof Error ? err.message : String(err),
         });

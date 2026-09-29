@@ -23,6 +23,11 @@ export interface CatalogActionsMenuItemsProps {
   onLegacyUpdate: (ids: string[]) => void;
   onPushStorefront?: (ids: string[]) => void;
   canPushStorefront?: boolean;
+  onPullStorefront?: (ids: string[]) => void;
+  canPullStorefront?: boolean;
+  onSyncStorefrontStock?: (ids: string[]) => void;
+  canSyncStorefrontStock?: boolean;
+  stockStorefrontSyncing?: boolean;
   onMoveTo: (ids: string[]) => void;
   onChangeType: (ids: string[]) => void;
   onDuplicate: (ids: string[]) => void;
@@ -45,6 +50,11 @@ export function CatalogActionsMenuItems({
   onLegacyUpdate,
   onPushStorefront,
   canPushStorefront,
+  onPullStorefront,
+  canPullStorefront,
+  onSyncStorefrontStock,
+  canSyncStorefrontStock,
+  stockStorefrontSyncing,
   onMoveTo,
   onChangeType,
   onDuplicate,
@@ -100,12 +110,29 @@ export function CatalogActionsMenuItems({
           onSelect={() => run(onLegacyUpdate)}
         />
       )}
+      {!onlyGroups && canPullStorefront && onPullStorefront && (
+        <CatalogMenuItem
+          icon="cloud-download"
+          label="Завантажити з сайту"
+          disabled={!canBulk}
+          onSelect={() => run(onPullStorefront)}
+        />
+      )}
       {!onlyGroups && canPushStorefront && onPushStorefront && (
         <CatalogMenuItem
           icon="cloud-upload"
           label="Синхронізувати з сайтом"
           disabled={!canBulk}
           onSelect={() => run(onPushStorefront)}
+        />
+      )}
+      {!onlyGroups && canSyncStorefrontStock && onSyncStorefrontStock && (
+        <CatalogMenuItem
+          icon="boxes"
+          label="Оновити залишки на сайті"
+          disabled={!canBulk || stockStorefrontSyncing}
+          legacy
+          onSelect={() => run(onSyncStorefrontStock)}
         />
       )}
       <CatalogMenuItem
@@ -180,6 +207,8 @@ function CatalogMenuItem({
     | 'archive-restore'
     | 'cloud-download'
     | 'cloud-upload'
+    | 'download'
+    | 'boxes'
     | 'database'
     | 'pencil'
     | 'shapes';
@@ -243,6 +272,11 @@ export function CatalogActionsDropdown({
   onLegacyUpdate,
   onPushStorefront,
   canPushStorefront,
+  onPullStorefront,
+  canPullStorefront,
+  onSyncStorefrontStock,
+  canSyncStorefrontStock,
+  stockStorefrontSyncing,
   onMoveTo,
   onChangeType,
   onDuplicate,
@@ -269,7 +303,9 @@ export function CatalogActionsDropdown({
   const inArchive = Boolean(fromArchive) && !inTrash;
   const onlyGroups = Boolean(groupsOnly);
   const canEditGroup = Boolean(onEdit) && onlyGroups && ids.length === 1 && !busy;
-  const catalogBusy = Boolean(busy || branchRefreshing || stockRefreshing || fullRefreshing);
+  const catalogBusy = Boolean(
+    busy || branchRefreshing || stockRefreshing || stockStorefrontSyncing || fullRefreshing,
+  );
   const { isDebugMode } = useDebug();
   const showDebugRefresh = Boolean(showFullRefresh && onFullRefresh && isDebugMode);
   const sectionDivider = { className: 'mt-1 bg-neutral-200' };
@@ -334,8 +370,14 @@ export function CatalogActionsDropdown({
             case 'legacyUpdate':
               onLegacyUpdate(ids);
               break;
+            case 'pullStorefront':
+              onPullStorefront?.(ids);
+              break;
             case 'pushStorefront':
               onPushStorefront?.(ids);
+              break;
+            case 'syncStorefrontStock':
+              onSyncStorefrontStock?.(ids);
               break;
             case 'moveTo':
               onMoveTo(ids);
@@ -443,12 +485,34 @@ export function CatalogActionsDropdown({
             Оновити legacy cache
           </DropdownItem>
           <DropdownItem
+            key="pullStorefront"
+            className={onlyGroups || !canPullStorefront ? 'hidden' : 'text-primary'}
+            isDisabled={!canBulk}
+            startContent={<DynamicIcon name="download" size={16} className="shrink-0" />}
+          >
+            Завантажити з сайту
+          </DropdownItem>
+          <DropdownItem
             key="pushStorefront"
             className={onlyGroups || !canPushStorefront ? 'hidden' : 'text-success'}
             isDisabled={!canBulk}
             startContent={<DynamicIcon name="cloud-upload" size={16} className="shrink-0" />}
           >
             Синхронізувати з сайтом
+          </DropdownItem>
+          <DropdownItem
+            key="syncStorefrontStock"
+            className={onlyGroups || !canSyncStorefrontStock ? 'hidden' : 'text-amber-600'}
+            isDisabled={!canBulk || stockStorefrontSyncing}
+            startContent={
+              <DynamicIcon
+                name={stockStorefrontSyncing ? 'refresh-cw' : 'boxes'}
+                size={16}
+                className={`shrink-0 ${stockStorefrontSyncing ? 'animate-spin' : ''}`}
+              />
+            }
+          >
+            Оновити залишки на сайті
           </DropdownItem>
           <DropdownItem
             key="moveTo"

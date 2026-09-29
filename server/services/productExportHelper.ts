@@ -9,10 +9,9 @@
  * зарезервованих активними замовленнями (статуси Нові=1 та Підтверджені=2).
  */
 
-import { prisma } from '../lib/utils.js';
 import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
 import { CATALOG_DEFAULT_CURRENCY_ID } from '../../shared/types/catalog.js';
-import { ordersCacheService, OrderCacheItem } from './ordersCacheService.js';
+import { loadOpenOrderPortionsBySku } from './orderShipmentMetricsService.js';
 
 /** SalesDrive product-handler приймає код валюти (UAH), не Dilovod id. */
 function toSalesDriveCurrency(currency: string | null | undefined): string {
@@ -54,42 +53,12 @@ export interface BuildExportPayloadOptions {
 // ─── Допоміжні функції ────────────────────────────────────────────────────────
 
 /**
- * Підраховує загальну кількість кожного SKU у активних замовленнях
- * (статуси 1 = Нові, 2 = Підтверджені, 9 = На утриманні) через кеш порцій.
- * Повертає Map<sku, totalQuantity>.
+ * Підраховує кількість порцій кожного SKU у активних замовленнях
+ * (статуси 1 = Нові, 2 = Підтверджені, 9 = На утриманні).
+ * splitMonolithic=true — узгоджено з колонкою «В замовленнях» у каталозі.
  */
 export async function getPortionsInOrdersBySku(): Promise<Map<string, number>> {
-  const portionsMap = new Map<string, number>();
-
-  // Отримуємо всі замовлення зі статусами 1 (Нові), 2 (Підтверджені) та 9 (На утриманні)
-  const activeOrders = await prisma.order.findMany({
-    where: { status: { in: ['1', '2', '9'] } },
-    select: { externalId: true },
-  });
-
-  if (activeOrders.length === 0) return portionsMap;
-
-  const externalIds = activeOrders.map(o => o.externalId);
-
-  // Bulk-запит до кешу (вже розгорнуті порції через preprocessOrderItemsForCache)
-  const cacheMap = await ordersCacheService.getMultipleOrderCaches(externalIds);
-
-  for (const cacheData of cacheMap.values()) {
-    if (!cacheData?.processedItems) continue;
-    try {
-      const items: OrderCacheItem[] = JSON.parse(cacheData.processedItems);
-      if (!Array.isArray(items)) continue;
-      for (const item of items) {
-        if (item.sku && item.orderedQuantity > 0) {
-          portionsMap.set(item.sku, (portionsMap.get(item.sku) ?? 0) + item.orderedQuantity);
-        }
-      }
-    } catch {
-      // Пошкоджений кеш — пропускаємо
-    }
-  }
-
-  return portionsMap;
+  return loadOpenOrderPortionsBySku({ splitMonolithic: true });
 }
 
 /**

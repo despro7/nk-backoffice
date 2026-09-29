@@ -59,7 +59,8 @@ import {
 import { ProductLabelsTab } from './ProductLabelsTab';
 import { ProductContentTab } from './ProductContentTab';
 import { StorefrontPullConfirmModal } from './StorefrontPullConfirmModal';
-import { storefrontApi } from '@/services/StorefrontService';
+import { StorefrontPushRetryModal } from './StorefrontPushRetryModal';
+import { storefrontApi, STOREFRONT_SETTINGS_UPDATED_EVENT } from '@/services/StorefrontService';
 import type { WooInspectResult } from '@shared/types/storefront';
 import { StockBadge } from '@/components/StockBadge';
 import {
@@ -101,6 +102,7 @@ import {
   parseSpecQtyInput,
   resolveObjectKind,
   snapshotState,
+  snapshotStorefrontFields,
   sortDictByName,
 } from './productDrawerUtils';
 import { BarcodesSection } from './BarcodesSection';
@@ -247,8 +249,14 @@ export function ProductDrawer({
   const [inspectLoading, setInspectLoading] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
   const [pushConfirmOpen, setPushConfirmOpen] = useState(false);
+  const [autoPushOnSave, setAutoPushOnSave] = useState(false);
+  const [wooIntegrationEnabled, setWooIntegrationEnabled] = useState(false);
+  const [pushRetryOpen, setPushRetryOpen] = useState(false);
+  const [pushRetryError, setPushRetryError] = useState<string | null>(null);
+  const [pushRetryGoodId, setPushRetryGoodId] = useState<string | null>(null);
 
   const baselineRef = useRef<string>('');
+  const storefrontBaselineRef = useRef<string>('');
   const [baselineVersion, setBaselineVersion] = useState(0);
   /** Порції після зміни складу набору — щоб не перезаписувати військову ціну при гідрації drawer */
   const pendingMilitarySyncRef = useRef<number | null>(null);
@@ -423,10 +431,36 @@ export function ProductDrawer({
         nextKind,
         nextParentId
       );
+      storefrontBaselineRef.current = snapshotStorefrontFields(nextForm, nextComponents);
       setBaselineVersion((v) => v + 1);
     },
     []
   );
+
+  const loadStorefrontSyncSettings = useCallback(async () => {
+    try {
+      const settings = await storefrontApi.getSettings();
+      setAutoPushOnSave(settings.sync.autoPushOnSave);
+      setWooIntegrationEnabled(settings.wooCommerce.enabled);
+    } catch {
+      setAutoPushOnSave(false);
+      setWooIntegrationEnabled(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    void loadStorefrontSyncSettings();
+    const onSettingsUpdated = () => void loadStorefrontSyncSettings();
+    window.addEventListener(STOREFRONT_SETTINGS_UPDATED_EVENT, onSettingsUpdated);
+    return () => window.removeEventListener(STOREFRONT_SETTINGS_UPDATED_EVENT, onSettingsUpdated);
+  }, [open, loadStorefrontSyncSettings]);
+
+  const isStorefrontDirty = useMemo(() => {
+    if (!open || isFolder) return false;
+    void baselineVersion;
+    return snapshotStorefrontFields(form, components) !== storefrontBaselineRef.current;
+  }, [open, isFolder, form, components, baselineVersion]);
 
   useEffect(() => {
     if (!open) {
@@ -606,32 +640,48 @@ export function ProductDrawer({
     }
   }, [detail?.sku]);
 
-  const pushGoodToStorefront = useCallback(async (goodId: string) => {
-    setPushLoading(true);
-    try {
-      const result = await storefrontApi.pushApply(goodId);
-      const imageWarning = result.imageErrors?.length
-        ? `Зображення: ${result.imageErrors.join('; ')}`
-        : undefined;
-      ToastService.show({
-        title: result.created ? 'Товар створено на сайті' : 'Товар оновлено на сайті',
-        description: [
-          `WC#${result.wooProductId}`,
-          result.imagesUploaded ? `Завантажено зображень: ${result.imagesUploaded}` : null,
-          imageWarning,
-        ]
-          .filter(Boolean)
-          .join('\n'),
-        color: result.imageErrors?.length ? 'warning' : 'success',
-      });
-      setPushConfirmOpen(false);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      ToastService.show({ title: 'Помилка синхронізації', description: message, color: 'danger' });
-    } finally {
-      setPushLoading(false);
-    }
-  }, []);
+  const pushGoodToStorefront = useCallback(
+    async (goodId: string, opts?: { silent?: boolean; showRetryOnFail?: boolean }) => {
+      setPushLoading(true);
+      try {
+        const result = await storefrontApi.pushApply(goodId);
+        const imageWarning = result.imageErrors?.length
+          ? `Зображення: ${result.imageErrors.join('; ')}`
+          : undefined;
+        if (!opts?.silent) {
+          ToastService.show({
+            title: result.created ? 'Товар створено на сайті' : 'Товар оновлено на сайті',
+            description: [
+              `WC#${result.wooProductId}`,
+              result.imagesUploaded ? `Завантажено зображень: ${result.imagesUploaded}` : null,
+              imageWarning,
+            ]
+              .filter(Boolean)
+              .join('\n'),
+            color: result.imageErrors?.length ? 'warning' : 'success',
+          });
+        }
+        setPushConfirmOpen(false);
+        setPushRetryOpen(false);
+        setPushRetryError(null);
+        setPushRetryGoodId(null);
+        return { ok: true as const, result };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (opts?.showRetryOnFail) {
+          setPushRetryGoodId(goodId);
+          setPushRetryError(message);
+          setPushRetryOpen(true);
+        } else if (!opts?.silent) {
+          ToastService.show({ title: 'Помилка синхронізації', description: message, color: 'danger' });
+        }
+        return { ok: false as const, error: message };
+      } finally {
+        setPushLoading(false);
+      }
+    },
+    [],
+  );
 
   const handleStorefrontPush = useCallback(async () => {
     if (!detail?.id) return;
@@ -754,6 +804,13 @@ export function ProductDrawer({
 
       const shouldPushStorefront =
         Boolean(opts?.pushStorefrontAfter) && canPushStorefront && !isFolder;
+      const shouldAutoPush =
+        !shouldPushStorefront &&
+        autoPushOnSave &&
+        isStorefrontDirty &&
+        canPushStorefront &&
+        wooIntegrationEnabled &&
+        !isFolder;
 
       if (isEdit && detail) {
         const input: CatalogUpdateGoodInput = {
@@ -765,6 +822,8 @@ export function ProductDrawer({
         await onUpdate(detail.id, input, { keepOpen: !opts?.closeAfter });
         if (shouldPushStorefront) {
           await pushGoodToStorefront(detail.id);
+        } else if (shouldAutoPush) {
+          await pushGoodToStorefront(detail.id, { silent: true, showRetryOnFail: true });
         }
         return;
       }
@@ -776,8 +835,11 @@ export function ProductDrawer({
       };
       const created = (await onCreate(input)) as CatalogGoodDetailDto | null | undefined;
       setStagingSessionId(null);
-      if (shouldPushStorefront && created?.id) {
-        await pushGoodToStorefront(created.id);
+      const createdId = created?.id;
+      if (createdId && shouldPushStorefront) {
+        await pushGoodToStorefront(createdId);
+      } else if (createdId && shouldAutoPush) {
+        await pushGoodToStorefront(createdId, { silent: true, showRetryOnFail: true });
       }
     },
     [
@@ -795,6 +857,9 @@ export function ProductDrawer({
       form.weight,
       canPushStorefront,
       pushGoodToStorefront,
+      autoPushOnSave,
+      isStorefrontDirty,
+      wooIntegrationEnabled,
     ],
   );
 
@@ -1732,6 +1797,19 @@ export function ProductDrawer({
         onConfirm={() => void handleStorefrontPush()}
         onCancel={() => setPushConfirmOpen(false)}
         overlayZClassName={overlayZ}
+      />
+      <StorefrontPushRetryModal
+        isOpen={pushRetryOpen}
+        error={pushRetryError}
+        loading={pushLoading}
+        onRetry={() => {
+          if (pushRetryGoodId) void pushGoodToStorefront(pushRetryGoodId, { showRetryOnFail: true });
+        }}
+        onClose={() => {
+          setPushRetryOpen(false);
+          setPushRetryError(null);
+          setPushRetryGoodId(null);
+        }}
       />
       <UnsavedChangesModal {...guard.modalProps} overlayZClassName={overlayZ} />
       <ConfirmModal

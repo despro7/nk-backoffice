@@ -27,6 +27,7 @@ import type {
   StorefrontMetaKeyConfig,
   StorefrontPresetDto,
   StorefrontSettingsDto,
+  StorefrontStockViaWcMode,
 } from '@shared/types/storefront';
 import {
   STOREFRONT_DEFAULT_BLOCKS,
@@ -104,6 +105,9 @@ const SettingsStorefront: React.FC = () => {
   const [wooConsumerSecret, setWooConsumerSecret] = useState('');
   const [wooEnabled, setWooEnabled] = useState(false);
   const [wooEnabledSaving, setWooEnabledSaving] = useState(false);
+  const [autoPushOnSave, setAutoPushOnSave] = useState(false);
+  const [stockViaWc, setStockViaWc] = useState<StorefrontStockViaWcMode>('legacy');
+  const [syncSettingsSaving, setSyncSettingsSaving] = useState(false);
   const [wooHasSecret, setWooHasSecret] = useState(false);
   const [wooTesting, setWooTesting] = useState(false);
   const [wooTestStatus, setWooTestStatus] = useState<StorefrontWooConnectionStatus | null>(null);
@@ -139,6 +143,8 @@ const SettingsStorefront: React.FC = () => {
       setWooConsumerKey(settingsRow.wooCommerce.consumerKey);
       setWooConsumerSecret('');
       setWooEnabled(settingsRow.wooCommerce.enabled);
+      setAutoPushOnSave(settingsRow.sync.autoPushOnSave);
+      setStockViaWc(settingsRow.sync.stockViaWc);
       setWooHasSecret(settingsRow.wooCommerce.hasConsumerSecret);
       setWooTestStatus(settingsRow.wooCommerce.connectionStatus ?? null);
       setPendingDefaultPresetId(settingsRow.defaultPresetId);
@@ -513,6 +519,29 @@ const SettingsStorefront: React.FC = () => {
     }
   };
 
+  const handleSyncSettingsSave = async (patch: {
+    autoPushOnSave?: boolean;
+    stockViaWc?: StorefrontStockViaWcMode;
+  }) => {
+    if (!canManage) return;
+    setSyncSettingsSaving(true);
+    setError(null);
+    try {
+      const settings = await storefrontApi.updateSettings({ sync: patch });
+      setSavedSettings(settings);
+      setAutoPushOnSave(settings.sync.autoPushOnSave);
+      setStockViaWc(settings.sync.stockViaWc);
+      window.dispatchEvent(new Event(STOREFRONT_SETTINGS_UPDATED_EVENT));
+      ToastService.show({ title: 'Налаштування синхронізації збережено', color: 'success' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      ToastService.show({ title: 'Помилка збереження', description: message, color: 'danger' });
+    } finally {
+      setSyncSettingsSaving(false);
+    }
+  };
+
   const handleWooSave = async () => {
     setWooSaving(true);
     setError(null);
@@ -707,6 +736,39 @@ const SettingsStorefront: React.FC = () => {
               >
                 Увімкнути інтеграцію
               </Switch>
+              <Divider />
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-gray-900">Синхронізація контенту</p>
+                <Switch
+                  isSelected={autoPushOnSave}
+                  onValueChange={(value) => {
+                    setAutoPushOnSave(value);
+                    void handleSyncSettingsSave({ autoPushOnSave: value });
+                  }}
+                  isDisabled={!canManage || syncSettingsSaving}
+                >
+                  Автопуш після збереження товару
+                </Switch>
+                {canManage ? (
+                  <Select
+                    label="Режим синхронізації залишків"
+                    labelPlacement="outside"
+                    selectedKeys={[stockViaWc]}
+                    onChange={(e) => {
+                      const mode = (e.target.value as StorefrontStockViaWcMode) || 'legacy';
+                      setStockViaWc(mode);
+                      void handleSyncSettingsSave({ stockViaWc: mode });
+                    }}
+                    isDisabled={syncSettingsSaving}
+                    description="legacy — syncStock.php; parallel — обидва шляхи + лог розбіжностей; wc_only — лише WC REST"
+                  >
+                    <SelectItem key="legacy">Legacy (syncStock.php)</SelectItem>
+                    <SelectItem key="parallel">Parallel (legacy + WC REST)</SelectItem>
+                    <SelectItem key="wc_only">WC only (REST)</SelectItem>
+                  </Select>
+                ) : null}
+              </div>
+              <Divider />
               <Input
                 label="URL магазину"
                 labelPlacement="outside"

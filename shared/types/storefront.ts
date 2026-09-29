@@ -163,6 +163,8 @@ export interface StorefrontDryRunPushPayload {
   descriptionHtml: string;
   weight: number | null;
   grossWeightKg: number | null;
+  /** Назва батьківської групи в BO → категорія WooCommerce */
+  categoryName: string | null;
   meta: Record<string, string>;
 }
 
@@ -189,11 +191,20 @@ export interface StorefrontWooCommerceSettingsDto {
   connectionStatus?: StorefrontWooConnectionStatus;
 }
 
+/** Stock sync cutover mode (Phase 3) */
+export type StorefrontStockViaWcMode = 'legacy' | 'parallel' | 'wc_only';
+
+export interface StorefrontSyncSettingsDto {
+  autoPushOnSave: boolean;
+  stockViaWc: StorefrontStockViaWcMode;
+}
+
 export interface StorefrontSettingsDto {
   defaultPresetId: string | null;
   metaKeys: StorefrontMetaKeyConfig[];
   kitComponentSettings: StorefrontKitComponentSettings;
   wooCommerce: StorefrontWooCommerceSettingsDto;
+  sync: StorefrontSyncSettingsDto;
 }
 
 export interface StorefrontWooSettingsInput {
@@ -210,6 +221,13 @@ export interface WooCommerceMetaData {
   value: string | Record<string, unknown>;
 }
 
+export interface WooCommerceProductCategory {
+  id: number;
+  name: string;
+  slug: string;
+  parent?: number;
+}
+
 export interface WooCommerceProduct {
   id: number;
   name: string;
@@ -224,6 +242,7 @@ export interface WooCommerceProduct {
   status: string;
   meta_data: WooCommerceMetaData[];
   images?: Array<{ id: number; src: string; name: string; alt?: string }>;
+  categories?: WooCommerceProductCategory[];
 }
 
 export interface WooConnectionTestResult {
@@ -275,6 +294,8 @@ export interface WooPullLocalSnapshot {
   regularPrice: string | null;
   doNotPublish: boolean;
   imageCount: number;
+  /** Батьківська група в BO */
+  groupName: string | null;
   storefrontDescriptionDoc: string | null;
   productIngredientsJson: string | null;
   productNutritionJson: string | null;
@@ -294,28 +315,99 @@ export interface WooPullPreviewResult {
     regularPrice: string | null;
     doNotPublish: boolean;
     imageCount: number;
+    /** Основна категорія WooCommerce */
+    categoryName: string | null;
     meta: Record<string, string>;
     parsed: StorefrontPullParseResult;
   };
   conflicts: WooPullConflict[];
 }
 
+/** Flags for pull-apply (single and bulk) */
+export interface StorefrontPullApplyFlags {
+  name?: boolean;
+  fullDescription?: boolean;
+  shortDescription?: boolean;
+  storefrontDescriptionDoc?: boolean;
+  productIngredientsJson?: boolean;
+  productNutritionJson?: boolean;
+  weight?: boolean;
+  regularPrice?: boolean;
+  doNotPublish?: boolean;
+  /** Оновити категорію на WC за групою в BO */
+  category?: boolean;
+  images?: boolean;
+  replaceImages?: boolean;
+  wooProductId?: boolean;
+}
+
 export interface WooPullApplyInput {
   goodId: string;
-  apply: {
-    name?: boolean;
-    fullDescription?: boolean;
-    shortDescription?: boolean;
-    storefrontDescriptionDoc?: boolean;
-    productIngredientsJson?: boolean;
-    productNutritionJson?: boolean;
-    weight?: boolean;
-    regularPrice?: boolean;
-    doNotPublish?: boolean;
-    images?: boolean;
-    replaceImages?: boolean;
-    wooProductId?: boolean;
+  apply: StorefrontPullApplyFlags;
+}
+
+export type WooPullBulkFieldKey =
+  | 'name'
+  | 'shortDescription'
+  | 'storefrontDescriptionDoc'
+  | 'productIngredientsJson'
+  | 'productNutritionJson'
+  | 'weight'
+  | 'regularPrice'
+  | 'doNotPublish'
+  | 'category'
+  | 'images';
+
+export type WooPullBulkWcStatus = 'found' | 'not_found';
+
+export type WooPullBulkRowAction = 'pull' | 'skip' | 'create_on_wc';
+
+export interface WooPullBulkPreviewItem {
+  goodId: string;
+  sku: string;
+  name: string;
+  wcStatus: WooPullBulkWcStatus;
+  conflicts: WooPullConflict[];
+  proposed: {
+    name: string | null;
+    shortDescription: string | null;
+    weight: number | null;
+    regularPrice: string | null;
+    doNotPublish: boolean;
+    storefrontDescriptionDoc: string | null;
+    productIngredientsJson: string | null;
+    productNutritionJson: string | null;
+    categoryName: string | null;
   };
+  defaultApply: StorefrontPullApplyFlags;
+}
+
+export interface WooPullBulkPreviewResult {
+  items: WooPullBulkPreviewItem[];
+}
+
+export interface WooPullBulkApplyItem {
+  goodId: string;
+  action: WooPullBulkRowAction;
+  apply?: StorefrontPullApplyFlags;
+}
+
+export interface WooPullBulkApplyRowResult {
+  goodId: string;
+  sku: string;
+  name: string;
+  ok: boolean;
+  action: WooPullBulkRowAction;
+  skipped?: boolean;
+  created?: boolean;
+  appliedFields?: string[];
+  wooProductId?: number;
+  error?: string;
+  warnings?: string[];
+}
+
+export interface WooPullBulkApplyResult {
+  results: WooPullBulkApplyRowResult[];
 }
 
 export interface WooPullApplyResult {
@@ -342,15 +434,63 @@ export interface WooPushApplyResult {
   imageErrors?: string[];
 }
 
+export interface WooPushBulkRowResult {
+  goodId: string;
+  sku: string;
+  name: string;
+  ok: boolean;
+  error?: string;
+  wooProductId?: number;
+  created?: boolean;
+  warnings?: string[];
+}
+
 export interface WooPushBulkResult {
-  results: Array<{
-    goodId: string;
-    sku: string;
-    ok: boolean;
-    error?: string;
-    wooProductId?: number;
-    created?: boolean;
-  }>;
+  results: WooPushBulkRowResult[];
+}
+
+export interface StorefrontBulkSyncReportRow {
+  goodId: string;
+  sku: string;
+  name: string;
+  ok: boolean;
+  action?: WooPullBulkRowAction;
+  appliedFields?: string[];
+  created?: boolean;
+  error?: string;
+  warnings?: string[];
+}
+
+export interface StorefrontBulkSyncReport {
+  op: 'push' | 'pull' | 'stock';
+  durationMs: number;
+  summary: {
+    total: number;
+    ok: number;
+    failed: number;
+    skipped: number;
+    created: number;
+  };
+  results: StorefrontBulkSyncReportRow[];
+}
+
+export interface WooStockSyncRowResult {
+  sku: string;
+  goodId?: string;
+  wooProductId?: number;
+  effectiveStock: number;
+  ok: boolean;
+  skipped?: boolean;
+  error?: string;
+}
+
+export interface WooStockSyncResult {
+  mode: StorefrontStockViaWcMode;
+  updated: number;
+  skipped: number;
+  errors: number;
+  discrepancies: Array<{ sku: string; local: number; wc: number }>;
+  results: WooStockSyncRowResult[];
 }
 
 export interface WooMediaUploadResult {

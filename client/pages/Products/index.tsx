@@ -41,6 +41,14 @@ import { pluralize } from '@/lib/formatUtils';
 import { useTouchUi } from '@/hooks/useTouchUi';
 import { hasPermission, PERMISSIONS } from '@shared/constants/permissions';
 import { storefrontApi } from '@/services/StorefrontService';
+import { StorefrontBulkPullWizard } from './components/StorefrontBulkPullWizard';
+import {
+  buildStorefrontBulkReport,
+  buildStorefrontStockReport,
+  StorefrontSyncReportModal,
+} from './components/StorefrontSyncReportModal';
+import { StorefrontBlockingProgressModal } from './components/StorefrontBlockingProgressModal';
+import type { StorefrontBulkSyncReport } from '@shared/types/storefront';
 
 const MANUAL_SORT: SortDescriptor = {
   column: 'sortOrder',
@@ -50,6 +58,7 @@ const MANUAL_SORT: SortDescriptor = {
 export default function ProductsPage() {
   const { isAdminView: isAdmin, effectivePermissions } = useRolePreview();
   const canPushStorefront = hasPermission(effectivePermissions, PERMISSIONS.ACTION_STOREFRONT_PUSH);
+  const canPullStorefront = hasPermission(effectivePermissions, PERMISSIONS.ACTION_STOREFRONT_PULL);
   const catalog = useProductsCatalog();
   const visualRootId =
     resolveCatalogVisualRootFolderId(catalog.treeNodes, effectivePermissions) ?? CATALOG_ROOT_ID;
@@ -77,6 +86,11 @@ export default function ProductsPage() {
   const [legacyUpdateConfirmIds, setLegacyUpdateConfirmIds] = useState<string[] | null>(null);
   const [pushStorefrontConfirmIds, setPushStorefrontConfirmIds] = useState<string[] | null>(null);
   const [pushStorefrontLoading, setPushStorefrontLoading] = useState(false);
+  const [pullStorefrontIds, setPullStorefrontIds] = useState<string[] | null>(null);
+  const [stockStorefrontConfirmIds, setStockStorefrontConfirmIds] = useState<string[] | null>(null);
+  const [stockStorefrontLoading, setStockStorefrontLoading] = useState(false);
+  const [storefrontSyncReport, setStorefrontSyncReport] = useState<StorefrontBulkSyncReport | null>(null);
+  const [storefrontPushProgress, setStorefrontPushProgress] = useState<{ current: number; total: number } | null>(null);
   const [portionsBySku, setPortionsBySku] = useState<
     Map<string, { newQty: number; confirmedQty: number; holdQty: number }>
   >(new Map());
@@ -235,7 +249,8 @@ export default function ProductsPage() {
     catalog.syncSelectedMutation.isPending ||
     catalog.legacySyncMutation.isPending ||
     catalog.stockSyncMutation.isPending ||
-    catalog.refreshFullMutation.isPending;
+    catalog.refreshFullMutation.isPending ||
+    stockStorefrontLoading;
 
   const selectedLabels = useMemo(
     () =>
@@ -349,6 +364,28 @@ export default function ProductsPage() {
     }
     return skus;
   }, [legacyUpdateLabels]);
+
+  const stockStorefrontConfirmLabels = useMemo(
+    () =>
+      resolveCatalogItemLabels(stockStorefrontConfirmIds || [], {
+        tableRows: [...catalog.tableRows, ...(catalog.detail ? [catalog.detail] : [])],
+        treeItems: catalog.treeItemsFull,
+      }),
+    [stockStorefrontConfirmIds, catalog.tableRows, catalog.detail, catalog.treeItemsFull],
+  );
+
+  const stockStorefrontConfirmSkus = useMemo(() => {
+    const skus: string[] = [];
+    const seen = new Set<string>();
+    for (const item of stockStorefrontConfirmLabels) {
+      if (item.isGroup) continue;
+      const sku = item.sku?.trim();
+      if (!sku || seen.has(sku)) continue;
+      seen.add(sku);
+      skus.push(sku);
+    }
+    return skus;
+  }, [stockStorefrontConfirmLabels]);
 
   const fullRefreshEstimate = useMemo(() => {
     const folders = catalog.treeNodes.length;
@@ -594,6 +631,58 @@ export default function ProductsPage() {
     [catalog.setSelectedIds, catalog.tableRows, catalog.detail, catalog.treeItemsFull],
   );
 
+  const requestPullStorefront = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return;
+      if (ids.length > 50) {
+        ToastService.show({
+          title: 'Занадто багато товарів',
+          description: 'Максимум 50 SKU за одну операцію pull.',
+          color: 'warning',
+        });
+        return;
+      }
+      catalog.setSelectedIds(ids);
+      const labels = resolveCatalogItemLabels(ids, {
+        tableRows: [...catalog.tableRows, ...(catalog.detail ? [catalog.detail] : [])],
+        treeItems: catalog.treeItemsFull,
+      });
+      const goods = labels.filter((l) => !l.isGroup && l.sku?.trim());
+      if (goods.length === 0) {
+        ToastService.show({
+          title: 'Немає товарів для pull',
+          description: 'Оберіть товари з артикулом.',
+          color: 'warning',
+        });
+        return;
+      }
+      setPullStorefrontIds(ids);
+    },
+    [catalog.setSelectedIds, catalog.tableRows, catalog.detail, catalog.treeItemsFull],
+  );
+
+  const requestSyncStorefrontStock = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0) return;
+      catalog.setSelectedIds(ids);
+      const labels = resolveCatalogItemLabels(ids, {
+        tableRows: [...catalog.tableRows, ...(catalog.detail ? [catalog.detail] : [])],
+        treeItems: catalog.treeItemsFull,
+      });
+      const goods = labels.filter((l) => !l.isGroup && l.sku?.trim());
+      if (goods.length === 0) {
+        ToastService.show({
+          title: 'Немає товарів для оновлення залишків',
+          description: 'Оберіть товари з артикулом.',
+          color: 'warning',
+        });
+        return;
+      }
+      setStockStorefrontConfirmIds(ids);
+    },
+    [catalog.setSelectedIds, catalog.tableRows, catalog.detail, catalog.treeItemsFull],
+  );
+
   const openProductOrders = useCallback(
     (row: CatalogGoodDto, tab: CatalogOrdersTabKey) => {
       const sku = row.sku?.trim();
@@ -761,6 +850,11 @@ export default function ProductsPage() {
             onLegacyUpdate={requestLegacyUpdate}
             onPushStorefront={requestPushStorefront}
             canPushStorefront={canPushStorefront}
+            onPullStorefront={requestPullStorefront}
+            canPullStorefront={canPullStorefront}
+            onSyncStorefrontStock={requestSyncStorefrontStock}
+            canSyncStorefrontStock={canPushStorefront}
+            stockStorefrontSyncing={stockStorefrontLoading}
             onMoveTo={(ids) => {
               if (selectionInTrash) requestRestoreFromTrash(ids);
               else requestMoveTo(ids);
@@ -934,6 +1028,13 @@ export default function ProductsPage() {
         onEdit={catalog.openEdit}
         onSyncFromDilovod={requestSyncFromDilovod}
         onLegacyUpdate={requestLegacyUpdate}
+        onPushStorefront={requestPushStorefront}
+        canPushStorefront={canPushStorefront}
+        onPullStorefront={requestPullStorefront}
+        canPullStorefront={canPullStorefront}
+        onSyncStorefrontStock={requestSyncStorefrontStock}
+        canSyncStorefrontStock={canPushStorefront}
+        stockStorefrontSyncing={stockStorefrontLoading}
         onMoveTo={(ids) => {
           if (contextMenu?.fromTrash) requestRestoreFromTrash(ids);
           else requestMoveTo(ids);
@@ -1262,6 +1363,60 @@ export default function ProductsPage() {
       />
 
       <ConfirmModal
+        isOpen={Boolean(stockStorefrontConfirmIds?.length)}
+        title={`Оновити залишки на сайті для ${stockStorefrontConfirmSkus.length} ${pluralize(stockStorefrontConfirmSkus.length, 'товару', 'товарів', 'товарів')}?`}
+        message={
+          <div className="space-y-1">
+            <p>
+              Поточні залишки з Backoffice будуть відправлені на WooCommerce (REST API) для обраних
+              товарів. Товари, яких немає на сайті, будуть пропущені.
+            </p>
+            <p className="text-default-500 text-sm">
+              SKU до оновлення: {stockStorefrontConfirmSkus.length}
+              {stockStorefrontConfirmLabels.length > stockStorefrontConfirmSkus.length
+                ? ` (пропущено ${stockStorefrontConfirmLabels.length - stockStorefrontConfirmSkus.length} без SKU / папок)`
+                : ''}
+              .
+            </p>
+            <CatalogConfirmItemsList
+              items={stockStorefrontConfirmLabels.filter((l) => !l.isGroup && l.sku?.trim())}
+            />
+          </div>
+        }
+        confirmText="Оновити залишки"
+        confirmColor="warning"
+        cancelText="Скасувати"
+        confirmLoading={stockStorefrontLoading}
+        onCancel={() => setStockStorefrontConfirmIds(null)}
+        onConfirm={() => {
+          const skus = stockStorefrontConfirmSkus;
+          const labels = stockStorefrontConfirmLabels;
+          setStockStorefrontConfirmIds(null);
+          if (!skus.length) return;
+          setStockStorefrontLoading(true);
+          const started = Date.now();
+          const nameBySku = new Map(
+            labels
+              .filter((l) => !l.isGroup && l.sku?.trim())
+              .map((l) => [l.sku!.trim(), l.name]),
+          );
+          void storefrontApi
+            .syncWooStock(skus)
+            .then((result) => {
+              setStorefrontSyncReport(buildStorefrontStockReport(Date.now() - started, result, nameBySku));
+            })
+            .catch((err) => {
+              ToastService.show({
+                title: 'Помилка оновлення залишків',
+                description: err instanceof Error ? err.message : String(err),
+                color: 'danger',
+              });
+            })
+            .finally(() => setStockStorefrontLoading(false));
+        }}
+      />
+
+      <ConfirmModal
         isOpen={Boolean(pushStorefrontConfirmIds?.length)}
         title={`Синхронізувати з сайтом ${pushStorefrontConfirmIds?.length || 0} ${pluralize(pushStorefrontConfirmIds?.length || 0, 'товар', 'товари', 'товарів')}?`}
         message="Опис, meta та статус публікації будуть відправлені на WooCommerce для обраних товарів."
@@ -1275,22 +1430,60 @@ export default function ProductsPage() {
           setPushStorefrontConfirmIds(null);
           if (!ids?.length) return;
           setPushStorefrontLoading(true);
+          setStorefrontPushProgress({ current: 0, total: ids.length });
+          const started = Date.now();
           void storefrontApi
             .pushBulk(ids)
             .then((result) => {
-              const ok = result.results.filter((r) => r.ok).length;
-              const fail = result.results.filter((r) => !r.ok).length;
-              ToastService.show({
-                title: 'Синхронізація з сайтом завершена',
-                description: `Успішно: ${ok}, помилок: ${fail}`,
-                color: fail > 0 ? 'warning' : 'success',
-              });
+              setStorefrontPushProgress({ current: ids.length, total: ids.length });
+              setStorefrontSyncReport(
+                buildStorefrontBulkReport(
+                  'push',
+                  Date.now() - started,
+                  result.results.map((row) => ({
+                    goodId: row.goodId,
+                    sku: row.sku,
+                    name: row.name,
+                    ok: row.ok,
+                    created: row.created,
+                    error: row.error,
+                    warnings: row.warnings,
+                  })),
+                ),
+              );
             })
             .catch((err) => {
-              ToastService.error('Помилка push', err instanceof Error ? err.message : String(err));
+              ToastService.show({
+                title: 'Помилка push',
+                description: err instanceof Error ? err.message : String(err),
+                color: 'danger',
+              });
             })
-            .finally(() => setPushStorefrontLoading(false));
+            .finally(() => {
+              setPushStorefrontLoading(false);
+              setStorefrontPushProgress(null);
+            });
         }}
+      />
+
+      <StorefrontBlockingProgressModal
+        isOpen={Boolean(storefrontPushProgress)}
+        title="Синхронізація з сайтом"
+        subtitle="Push опису та meta на WooCommerce"
+        current={storefrontPushProgress?.current ?? 0}
+        total={storefrontPushProgress?.total ?? 0}
+      />
+
+      <StorefrontBulkPullWizard
+        goodIds={pullStorefrontIds ?? []}
+        isOpen={Boolean(pullStorefrontIds?.length)}
+        onClose={() => setPullStorefrontIds(null)}
+        onComplete={() => catalog.invalidateCatalog({ skipLiveDetail: true })}
+      />
+
+      <StorefrontSyncReportModal
+        report={storefrontSyncReport}
+        onClose={() => setStorefrontSyncReport(null)}
       />
 
       <ConfirmModal

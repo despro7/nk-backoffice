@@ -403,7 +403,13 @@ export const STOREFRONT_SETTINGS_KEYS = {
     enabled: 'storefront.woo.enabled',
     mediaPublicBaseUrl: 'storefront.woo.mediaPublicBaseUrl',
   },
+  sync: {
+    autoPushOnSave: 'storefront.sync.autoPushOnSave',
+    stockViaWc: 'storefront.sync.stockViaWc',
+  },
 } as const;
+
+export const STOREFRONT_DEFAULT_STOCK_VIA_WC = 'legacy' as const;
 
 export function getStorefrontDefaultKitComponentsTemplate(): string {
   return STOREFRONT_BUILTIN_DEFAULTS.kitComponents.template ?? '{{kitComponents}}';

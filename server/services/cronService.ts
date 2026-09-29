@@ -95,6 +95,11 @@ export type LegacyStockChainResult = {
   adjustedCount: number;
   wpTriggered: boolean;
   wpStatus: number | null;
+  wcDirectUpdated?: number;
+  wcDirectSkipped?: number;
+  wcDirectErrors?: number;
+  wcDiscrepancies?: number;
+  stockViaWcMode?: 'legacy' | 'parallel' | 'wc_only';
   errors: string[];
 };
 
@@ -398,23 +403,61 @@ export class CronService {
         console.error(`❌ ${tag} [2/3] SalesDrive export failed:`, error);
       }
 
+      let wcDirectUpdated = 0;
+      let wcDirectSkipped = 0;
+      let wcDirectErrors = 0;
+      let wcDiscrepancies = 0;
+      let stockViaWcMode: LegacyStockChainResult['stockViaWcMode'] = 'legacy';
+
       if (exported) {
-        console.log(`🕐 ${tag} [3/3] Triggering SD → WP stock sync...`);
-        try {
-          const wpResponse = await fetch(WP_STOCK_SYNC_URL, { signal: AbortSignal.timeout(30_000) });
-          wpStatus = wpResponse.status;
-          wpTriggered = wpResponse.ok;
-          const duration = Date.now() - startTime;
-          if (wpResponse.ok) {
-            console.log(`✅ ${tag} [3/3] WP stock sync triggered in ${duration}ms (status ${wpResponse.status})`);
-          } else {
-            errors.push(`WooCommerce syncStock HTTP ${wpResponse.status}`);
-            console.warn(`⚠️ ${tag} [3/3] WP stock sync returned HTTP ${wpResponse.status} in ${duration}ms`);
+        const { storefrontService } = await import('../modules/Storefront/StorefrontService.js');
+        stockViaWcMode = await storefrontService.getStockViaWcMode();
+        const runLegacyWp = stockViaWcMode === 'legacy' || stockViaWcMode === 'parallel';
+        const runWcDirect = stockViaWcMode === 'parallel' || stockViaWcMode === 'wc_only';
+
+        if (runWcDirect) {
+          console.log(`🕐 ${tag} [3/3] WooCommerce REST stock sync (${stockViaWcMode})...`);
+          try {
+            const { wooCommerceStockService } = await import('../modules/Storefront/WooCommerceStockService.js');
+            const wcResult = await wooCommerceStockService.syncStock({ mode: stockViaWcMode });
+            wcDirectUpdated = wcResult.updated;
+            wcDirectSkipped = wcResult.skipped;
+            wcDirectErrors = wcResult.errors;
+            wcDiscrepancies = wcResult.discrepancies.length;
+            if (wcResult.errors > 0) {
+              errors.push(`WC direct stock: ${wcResult.errors} помилок`);
+            }
+            console.log(
+              `✅ ${tag} [3/3] WC REST: ${wcResult.updated} updated, ${wcResult.skipped} skipped (no WC product), ${wcResult.discrepancies.length} discrepancies`,
+            );
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : 'Помилка WC REST stock sync';
+            errors.push(msg);
+            console.error(`❌ ${tag} [3/3] WC REST stock sync failed:`, error);
           }
-        } catch (error) {
-          const msg = error instanceof Error ? error.message : 'Помилка тригера WooCommerce';
-          errors.push(msg);
-          console.error(`❌ ${tag} [3/3] WP stock sync request failed:`, error);
+        }
+
+        if (runLegacyWp) {
+          console.log(`🕐 ${tag} [3/3] Triggering SD → WP stock sync (syncStock.php)...`);
+          try {
+            const wpResponse = await fetch(WP_STOCK_SYNC_URL, { signal: AbortSignal.timeout(30_000) });
+            wpStatus = wpResponse.status;
+            wpTriggered = wpResponse.ok;
+            const duration = Date.now() - startTime;
+            if (wpResponse.ok) {
+              console.log(`✅ ${tag} [3/3] WP stock sync triggered in ${duration}ms (status ${wpResponse.status})`);
+            } else {
+              errors.push(`WooCommerce syncStock HTTP ${wpResponse.status}`);
+              console.warn(`⚠️ ${tag} [3/3] WP stock sync returned HTTP ${wpResponse.status} in ${duration}ms`);
+            }
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : 'Помилка тригера WooCommerce';
+            errors.push(msg);
+            console.error(`❌ ${tag} [3/3] WP stock sync request failed:`, error);
+          }
+        } else {
+          wpTriggered = wcDirectUpdated > 0;
+          console.log(`⏭️ ${tag} [3/3] Skipping syncStock.php — wc_only mode.`);
         }
       } else {
         console.log(`⏭️ ${tag} [3/3] Skipping WP stock sync — SalesDrive export was not successful.`);
@@ -429,6 +472,11 @@ export class CronService {
         adjustedCount,
         wpTriggered,
         wpStatus,
+        wcDirectUpdated,
+        wcDirectSkipped,
+        wcDirectErrors,
+        wcDiscrepancies,
+        stockViaWcMode,
         errors,
       };
     } finally {

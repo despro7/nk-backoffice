@@ -5,6 +5,7 @@ vi.mock('../../lib/utils.js', () => ({
   prisma: {
     catalogGood: {
       findUnique: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
     },
     catalogGoodPrice: {
@@ -46,6 +47,7 @@ vi.mock('./StorefrontService.js', () => ({
 vi.mock('../Products/ProductsDilovodGateway.js', () => ({
   productsDilovodGateway: {
     savePrice: vi.fn().mockResolvedValue(undefined),
+    saveObject: vi.fn().mockResolvedValue({ id: 'good-1' }),
   },
 }));
 
@@ -63,10 +65,23 @@ vi.mock('./WooCommerceApiClient.js', () => ({
       status: 'publish',
       meta_data: [],
       images: [{ id: 501, src: 'https://shop.example.com/img.jpg', name: 'photo' }],
+      categories: [{ id: 21, name: 'Другі страви', slug: 'drugi-stravy' }],
     }),
     getProductById: vi.fn(),
+    updateProduct: vi.fn().mockResolvedValue({ id: 77 }),
   })),
 }));
+
+vi.mock('./WooCommerceCategoryService.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./WooCommerceCategoryService.js')>();
+  return {
+    ...actual,
+    wooCommerceCategoryService: {
+      resolveCategoryId: vi.fn().mockResolvedValue(20),
+      clearCache: vi.fn(),
+    },
+  };
+});
 
 import { prisma } from '../../lib/utils.js';
 import { productsDilovodGateway } from '../Products/ProductsDilovodGateway.js';
@@ -360,6 +375,141 @@ describe('WooCommerceSyncService', () => {
         }),
       }),
     );
+    expect(productsDilovodGateway.saveObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        header: expect.objectContaining({
+          id: 'good-1',
+          description: { uk: '<p>Маркетинговий текст.</p>', ru: '<p>Маркетинговий текст.</p>' },
+        }),
+      }),
+    );
+  });
+
+  it('pullApply syncs short description to Dilovod when explicitly selected', async () => {
+    vi.mocked(prisma.catalogGood.findUnique).mockResolvedValue({
+      id: 'good-1',
+      sku: 'SKU-1',
+      name: 'Товар',
+      parentId: 'group-1',
+      isGroup: false,
+      accPolicyId: 'policy-1',
+      mainUnitId: 'unit-1',
+      wooProductId: null,
+      fullDescription: null,
+      description: null,
+      weight: null,
+      storefrontDescriptionDoc: null,
+      productIngredientsJson: null,
+      productNutritionJson: null,
+      storefrontPresetId: null,
+      doNotPublish: false,
+      images: [],
+      prices: [],
+    } as never);
+    vi.mocked(prisma.catalogGood.update).mockResolvedValue({} as never);
+
+    const { createWooCommerceClient } = await import('./WooCommerceApiClient.js');
+    vi.mocked(createWooCommerceClient).mockReturnValue({
+      getProductBySku: vi.fn().mockResolvedValue({
+        id: 77,
+        sku: 'SKU-1',
+        name: 'Test',
+        description: '<p>Склад: вода.</p>',
+        short_description: '<p>Короткий з WC</p>',
+        regular_price: '10',
+        weight: '0.3',
+        stock_quantity: 5,
+        status: 'publish',
+        meta_data: [],
+        images: [],
+      }),
+      getProductById: vi.fn(),
+    } as never);
+
+    const result = await service.pullApply({
+      goodId: 'good-1',
+      apply: { shortDescription: true, wooProductId: true },
+    });
+
+    expect(result.appliedFields).toContain('shortDescription');
+    expect(productsDilovodGateway.saveObject).toHaveBeenCalledWith({
+      header: {
+        id: 'good-1',
+        name: { uk: 'Товар', ru: 'Товар' },
+        parent: 'group-1',
+        isGroup: 0,
+        productNum: 'SKU-1',
+        mainUnit: 'unit-1',
+        accPolicy: 'policy-1',
+        description: { uk: '<p>Короткий з WC</p>', ru: '<p>Короткий з WC</p>' },
+      },
+    });
+  });
+
+  it('pullBulkApply applies short description from bulk matrix', async () => {
+    vi.mocked(prisma.catalogGood.findMany).mockResolvedValue([
+      { id: 'good-1', sku: 'SKU-1', name: 'Товар' },
+    ] as never);
+    vi.mocked(prisma.catalogGood.findUnique).mockResolvedValue({
+      id: 'good-1',
+      sku: 'SKU-1',
+      name: 'Товар',
+      parentId: null,
+      isGroup: false,
+      accPolicyId: null,
+      mainUnitId: null,
+      wooProductId: null,
+      fullDescription: null,
+      description: null,
+      weight: null,
+      storefrontDescriptionDoc: null,
+      productIngredientsJson: null,
+      productNutritionJson: null,
+      storefrontPresetId: null,
+      doNotPublish: false,
+      images: [],
+      prices: [],
+    } as never);
+    vi.mocked(prisma.catalogGood.update).mockResolvedValue({} as never);
+
+    const { createWooCommerceClient } = await import('./WooCommerceApiClient.js');
+    vi.mocked(createWooCommerceClient).mockReturnValue({
+      getProductBySku: vi.fn().mockResolvedValue({
+        id: 77,
+        sku: 'SKU-1',
+        name: 'Test',
+        description: '<p>Склад: вода.</p>',
+        short_description: '<p>Короткий з WC</p>',
+        regular_price: '10',
+        weight: '0.3',
+        stock_quantity: 5,
+        status: 'publish',
+        meta_data: [],
+        images: [],
+        categories: [],
+      }),
+      getProductById: vi.fn(),
+      updateProduct: vi.fn(),
+    } as never);
+
+    const result = await service.pullBulkApply([
+      {
+        goodId: 'good-1',
+        action: 'pull',
+        apply: { shortDescription: true, wooProductId: true },
+      },
+    ]);
+
+    expect(result.results[0]?.ok).toBe(true);
+    expect(result.results[0]?.appliedFields).toContain('shortDescription');
+    expect(prisma.catalogGood.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          description: '<p>Короткий з WC</p>',
+        }),
+      }),
+    );
+    expect(productsDilovodGateway.saveObject).toHaveBeenCalled();
   });
 
   it('pullApply updates retail and regular prices when regularPrice selected', async () => {
@@ -391,5 +541,233 @@ describe('WooCommerceSyncService', () => {
     expect(result.appliedFields).toContain('regularPrice');
     expect(productsDilovodGateway.savePrice).toHaveBeenCalledTimes(2);
     expect(prisma.catalogGoodPrice.upsert).toHaveBeenCalledTimes(2);
+  });
+
+  it('pullBulkPreview enables only non-conflicting bulk fields by default', async () => {
+    const { createWooCommerceClient } = await import('./WooCommerceApiClient.js');
+    vi.mocked(createWooCommerceClient).mockReturnValue({
+      getProductBySku: vi.fn().mockResolvedValue({
+        id: 77,
+        sku: 'SKU-1',
+        name: 'Test',
+        description: '<p>Склад: вода.</p>',
+        short_description: 'short',
+        regular_price: '10',
+        weight: '0.3',
+        stock_quantity: 5,
+        status: 'publish',
+        meta_data: [],
+        images: [{ id: 501, src: 'https://shop.example.com/img.jpg', name: 'photo' }],
+        categories: [{ id: 21, name: 'Другі страви', slug: 'drugi-stravy' }],
+      }),
+      getProductById: vi.fn(),
+      updateProduct: vi.fn(),
+    } as never);
+
+    vi.mocked(prisma.catalogGood.findMany).mockResolvedValue([
+      { id: 'good-1', sku: 'SKU-1', name: 'Товар' },
+    ] as never);
+    vi.mocked(prisma.catalogGood.findUnique).mockResolvedValue({
+      id: 'good-1',
+      sku: 'SKU-1',
+      name: 'Локальна назва',
+      isGroup: false,
+      accPolicyId: null,
+      wooProductId: null,
+      fullDescription: null,
+      description: null,
+      weight: null,
+      doNotPublish: false,
+      storefrontDescriptionDoc: null,
+      productIngredientsJson: null,
+      productNutritionJson: null,
+      storefrontPresetId: null,
+      images: [],
+      prices: [],
+    } as never);
+
+    const preview = await service.pullBulkPreview(['good-1']);
+    expect(preview.items).toHaveLength(1);
+    expect(preview.items[0].wcStatus).toBe('found');
+    expect(preview.items[0].defaultApply.name).toBe(false);
+    expect(preview.items[0].defaultApply.weight).toBe(true);
+    expect(preview.items[0].defaultApply.images).toBe(true);
+    expect(preview.items[0].defaultApply.shortDescription).toBe(true);
+  });
+
+  it('pullBulkPreview enables shortDescription when local description is empty and WC has marketing text', async () => {
+    const { createWooCommerceClient } = await import('./WooCommerceApiClient.js');
+    vi.mocked(createWooCommerceClient).mockReturnValue({
+      getProductBySku: vi.fn().mockResolvedValue({
+        id: 77,
+        sku: 'SKU-1',
+        name: 'Test',
+        description: '<p class="storefront-marketing">Маркетинговий текст.</p><p>Склад: вода.</p>',
+        short_description: '<p></p>',
+        regular_price: '10',
+        weight: '0.3',
+        stock_quantity: 5,
+        status: 'publish',
+        meta_data: [],
+        images: [],
+        categories: [],
+      }),
+      getProductById: vi.fn(),
+      updateProduct: vi.fn(),
+    } as never);
+
+    vi.mocked(prisma.catalogGood.findMany).mockResolvedValue([
+      { id: 'good-1', sku: 'SKU-1', name: 'Товар' },
+    ] as never);
+    vi.mocked(prisma.catalogGood.findUnique).mockResolvedValue({
+      id: 'good-1',
+      sku: 'SKU-1',
+      name: 'Товар',
+      isGroup: false,
+      accPolicyId: null,
+      wooProductId: null,
+      fullDescription: null,
+      description: null,
+      weight: null,
+      doNotPublish: false,
+      storefrontDescriptionDoc: null,
+      productIngredientsJson: null,
+      productNutritionJson: null,
+      storefrontPresetId: null,
+      images: [],
+      prices: [],
+    } as never);
+
+    const preview = await service.pullBulkPreview(['good-1']);
+
+    expect(preview.items[0].proposed.shortDescription).toBe('<p>Маркетинговий текст.</p>');
+    expect(preview.items[0].defaultApply.shortDescription).toBe(true);
+  });
+
+  it('pullPreview detects category conflict between BO group and WC category', async () => {
+    const { createWooCommerceClient } = await import('./WooCommerceApiClient.js');
+    vi.mocked(createWooCommerceClient).mockReturnValue({
+      getProductBySku: vi.fn().mockResolvedValue({
+        id: 77,
+        sku: 'SKU-1',
+        name: 'Test',
+        description: '<p>Склад: вода.</p>',
+        short_description: 'short',
+        regular_price: '10',
+        weight: '0.3',
+        stock_quantity: 5,
+        status: 'publish',
+        meta_data: [],
+        images: [],
+        categories: [{ id: 21, name: 'Другі страви', slug: 'drugi-stravy' }],
+      }),
+      getProductById: vi.fn(),
+      updateProduct: vi.fn(),
+    } as never);
+
+    vi.mocked(prisma.catalogGood.findUnique)
+      .mockResolvedValueOnce({
+        id: 'good-1',
+        parentId: 'group-1',
+        sku: 'SKU-1',
+        name: 'Локальна назва',
+        isGroup: false,
+        accPolicyId: null,
+        wooProductId: null,
+        fullDescription: null,
+        description: null,
+        weight: 0.2,
+        doNotPublish: false,
+        storefrontDescriptionDoc: null,
+        productIngredientsJson: null,
+        productNutritionJson: null,
+        storefrontPresetId: null,
+        images: [],
+        prices: [{ priceType: '1101300000001001', price: 85 }],
+      } as never)
+      .mockResolvedValueOnce({
+        id: 'group-1',
+        name: 'Салати',
+        isGroup: true,
+      } as never);
+
+    const preview = await service.pullPreview('good-1');
+
+    expect(preview.local.groupName).toBe('Салати');
+    expect(preview.proposed.categoryName).toBe('Другі страви');
+    expect(preview.conflicts.some((c) => c.field === 'category')).toBe(true);
+  });
+
+  it('pullApply updates WooCommerce category when selected', async () => {
+    vi.mocked(prisma.catalogGood.findUnique)
+      .mockResolvedValueOnce({
+        id: 'good-1',
+        parentId: 'group-1',
+        sku: 'SKU-1',
+        name: 'Товар',
+        isGroup: false,
+        accPolicyId: null,
+        wooProductId: null,
+        fullDescription: null,
+        description: null,
+        weight: null,
+        storefrontDescriptionDoc: null,
+        productIngredientsJson: null,
+        productNutritionJson: null,
+        storefrontPresetId: null,
+        doNotPublish: false,
+        images: [],
+        prices: [],
+      } as never)
+      .mockResolvedValueOnce({
+        id: 'group-1',
+        name: 'Салати',
+        isGroup: true,
+      } as never);
+    vi.mocked(prisma.catalogGood.update).mockResolvedValue({} as never);
+
+    const { createWooCommerceClient } = await import('./WooCommerceApiClient.js');
+    const updateProduct = vi.fn().mockResolvedValue({ id: 77 });
+    vi.mocked(createWooCommerceClient).mockReturnValue({
+      getProductBySku: vi.fn().mockResolvedValue({
+        id: 77,
+        sku: 'SKU-1',
+        name: 'Test',
+        description: '',
+        short_description: '',
+        regular_price: '10',
+        weight: '',
+        stock_quantity: 5,
+        status: 'publish',
+        meta_data: [],
+        images: [],
+        categories: [{ id: 21, name: 'Другі страви', slug: 'drugi-stravy' }],
+      }),
+      getProductById: vi.fn(),
+      updateProduct,
+    } as never);
+
+    const result = await service.pullApply({
+      goodId: 'good-1',
+      apply: { category: true, wooProductId: true },
+    });
+
+    expect(result.appliedFields).toContain('category');
+    expect(updateProduct).toHaveBeenCalledWith(77, { categories: [{ id: 20 }] });
+  });
+
+  it('pullBulkApply skip returns skipped result', async () => {
+    vi.mocked(prisma.catalogGood.findUnique).mockResolvedValue({
+      id: 'good-1',
+      sku: 'SKU-1',
+      name: 'Товар',
+    } as never);
+
+    const result = await service.pullBulkApply([{ goodId: 'good-1', action: 'skip' }]);
+    expect(result.results[0]).toMatchObject({
+      ok: true,
+      skipped: true,
+      action: 'skip',
+    });
   });
 });

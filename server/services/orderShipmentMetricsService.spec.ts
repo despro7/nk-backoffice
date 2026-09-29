@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  aggregateOpenOrderPortionsBySku,
   computeOrderedSetQuantityBreakdown,
   computeShippedQuantityBreakdown,
   extractOrderedSetItems,
@@ -92,6 +93,48 @@ describe('computeOrderedSetQuantityBreakdown', () => {
     expect(breakdown.isMonolithicSet).toBe(false);
     expect(breakdown.cacheQuantity).toBe(7);
     expect(breakdown.monolithicComponentQuantity).toBe(4);
+  });
+});
+
+describe('aggregateOpenOrderPortionsBySku', () => {
+  const descriptors = new Map([
+    [
+      'KIT',
+      descriptor('KIT', {
+        isSet: true,
+        setPortions: 4,
+        setComponents: [{ sku: 'LEAF', quantity: 4 }],
+      }),
+    ],
+    ['LEAF', descriptor('LEAF')],
+  ]);
+
+  it('без splitMonolithic сумує processedItems як раніше', () => {
+    const portions = aggregateOpenOrderPortionsBySku(
+      [{ externalId: 'o1', items: [{ sku: 'LEAF', quantity: 3 }] }],
+      new Map([['o1', [{ sku: 'LEAF', orderedQuantity: 15 }]]]),
+      descriptors,
+    );
+
+    expect(portions.get('LEAF')).toBe(15);
+  });
+
+  it('зі splitMonolithic віднімає порції, що пішли в комплект', () => {
+    const portions = aggregateOpenOrderPortionsBySku(
+      [{
+        externalId: 'o1',
+        items: [
+          { sku: 'KIT', quantity: 1 },
+          { sku: 'LEAF', quantity: 3 },
+        ],
+      }],
+      new Map([['o1', [{ sku: 'LEAF', orderedQuantity: 15 }]]]),
+      descriptors,
+      { splitMonolithic: true },
+    );
+
+    expect(portions.get('LEAF')).toBe(11);
+    expect(portions.get('KIT')).toBe(1);
   });
 });
 

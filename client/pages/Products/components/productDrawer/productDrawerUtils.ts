@@ -62,6 +62,26 @@ export function snapshotState(
   return JSON.stringify({ form, components, prices, barcodes, objectKind, parentId: parentId ?? null });
 }
 
+/** Snapshot лише полів вкладки контенту / storefront для auto-push */
+export function snapshotStorefrontFields(form: DrawerForm, components: BomRow[]): string {
+  return JSON.stringify({
+    description: form.description,
+    fullDescription: form.fullDescription,
+    storefrontDescriptionDoc: form.storefrontDescriptionDoc,
+    productIngredientsJson: form.productIngredientsJson,
+    productNutritionJson: form.productNutritionJson,
+    doNotPublish: form.doNotPublish,
+    storefrontPresetId: form.storefrontPresetId,
+    components: components.map((row) => ({
+      componentGoodId: row.componentGoodId,
+      qty: row.qty,
+      unitId: row.unitId,
+      note: row.note,
+      cookingLossPercent: row.cookingLossPercent,
+    })),
+  });
+}
+
 export function newStagingSessionId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID().replace(/-/g, '').slice(0, 32);

@@ -30,6 +30,7 @@ export interface StorefrontPullApplyFlags {
   weight: boolean;
   regularPrice: boolean;
   doNotPublish: boolean;
+  category: boolean;
   images: boolean;
   replaceImages: boolean;
   wooProductId: boolean;
@@ -118,6 +119,12 @@ const PULL_FIELD_OPTIONS: Array<{
     conflictField: 'doNotPublish',
   },
   {
+    key: 'category',
+    label: 'Категорія',
+    hint: 'Оновити категорію на WC за групою в BO',
+    conflictField: 'category',
+  },
+  {
     key: 'images',
     label: 'Зображення',
     hint: 'Імпорт з WooCommerce',
@@ -179,6 +186,7 @@ function defaultFlags(
     weight: !hasConflict(preview, 'weight'),
     regularPrice: Boolean(preview.proposed.regularPrice),
     doNotPublish: !hasConflict(preview, 'doNotPublish'),
+    category: Boolean(preview.local.groupName) && !hasConflict(preview, 'category'),
     images: !hasConflict(preview, 'images') && hasRemoteImages && !hasLocalImages,
     replaceImages: false,
     wooProductId: true,
@@ -320,6 +328,14 @@ function buildAllImportRows(
       willApply: flags.doNotPublish,
     },
     {
+      key: 'category',
+      label: 'Категорія (група BO → WC)',
+      local: truncateValue(preview.local.groupName, 80),
+      remote: truncateValue(preview.proposed.categoryName, 80),
+      conflict: hasConflict(preview, 'category'),
+      willApply: flags.category,
+    },
+    {
       key: 'images',
       label: 'Зображення',
       local: preview.local.imageCount > 0 ? `${preview.local.imageCount} шт.` : '—',
@@ -453,6 +469,7 @@ export function StorefrontPullConfirmModal({
     weight: false,
     regularPrice: false,
     doNotPublish: false,
+    category: false,
     images: false,
     replaceImages: false,
     wooProductId: true,

@@ -5,12 +5,15 @@ import { storefrontService } from '../modules/Storefront/StorefrontService.js';
 import { storefrontDescriptionBuilder } from '../modules/Storefront/StorefrontDescriptionBuilder.js';
 import { wooCommerceSyncService } from '../modules/Storefront/WooCommerceSyncService.js';
 import { wooCommerceMediaService } from '../modules/Storefront/WooCommerceMediaService.js';
+import { wooCommerceStockService } from '../modules/Storefront/WooCommerceStockService.js';
 import type {
   StorefrontPresetInput,
   StorefrontKitComponentSettings,
   StorefrontMetaKeyConfig,
+  StorefrontSyncSettingsDto,
   StorefrontWooSettingsInput,
   WooPullApplyInput,
+  WooPullBulkApplyItem,
 } from '../../shared/types/storefront.js';
 
 const router = Router();
@@ -81,6 +84,7 @@ router.put('/settings', ...authOnly, storefrontManage, async (req, res) => {
       metaKeys?: StorefrontMetaKeyConfig[];
       kitComponentSettings?: StorefrontKitComponentSettings;
       wooCommerce?: StorefrontWooSettingsInput;
+      sync?: Partial<StorefrontSyncSettingsDto>;
     };
     const data = await storefrontService.updateSettings(body);
     res.json({ success: true, data });
@@ -195,6 +199,46 @@ router.post('/woo/push-apply', ...authOnly, storefrontPush, async (req, res) => 
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'wooPushApply');
+  }
+});
+
+router.post('/woo/pull-bulk-preview', ...authOnly, storefrontPull, async (req, res) => {
+  try {
+    const goodIds = Array.isArray(req.body?.goodIds)
+      ? req.body.goodIds.map((id: unknown) => String(id).trim()).filter(Boolean)
+      : [];
+    if (goodIds.length === 0) {
+      return res.status(400).json({ success: false, error: 'goodIds обовʼязковий' });
+    }
+    const data = await wooCommerceSyncService.pullBulkPreview(goodIds);
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'wooPullBulkPreview');
+  }
+});
+
+router.post('/woo/pull-bulk-apply', ...authOnly, storefrontPull, async (req, res) => {
+  try {
+    const items = Array.isArray(req.body?.items) ? (req.body.items as WooPullBulkApplyItem[]) : [];
+    if (items.length === 0) {
+      return res.status(400).json({ success: false, error: 'items обовʼязковий' });
+    }
+    const data = await wooCommerceSyncService.pullBulkApply(items);
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'wooPullBulkApply');
+  }
+});
+
+router.post('/woo/stock/sync', ...authOnly, storefrontPush, async (req, res) => {
+  try {
+    const skus = Array.isArray(req.body?.skus)
+      ? req.body.skus.map((sku: unknown) => String(sku).trim()).filter(Boolean)
+      : undefined;
+    const data = await wooCommerceStockService.syncStock({ skus });
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'wooStockSync');
   }
 });
 

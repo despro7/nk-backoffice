@@ -10,12 +10,17 @@ import type {
   WooInspectResult,
   WooMediaUploadResult,
   WooOrphanAuditResult,
+  StorefrontSyncSettingsDto,
   WooPullApplyInput,
   WooPullApplyResult,
+  WooPullBulkApplyItem,
+  WooPullBulkApplyResult,
+  WooPullBulkPreviewResult,
   WooPullPreviewResult,
   WooPushApplyResult,
   WooPushBulkResult,
   WooPushPreviewResult,
+  WooStockSyncResult,
 } from '@shared/types/storefront';
 
 /** Fired after storefront preset/settings are saved in SettingsStorefront. */
@@ -73,6 +78,7 @@ export const storefrontApi = {
     metaKeys?: StorefrontMetaKeyConfig[];
     kitComponentSettings?: StorefrontKitComponentSettings;
     wooCommerce?: StorefrontWooSettingsInput;
+    sync?: Partial<StorefrontSyncSettingsDto>;
   }): Promise<StorefrontSettingsDto> {
     const res = await fetch('/api/storefront/settings', {
       method: 'PUT',
@@ -157,12 +163,42 @@ export const storefrontApi = {
     return parseJson(res);
   },
 
+  async pullBulkPreview(goodIds: string[]): Promise<WooPullBulkPreviewResult> {
+    const res = await fetch('/api/storefront/woo/pull-bulk-preview', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ goodIds }),
+    });
+    return parseJson(res);
+  },
+
+  async pullBulkApply(items: WooPullBulkApplyItem[]): Promise<WooPullBulkApplyResult> {
+    const res = await fetch('/api/storefront/woo/pull-bulk-apply', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    });
+    return parseJson(res);
+  },
+
   async pushBulk(goodIds: string[]): Promise<WooPushBulkResult> {
     const res = await fetch('/api/storefront/woo/push-bulk', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ goodIds }),
+    });
+    return parseJson(res);
+  },
+
+  async syncWooStock(skus?: string[]): Promise<WooStockSyncResult> {
+    const res = await fetch('/api/storefront/woo/stock/sync', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(skus?.length ? { skus } : {}),
     });
     return parseJson(res);
   },
