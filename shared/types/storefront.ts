@@ -106,7 +106,7 @@ export interface ProductNutritionJson {
 }
 
 /** TipTap storefront block node attrs inside storefrontDescriptionDoc */
-export interface StorefrontBlockNodeAttrs {
+export type StorefrontBlockNodeAttrs = {
   blockId: string;
   resolver: StorefrontBlockResolver;
   template: string;
@@ -116,7 +116,7 @@ export interface StorefrontBlockNodeAttrs {
   manualInclude?: boolean | null;
   /** Явно прибраний з опису, щоб preset sync не повертав увімкнений блок */
   manualExclude?: boolean | null;
-}
+} & Record<string, unknown>;
 
 export interface StorefrontDescriptionInlineNode {
   type: string;
