@@ -332,6 +332,64 @@ export function unwrapListItemParagraphs(html: string): string {
   return result;
 }
 
+/** Replace em dash (—) with en dash (–) in WooCommerce imported text. */
+export function normalizeWcTypography(text: string): string {
+  return text.replace(/\u2014/g, '\u2013');
+}
+
+/** Normalize typography in HTML strings (block overrides, short description). */
+export function normalizeWcTypographyInHtml(html: string): string {
+  return normalizeWcTypography(html);
+}
+
+function normalizeWcTypographyInDescriptionNode(
+  node: StorefrontDescriptionNode,
+): StorefrontDescriptionNode {
+  if (node.type === 'text' && 'text' in node && typeof node.text === 'string') {
+    const text = normalizeWcTypography(node.text);
+    return text === node.text ? node : { ...node, text };
+  }
+
+  const attrs = node.attrs as
+    | {
+        overrideContent?: string | null;
+        template?: string;
+      }
+    | undefined;
+  let nextAttrs = node.attrs;
+  if (attrs?.overrideContent) {
+    const overrideContent = normalizeWcTypographyInHtml(attrs.overrideContent);
+    if (overrideContent !== attrs.overrideContent) {
+      nextAttrs = { ...attrs, overrideContent };
+    }
+  }
+  if (attrs?.template) {
+    const template = normalizeWcTypographyInHtml(attrs.template);
+    if (template !== attrs.template) {
+      nextAttrs = { ...(nextAttrs ?? attrs), template };
+    }
+  }
+
+  const content = node.content;
+  if (!content?.length) {
+    return nextAttrs === node.attrs ? node : { ...node, attrs: nextAttrs };
+  }
+
+  const nextContent = content.map(normalizeWcTypographyInDescriptionNode);
+  const contentChanged = nextContent.some((child, idx) => child !== content[idx]);
+  if (!contentChanged && nextAttrs === node.attrs) return node;
+  return { ...node, attrs: nextAttrs, content: nextContent };
+}
+
+/** Normalize typography in TipTap storefront description doc (marketing text, block overrides). */
+export function normalizeWcTypographyInStorefrontDoc(
+  doc: StorefrontDescriptionDoc,
+): StorefrontDescriptionDoc {
+  const content = (doc.content || []).map(normalizeWcTypographyInDescriptionNode);
+  const changed = content.some((node, idx) => node !== (doc.content || [])[idx]);
+  return changed ? { ...doc, content } : doc;
+}
+
 /** Strip TipTap trailing empty paragraphs from block HTML before save/preview. */
 export function normalizeStorefrontBlockHtml(html: string): string {
   let result = unwrapListItemParagraphs(html.trim());
@@ -695,6 +753,15 @@ export function parseStorefrontDescriptionDoc(
 
 export function stringifyStorefrontDescriptionDoc(doc: StorefrontDescriptionDoc): string {
   return JSON.stringify(doc);
+}
+
+/** Parse, normalize structure/typography — for form hydration without spurious dirty state. */
+export function prepareStorefrontDescriptionDocForForm(raw: string | null | undefined): string {
+  if (!raw?.trim()) return '';
+  const parsed = parseStorefrontDescriptionDoc(raw);
+  if (!parsed) return raw;
+  const prepared = normalizeStorefrontDescriptionDoc(normalizeWcTypographyInStorefrontDoc(parsed));
+  return stringifyStorefrontDescriptionDoc(prepared);
 }
 
 export function createStorefrontBlockNodeAttrsFromPreset(

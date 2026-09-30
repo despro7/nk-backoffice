@@ -13,6 +13,9 @@ import {
   buildStorefrontDescriptionDocFromPreset,
   normalizeIngredientTag,
   normalizeStorefrontBlockHtml,
+  normalizeWcTypography,
+  normalizeWcTypographyInHtml,
+  normalizeWcTypographyInStorefrontDoc,
 } from './storefrontDescription.js';
 
 function metaValueToString(value: unknown): string {
@@ -269,12 +272,14 @@ function setBlockOverride(
     const attrs = node.attrs as { blockId?: string; overrideContent?: string | null } | undefined;
     if (attrs?.blockId !== blockId) continue;
     attrs.overrideContent =
-      overrideContent != null ? normalizeStorefrontBlockHtml(overrideContent) : null;
+      overrideContent != null
+        ? normalizeStorefrontBlockHtml(normalizeWcTypographyInHtml(overrideContent))
+        : null;
   }
 }
 
 function setMarketingParagraph(doc: StorefrontDescriptionDoc, html: string): void {
-  const text = stripHtml(html);
+  const text = normalizeWcTypography(stripHtml(html));
   if (!text) return;
   const paragraph = doc.content.find(
     (node) =>
@@ -316,9 +321,9 @@ export function parseWcDescription(input: ParseWcDescriptionInput): StorefrontPu
     warnings.push('Маркетинговий абзац не розпізнано');
   }
 
-  let ingredientsText = nkMeta[STOREFRONT_WC_META.ingredients] || '';
+  let ingredientsText = normalizeWcTypography(nkMeta[STOREFRONT_WC_META.ingredients] || '');
   if (!ingredientsText) {
-    ingredientsText = parseIngredientsFromHtml(html) || '';
+    ingredientsText = normalizeWcTypography(parseIngredientsFromHtml(html) || '');
     if (!ingredientsText && html.includes('Склад')) {
       warnings.push('Склад не розпізнано з HTML');
     }
@@ -332,12 +337,12 @@ export function parseWcDescription(input: ParseWcDescriptionInput): StorefrontPu
     }
   }
 
-  const storageFromMeta = nkMeta[STOREFRONT_WC_META.storage]?.trim() || '';
+  const storageFromMeta = normalizeWcTypography(nkMeta[STOREFRONT_WC_META.storage]?.trim() || '');
   if (storageFromMeta) {
     setBlockOverride(doc, 'storage', storageFromMeta);
   }
 
-  const grossFromMeta = nkMeta[STOREFRONT_WC_META.grossWeight]?.trim() || '';
+  const grossFromMeta = normalizeWcTypography(nkMeta[STOREFRONT_WC_META.grossWeight]?.trim() || '');
   if (grossFromMeta) {
     setBlockOverride(
       doc,
@@ -353,9 +358,11 @@ export function parseWcDescription(input: ParseWcDescriptionInput): StorefrontPu
     unparsed.push(html.slice(0, 500));
   }
 
+  const storefrontDescriptionDoc = normalizeWcTypographyInStorefrontDoc(doc);
+
   return {
-    storefrontDescriptionDoc: doc,
-    marketingText,
+    storefrontDescriptionDoc,
+    marketingText: marketingText ? normalizeWcTypography(marketingText) : null,
     productIngredientsJson: ingredientTags,
     productNutritionJson: nutrition,
     parseWarnings: warnings,

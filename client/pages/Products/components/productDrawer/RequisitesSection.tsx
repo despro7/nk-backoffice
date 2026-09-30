@@ -5,6 +5,17 @@ import { formatCatalogName, type CatalogFolderOption } from '../../ProductsUtils
 import type { CatalogDictItemDto } from '../../ProductsTypes';
 import type { DrawerForm, DrawerObjectKind } from './productDrawerTypes';
 import { OBJECT_KIND_TABS } from './productDrawerTypes';
+import { FieldDirtyMarker } from './FieldDirtyMarker';
+import type { DrawerDirtyFieldKey } from './productDrawerUtils';
+
+function fieldLabel(text: string, dirty?: boolean) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      {text}
+      <FieldDirtyMarker show={dirty} />
+    </span>
+  );
+}
 
 interface RequisitesSectionProps {
   form: DrawerForm;
@@ -20,6 +31,7 @@ interface RequisitesSectionProps {
   nameHasWeight: boolean;
   skuGenerating: boolean;
   saving?: boolean;
+  dirtyFields?: Set<DrawerDirtyFieldKey>;
   otherAccPolicies: CatalogDictItemDto[];
   folderOptions: CatalogFolderOption[];
   selectedFolderId: string;
@@ -44,6 +56,7 @@ export function RequisitesSection({
   nameHasWeight,
   skuGenerating,
   saving,
+  dirtyFields,
   otherAccPolicies,
   folderOptions,
   selectedFolderId,
@@ -66,7 +79,7 @@ export function RequisitesSection({
       </h3>
       {isCreate && (
         <Autocomplete
-          label="Група"
+          label={fieldLabel('Група', dirtyFields?.has('parentId'))}
           placeholder="Оберіть групу"
           isRequired
           selectedKey={selectedFolderId || null}
@@ -95,7 +108,7 @@ export function RequisitesSection({
         </Autocomplete>
       )}
       <Input
-        label="Назва"
+        label={fieldLabel('Назва', dirtyFields?.has('name'))}
         value={form.name}
         onValueChange={(v) => patchForm({ name: formatCatalogName(v) })}
         onBlur={() => onFormChange((f) => ({ ...f, name: formatCatalogName(f.name).trim() }))}
@@ -144,7 +157,7 @@ export function RequisitesSection({
       />
       {showPrintName && (
         <Input
-          label="Назва для друку"
+          label={fieldLabel('Назва для друку', dirtyFields?.has('printName'))}
           value={form.printName}
           onValueChange={(v) => patchForm({ printName: v })}
         />
@@ -154,7 +167,7 @@ export function RequisitesSection({
         className={`grid grid-cols-2 gap-3 ${isOther ? 'md:grid-cols-5' : 'md:grid-cols-3'}`}
       >
         <Select
-          label="Тип обʼєкта"
+          label={fieldLabel('Тип обʼєкта', dirtyFields?.has('objectKind'))}
           placeholder="Оберіть тип"
           isRequired
           selectedKeys={objectKind ? [objectKind] : []}
@@ -189,7 +202,7 @@ export function RequisitesSection({
         </Select>
         {isOther && (
           <Select
-            label="Політика обліку"
+            label={fieldLabel('Політика обліку', dirtyFields?.has('accPolicyId'))}
             selectedKeys={form.accPolicyId ? [form.accPolicyId] : []}
             classNames={{ popoverContent: 'bg-default-100' }}
             onSelectionChange={(keys) => {
@@ -209,7 +222,7 @@ export function RequisitesSection({
           </Select>
         )}
         <Input
-          label="SKU (артикул)"
+          label={fieldLabel('SKU (артикул)', dirtyFields?.has('sku'))}
           value={form.sku}
           isRequired={isGood || isKit}
           onValueChange={(v) => patchForm({ sku: v })}
@@ -243,7 +256,7 @@ export function RequisitesSection({
         />
         {showMainUnit && (
           <Select
-            label="Од. виміру"
+            label={fieldLabel('Од. виміру', dirtyFields?.has('mainUnitId'))}
             selectedKeys={form.mainUnitId ? [form.mainUnitId] : []}
             classNames={{ popoverContent: 'bg-default-100' }}
             isDisabled={saving}
@@ -259,7 +272,7 @@ export function RequisitesSection({
         )}
         {isOther && (
           <NumberInput
-            label="Вага, кг"
+            label={fieldLabel('Вага, кг', dirtyFields?.has('weight'))}
             value={form.weight}
             decimalPlaces={3}
             min={0}

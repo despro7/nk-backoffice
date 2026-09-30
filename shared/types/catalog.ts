@@ -113,6 +113,8 @@ export interface CatalogGoodDto {
   stockBalanceByStock?: Record<string, number> | null;
   syncedAt: string;
   updatedAt: string;
+  /** Локальна дата архівації; null для активних або старих записів без історії */
+  archivedAt?: string | null;
   /** Has BOM or kit accPolicy */
   isKit?: boolean;
   childrenCount?: number;

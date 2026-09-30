@@ -30,6 +30,7 @@ import type {
   WooPushPreviewResult,
 } from '../../../shared/types/storefront.js';
 import {
+  normalizeWcTypographyInHtml,
   stringifyProductIngredientsJson,
   stringifyProductNutritionJson,
   stringifyStorefrontDescriptionDoc,
@@ -146,7 +147,7 @@ function resolveProposedShortDescription(
       ? wcShort
       : extractMarketingPlainFromDoc(parsedDoc) ||
         extractMarketingPlainFromHtml(product.description || '');
-  return normalizeShortDescriptionHtml(raw);
+  return normalizeShortDescriptionHtml(raw ? normalizeWcTypographyInHtml(raw) : raw);
 }
 
 function resolveWooRegularPrice(product: {
@@ -476,7 +477,9 @@ export class WooCommerceSyncService {
       appliedFields.push('name');
     }
     if (input.apply.fullDescription) {
-      patch.fullDescription = preview.proposed.fullDescription;
+      patch.fullDescription = preview.proposed.fullDescription
+        ? normalizeWcTypographyInHtml(preview.proposed.fullDescription)
+        : preview.proposed.fullDescription;
       appliedFields.push('fullDescription');
     }
     if (input.apply.doNotPublish) {

@@ -263,8 +263,8 @@ function TreeNode({
               className={[
                 'mr-1.5 inline-flex shrink-0 rounded p-1 transition-colors',
                 isArchiveActive
-                  ? 'bg-warning/20 text-warning'
-                  : 'text-gray-400/80 hover:text-warning',
+                  ? 'bg-warning/30 text-warning-700'
+                  : 'text-gray-400/80 hover:text-warning-700',
               ].join(' ')}
               onClick={(e) => {
                 e.preventDefault();

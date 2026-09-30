@@ -85,6 +85,8 @@ interface StorefrontDescriptionEditorProps {
   presetBlocks: StorefrontBlockConfig[];
   renderOptions?: StorefrontRenderOptions;
   onChange: (json: string) => void;
+  /** Після першої пасивної синхронізації TipTap (нормалізація без ручного редагування). */
+  onInitialSettled?: (json: string) => void;
   isDisabled?: boolean;
   minHeightClass?: string;
   overlayZClassName?: string;
@@ -954,6 +956,7 @@ export function StorefrontDescriptionEditor({
   presetBlocks,
   renderOptions,
   onChange,
+  onInitialSettled,
   isDisabled,
   minHeightClass = 'min-h-[160px]',
   overlayZClassName,
@@ -964,6 +967,9 @@ export function StorefrontDescriptionEditor({
   const [deleteRequest, setDeleteRequest] = useState<StorefrontBlockDeleteRequest | null>(null);
   const [toolbarTick, setToolbarTick] = useState(0);
   const skipUpdateRef = useRef(true);
+  const valueRef = useRef(value);
+  const initialSettledRef = useRef(false);
+  valueRef.current = value;
   const [editorShellEl, setEditorShellEl] = useState<HTMLDivElement | null>(null);
   const [editorScrollEl, setEditorScrollEl] = useState<HTMLDivElement | null>(null);
   const boundValuesRef = useRef(boundValues);
@@ -1030,7 +1036,9 @@ export function StorefrontDescriptionEditor({
       if (skipUpdateRef.current) return;
       if (transaction.getMeta(BOUND_REFRESH_META)) return;
       const json = normalizeStorefrontDescriptionDoc(ed.getJSON() as StorefrontDescriptionDoc);
-      onChange(stringifyStorefrontDescriptionDoc(json));
+      const next = stringifyStorefrontDescriptionDoc(json);
+      if (next === valueRef.current) return;
+      onChange(next);
     },
     onSelectionUpdate: () => setToolbarTick((t) => t + 1),
     onTransaction: ({ transaction }) => {
@@ -1070,6 +1078,7 @@ export function StorefrontDescriptionEditor({
 
   useEffect(() => {
     if (!editor) return;
+    initialSettledRef.current = false;
     skipUpdateRef.current = true;
     if (showSource) {
       setSourceText(formatSourceCodeMirrorValue(value || '{"type":"doc","content":[]}', 'json'));
@@ -1079,21 +1088,24 @@ export function StorefrontDescriptionEditor({
     const parsed = parseStorefrontDescriptionDoc(value);
     const current = editor.getJSON();
     const nextJson = normalizeStorefrontDescriptionDoc(parsed || { type: 'doc', content: [] });
-    const normalizedChanged =
-      parsed != null && JSON.stringify(parsed) !== JSON.stringify(nextJson);
     if (JSON.stringify(current) !== JSON.stringify(nextJson)) {
-      if (normalizedChanged) skipUpdateRef.current = false;
-      editor.commands.setContent(nextJson, { emitUpdate: normalizedChanged });
+      editor.commands.setContent(nextJson, { emitUpdate: false });
     }
     requestAnimationFrame(() => {
       applyTrailingParagraphCleanup(editor);
-      if (normalizedChanged) {
-        const cleaned = normalizeStorefrontDescriptionDoc(editor.getJSON() as StorefrontDescriptionDoc);
-        onChange(stringifyStorefrontDescriptionDoc(cleaned));
-      }
-      skipUpdateRef.current = false;
+      requestAnimationFrame(() => {
+        if (editor.isDestroyed) return;
+        const normalized = stringifyStorefrontDescriptionDoc(
+          normalizeStorefrontDescriptionDoc(editor.getJSON() as StorefrontDescriptionDoc),
+        );
+        skipUpdateRef.current = false;
+        if (!initialSettledRef.current) {
+          initialSettledRef.current = true;
+          onInitialSettled?.(normalized);
+        }
+      });
     });
-  }, [value, editor, showSource]);
+  }, [value, editor, showSource, onInitialSettled]);
 
   useEffect(() => {
     if (!editor) return;

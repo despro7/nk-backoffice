@@ -90,10 +90,14 @@ import type {
   RowDeleteKind,
 } from './productDrawerTypes';
 import { CARD_TABS } from './productDrawerTypes';
+import { FieldDirtyMarker } from './FieldDirtyMarker';
 import {
   drawerTitle,
   emptyForm,
   formatWeightKg,
+  getDrawerDirtyFields,
+  isDrawerTabDirty,
+  mergeStorefrontFieldsIntoDrawerBaseline,
   isRequiredPositiveField,
   NESTED_DRAWER_MAX_W,
   NESTED_DRAWER_Z,
@@ -105,6 +109,7 @@ import {
   snapshotStorefrontFields,
   sortDictByName,
 } from './productDrawerUtils';
+import { prepareStorefrontDescriptionDocForForm } from '@shared/utils/storefrontDescription';
 import { BarcodesSection } from './BarcodesSection';
 import { BomSection, newBomRowFromSearch } from './BomSection';
 import { PricesSection } from './PricesSection';
@@ -257,7 +262,16 @@ export function ProductDrawer({
 
   const baselineRef = useRef<string>('');
   const storefrontBaselineRef = useRef<string>('');
+  const contentHydratedRef = useRef(false);
+  const formRef = useRef(form);
+  const componentsRef = useRef(components);
+  const pricesRef = useRef(prices);
+  const barcodesRef = useRef(barcodes);
   const [baselineVersion, setBaselineVersion] = useState(0);
+  formRef.current = form;
+  componentsRef.current = components;
+  pricesRef.current = prices;
+  barcodesRef.current = barcodes;
   /** Порції після зміни складу набору — щоб не перезаписувати військову ціну при гідрації drawer */
   const pendingMilitarySyncRef = useRef<number | null>(null);
   /** Ключ сесії drawer — скидаємо вкладку лише при відкритті іншого товару/режиму, не після keepOpen save */
@@ -420,6 +434,7 @@ export function ProductDrawer({
       nextComponents: BomRow[],
       nextPrices: PriceRow[],
       nextBarcodes: BarcodeRow[],
+      nextImages: CatalogGoodImageDto[],
       nextKind: DrawerObjectKind | null,
       nextParentId?: string | null
     ) => {
@@ -428,6 +443,7 @@ export function ProductDrawer({
         nextComponents,
         nextPrices,
         nextBarcodes,
+        nextImages,
         nextKind,
         nextParentId
       );
@@ -462,10 +478,53 @@ export function ProductDrawer({
     return snapshotStorefrontFields(form, components) !== storefrontBaselineRef.current;
   }, [open, isFolder, form, components, baselineVersion]);
 
+  const drawerParentId = isEdit ? detail?.parentId : createParentId;
+
+  const drawerDirtyFields = useMemo(() => {
+    if (!open || readOnly) return new Set<never>();
+    void baselineVersion;
+    return getDrawerDirtyFields(
+      form,
+      components,
+      prices,
+      barcodes,
+      images,
+      objectKind,
+      drawerParentId,
+      baselineRef.current,
+    );
+  }, [
+    open,
+    readOnly,
+    form,
+    components,
+    prices,
+    barcodes,
+    images,
+    objectKind,
+    drawerParentId,
+    baselineVersion,
+  ]);
+
+  const handleContentHydrationComplete = useCallback(() => {
+    if (contentHydratedRef.current) return;
+    contentHydratedRef.current = true;
+    storefrontBaselineRef.current = snapshotStorefrontFields(
+      formRef.current,
+      componentsRef.current,
+    );
+    baselineRef.current = mergeStorefrontFieldsIntoDrawerBaseline(
+      baselineRef.current,
+      formRef.current,
+    );
+    setBaselineVersion((v) => v + 1);
+  }, []);
+
   useEffect(() => {
     if (!open) {
       setNestedGoodId(null);
       cardTabScopeRef.current = null;
+      contentHydratedRef.current = false;
       return;
     }
     // Поки live-pull/кеш не віддав detail — не гідратимо як «створення».
@@ -507,9 +566,9 @@ export function ProductDrawer({
         storefrontPresetId: detail.storefrontPresetId || '',
         productIngredientsJson: detail.productIngredientsJson ?? [],
         productNutritionJson: detail.productNutritionJson ?? null,
-        storefrontDescriptionDoc: detail.storefrontDescriptionDoc
-          ? JSON.stringify(detail.storefrontDescriptionDoc)
-          : '',
+        storefrontDescriptionDoc: prepareStorefrontDescriptionDocForForm(
+          detail.storefrontDescriptionDoc ? JSON.stringify(detail.storefrontDescriptionDoc) : '',
+        ),
         grossWeight:
           detail.grossWeight != null ? formatWeightKg(Number(detail.grossWeight), 3) : '',
         mainProductWeight:
@@ -561,7 +620,7 @@ export function ProductDrawer({
       setComponents(nextComponents);
       setPrices(nextPrices);
       setBarcodes(nextBarcodes);
-      commitBaseline(nextForm, nextComponents, nextPrices, nextBarcodes, resolvedKind, detail.parentId);
+      commitBaseline(nextForm, nextComponents, nextPrices, nextBarcodes, detail.images || [], resolvedKind, detail.parentId);
     } else {
       setImages([]);
       const items = treeItems || {};
@@ -589,7 +648,7 @@ export function ProductDrawer({
       setComponents([]);
       setPrices([]);
       setBarcodes([]);
-      commitBaseline(nextForm, [], [], [], kind, nextParent);
+      commitBaseline(nextForm, [], [], [], [], kind, nextParent);
     }
   }, [open, isEdit, detail, mode, parentFolderId, commitBaseline, dictionaries.accPolicies]);
 
@@ -618,8 +677,8 @@ export function ProductDrawer({
     if (!baselineRef.current) return false;
     if (isEdit && !detail) return false;
     void baselineVersion;
-    return snapshotState(form, components, prices, barcodes, objectKind, isEdit ? detail?.parentId : createParentId) !== baselineRef.current;
-  }, [open, readOnly, form, components, prices, barcodes, objectKind, baselineVersion, isEdit, detail, createParentId]);
+    return snapshotState(form, components, prices, barcodes, images, objectKind, drawerParentId) !== baselineRef.current;
+  }, [open, readOnly, form, components, prices, barcodes, images, objectKind, drawerParentId, baselineVersion, isEdit, detail]);
 
   const handleStorefrontInspect = useCallback(async () => {
     if (!detail?.sku) return;
@@ -1244,6 +1303,7 @@ export function ProductDrawer({
                         <DynamicIcon name={tab.icon} size={14} />
                         <span className="hidden md:block">{tab.title}</span>
                         <span className="block md:hidden">{tab.titleMobile}</span>
+                        <FieldDirtyMarker show={isDrawerTabDirty(drawerDirtyFields, tab.key)} />
                       </div>
                     }
                   />
@@ -1274,6 +1334,7 @@ export function ProductDrawer({
                       nameHasWeight={nameHasWeight}
                       skuGenerating={skuGenerating}
                       saving={fieldsLocked}
+                      dirtyFields={drawerDirtyFields}
                       otherAccPolicies={otherAccPolicies}
                       folderOptions={folderOptions}
                       selectedFolderId={createParentId}
@@ -1304,6 +1365,7 @@ export function ProductDrawer({
                             kitPortionCount={kitPortionCount}
                             packageRatioInvalid={packageRatioInvalid}
                             weightFieldInvalid={weightInvalid}
+                            dirtyFields={drawerDirtyFields}
                             bomQuery={bomQuery}
                             bomSuggestions={bomSuggestions}
                             editingNoteIdx={editingNoteIdx}
@@ -1347,6 +1409,7 @@ export function ProductDrawer({
                           requiredPricesOk={requiredPricesOk}
                           mainPriceValue={mainPriceValue}
                           militaryExpected={militaryExpected}
+                          dirty={drawerDirtyFields.has('prices')}
                           rowDeleteConfirm={rowDeleteConfirm}
                           onApplyPriceRowChange={applyPriceRowChange}
                           onPricesChange={setPrices}
@@ -1358,6 +1421,7 @@ export function ProductDrawer({
                           barcodes={barcodes}
                           saving={fieldsLocked}
                           barcodeGeneratingIdx={barcodeGeneratingIdx}
+                          dirty={drawerDirtyFields.has('barcodes')}
                           rowDeleteConfirm={rowDeleteConfirm}
                           onBarcodesChange={setBarcodes}
                           onGenerateBarcode={handleGenerateBarcode}
@@ -1402,6 +1466,8 @@ export function ProductDrawer({
                     units={units}
                     onImagesChange={setImages}
                     overlayZClassName={overlayZ}
+                    dirtyFields={drawerDirtyFields}
+                    onHydrationComplete={handleContentHydrationComplete}
                   />
                 )}
 
@@ -1712,19 +1778,23 @@ export function ProductDrawer({
                     ? formatWeightKg(Number(fresh.weight), 3)
                     : f.weight,
                 doNotPublish: fresh.doNotPublish ?? f.doNotPublish,
-                storefrontDescriptionDoc: fresh.storefrontDescriptionDoc
-                  ? JSON.stringify(fresh.storefrontDescriptionDoc)
-                  : f.storefrontDescriptionDoc,
+                storefrontDescriptionDoc: prepareStorefrontDescriptionDocForForm(
+                  fresh.storefrontDescriptionDoc
+                    ? JSON.stringify(fresh.storefrontDescriptionDoc)
+                    : f.storefrontDescriptionDoc,
+                ),
                 productIngredientsJson: fresh.productIngredientsJson ?? f.productIngredientsJson,
                 productNutritionJson: fresh.productNutritionJson || f.productNutritionJson,
               };
               setPrices((currentPrices) => {
                 const nextPrices = mergePulledPrices(currentPrices, fresh.prices);
+                contentHydratedRef.current = true;
                 commitBaseline(
                   nextForm,
                   components,
                   nextPrices,
                   barcodes,
+                  fresh.images || [],
                   objectKind,
                   detail.parentId,
                 );

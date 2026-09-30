@@ -31,6 +31,9 @@ import {
   templateHtmlForStorefrontEditorLive,
   normalizeStorefrontBlockHtml,
   normalizeStorefrontDescriptionDoc,
+  normalizeWcTypography,
+  normalizeWcTypographyInStorefrontDoc,
+  prepareStorefrontDescriptionDocForForm,
   walkStorefrontDescriptionBlocks,
 } from './storefrontDescription.js';
 import {
@@ -100,6 +103,46 @@ describe('resolveStorefrontTemplate', () => {
         ingredients: 'картопля',
       }),
     ).toBe('Склад: картопля');
+  });
+});
+
+describe('normalizeWcTypography', () => {
+  it('replaces em dash with en dash in plain text', () => {
+    expect(normalizeWcTypography('круп — зручно')).toBe('круп – зручно');
+    expect(normalizeWcTypography('без змін')).toBe('без змін');
+  });
+
+  it('normalizes typography in storefront doc marketing paragraph', () => {
+    const doc = normalizeWcTypographyInStorefrontDoc({
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          attrs: { class: 'storefront-marketing' },
+          content: [{ type: 'text', text: 'Текст — продовження' }],
+        },
+      ],
+    });
+    const paragraph = doc.content[0];
+    expect((paragraph.content?.[0] as { text?: string }).text).toBe('Текст – продовження');
+  });
+
+  it('prepareStorefrontDescriptionDocForForm returns stable normalized JSON', () => {
+    const raw = JSON.stringify({
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          attrs: { class: 'storefront-marketing' },
+          content: [{ type: 'text', text: 'Опис — тест' }],
+        },
+        { type: 'paragraph', content: [] },
+      ],
+    });
+    const prepared = prepareStorefrontDescriptionDocForForm(raw);
+    expect(prepared).toContain('Опис – тест');
+    expect(prepared).not.toContain('—');
+    expect(prepareStorefrontDescriptionDocForForm(prepared)).toBe(prepared);
   });
 });
 

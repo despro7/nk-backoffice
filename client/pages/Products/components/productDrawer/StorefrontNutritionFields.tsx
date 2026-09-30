@@ -2,10 +2,12 @@ import { Button, Input, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { ProductNutritionJson } from '@shared/types/storefront';
 import { patchProductNutritionWithAutoEnergy } from '@shared/utils/storefrontDescription';
+import { FieldDirtyMarker } from './FieldDirtyMarker';
 
 interface StorefrontNutritionFieldsProps {
   value: ProductNutritionJson | null;
   disabled?: boolean;
+  dirty?: boolean;
   onChange: (value: ProductNutritionJson) => void;
 }
 
@@ -28,6 +30,7 @@ const ROWS: Array<{ key: keyof ProductNutritionJson; label: string; unit: string
 export function StorefrontNutritionFields({
   value,
   disabled,
+  dirty,
   onChange,
 }: StorefrontNutritionFieldsProps) {
   const current = value || EMPTY;
@@ -47,6 +50,7 @@ export function StorefrontNutritionFields({
         <h3 className="text-sm font-semibold flex items-center gap-1.5">
           <DynamicIcon name="activity" size={14} className="text-default-500 shrink-0" />
           КБЖВ
+          <FieldDirtyMarker show={dirty} />
         </h3>
         <Tooltip content="Скоро...">
           <span>

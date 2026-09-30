@@ -1,12 +1,14 @@
 import { Button, Input, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { BarcodeRow, RowDeleteKind } from './productDrawerTypes';
+import { FieldDirtyMarker } from './FieldDirtyMarker';
 import { RowDeleteButton } from './RowDeleteButton';
 
 interface BarcodesSectionProps {
   barcodes: BarcodeRow[];
   saving?: boolean;
   barcodeGeneratingIdx: number | null;
+  dirty?: boolean;
   rowDeleteConfirm: { kind: RowDeleteKind; idx: number } | null;
   onBarcodesChange: (updater: (prev: BarcodeRow[]) => BarcodeRow[]) => void;
   onGenerateBarcode: (idx: number) => void;
@@ -18,6 +20,7 @@ export function BarcodesSection({
   barcodes,
   saving,
   barcodeGeneratingIdx,
+  dirty,
   rowDeleteConfirm,
   onBarcodesChange,
   onGenerateBarcode,
@@ -29,6 +32,7 @@ export function BarcodesSection({
       <h3 className="text-sm font-semibold flex items-center gap-1">
         <DynamicIcon name="scan-barcode" size={14} />
         <span>Штрихкоди</span>
+        <FieldDirtyMarker show={dirty} />
       </h3>
       {barcodes.map((b, idx) => (
         <div key={idx} className="grid grid-cols-[5fr_4fr_auto] gap-2">

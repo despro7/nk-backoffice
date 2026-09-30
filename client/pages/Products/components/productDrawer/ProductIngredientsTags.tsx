@@ -32,6 +32,7 @@ import {
   normalizeIngredientTag,
 } from '@shared/utils/storefrontDescription';
 import type { BomRow } from './productDrawerTypes';
+import { FieldDirtyMarker } from './FieldDirtyMarker';
 
 function remapIndexAfterReorder(index: number, from: number, to: number): number {
   if (index === from) return to;
@@ -178,6 +179,7 @@ interface ProductIngredientsTagsProps {
   value: string[];
   components: BomRow[];
   disabled?: boolean;
+  dirty?: boolean;
   onChange: (next: string[]) => void;
 }
 
@@ -185,6 +187,7 @@ export function ProductIngredientsTags({
   value,
   components,
   disabled,
+  dirty,
   onChange,
 }: ProductIngredientsTagsProps) {
   const [draft, setDraft] = useState('');
@@ -313,6 +316,7 @@ export function ProductIngredientsTags({
         <h3 className="text-sm font-semibold flex items-center gap-1.5">
           <DynamicIcon name="clipboard-list" size={14} className="text-default-500 shrink-0" />
           Склад
+          <FieldDirtyMarker show={dirty} />
         </h3>
         <Button
           size="sm"

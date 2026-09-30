@@ -139,6 +139,27 @@ describe('parseWcDescription marketing extraction', () => {
 });
 
 describe('parseWcDescription', () => {
+  it('replaces em dash with en dash in imported marketing text', () => {
+    const product = sampleProduct({
+      description: `<p class="storefront-marketing">Меню з м'яса — зручно для щоденного харчування.</p>
+<p>Склад: вода.</p>`,
+    });
+
+    const result = parseWcDescription({
+      product,
+      presetBlocks: STOREFRONT_DEFAULT_BLOCKS,
+      metaKeys: STOREFRONT_DEFAULT_META_KEYS,
+    });
+
+    expect(result.marketingText).toBe("Меню з м'яса – зручно для щоденного харчування.");
+    const marketing = result.storefrontDescriptionDoc.content.find(
+      (node) =>
+        node.type === 'paragraph' &&
+        (node.attrs as { class?: string } | undefined)?.class === 'storefront-marketing',
+    );
+    expect((marketing?.content?.[0] as { text?: string }).text).toBe(result.marketingText);
+  });
+
   it('parses ingredients from HTML', () => {
     const product = sampleProduct({
       description: `<p class="storefront-marketing">Смачний суп для всієї родини.</p>

@@ -9,6 +9,7 @@ import {
 import type { CatalogDictItemDto } from '../../ProductsTypes';
 import { pricesAlmostEqual, withSyncedDerivedPrices } from '../../ProductsUtils';
 import type { PriceRow, RowDeleteKind } from './productDrawerTypes';
+import { FieldDirtyMarker } from './FieldDirtyMarker';
 import { RowDeleteButton } from './RowDeleteButton';
 
 interface PricesSectionProps {
@@ -20,6 +21,7 @@ interface PricesSectionProps {
   requiredPricesOk: boolean;
   mainPriceValue: number | null;
   militaryExpected: number | null;
+  dirty?: boolean;
   rowDeleteConfirm: { kind: RowDeleteKind; idx: number } | null;
   onApplyPriceRowChange: (idx: number, patch: Partial<PriceRow>) => void;
   onPricesChange: (updater: (prev: PriceRow[]) => PriceRow[]) => void;
@@ -36,6 +38,7 @@ export function PricesSection({
   requiredPricesOk,
   mainPriceValue,
   militaryExpected,
+  dirty,
   rowDeleteConfirm,
   onApplyPriceRowChange,
   onPricesChange,
@@ -47,6 +50,7 @@ export function PricesSection({
       <h3 className="text-sm font-semibold flex items-center gap-1">
         <DynamicIcon name="wallet" size={14} />
         <span>Ціни</span>
+        <FieldDirtyMarker show={dirty} />
         {(isGood || isKit) && <span className="font-normal text-danger-500">*</span>}
       </h3>
       {!requiredPricesOk && (

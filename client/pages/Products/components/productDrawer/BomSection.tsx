@@ -28,11 +28,22 @@ import {
   type ExpectedBomWeight,
 } from '../../ProductsUtils';
 import type { BomRow, CatalogSearchHit, DrawerForm, RowDeleteKind } from './productDrawerTypes';
+import { FieldDirtyMarker } from './FieldDirtyMarker';
 import {
   formatWeightKg,
   hasComponentWeight,
   showMissingWeightBadge,
+  type DrawerDirtyFieldKey,
 } from './productDrawerUtils';
+
+function fieldLabel(text: string, dirty?: boolean) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      {text}
+      <FieldDirtyMarker show={dirty} />
+    </span>
+  );
+}
 import { RowDeleteButton } from './RowDeleteButton';
 import {
   BOM_MANUAL_SORT,
@@ -55,6 +66,7 @@ interface BomSectionProps {
   kitPortionCount: number;
   packageRatioInvalid: boolean;
   weightFieldInvalid: boolean;
+  dirtyFields?: Set<DrawerDirtyFieldKey>;
   bomQuery: string;
   bomSuggestions: CatalogSearchHit[];
   editingNoteIdx: number | null;
@@ -146,6 +158,7 @@ export function BomSection({
   kitPortionCount,
   packageRatioInvalid,
   weightFieldInvalid,
+  dirtyFields,
   bomQuery,
   bomSuggestions,
   editingNoteIdx,
@@ -552,7 +565,7 @@ export function BomSection({
         <div className={`grid gap-3 grid-cols-2 md:grid-cols-${packCols}`}>
           {isGood && (
             <NumberInput
-              label="Порцій в коробці"
+              label={fieldLabel('Порцій в коробці', dirtyFields?.has('packageRatio'))}
               value={form.packageRatio}
               decimalPlaces={0}
               min={1}
@@ -565,7 +578,7 @@ export function BomSection({
           )}
           <div className="min-w-0 space-y-1">
             <NumberInput
-              label="Маса нетто, кг"
+              label={fieldLabel('Маса нетто, кг', dirtyFields?.has('weight'))}
               value={form.weight}
               decimalPlaces={3}
               min={0}
@@ -593,7 +606,7 @@ export function BomSection({
           </div>
           <div className="min-w-0">
             <NumberInput
-              label="Маса осн. продукту"
+              label={fieldLabel('Маса осн. продукту', dirtyFields?.has('mainProductWeight'))}
               value={form.mainProductWeight}
               decimalPlaces={3}
               min={0}
@@ -606,7 +619,7 @@ export function BomSection({
           {isAdmin && (
             <NumberInput
               className="md:max-w-xs"
-              label="Коефіцієнт ваги"
+              label={fieldLabel('Коефіцієнт ваги', dirtyFields?.has('unitRatio'))}
               value={form.unitRatio}
               decimalPlaces={3}
               min={0}
@@ -626,11 +639,13 @@ export function BomSection({
               <div className="flex items-center gap-1">
                 <DynamicIcon name="file-text" size={14} />
                 <span>Специфікація товару</span>
+                <FieldDirtyMarker show={dirtyFields?.has('components')} />
               </div>
             ) : (
               <div className="flex items-center gap-1">
                 <DynamicIcon name="package-2" size={14} />
                 <span>Склад комплекту</span>
+                <FieldDirtyMarker show={dirtyFields?.has('components')} />
               </div>
             )}
             {components.length > 0 && (
@@ -643,7 +658,10 @@ export function BomSection({
           </h3>
           {isGood && (
             <div className="flex flex-wrap items-center gap-2 ml-4.5 md:ml-auto">
-              <span className="text-sm font-semibold whitespace-nowrap">Розрахунок на</span>
+              <span className="text-sm font-semibold whitespace-nowrap inline-flex items-center gap-1">
+                Розрахунок на
+                <FieldDirtyMarker show={dirtyFields?.has('specQty')} />
+              </span>
               <NumberInput
                 aria-label="Розрахунок на, шт."
                 size="sm"

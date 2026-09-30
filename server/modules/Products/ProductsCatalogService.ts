@@ -133,6 +133,7 @@ function mapGoodDto(
     stockBalanceByStock?: string | null;
     syncedAt: Date;
     updatedAt: Date;
+    archivedAt?: Date | null;
     doNotPublish?: boolean;
     storefrontPresetId?: string | null;
     productIngredientsJson?: string | null;
@@ -172,6 +173,7 @@ function mapGoodDto(
     stockBalanceByStock: stock.stockBalanceByStock,
     syncedAt: row.syncedAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    archivedAt: row.archivedAt?.toISOString() ?? null,
     isKit,
     missingRequired: getMissingRequiredCatalogFields({
       isGroup: row.isGroup,
@@ -1862,6 +1864,7 @@ export class ProductsCatalogService {
 
     try {
       await productsLocalSync.updateParents(movedIds, parentId);
+      await this.setArchivedAt(movedIds, targetIsArchive ? new Date() : null);
     } catch (err) {
       logServer('[ProductsCatalogService] move local sync failed', err);
       await this.refreshFromDilovod(movedIds);
@@ -1985,6 +1988,7 @@ export class ProductsCatalogService {
       for (const [pId, groupIds] of byParent) {
         await productsLocalSync.updateParents(groupIds, pId);
       }
+      await this.setArchivedAt(restoredIds, null);
     } catch (err) {
       logServer('[ProductsCatalogService] restore local sync failed', err);
       await this.refreshFromDilovod(restoredIds);
@@ -2000,6 +2004,15 @@ export class ProductsCatalogService {
       select: { name: true, isGroup: true },
     });
     return Boolean(folder?.isGroup && isArchiveFolderName(folder.name));
+  }
+
+  private async setArchivedAt(ids: string[], archivedAt: Date | null): Promise<void> {
+    const clean = ids.filter(Boolean);
+    if (!clean.length) return;
+    await prisma.catalogGood.updateMany({
+      where: { id: { in: clean } },
+      data: { archivedAt },
+    });
   }
 
   async archiveGoods(ids: string[]): Promise<{ archived: number; archiveFolderId: string | null }> {
@@ -2039,6 +2052,7 @@ export class ProductsCatalogService {
 
     const archiveId = archiveFolder.id;
     let archived = 0;
+    const archivedIds: string[] = [];
 
     for (const id of ids) {
       if (id === archiveId) continue;
@@ -2058,10 +2072,12 @@ export class ProductsCatalogService {
         },
       });
       archived++;
+      archivedIds.push(id);
     }
 
     try {
-      await productsLocalSync.updateParents(ids.filter((i) => i !== archiveId), archiveId);
+      await productsLocalSync.updateParents(archivedIds, archiveId);
+      await this.setArchivedAt(archivedIds, new Date());
     } catch (err) {
       logServer('[ProductsCatalogService] archive local sync failed', err);
       await this.refreshFromDilovod([...ids, archiveId]);

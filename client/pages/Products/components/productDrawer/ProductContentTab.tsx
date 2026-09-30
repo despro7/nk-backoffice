@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Accordion,
   AccordionItem,
@@ -10,6 +10,8 @@ import {
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { CatalogGoodDetailDto } from '../../ProductsTypes';
 import type { BomRow, DrawerForm } from './productDrawerTypes';
+import type { DrawerDirtyFieldKey } from './productDrawerUtils';
+import { FieldDirtyMarker } from './FieldDirtyMarker';
 import { DescriptionEditor } from '../DescriptionEditor';
 import { ProductImageUpload } from '../ProductImageUpload';
 import type { CatalogGoodImageDto } from '@shared/types/catalog';
@@ -55,6 +57,8 @@ interface ProductContentTabProps {
   units: Array<{ id: string; name: string; code?: string | null }>;
   onImagesChange: (images: CatalogGoodImageDto[]) => void;
   overlayZClassName?: string;
+  dirtyFields?: Set<DrawerDirtyFieldKey>;
+  onHydrationComplete?: () => void;
 }
 
 export function ProductContentTab({
@@ -73,15 +77,24 @@ export function ProductContentTab({
   units,
   onImagesChange,
   overlayZClassName,
+  dirtyFields,
+  onHydrationComplete,
 }: ProductContentTabProps) {
   const [presets, setPresets] = useState<StorefrontPresetDto[]>([]);
   const [defaultPresetId, setDefaultPresetId] = useState<string | null>(null);
+  const [presetsLoaded, setPresetsLoaded] = useState(false);
   const [kitComponentSettings, setKitComponentSettings] = useState<StorefrontKitComponentSettings>(
     STOREFRONT_DEFAULT_KIT_COMPONENT_SETTINGS,
   );
+  const hydrationNotifiedRef = useRef(false);
+  const [contentSyncVersion, setContentSyncVersion] = useState(0);
+  const [editorSettled, setEditorSettled] = useState(false);
 
   useEffect(() => {
-    if (!canReadStorefront) return;
+    if (!canReadStorefront) {
+      setPresetsLoaded(true);
+      return;
+    }
 
     const loadStorefrontSettings = () => {
       void Promise.all([storefrontApi.listPresets(), storefrontApi.getSettings()])
@@ -89,8 +102,9 @@ export function ProductContentTab({
           setPresets(presetRows);
           setDefaultPresetId(settings.defaultPresetId);
           setKitComponentSettings(settings.kitComponentSettings);
+          setPresetsLoaded(true);
         })
-        .catch(() => undefined);
+        .catch(() => setPresetsLoaded(true));
     };
 
     loadStorefrontSettings();
@@ -202,8 +216,21 @@ export function ProductContentTab({
     ],
   );
 
+  const handleEditorSettled = React.useCallback(
+    (normalizedDoc: string) => {
+      setForm((f) =>
+        f.storefrontDescriptionDoc === normalizedDoc
+          ? f
+          : { ...f, storefrontDescriptionDoc: normalizedDoc },
+      );
+      setEditorSettled(true);
+    },
+    [setForm],
+  );
+
   useEffect(() => {
-    if (!activePreset) return;
+    if (!presetsLoaded || !activePreset) return;
+    setEditorSettled(false);
     setForm((f) => {
       const parsed = parseStorefrontDescriptionDoc(f.storefrontDescriptionDoc);
       if (parsed) {
@@ -222,16 +249,33 @@ export function ProductContentTab({
       );
       return { ...f, storefrontDescriptionDoc: next };
     });
-  }, [activePreset?.id, activePreset?.blocks, isKit, form.storefrontDescriptionDoc, setForm]);
+    setContentSyncVersion((v) => v + 1);
+  }, [presetsLoaded, activePreset?.id, activePreset?.blocks, isKit, setForm]);
 
   useEffect(() => {
-    if (isKit || form.productIngredientsJson.length > 0) return;
+    if (!presetsLoaded || isKit || form.productIngredientsJson.length > 0) return;
+    setEditorSettled(false);
     const bomTags = buildIngredientsJsonFromBom(
       components.map((c) => ({ componentName: c.componentName, qty: c.qty })),
     );
     if (!bomTags.length) return;
     setForm((f) => ({ ...f, productIngredientsJson: bomTags }));
-  }, [components, form.productIngredientsJson.length, isKit, setForm]);
+    setContentSyncVersion((v) => v + 1);
+  }, [presetsLoaded, components, form.productIngredientsJson.length, isKit, setForm]);
+
+  useEffect(() => {
+    if (!presetsLoaded || !editorSettled || !onHydrationComplete || hydrationNotifiedRef.current) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        if (hydrationNotifiedRef.current) return;
+        hydrationNotifiedRef.current = true;
+        onHydrationComplete();
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [presetsLoaded, contentSyncVersion, editorSettled, onHydrationComplete]);
 
   const nutritionPreview = form.productNutritionJson
     ? formatProductNutritionHtml(form.productNutritionJson)
@@ -254,6 +298,7 @@ export function ProductContentTab({
           value={form.productIngredientsJson}
           components={components}
           disabled={storefrontFieldsLocked}
+          dirty={dirtyFields?.has('productIngredientsJson')}
           onChange={(next) => setForm((f) => ({ ...f, productIngredientsJson: next }))}
         />
       )}
@@ -261,6 +306,7 @@ export function ProductContentTab({
       <StorefrontNutritionFields
         value={form.productNutritionJson}
         disabled={storefrontFieldsLocked}
+        dirty={dirtyFields?.has('productNutritionJson')}
         onChange={(v) => setForm((f) => ({ ...f, productNutritionJson: v }))}
       />
 
@@ -276,7 +322,10 @@ export function ProductContentTab({
             isDisabled={storefrontFieldsLocked}
             onValueChange={(v) => setForm((f) => ({ ...f, doNotPublish: v }))}
           >
-            Не публікувати на сайті
+            <span className="inline-flex items-center gap-1.5">
+              Не публікувати на сайті
+              <FieldDirtyMarker show={dirtyFields?.has('doNotPublish')} />
+            </span>
           </Switch>
         </div>
       </div>
@@ -286,11 +335,17 @@ export function ProductContentTab({
           <h3 className="text-sm font-semibold flex items-center gap-1.5">
             <DynamicIcon name="file-text" size={14} className="text-default-500 shrink-0" />
             Повний опис
+            <FieldDirtyMarker show={dirtyFields?.has('storefrontDescriptionDoc')} />
           </h3>
           <Select
             size="sm"
             labelPlacement="outside-left"
-            label="Шаблон опису"
+            label={
+              <span className="inline-flex items-center gap-1.5">
+                Шаблон опису
+                <FieldDirtyMarker show={dirtyFields?.has('storefrontPresetId')} />
+              </span>
+            }
             classNames={{
               base: 'w-auto max-w-xs ml-auto',
               trigger: 'w-auto min-w-46',
@@ -325,6 +380,7 @@ export function ProductContentTab({
           renderOptions={storefrontRenderOptions}
           isDisabled={publishLocked}
           onChange={(json) => setForm((f) => ({ ...f, storefrontDescriptionDoc: json }))}
+          onInitialSettled={handleEditorSettled}
           minHeightClass="min-h-[200px]"
           overlayZClassName={overlayZClassName}
         />
@@ -334,6 +390,7 @@ export function ProductContentTab({
         <h3 className="text-sm font-semibold flex items-center gap-1.5">
           <DynamicIcon name="align-left" size={14} className="text-default-500 shrink-0" />
           Короткий опис
+          <FieldDirtyMarker show={dirtyFields?.has('description')} />
         </h3>
         <DescriptionEditor
           aria-label="Короткий опис"
@@ -347,6 +404,7 @@ export function ProductContentTab({
         <h3 className="text-sm font-semibold flex items-center gap-1.5">
           <DynamicIcon name="image" size={14} className="text-default-500 shrink-0" />
           Зображення
+          <FieldDirtyMarker show={dirtyFields?.has('images')} />
         </h3>
         <ProductImageUpload
           goodId={isEdit ? detail?.id : null}

@@ -26,11 +26,13 @@ import {
 } from '@shared/utils/specColorPalette';
 import { StockBadge } from '@/components/StockBadge';
 import { ToastService } from '@/services/ToastService';
+import { formatDateOnly } from '@/lib/formatUtils';
 import type { CatalogGoodDto, CatalogMissingRequired, CatalogTreeItemData } from '../ProductsTypes';
 import { CATALOG_ROOT_ID } from '../ProductsTypes';
 import {
   goodTypeLabel,
   isArchiveFolderName,
+  resolveCatalogItemLocation,
   getBlockedMoveTargetIds,
   weightsAlmostEqual,
   createCatalogLiveDragPreview,
@@ -135,6 +137,98 @@ function formatWeightKg(weight: number | null | undefined): string {
 function resolveMissingRequired(row: CatalogGoodDto): CatalogMissingRequired {
   if (row.missingRequired) return row.missingRequired;
   return getMissingRequiredCatalogFields(row);
+}
+
+function isCatalogRowArchived(
+  row: CatalogGoodDto,
+  treeItems?: Record<string, CatalogTreeItemData>
+): boolean {
+  if (isArchiveFolderName(row.parentName || '')) return true;
+  if (treeItems) {
+    return resolveCatalogItemLocation(row, treeItems) === 'archive';
+  }
+  return false;
+}
+
+function CatalogRowNameBadges({
+  row,
+  treeItems,
+}: {
+  row: CatalogGoodDto;
+  treeItems?: Record<string, CatalogTreeItemData>;
+}) {
+  if (row.isGroup) return null;
+
+  const isArchived = isCatalogRowArchived(row, treeItems);
+
+  if (isArchived) {
+    const archiveDate = row.archivedAt ? formatDateOnly(row.archivedAt) : null;
+    const tooltipContent =
+      archiveDate && archiveDate !== '-'
+        ? (
+            <div className="text-xs">
+              <div>Архівний товар</div>
+              <div className="text-default-300 mt-0.5">{archiveDate}</div>
+            </div>
+          )
+        : 'Архівний товар';
+
+    return (
+      <Tooltip
+        content={tooltipContent}
+        placement="top"
+        color="secondary"
+        delay={300}
+        showArrow
+        classNames={{
+          base: 'before:bg-gray-700 before:rounded-[2px]',
+          content: 'bg-gray-700 border-0 text-white text-xs',
+        }}
+      >
+        <span className="inline-flex shrink-0" aria-label="Архівний товар">
+          <DynamicIcon name="archive" size={14} className="text-warning" />
+        </span>
+      </Tooltip>
+    );
+  }
+
+  if (row.doNotPublish) {
+    return (
+      <Tooltip
+        content="Товар не буде опублікований на сайті"
+        placement="top"
+        color="danger"
+        delay={200}
+        showArrow
+        classNames={{
+          base: 'before:bg-danger-500 before:rounded-[2px]',
+          content: 'bg-danger-500 border-0 text-white py-2 text-xs',
+        }}
+      >
+        <span
+          data-selection-ignore
+          className="inline-flex shrink-0"
+          aria-label="Товар не буде опублікований на сайті"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Chip
+            size="sm"
+            variant="flat"
+            color="danger"
+            classNames={{
+              base: 'bg-danger-500 text-white px-1 py-0.5 h-5',
+              content: 'font-semibold text-[10px]',
+            }}
+          >
+            OFF
+          </Chip>
+        </span>
+      </Tooltip>
+    );
+  }
+
+  return null;
 }
 
 function MissingRequiredHint({ labels }: { labels: string[] }) {
@@ -1241,19 +1335,7 @@ export function CatalogTable({
               <Tooltip content={row.name} placement="top" color="secondary" delay={500} showArrow={true} classNames={{ base: 'before:bg-gray-700 before:rounded-[2px]', content: 'bg-gray-700 border-0 text-white text-xs' }}>
                 <span className="max-w-[240px] truncate select-none">{row.name}</span>
               </Tooltip>
-              {row.delMark && (
-                <Chip
-                  size="sm"
-                  variant="flat"
-                  color="danger"
-                  classNames={{
-                    base: 'bg-danger-500 text-white px-1 py-0.5 h-5',
-                    content: 'font-semibold text-[10px]',
-                  }}
-                >
-                  OFF
-                </Chip>
-              )}
+              <CatalogRowNameBadges row={row} treeItems={treeItems} />
             </button>
             <MissingRequiredHint labels={catalogMissingNameLabels(resolveMissingRequired(row))} />
           </div>

@@ -503,6 +503,8 @@ model CatalogGood {
   syncedAt        DateTime @default(now())
   updatedAt       DateTime @updatedAt
   createdAt       DateTime @default(now())
+  /// Локальна дата архівації (папка «Архів – …»); Dilovod не зберігає
+  archivedAt      DateTime?
 
   components CatalogGoodComponent[] @relation("CatalogGoodComponents")
   usedIn     CatalogGoodComponent[] @relation("CatalogComponentGoods")
