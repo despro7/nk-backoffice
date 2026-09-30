@@ -5,6 +5,31 @@
 
 ---
 
+## 2026-09-30 — Каталог: archivedAt, dirty-маркери в ProductDrawer, WC typography
+
+**Files:** `prisma/migrations/20260930124500_catalog_good_archived_at/`, `client/pages/Products/components/CatalogTable.tsx`, `CatalogTree.tsx`, `productDrawer/*`, `shared/utils/storefrontDescription*.ts`, `server/modules/Products/ProductsCatalogService.ts`, `server/modules/Storefront/WooCommerceSyncService.ts`
+
+### Архів товарів
+
+- **`catalog_goods.archivedAt`** — дата архівації; встановлюється при move/archive, скидається при restore.
+- **`CatalogTable`** — бейдж «Архів» з tooltip (дата); **`CatalogTree`** — стилі для архівних папок.
+
+### ProductDrawer: dirty state і візуальні маркери
+
+- **`getDrawerDirtyFields`** — порівняння snapshot усіх вкладок: реквізити, BOM, ціни, штрихкоди, зображення, storefront-поля (`sku`, `name`, `storefrontDescriptionDoc` тощо).
+- **`FieldDirtyMarker`** — жовта іконка дискетки + tooltip «Незбережені зміни» біля змінених полей і на заголовках вкладок.
+- **`mergeStorefrontFieldsIntoDrawerBaseline`** — при lazy hydration вкладки «Опис і зображення» оновлює лише storefront baseline, не затираючи dirty з інших вкладок (наприклад, зміну артикулу).
+- **`StorefrontDescriptionEditor.onInitialSettled`** — очікування нормалізації TipTap перед завершенням hydration; усунено хибний dirty у «Повному описі» при відкритті вкладки.
+
+### WooCommerce typography
+
+- **`normalizeWcTypography`** — заміна довгого тире (—) на коротке (–) при імпорті з WC (`normalizeWcTypographyInStorefrontDoc`, HTML override/template).
+- Типізація: union `StorefrontDescriptionTreeNode` для block/inline вузлів TipTap.
+
+**Документація:** [`Docs/features/products-catalog-2.0.md`](features/products-catalog-2.0.md), [`Docs/features/woocommerce-storefront-phase1.md`](features/woocommerce-storefront-phase1.md).
+
+---
+
 ## 2026-09-29 — Storefront Phase 2–3: bulk pull, категорія WC, stock sync, auto-push
 
 **Files:** `client/pages/Products/components/StorefrontBulkPullWizard.tsx`, `StorefrontSyncReportModal.tsx`, `PullFieldConflictTooltip.tsx`, `storefrontPullFields.ts`, `server/modules/Storefront/WooCommerceSyncService.ts`, `WooCommerceCategoryService.ts`, `WooCommerceStockService.ts`, `client/pages/SettingsStorefront.tsx`, `client/pages/Products/index.tsx`, `server/routes/storefront.ts`, `server/services/cronService.ts`, `shared/types/storefront.ts`, `Docs/features/woocommerce-storefront-phase1.md`

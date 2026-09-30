@@ -13,6 +13,7 @@ import type {
   StorefrontBlockResolver,
   StorefrontBoundBlockValues,
   StorefrontDescriptionDoc,
+  StorefrontDescriptionInlineNode,
   StorefrontDescriptionNode,
   StorefrontGrossResolveInput,
   StorefrontGrossResolveResult,
@@ -342,21 +343,24 @@ export function normalizeWcTypographyInHtml(html: string): string {
   return normalizeWcTypography(html);
 }
 
+type StorefrontDescriptionTreeNode = StorefrontDescriptionNode | StorefrontDescriptionInlineNode;
+
 function normalizeWcTypographyInDescriptionNode(
-  node: StorefrontDescriptionNode,
-): StorefrontDescriptionNode {
+  node: StorefrontDescriptionTreeNode,
+): StorefrontDescriptionTreeNode {
   if (node.type === 'text' && 'text' in node && typeof node.text === 'string') {
     const text = normalizeWcTypography(node.text);
     return text === node.text ? node : { ...node, text };
   }
 
-  const attrs = node.attrs as
+  const blockNode = node as StorefrontDescriptionNode;
+  const attrs = blockNode.attrs as
     | {
         overrideContent?: string | null;
         template?: string;
       }
     | undefined;
-  let nextAttrs = node.attrs;
+  let nextAttrs = blockNode.attrs;
   if (attrs?.overrideContent) {
     const overrideContent = normalizeWcTypographyInHtml(attrs.overrideContent);
     if (overrideContent !== attrs.overrideContent) {
@@ -370,22 +374,24 @@ function normalizeWcTypographyInDescriptionNode(
     }
   }
 
-  const content = node.content;
+  const content = blockNode.content;
   if (!content?.length) {
-    return nextAttrs === node.attrs ? node : { ...node, attrs: nextAttrs };
+    return nextAttrs === blockNode.attrs ? blockNode : { ...blockNode, attrs: nextAttrs };
   }
 
   const nextContent = content.map(normalizeWcTypographyInDescriptionNode);
   const contentChanged = nextContent.some((child, idx) => child !== content[idx]);
-  if (!contentChanged && nextAttrs === node.attrs) return node;
-  return { ...node, attrs: nextAttrs, content: nextContent };
+  if (!contentChanged && nextAttrs === blockNode.attrs) return blockNode;
+  return { ...blockNode, attrs: nextAttrs, content: nextContent };
 }
 
 /** Normalize typography in TipTap storefront description doc (marketing text, block overrides). */
 export function normalizeWcTypographyInStorefrontDoc(
   doc: StorefrontDescriptionDoc,
 ): StorefrontDescriptionDoc {
-  const content = (doc.content || []).map(normalizeWcTypographyInDescriptionNode);
+  const content = (doc.content || []).map(
+    (node) => normalizeWcTypographyInDescriptionNode(node) as StorefrontDescriptionNode,
+  );
   const changed = content.some((node, idx) => node !== (doc.content || [])[idx]);
   return changed ? { ...doc, content } : doc;
 }
@@ -1158,12 +1164,6 @@ function renderInlineContent(
     })
     .join('');
 }
-
-type StorefrontDescriptionInlineNode = {
-  type: string;
-  text?: string;
-  marks?: Array<{ type: string; attrs?: Record<string, unknown> }>;
-};
 
 export function buildStorefrontBoundValues(input: {
   ingredientsJson: string[];

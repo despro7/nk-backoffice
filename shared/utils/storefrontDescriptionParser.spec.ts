@@ -91,7 +91,11 @@ describe('parseWcDescription marketing extraction', () => {
         node.type === 'paragraph' &&
         (node.attrs as { class?: string } | undefined)?.class === 'storefront-marketing',
     );
-    const marketingText = marketingNode?.content?.[0]?.type === 'text' ? marketingNode.content[0].text : '';
+    const firstMarketingChild = marketingNode?.content?.[0];
+    const marketingText =
+      firstMarketingChild?.type === 'text' && 'text' in firstMarketingChild
+        ? firstMarketingChild.text ?? ''
+        : '';
     const kitBlock = result.storefrontDescriptionDoc.content.find(
       (node) =>
         node.type === 'storefrontBlock' &&

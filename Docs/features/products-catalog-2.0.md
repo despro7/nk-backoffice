@@ -1,6 +1,6 @@
 # Products 2.0 — домен керування каталогом Dilovod
 
-**Дата:** 2026-07-30 (оновлено 2026-09-22)  
+**Дата:** 2026-07-30 (оновлено 2026-09-30)  
 **Маршрут:** `/products` (`minRole: WAREHOUSE_MANAGER`)  
 **API:** `/api/catalog/`*
 
@@ -39,7 +39,7 @@
 | `catalog_good_images`     | Локальні зображення товару                                               |
 
 
-Ключові поля `catalog_goods`: `parentId`, `isGroup`, `delMark`, `name` (uk only), `sku` (= Dilovod `productNum`), `mainUnitId`, `packageRatio`, `weight`, `accPolicyId`, `printName`, `description` / `fullDescription`, **`sortOrder`**, **`unitRatio`**, **`stockBalanceByStock`**, `syncedAt`.
+Ключові поля `catalog_goods`: `parentId`, `isGroup`, `delMark`, `name` (uk only), `sku` (= Dilovod `productNum`), `mainUnitId`, `packageRatio`, `weight`, `accPolicyId`, `printName`, `description` / `fullDescription`, **`sortOrder`**, **`unitRatio`**, **`stockBalanceByStock`**, **`archivedAt`**, `syncedAt`.
 
 Локальні ops-поля (не SoT Dilovod для порядку / порцій / залишків-дзеркала):
 
@@ -207,8 +207,10 @@ Match: `dilovodId = catalog id` або `sku`. **Не** чіпає `set`, `dilovo
 | «В архів» (`/goods/archive`)            | папка «Архів – {parentName}» | `saveObject` + `setDelMark`                  | `parentId` + `delMark=true`         |
 | Move **в** архів (`/goods/move`)        | обрана архівна папка         | `saveObject` + `setDelMark`                  | те саме                             |
 | Move **з** архіву в звичайну папку      | нова папка                   | `saveObject` з `delMark: 0`                  | `delMark=false`                     |
-| «Відновити з архіву» (`/goods/restore`) | батько папки-архіву          | `clearDelMark` = `saveObject` з `delMark: 0` | `parentId` батька + `delMark=false` |
+| «Відновити з архіву» (`/goods/restore`) | батько папки-архіву          | `clearDelMark` = `saveObject` з `delMark: 0` | `parentId` батька + `delMark=false`, `archivedAt=null` |
 | Trash                                   | `CATALOG_TRASH_ID`           | `setDelMark`                                 | `delMark=true`                      |
+
+Локально при archive/move в архів також пишеться **`archivedAt`** (дата операції); при restore — скидається. У таблиці каталогу архівний товар показує бейдж з tooltip (дата архівації).
 
 
 `ProductsDilovodGateway.clearDelMark(params)` — обгортка над `saveObject` із примусовим `header.delMark = 0`.
@@ -276,6 +278,8 @@ client/pages/Products/
     MoveToFolderModal.tsx
     ProductDrawer.tsx           # футер: Оновити Legacy; Tabs kind, BOM, UsedIn, техкарта, unitRatio Admin, Наліпки, …
     productDrawer/
+      FieldDirtyMarker.tsx      # жовта іконка «Незбережені зміни» біля поля / вкладки
+      productDrawerUtils.ts     # snapshot baseline, getDrawerDirtyFields, mergeStorefrontFieldsIntoDrawerBaseline
       BomSection.tsx            # специфікація / склад; сортування, DnD, втрати %, техкарта
       bomSectionSort.ts         # сортування колонок + reorder рядків BOM
       UsedInSection.tsx         # зворотний BOM (де використовується інгредієнт / продукція)
@@ -330,7 +334,8 @@ client/pages/Products/
 - Одиниці / типи цін / валюти — Select з `GET /dictionaries`.
 - Опис — `DescriptionEditor` (не name/printName).
 - ШК: генерація EAN-13 (`/barcode/next`) + вибір партії (reuse Movement `BatchNumbersAutocomplete`); див. секцію «Штрихкоди» вище.
-- Unsaved: snapshot form+BOM+prices+barcodes → `isDirty` → `useUnsavedGuard` + `UnsavedChangesModal` при закритті Drawer / навігації / beforeunload.
+- Unsaved: snapshot form + BOM + prices + barcodes + images + objectKind/parentId → `getDrawerDirtyFields` → `isDirty` → `useUnsavedGuard` + `UnsavedChangesModal` при закритті Drawer / навігації / beforeunload.
+- **Dirty-маркери:** `FieldDirtyMarker` (жовта дискетка) на змінених полях і заголовках вкладок (Основні, BOM, ціни, штрихкоди, опис і зображення). Lazy hydration вкладки «Опис і зображення» не затирає dirty інших вкладок (`mergeStorefrontFieldsIntoDrawerBaseline`); TipTap editor чекає `onInitialSettled` перед фіксацією baseline.
 - Смітник у картці: `parentId === CATALOG_TRASH_ID` → кнопка «Відновити» (move picker).
 - Футер (edit, є SKU): зліва **Оновити Legacy** → той самий confirm / `legacySyncMutation`, що в toolbar і context menu.
 

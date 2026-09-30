@@ -301,6 +301,7 @@ HTML для WC збирає `StorefrontDescriptionBuilder.resolveDescriptionDocH
 | Backspace у trailing `<p>` видаляв atom «Маса брутто» | `StorefrontAtomBackspaceGuard` — видаляє порожній абзац, не atom |
 | Bound edit: blur спрацьовував лише з другого разу | `attachMiniEditorBlurHandler` — deferred check `document.activeElement` |
 | Ghost `<p></p>` у збережених override | Нормалізація при load/save + `onChange` якщо doc «брудний» |
+| Хибний dirty «Повний опис» при відкритті вкладки | `onInitialSettled` у `StorefrontDescriptionEditor` + `mergeStorefrontFieldsIntoDrawerBaseline` у `ProductDrawer` (не перезаписувати baseline інших вкладок) |
 
 Стилі: `client/global.css` — `.storefront-block*`, `.storefront-ph-atom`, приховання trailing empty `<p>`.
 
@@ -320,6 +321,8 @@ HTML для WC збирає `StorefrontDescriptionBuilder.resolveDescriptionDocH
 **Bulk pull** — до 50 товарів: матриця полів (`name`, короткий опис, storefront doc, склад, КБЖВ, вага, ціна, не публікувати, **категорія**, **зображення**), tooltip конфліктів BO↔WC, дії `pull` / `skip` / `create_on_wc`.
 
 Pull парсить WC HTML/meta через `storefrontDescriptionParser` → `storefrontDescriptionDoc`, склад, КБЖВ, **назва**, ціни; короткий опис — з `short_description` або маркетингового абзаца. Push відправляє **назву**, опис, meta, status, **категорію** (група BO). Після sync оновлюються `wooProductId`, `wooLastSyncedAt`; зображення — `catalog_good_images.wooMediaId`.
+
+**Typography при pull:** `normalizeWcTypography` замінює довге тире (—) на коротке (–) у текстових вузлах doc, HTML override блоків і template-полях (`normalizeWcTypographyInStorefrontDoc`).
 
 > **Короткий опис при pull:** поле `description` — SoT Dilovod. Після pull значення пишеться в Prisma **і** в Dilovod (`saveObject`), інакше live-pull з ERP затирає імпорт.
 
