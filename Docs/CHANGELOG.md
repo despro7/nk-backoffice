@@ -5,16 +5,25 @@
 
 ---
 
-## 2026-10-01 — Каталог: дублювання, SKU, архівація медіа, doNotPublish
+## 2026-10-01 — Каталог: confirm архівації, WC unpublish, дублювання, медіа
 
-**Files:** `server/modules/Products/ProductsCatalogService.ts`, `CatalogMediaService.ts`, `CatalogArchiveMediaService.ts`, `CatalogInactiveMediaCleanupService.ts`, `server/services/TelegramAlertService.ts`, `server/services/cronService.ts`
+**Files:** `client/pages/Products/components/ArchiveStockWarningBanner.tsx`, `ArchiveConfirmModal.tsx`, `MoveToFolderModal.tsx`, `ProductsUtils.ts`, `server/modules/Storefront/WooCommerceSyncService.ts`, `ProductsCatalogService.ts`, `CatalogMediaService.ts`, `CatalogArchiveMediaService.ts`, `CatalogInactiveMediaCleanupService.ts`, `server/services/TelegramAlertService.ts`, `server/services/cronService.ts`
+
+### Confirm перед архівацією
+
+- **`ArchiveStockWarningBanner`** — пояснення наслідків (архів, зняття з сайту, залишки не змінюються), картка кожного товару з ГП/МС залишками, поради: розукомплектування / інвентаризація.
+- **`ArchiveConfirmModal`** / **`MoveToFolderModal`** — ширше вікно (`2xl`), банер замість простого списку.
+
+### WooCommerce при архівації
+
+- **`unpublishArchivedGoods`** — при archive/move в архів: WC `status: draft` (не публікувати); stock не чіпається.
 
 ### Дублювання товарів
 
 - **`suggestNextSku`** — порівняння останнього SKU в локальній папці та Dilovod; якщо Dilovod «новіший» — fallback + Telegram-алерт про розсинхрон.
 - **`duplicateGood`** — копіювання storefront-полів (без `wooProductId`), дублювання зображень через **`copyImagesFromGood`** (нові файли + записи в БД; відсутні на диску файли пропускаються з логом).
 
-### Архівація
+### Архівація (бекенд)
 
 - При архівації (`archiveGoods` / move в папку архіву) — **`doNotPublish: true`** для товарів (не груп).
 - **`CatalogArchiveMediaService`** — при архівації надсилання зображень у Telegram як **document** (не photo) з назвою, SKU, описом, посиланням на картку та попередженням про видалення через 7 днів.

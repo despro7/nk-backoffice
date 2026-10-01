@@ -255,10 +255,13 @@ export default function ProductsPage() {
   const selectedLabels = useMemo(
     () =>
       resolveCatalogItemLabels(catalog.selectedIds, {
-        tableRows: catalog.tableRows,
+        tableRows: [
+          ...catalog.tableRows,
+          ...(catalog.detail ? [catalog.detail] : []),
+        ],
         treeItems: catalog.treeItems,
       }),
-    [catalog.selectedIds, catalog.tableRows, catalog.treeItems]
+    [catalog.selectedIds, catalog.tableRows, catalog.detail, catalog.treeItems]
   );
 
   const moveLabels = useMemo(

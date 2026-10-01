@@ -5,7 +5,7 @@ vi.mock('../../lib/utils.js', () => ({
   prisma: {
     catalogGood: {
       findUnique: vi.fn(),
-      findMany: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       update: vi.fn(),
     },
     catalogGoodPrice: {
@@ -754,6 +754,42 @@ describe('WooCommerceSyncService', () => {
 
     expect(result.appliedFields).toContain('category');
     expect(updateProduct).toHaveBeenCalledWith(77, { categories: [{ id: 20 }] });
+  });
+
+  it('unpublishArchivedGoods sets WC status to draft without stock fields', async () => {
+    vi.mocked(prisma.catalogGood.findMany).mockResolvedValue([
+      { id: 'good-1', wooProductId: 77 },
+    ] as never);
+    vi.mocked(prisma.catalogGood.update).mockResolvedValue({} as never);
+
+    const { createWooCommerceClient } = await import('./WooCommerceApiClient.js');
+    const updateProduct = vi.fn().mockResolvedValue({ id: 77, status: 'draft' });
+    vi.mocked(createWooCommerceClient).mockReturnValue({
+      updateProduct,
+    } as never);
+
+    await service.unpublishArchivedGoods(['good-1']);
+
+    expect(updateProduct).toHaveBeenCalledWith(77, { status: 'draft' });
+    expect(updateProduct).not.toHaveBeenCalledWith(
+      77,
+      expect.objectContaining({ stock_quantity: expect.anything() }),
+    );
+    expect(prisma.catalogGood.update).toHaveBeenCalledWith({
+      where: { id: 'good-1' },
+      data: { wooLastSyncedAt: expect.any(Date) },
+    });
+  });
+
+  it('unpublishArchivedGoods skips when WC is not configured', async () => {
+    const { storefrontService } = await import('./StorefrontService.js');
+    vi.mocked(storefrontService.getWooCredentialsInternal).mockRejectedValueOnce(
+      new Error('WooCommerce credentials не налаштовані'),
+    );
+
+    await service.unpublishArchivedGoods(['good-1']);
+
+    expect(prisma.catalogGood.findMany).not.toHaveBeenCalled();
   });
 
   it('pullBulkApply skip returns skipped result', async () => {

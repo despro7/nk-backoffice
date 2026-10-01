@@ -909,6 +909,52 @@ export class WooCommerceSyncService {
     return { results };
   }
 
+  /**
+   * При архівації — зняти товар з публікації на WC (status: draft).
+   * Оновлює лише status; stock, категорії, опис і зображення не чіпає.
+   */
+  async unpublishArchivedGoods(goodIds: string[]): Promise<void> {
+    const unique = [...new Set(goodIds.filter(Boolean))];
+    if (!unique.length) return;
+
+    try {
+      await storefrontService.getWooCredentialsInternal();
+    } catch (err) {
+      logServer('[WooCommerceSyncService] unpublish archived skipped: WC not available', err);
+      return;
+    }
+
+    const goods = await prisma.catalogGood.findMany({
+      where: {
+        id: { in: unique },
+        isGroup: false,
+        wooProductId: { not: null },
+      },
+      select: { id: true, wooProductId: true },
+    });
+    if (!goods.length) return;
+
+    const creds = await storefrontService.getWooCredentialsInternal();
+    const client = createWooCommerceClient(creds);
+    const now = new Date();
+
+    for (const good of goods) {
+      if (!good.wooProductId) continue;
+      try {
+        await client.updateProduct(good.wooProductId, { status: 'draft' });
+        await prisma.catalogGood.update({
+          where: { id: good.id },
+          data: { wooLastSyncedAt: now },
+        });
+        logServer(
+          `[WooCommerceSyncService] unpublished archived ${good.id} → WC#${good.wooProductId}`,
+        );
+      } catch (err) {
+        logServer(`[WooCommerceSyncService] unpublish archived failed for ${good.id}`, err);
+      }
+    }
+  }
+
   async pushBulk(goodIds: string[]): Promise<WooPushBulkResult> {
     const results: WooPushBulkResult['results'] = [];
     for (const goodId of goodIds) {

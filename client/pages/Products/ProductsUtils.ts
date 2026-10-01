@@ -670,6 +670,55 @@ export interface CatalogItemLabel {
   sku: string | null;
   isGroup: boolean;
   parentId: string | null;
+  accPolicyId?: string | null;
+  isKit?: boolean;
+  mainStock?: number;
+  smallStock?: number;
+}
+
+export function resolveCatalogItemStock(item: CatalogItemLabel): {
+  mainStock: number;
+  smallStock: number;
+  total: number;
+} {
+  const mainStock = item.mainStock ?? 0;
+  const smallStock = item.smallStock ?? 0;
+  return { mainStock, smallStock, total: mainStock + smallStock };
+}
+
+export interface ArchiveStockSelectionSummary {
+  kitCount: number;
+  goodCount: number;
+  groupCount: number;
+  productCount: number;
+}
+
+/** Підсумок вибраних елементів для попередження про залишки при архівації. */
+export function summarizeArchiveStockSelection(
+  items: CatalogItemLabel[],
+): ArchiveStockSelectionSummary {
+  let kitCount = 0;
+  let goodCount = 0;
+  let groupCount = 0;
+
+  for (const item of items) {
+    if (item.isGroup) {
+      groupCount++;
+      continue;
+    }
+    if (isKitGood(item)) {
+      kitCount++;
+    } else {
+      goodCount++;
+    }
+  }
+
+  return {
+    kitCount,
+    goodCount,
+    groupCount,
+    productCount: kitCount + goodCount,
+  };
 }
 
 /** Оцінка к-сті записів structure-refresh гілки за локальним дзеркалом. */
@@ -780,6 +829,11 @@ export function resolveCatalogItemLabels(
       sku?: string | null;
       isGroup?: boolean;
       parentId?: string | null;
+      accPolicyId?: string | null;
+      isKit?: boolean;
+      mainStock?: number;
+      smallStock?: number;
+      stock?: { mainStock: number; smallStock: number } | null;
     }>;
     treeItems?: Record<string, CatalogTreeItemData>;
   }
@@ -794,6 +848,10 @@ export function resolveCatalogItemLabels(
       sku: row.sku ?? null,
       isGroup: Boolean(row.isGroup),
       parentId: row.parentId ?? null,
+      accPolicyId: row.accPolicyId ?? null,
+      isKit: row.isKit,
+      mainStock: row.mainStock ?? row.stock?.mainStock,
+      smallStock: row.smallStock ?? row.stock?.smallStock,
     });
   }
   for (const item of Object.values(treeItems)) {
@@ -804,6 +862,7 @@ export function resolveCatalogItemLabels(
       sku: item.sku,
       isGroup: item.isGroup,
       parentId: item.parentId,
+      isKit: item.isKit,
     });
   }
 

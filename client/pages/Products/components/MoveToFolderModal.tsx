@@ -16,6 +16,7 @@ import {
   isArchiveFolderName,
   type CatalogItemLabel,
 } from '../ProductsUtils';
+import { ArchiveStockWarningBanner } from './ArchiveStockWarningBanner';
 import { CatalogConfirmItemsList } from './CatalogConfirmItemsList';
 
 interface MoveToFolderModalProps {
@@ -223,28 +224,36 @@ export function MoveToFolderModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      size="lg"
+      size={targetIsArchive ? '2xl' : 'lg'}
       scrollBehavior="inside"
       classNames={{
-        base: 'max-h-[85vh]',
+        base: targetIsArchive ? 'max-h-[85vh] max-w-2xl' : 'max-h-[85vh]',
         body: 'py-3',
       }}
     >
       <ModalContent>
         <ModalHeader>{isRestore ? 'Відновити в…' : 'Перемістити в…'}</ModalHeader>
         <ModalBody className="gap-3">
-          <p className="text-sm text-default-600">
-            Оберіть цільову папку для {items.length} елемент(ів)
-            {targetName ? (
-              <>
-                {' '}
-                → «{targetName}»
-              </>
-            ) : null}
-            .
-            {targetIsArchive ? ' Ціль — архівна папка.' : ''}
-          </p>
-          <CatalogConfirmItemsList items={items} />
+          {targetIsArchive ? (
+            <ArchiveStockWarningBanner items={items} archiveFolderName={targetName} />
+          ) : (
+            <>
+              <p className="text-sm text-default-600">
+                Оберіть цільову папку для {items.length} елемент(ів)
+                {targetName ? (
+                  <>
+                    {' '}
+                    → «{targetName}»
+                  </>
+                ) : null}
+                .
+              </p>
+              <CatalogConfirmItemsList items={items} />
+            </>
+          )}
+          {targetIsArchive ? (
+            <p className="text-sm text-default-600">Оберіть архівну папку нижче.</p>
+          ) : null}
           <div className="max-h-[min(420px,50vh)] overflow-auto rounded-lg border border-default-200 p-2">
             {rootChildren.length === 0 ? (
               <p className="px-2 py-4 text-sm text-default-400">Немає доступних папок</p>

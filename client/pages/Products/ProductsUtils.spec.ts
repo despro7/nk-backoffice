@@ -10,6 +10,8 @@ import {
   isSuspiciousBomIngredientQty,
   isSuspiciousSpecQty,
   massUnitToKgFactor,
+  resolveCatalogItemStock,
+  summarizeArchiveStockSelection,
 } from './ProductsUtils';
 import {
   CATALOG_ACC_POLICY_GOOD,
@@ -406,6 +408,39 @@ describe('getMissingRequiredCatalogFields', () => {
       prices: [],
       weight: false,
       packageRatio: false,
+    });
+  });
+});
+
+describe('resolveCatalogItemStock', () => {
+  it('повертає залишки та суму', () => {
+    expect(
+      resolveCatalogItemStock({
+        id: '1',
+        name: 'Суп',
+        sku: '001',
+        isGroup: false,
+        parentId: null,
+        mainStock: 12,
+        smallStock: 3,
+      })
+    ).toEqual({ mainStock: 12, smallStock: 3, total: 15 });
+  });
+});
+
+describe('summarizeArchiveStockSelection', () => {
+  it('рахує набори, порції та папки', () => {
+    expect(
+      summarizeArchiveStockSelection([
+        { id: '1', name: 'Набір', sku: 'K1', isGroup: false, parentId: null, accPolicyId: CATALOG_ACC_POLICY_KIT },
+        { id: '2', name: 'Суп', sku: 'G1', isGroup: false, parentId: null, accPolicyId: CATALOG_ACC_POLICY_GOOD },
+        { id: '3', name: 'Група', sku: null, isGroup: true, parentId: null },
+      ])
+    ).toEqual({
+      kitCount: 1,
+      goodCount: 1,
+      groupCount: 1,
+      productCount: 2,
     });
   });
 });

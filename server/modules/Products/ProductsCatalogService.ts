@@ -32,6 +32,7 @@ import { productsDilovodGateway } from './ProductsDilovodGateway.js';
 import { productsLocalSync } from './ProductsLocalSync.js';
 import { catalogMediaService } from './CatalogMediaService.js';
 import { catalogArchiveMediaService } from './CatalogArchiveMediaService.js';
+import { wooCommerceSyncService } from '../Storefront/WooCommerceSyncService.js';
 import { compareSku, pickLatestSku } from './skuUtils.js';
 import { telegramAlertService } from '../../services/TelegramAlertService.js';
 import { catalogBarcodeRowKey, matchExistingBarcode } from './barcodeUtils.js';
@@ -2134,6 +2135,7 @@ export class ProductsCatalogService {
         where: { id: { in: clean }, isGroup: false },
         data: { doNotPublish: true },
       });
+      void wooCommerceSyncService.unpublishArchivedGoods(clean);
     }
   }
 
