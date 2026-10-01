@@ -304,6 +304,78 @@ export class CatalogMediaService {
     return created;
   }
 
+  /**
+   * Копіює зображення з одного товару в інший (нові файли + записи в БД).
+   */
+  async copyImagesFromGood(
+    sourceGoodId: string,
+    targetGoodId: string,
+  ): Promise<CatalogGoodImageDto[]> {
+    const sourceImages = await prisma.catalogGoodImage.findMany({
+      where: { goodId: sourceGoodId },
+      orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+    });
+    if (sourceImages.length === 0) return [];
+
+    const target = await prisma.catalogGood.findUnique({
+      where: { id: targetGoodId },
+      select: { id: true, isGroup: true },
+    });
+    if (!target) throw new Error('Товар не знайдено');
+    if (target.isGroup) return [];
+
+    const currentCount = await prisma.catalogGoodImage.count({ where: { goodId: targetGoodId } });
+    if (currentCount + sourceImages.length > CATALOG_MEDIA_MAX_FILES) {
+      throw new Error(`Максимум ${CATALOG_MEDIA_MAX_FILES} зображень`);
+    }
+
+    const srcDir = this.goodDir(sourceGoodId);
+    const destDir = this.goodDir(targetGoodId);
+    await fs.mkdir(destDir, { recursive: true });
+
+    const created: CatalogGoodImageDto[] = [];
+    for (const img of sourceImages) {
+      const srcPath = path.join(srcDir, img.fileName);
+      const ext =
+        path.extname(img.fileName) || extFromMime(img.mimeType, img.originalName);
+      const newFileName = `${randomUUID()}${ext}`;
+      const destPath = path.join(destDir, newFileName);
+
+      try {
+        await fs.copyFile(srcPath, destPath);
+      } catch (err) {
+        logServer(
+          `[CatalogMediaService] copyImagesFromGood: skip missing file ${img.fileName}`,
+          err,
+        );
+        continue;
+      }
+
+      const row = await prisma.catalogGoodImage.create({
+        data: {
+          goodId: targetGoodId,
+          fileName: newFileName,
+          originalName: img.originalName,
+          mimeType: img.mimeType,
+          size: img.size,
+          sortOrder: currentCount + img.sortOrder,
+          isPrimary: currentCount === 0 && img.isPrimary,
+        },
+      });
+      created.push(toDto(row));
+    }
+
+    if (currentCount === 0 && created.length > 0 && !created.some((i) => i.isPrimary)) {
+      await prisma.catalogGoodImage.update({
+        where: { id: created[0].id },
+        data: { isPrimary: true },
+      });
+      created[0] = { ...created[0], isPrimary: true };
+    }
+
+    return created;
+  }
+
   async commitStaging(sessionId: string, goodId: string): Promise<CatalogGoodImageDto[]> {
     const stagingItems = await this.listStaging(sessionId);
     if (stagingItems.length === 0) {

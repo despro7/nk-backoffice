@@ -109,6 +109,8 @@ export class CronService {
   private stockSyncJob: cron.ScheduledTask | null = null;
   private statusCheckJob: cron.ScheduledTask | null = null;
   private warehouseAutoFinalizeJob: cron.ScheduledTask | null = null;
+  private catalogMediaCleanupJob: cron.ScheduledTask | null = null;
+  private isCatalogMediaCleanupRunning = false;
   private isTaskRunning = false;
   private isProductsSyncRunning = false;
   private isStockSyncRunning = false;
@@ -612,6 +614,8 @@ export class CronService {
     hasStockSyncJob: boolean;
     isStatusCheckRunning: boolean;
     hasStatusCheckJob: boolean;
+    isCatalogMediaCleanupRunning: boolean;
+    hasCatalogMediaCleanupJob: boolean;
   } {
     return {
       isRunning: this.isTaskRunning,
@@ -622,6 +626,8 @@ export class CronService {
       hasStockSyncJob: this.stockSyncJob !== null,
       isStatusCheckRunning: this.isStatusCheckRunning,
       hasStatusCheckJob: this.statusCheckJob !== null,
+      isCatalogMediaCleanupRunning: this.isCatalogMediaCleanupRunning,
+      hasCatalogMediaCleanupJob: this.catalogMediaCleanupJob !== null,
     };
   }
 
@@ -636,6 +642,7 @@ export class CronService {
     void this.startStockSync();
     this.startOrderStatusCheck();
     this.startWarehouseAutoFinalize();
+    this.startCatalogMediaCleanup();
   }
 
   stopAll(): void {
@@ -644,6 +651,7 @@ export class CronService {
     this.stopStockSync();
     this.stopOrderStatusCheck();
     this.stopWarehouseAutoFinalize();
+    this.stopCatalogMediaCleanup();
   }
 
   // ─── Warehouse auto-finalize о 23:55 ──────────────────────────────────────
@@ -676,6 +684,51 @@ export class CronService {
     if (this.warehouseAutoFinalizeJob) {
       this.warehouseAutoFinalizeJob.stop();
       this.warehouseAutoFinalizeJob = null;
+    }
+  }
+
+  // ─── Видалення медіа архівних товарів (7 днів після archivedAt) ───────────
+
+  startCatalogMediaCleanup(): void {
+    if (!isAutomaticSyncEnabled()) {
+      console.log('ℹ️  Catalog media cleanup cron is disabled in development (NODE_ENV=development).');
+      return;
+    }
+
+    if (this.catalogMediaCleanupJob) return;
+
+    // 0 4 * * * — щодня о 04:00 (Kyiv)
+    this.catalogMediaCleanupJob = cron.schedule('0 4 * * *', async () => {
+      if (this.isCatalogMediaCleanupRunning) {
+        console.log('🖼️  [CronService] Catalog media cleanup already running, skipping.');
+        return;
+      }
+
+      this.isCatalogMediaCleanupRunning = true;
+      console.log('🖼️  [CronService] Запуск видалення медіа архівних товарів каталогу...');
+      try {
+        const { catalogInactiveMediaCleanupService } = await import(
+          '../modules/Products/CatalogInactiveMediaCleanupService.js'
+        );
+        const result = await catalogInactiveMediaCleanupService.cleanup();
+        console.log(
+          `🖼️  [CronService] Очищення медіа завершено: товарів=${result.goodsProcessed}, зображень=${result.imagesDeleted}, помилок=${result.errors.length}.`,
+        );
+      } catch (err) {
+        console.error('🖼️  [CronService] Помилка очищення медіа каталогу:', err);
+      } finally {
+        this.isCatalogMediaCleanupRunning = false;
+      }
+    });
+    this.catalogMediaCleanupJob.start();
+    cronJobsRegistry.add(this.catalogMediaCleanupJob);
+    console.log('🖼️  [CronService] Catalog media cleanup job запущено (04:00 щодня)');
+  }
+
+  stopCatalogMediaCleanup(): void {
+    if (this.catalogMediaCleanupJob) {
+      this.catalogMediaCleanupJob.stop();
+      this.catalogMediaCleanupJob = null;
     }
   }
 }

@@ -5,6 +5,24 @@
 
 ---
 
+## 2026-10-01 — Каталог: дублювання, SKU, архівація медіа, doNotPublish
+
+**Files:** `server/modules/Products/ProductsCatalogService.ts`, `CatalogMediaService.ts`, `CatalogArchiveMediaService.ts`, `CatalogInactiveMediaCleanupService.ts`, `server/services/TelegramAlertService.ts`, `server/services/cronService.ts`
+
+### Дублювання товарів
+
+- **`suggestNextSku`** — порівняння останнього SKU в локальній папці та Dilovod; якщо Dilovod «новіший» — fallback + Telegram-алерт про розсинхрон.
+- **`duplicateGood`** — копіювання storefront-полів (без `wooProductId`), дублювання зображень через **`copyImagesFromGood`** (нові файли + записи в БД; відсутні на диску файли пропускаються з логом).
+
+### Архівація
+
+- При архівації (`archiveGoods` / move в папку архіву) — **`doNotPublish: true`** для товарів (не груп).
+- **`CatalogArchiveMediaService`** — при архівації надсилання зображень у Telegram як **document** (не photo) з назвою, SKU, описом, посиланням на картку та попередженням про видалення через 7 днів.
+- **`CatalogInactiveMediaCleanupService`** + cron **04:00** — видалення медіа архівних товарів через 7 днів після `archivedAt`; підсумок у Telegram.
+- **`TelegramAlertService`** — `sendAdminAlert`, `sendArchivedProductMedia`.
+
+---
+
 ## 2026-09-30 — Каталог: archivedAt, dirty-маркери в ProductDrawer, WC typography
 
 **Files:** `prisma/migrations/20260930124500_catalog_good_archived_at/`, `client/pages/Products/components/CatalogTable.tsx`, `CatalogTree.tsx`, `productDrawer/*`, `shared/utils/storefrontDescription*.ts`, `server/modules/Products/ProductsCatalogService.ts`, `server/modules/Storefront/WooCommerceSyncService.ts`

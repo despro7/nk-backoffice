@@ -31,7 +31,9 @@ import { getMissingRequiredCatalogFields } from '../../../shared/utils/catalogRe
 import { productsDilovodGateway } from './ProductsDilovodGateway.js';
 import { productsLocalSync } from './ProductsLocalSync.js';
 import { catalogMediaService } from './CatalogMediaService.js';
-import { pickLatestSku } from './skuUtils.js';
+import { catalogArchiveMediaService } from './CatalogArchiveMediaService.js';
+import { compareSku, pickLatestSku } from './skuUtils.js';
+import { telegramAlertService } from '../../services/TelegramAlertService.js';
 import { catalogBarcodeRowKey, matchExistingBarcode } from './barcodeUtils.js';
 import { sanitizeStoredBatchName } from '../../../shared/utils/dilovodBatchId.js';
 import {
@@ -760,9 +762,14 @@ export class ProductsCatalogService {
 
   /**
    * Наступний SKU: останній у поточній папці (локальне дзеркало) +1,
-   * з перевіркою унікальності по всьому каталогу Dilovod.
+   * з перевіркою унікальності в Dilovod.
+   * Якщо Dilovod має «новіший» SKU — fallback на Dilovod + Telegram-алерт.
    */
-  async suggestNextSku(parentId: string | null, excludeId?: string): Promise<string> {
+  async suggestNextSku(
+    parentId: string | null,
+    excludeId?: string,
+    alertContext?: string,
+  ): Promise<string> {
     const isRoot = !parentId || parentId === 'root';
     const siblings = await prisma.catalogGood.findMany({
       where: {
@@ -776,9 +783,82 @@ export class ProductsCatalogService {
       select: { sku: true },
     });
 
-    const latest = pickLatestSku(siblings.map((r) => r.sku || ''));
-    const base = latest || '01000';
-    return productsDilovodGateway.allocateNextSku(base);
+    const localLatest = pickLatestSku(siblings.map((r) => r.sku || ''));
+    const localBase = localLatest || '01000';
+
+    let dilovodLatest: string | null = null;
+    try {
+      const dilovodRows = await productsDilovodGateway.fetchGoodsByParent(parentId);
+      const dilovodSkus = dilovodRows
+        .filter((row) => !row.isGroup && row.sku)
+        .map((row) => String(row.sku).trim())
+        .filter(Boolean);
+      dilovodLatest = pickLatestSku(dilovodSkus);
+    } catch (err) {
+      logServer('[ProductsCatalogService] fetchGoodsByParent for SKU failed', err);
+    }
+
+    let base = localBase;
+    let usedDilovodFallback = false;
+
+    if (dilovodLatest && compareSku(dilovodLatest, localBase) > 0) {
+      base = dilovodLatest;
+      usedDilovodFallback = true;
+    }
+
+    const notifyDesync = (nextSku: string, forcedFallback = false): void => {
+      void this.notifySkuCatalogDesync({
+        parentId,
+        localLatest,
+        dilovodLatest,
+        chosenSku: nextSku,
+        context: alertContext,
+        forcedFallback,
+      });
+    };
+
+    try {
+      const nextSku = await productsDilovodGateway.allocateNextSku(base);
+      if (usedDilovodFallback) {
+        notifyDesync(nextSku);
+      }
+      return nextSku;
+    } catch (err) {
+      if (!usedDilovodFallback && dilovodLatest) {
+        const nextSku = await productsDilovodGateway.allocateNextSku(dilovodLatest);
+        notifyDesync(nextSku, true);
+        return nextSku;
+      }
+      throw err;
+    }
+  }
+
+  private notifySkuCatalogDesync(params: {
+    parentId: string | null;
+    localLatest: string | null;
+    dilovodLatest: string | null;
+    chosenSku: string;
+    context?: string;
+    forcedFallback?: boolean;
+  }): Promise<void> {
+    const folderLabel =
+      !params.parentId || params.parentId === 'root' ? 'корінь каталогу' : params.parentId;
+    const lines = [
+      '⚠️ Розсинхрон SKU: локальне дзеркало vs Діловод',
+      '',
+      `Папка: ${folderLabel}`,
+      `Локальний останній SKU: ${params.localLatest ?? '—'}`,
+      `Діловод останній SKU: ${params.dilovodLatest ?? '—'}`,
+      `Обраний SKU: ${params.chosenSku}`,
+    ];
+    if (params.context) {
+      lines.push(`Контекст: ${params.context}`);
+    }
+    if (params.forcedFallback) {
+      lines.push('Причина: не вдалося виділити SKU з локальної бази — використано Dilovod.');
+    }
+    lines.push('', 'Рекомендація: перевірте синхронізацію каталогу з Діловодом.');
+    return telegramAlertService.sendAdminAlert('Каталог: розсинхрон SKU', lines);
   }
 
   /**
@@ -1769,8 +1849,24 @@ export class ProductsCatalogService {
     if (!mapped.id) throw new Error('Не вдалося отримати обʼєкт з Dilovod');
     if (mapped.isGroup) throw new Error('Дублювання папок не підтримується в MVP');
 
-    const baseSku = mapped.sku || '01000';
-    const nextSku = await productsDilovodGateway.allocateNextSku(baseSku);
+    const localSource = await prisma.catalogGood.findUnique({
+      where: { id },
+      select: {
+        fullDescription: true,
+        unitRatio: true,
+        doNotPublish: true,
+        storefrontPresetId: true,
+        productIngredientsJson: true,
+        productNutritionJson: true,
+        storefrontDescriptionDoc: true,
+        grossWeight: true,
+        mainProductWeight: true,
+      },
+    });
+    const storefront = localSource ? mapStorefrontFieldsToDto(localSource) : null;
+
+    const alertContext = `дублювання «${mapped.name}»${mapped.sku ? ` (${mapped.sku})` : ''}`;
+    const nextSku = await this.suggestNextSku(mapped.parentId, id, alertContext);
     const copyName = `Копія ${mapped.name}`.trim();
 
     const prices = await productsDilovodGateway.fetchPricesForGoods([id]);
@@ -1794,7 +1890,7 @@ export class ProductsCatalogService {
       }
     }
 
-    return this.createGood({
+    const created = await this.createGood({
       name: copyName,
       parentId: mapped.parentId,
       isGroup: false,
@@ -1803,9 +1899,20 @@ export class ProductsCatalogService {
       packageRatio: mapped.packageRatio,
       weight: mapped.weight,
       specQty: mapped.specQty,
-      accPolicyId: mapped.accPolicyId || (mapped.components.length ? CATALOG_ACC_POLICY_KIT : CATALOG_ACC_POLICY_GOOD),
+      accPolicyId:
+        mapped.accPolicyId ||
+        (mapped.components.length ? CATALOG_ACC_POLICY_KIT : CATALOG_ACC_POLICY_GOOD),
       printName: mapped.printName,
       description: mapped.description,
+      fullDescription: localSource?.fullDescription ?? null,
+      unitRatio: localSource?.unitRatio ?? undefined,
+      doNotPublish: storefront?.doNotPublish,
+      storefrontPresetId: storefront?.storefrontPresetId ?? null,
+      productIngredientsJson: storefront?.productIngredientsJson ?? null,
+      productNutritionJson: storefront?.productNutritionJson ?? null,
+      storefrontDescriptionDoc: storefront?.storefrontDescriptionDoc ?? null,
+      grossWeight: storefront?.grossWeight ?? null,
+      mainProductWeight: storefront?.mainProductWeight ?? null,
       components: mapped.components.map((c) => ({
         componentGoodId: c.componentGoodId,
         qty: c.qty,
@@ -1819,6 +1926,15 @@ export class ProductsCatalogService {
       })),
       barcodes: uniqueBarcodes,
     });
+
+    try {
+      await catalogMediaService.copyImagesFromGood(id, created.id);
+    } catch (mediaErr) {
+      logServer('[ProductsCatalogService] copy images on duplicate failed', mediaErr);
+    }
+
+    const detail = await this.getGoodDetail(created.id);
+    return detail ?? created;
   }
 
   async moveGoods(ids: string[], targetParentId: string): Promise<{ moved: number; deactivated: number }> {
@@ -2013,6 +2129,12 @@ export class ProductsCatalogService {
       where: { id: { in: clean } },
       data: { archivedAt },
     });
+    if (archivedAt) {
+      await prisma.catalogGood.updateMany({
+        where: { id: { in: clean }, isGroup: false },
+        data: { doNotPublish: true },
+      });
+    }
   }
 
   async archiveGoods(ids: string[]): Promise<{ archived: number; archiveFolderId: string | null }> {
@@ -2081,6 +2203,10 @@ export class ProductsCatalogService {
     } catch (err) {
       logServer('[ProductsCatalogService] archive local sync failed', err);
       await this.refreshFromDilovod([...ids, archiveId]);
+    }
+
+    if (archivedIds.length > 0) {
+      void catalogArchiveMediaService.notifyArchivedGoods(archivedIds);
     }
 
     return { archived, archiveFolderId: archiveId };

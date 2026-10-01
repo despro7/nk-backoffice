@@ -74,6 +74,102 @@ export class TelegramAlertService {
     };
   }
 
+  /**
+   * Адмін-сповіщення в налаштований Telegram-канал (fire-and-forget safe).
+   * Не кидає помилку, якщо alerts вимкнені або не налаштовані.
+   */
+  /**
+   * Архівація товару: текст + файли зображень як document (не photo).
+   */
+  async sendArchivedProductMedia(params: {
+    name: string;
+    sku: string | null;
+    description: string | null;
+    productLink: string | null;
+    retentionDays: number;
+    files: Array<{ buffer: Buffer; filename: string; mimeType: string }>;
+  }): Promise<void> {
+    const { token, chatId, enabled } = await this.getBotConfig();
+    if (!enabled) {
+      logServer('TelegramAlertService: alerts disabled, skipping archived product media');
+      return;
+    }
+    if (!token || !chatId) {
+      logServer('TelegramAlertService: missing token or chatId, skipping archived product media');
+      return;
+    }
+
+    const descriptionLine = params.description?.trim()
+      ? truncate(params.description.trim(), 400)
+      : null;
+
+    const messageLines = [
+      '📦 Товар переведено в архів',
+      '',
+      `Назва: ${params.name}`,
+      params.sku ? `SKU: ${params.sku}` : 'SKU: —',
+      descriptionLine ? `Короткий опис: ${descriptionLine}` : null,
+      params.productLink ? `Посилання: ${params.productLink}` : null,
+      '',
+      `⚠️ Файли зображень будуть видалені з сервера через ${params.retentionDays} днів.`,
+      `Файлів у повідомленні: ${params.files.length}`,
+    ].filter((line): line is string => Boolean(line));
+
+    const text = [
+      '<b>Каталог: архівація товару</b>',
+      '',
+      ...messageLines.map((line) => escapeHtml(line)),
+    ].join('\n');
+
+    let replyToMessageId: number | undefined;
+    try {
+      replyToMessageId = await this.sendMessage(token, chatId, truncate(text, 4096));
+    } catch (err) {
+      logServer('TelegramAlertService sendArchivedProductMedia header failed', err);
+      return;
+    }
+
+    for (const file of params.files) {
+      try {
+        await this.sendDocument(
+          token,
+          chatId,
+          file.buffer,
+          file.filename,
+          file.mimeType,
+          undefined,
+          replyToMessageId,
+        );
+      } catch (err) {
+        logServer(`TelegramAlertService sendArchivedProductMedia file failed: ${file.filename}`, err);
+      }
+    }
+  }
+
+  async sendAdminAlert(title: string, messageLines: string[]): Promise<void> {
+    const { token, chatId, enabled } = await this.getBotConfig();
+    if (!enabled) {
+      logServer('TelegramAlertService: alerts disabled, skipping admin alert');
+      return;
+    }
+    if (!token || !chatId) {
+      logServer('TelegramAlertService: missing token or chatId, skipping admin alert');
+      return;
+    }
+
+    const text = [
+      `<b>${escapeHtml(title)}</b>`,
+      '',
+      ...messageLines.map((line) => escapeHtml(line)),
+    ].join('\n');
+
+    try {
+      await this.sendMessage(token, chatId, truncate(text, 4096));
+    } catch (err) {
+      logServer('TelegramAlertService sendAdminAlert failed', err);
+    }
+  }
+
   async sendTestMessage(): Promise<void> {
     const { token, chatId, enabled } = await this.getBotConfig();
     if (!enabled) {
