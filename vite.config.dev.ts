@@ -1,5 +1,6 @@
 import { defineConfig, Plugin } from "vite";
-import react from "@vitejs/plugin-react-swc";
+import react from "@vitejs/plugin-react";
+import locatorBabelJsx from "@locator/babel-jsx";
 import path from "path";
 import tailwindcss from "@tailwindcss/vite";
 import { createServer } from "./server";
@@ -23,7 +24,23 @@ export default defineConfig(({ mode }) => ({
   build: {
     outDir: "dist/client",
   },
-  plugins: [react(), expressPlugin(), tailwindcss()],
+  plugins: [
+    react({
+      babel: {
+        plugins: [
+          [
+            locatorBabelJsx,
+            {
+              // path — повний шлях у DOM, працює без window.__LOCATOR_DATA__
+              dataAttribute: "path",
+            },
+          ],
+        ],
+      },
+    }),
+    expressPlugin(),
+    tailwindcss(),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./client"),
@@ -36,7 +53,15 @@ export default defineConfig(({ mode }) => ({
     "process.env.CLIENT_URL": JSON.stringify(process.env.CLIENT_URL),
   },
   optimizeDeps: {
-    include: ["modern-screenshot"],
+    // Після зміни compiler-плагіна (SWC → Babel) кеш deps застаріває → 504 Outdated Optimize Dep
+    include: [
+      "modern-screenshot",
+      "react",
+      "react-dom",
+      "react-dom/client",
+      "react/jsx-dev-runtime",
+      "@locator/runtime",
+    ],
   },
 }));
 
