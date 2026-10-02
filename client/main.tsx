@@ -5,7 +5,8 @@ import App from "./App";
 createRoot(document.getElementById("root")!).render(<App />);
 
 if (import.meta.env.DEV) {
-  setupLocatorUI({
+  document.documentElement.dataset.locatorMouseModifiers = "meta+shift";
+	setupLocatorUI({
     targets: {
       cursor: "cursor://file/${projectPath}${filePath}:${line}:${column}",
     },
