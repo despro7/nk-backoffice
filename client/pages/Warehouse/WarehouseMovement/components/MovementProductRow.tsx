@@ -503,6 +503,7 @@ export const MovementProductRow = ({
                       .filter((_, i) => i !== editingBatchIndex)
                       .map((b) => `${b.batchId}:${b.storage}`),
                   )}
+                  portionsPerBox={!isSetProduct ? effectivePortionsPerBox : null}
                   onSelect={handleBatchSelect}
                   onClose={handleDrawerClose}
                   onRefresh={handleRefreshBatches}

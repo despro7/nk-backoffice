@@ -4,6 +4,8 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { useDebug } from '@/contexts/debug-context';
 import type { BatchNumber } from '../hooks/useBatchNumbers';
 import { resolveStorageIconClass } from '../storageDisplay';
+import { QtyPills } from '../../shared/QtyPills';
+import { breakdownStockPortions } from '../../WarehouseMovementMob/WarehouseMovementMobUtils';
 
 interface BatchNumbersAutocompleteProps {
   batches: BatchNumber[];
@@ -23,6 +25,8 @@ interface BatchNumbersAutocompleteProps {
   includeAllStorages?: boolean;
   /** Ключі вже доданих партій у форматі "batchId:storage" (крім поточної редагованої) */
   addedBatchKeys?: Set<string>;
+  /** Порцій у коробці — для віджета коробки + розсип під залишком */
+  portionsPerBox?: number | null;
   onSelect: (batch: BatchNumber) => void;
   onClose: () => void;
   /** Примусово оновити партії з Dilovod (скинути серверний кеш) */
@@ -46,6 +50,7 @@ export const BatchNumbersAutocomplete = ({
   sourceStorageName,
   includeAllStorages = false,
   addedBatchKeys,
+  portionsPerBox,
   onSelect,
   onClose,
   onRefresh,
@@ -103,6 +108,9 @@ export const BatchNumbersAutocomplete = ({
                       && selectedStorage === batch.storage
                     );
                     const isAlreadyAdded = addedBatchKeys?.has(`${batch.batchId}:${batch.storage}`) ?? false;
+                    const stockBreakdown = portionsPerBox != null && portionsPerBox > 0
+                      ? breakdownStockPortions(batch.quantity, portionsPerBox)
+                      : null;
                     return (
                       <motion.button
                         key={`${batch.batchId}:${batch.storage}`}
@@ -127,8 +135,8 @@ export const BatchNumbersAutocomplete = ({
                             : 'border-gray-200 bg-white hover:bg-gray-50'
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex-1">
+                        <div className="flex items-start gap-2">
+                          <div className="flex flex-col gap-2 w-full">
                             <div className="flex items-start gap-2 flex-wrap">
                               <span className="font-semibold text-gray-900">
                                 {batch.batchNumber}
@@ -147,21 +155,16 @@ export const BatchNumbersAutocomplete = ({
                                 </span>
                               )}
                             </div>
-                            
-                            <div className="mt-2 space-y-1">
-                              <div className="flex items-center gap-2 text-sm">
-                                <DynamicIcon name="warehouse" size={14} className={resolveStorageIconClass(batch.storage)} />
-                                <span className="text-gray-600">{batch.storageDisplayName || 'невідомий склад'}</span>
-                                <span className="font-semibold text-blue-600">
-                                  {batch.quantity} шт.
-                                </span>
-                              </div>
-                              
-                              {/* <div className="flex items-center gap-2 text-sm">
-                                <DynamicIcon name="building" size={14} className="text-gray-400" />
-                                <span className="text-gray-500">{batch.firmDisplayName}</span>
-                              </div> */}
+                            <div className="flex items-center gap-1 text-sm">
+                              <DynamicIcon name="warehouse" size={14} className={resolveStorageIconClass(batch.storage)} />
+                              <span className="text-gray-600">{batch.storageDisplayName || 'невідомий склад'}</span>
                             </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1 w-28">
+                            <span className="font-semibold text-blue-600 text-lg">{batch.quantity} <span className="text-xs font-light">шт.</span></span>
+                            {stockBreakdown && (
+                              <QtyPills boxes={stockBreakdown.boxes} loose={stockBreakdown.loosePortions} />
+                            )}
                           </div>
                         </div>
                       </motion.button>

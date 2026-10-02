@@ -291,7 +291,7 @@ Skeleton (`@heroui/react`) **прогресивно**: залишки (`stockLoa
 
 **Серверний bulk `/batch-numbers`:** per-SKU lookup у in-memory кеші; cache-miss SKU збираються в один виклик `getBatchNumbersBySkus`. `skipExpiration=true` пропускає enrichment термінів придатності (для mob не потрібен). Після фільтрації складів — **`dedupeBatchesByStorage`** (однакові `batchId+storage`, часто дубль по `firm` у Dilovod balance).
 
-**Picker партій (Products / mob):** спільний `BatchNumbersAutocomplete`; ключ рядка `batchId:storage`; у debug-режимі біля номера показується Dilovod `batchId`.
+**Picker партій (Products / mob):** спільний `BatchNumbersAutocomplete`; ключ рядка `batchId:storage`; у debug-режимі біля номера показується Dilovod `batchId`. Якщо передано `portionsPerBox`, під залишком показується **`QtyPills`** (коробки + розсип) — shared `client/pages/Warehouse/shared/QtyPills.tsx`, розрахунок через `breakdownStockPortions`.
 
 **Dilovod:** усі HTTP-запити йдуть через **глобальну чергу** `DilovodApiClient` (одна на процес) — паралельні API-ендпоінти backoffice не спричиняють `multithreadApiSession`. Див. `server/services/dilovod/README.md`.
 

@@ -5,6 +5,25 @@
 
 ---
 
+## 2026-10-02 — Склад: спільний QtyPills (коробки + розсип)
+
+**Files:** `client/pages/Warehouse/shared/QtyPills.tsx`, `BatchNumbersAutocomplete.tsx`, `MovementProductRow.tsx`, `MovementMobDocumentCard.tsx`, `Docs/features/warehouse-movement-mob.md`
+
+### Shared-компонент
+
+- **`QtyPills`** — винесено з `MovementMobDocumentCard` / `ReleaseComponentBatchesPanel` у `client/pages/Warehouse/shared/QtyPills.tsx`: іконки коробок (`package-2`) і розсипу (`paper-bag`) з кількістю.
+
+### BatchNumbersAutocomplete
+
+- Новий опційний проп **`portionsPerBox`**: під залишком партії (`N шт.`) показується розбивка коробки + розсип через `breakdownStockPortions`.
+- **`MovementProductRow`** передає `portionsPerBox` для звичайних товарів (не комплектів).
+
+### Рефакторинг
+
+- **`MovementMobDocumentCard`** — локальний дублікат `QtyPills` замінено на імпорт з shared.
+
+---
+
 ## 2026-10-01 — Каталог: confirm архівації, WC unpublish, дублювання, медіа
 
 **Files:** `client/pages/Products/components/ArchiveStockWarningBanner.tsx`, `ArchiveConfirmModal.tsx`, `MoveToFolderModal.tsx`, `ProductsUtils.ts`, `server/modules/Storefront/WooCommerceSyncService.ts`, `ProductsCatalogService.ts`, `CatalogMediaService.ts`, `CatalogArchiveMediaService.ts`, `CatalogInactiveMediaCleanupService.ts`, `server/services/TelegramAlertService.ts`, `server/services/cronService.ts`
