@@ -92,7 +92,16 @@ export default function ProductsPage() {
   const [storefrontSyncReport, setStorefrontSyncReport] = useState<StorefrontBulkSyncReport | null>(null);
   const [storefrontPushProgress, setStorefrontPushProgress] = useState<{ current: number; total: number } | null>(null);
   const [portionsBySku, setPortionsBySku] = useState<
-    Map<string, { newQty: number; confirmedQty: number; holdQty: number }>
+    Map<
+      string,
+      {
+        newQty: number;
+        confirmedQty: number;
+        readyToShipQty: number;
+        shippedQty: number;
+        holdQty: number;
+      }
+    >
   >(new Map());
   const [portionsLoading, setPortionsLoading] = useState(false);
   const [tableSort, setTableSort] = useState<SortDescriptor>(MANUAL_SORT);
@@ -134,33 +143,54 @@ export default function ProductsPage() {
     setPortionsLoading(true);
     void (async () => {
       try {
-        const [resNew, resConf, resHold] = await Promise.all([
+        const [resNew, resConf, resReady, resShipped, resHold] = await Promise.all([
           fetch('/api/orders/products/stats?status=1&splitMonolithic=true', { credentials: 'include' }),
           fetch('/api/orders/products/stats?status=2&splitMonolithic=true', { credentials: 'include' }),
+          fetch('/api/orders/products/stats?status=3&splitMonolithic=true', { credentials: 'include' }),
+          fetch('/api/orders/products/stats?status=4&splitMonolithic=true', { credentials: 'include' }),
           fetch('/api/orders/products/stats?status=9&splitMonolithic=true', { credentials: 'include' }),
         ]);
-        const [datNew, datConf, datHold] = await Promise.all([
+        const [datNew, datConf, datReady, datShipped, datHold] = await Promise.all([
           resNew.json(),
           resConf.json(),
+          resReady.json(),
+          resShipped.json(),
           resHold.json(),
         ]);
         if (cancelled) return;
-        const map = new Map<string, { newQty: number; confirmedQty: number; holdQty: number }>();
+        const map = new Map<
+          string,
+          {
+            newQty: number;
+            confirmedQty: number;
+            readyToShipQty: number;
+            shippedQty: number;
+            holdQty: number;
+          }
+        >();
         const apply = (
           data: { success?: boolean; data?: Array<{ sku?: string; orderedQuantity?: number }> },
-          key: 'newQty' | 'confirmedQty' | 'holdQty'
+          key: 'newQty' | 'confirmedQty' | 'readyToShipQty' | 'shippedQty' | 'holdQty'
         ) => {
           if (!data.success || !Array.isArray(data.data)) return;
           for (const item of data.data) {
             if (item.sku && (item.orderedQuantity ?? 0) > 0) {
               const skuKey = String(item.sku).trim().toLowerCase();
-              const existing = map.get(skuKey) ?? { newQty: 0, confirmedQty: 0, holdQty: 0 };
+              const existing = map.get(skuKey) ?? {
+                newQty: 0,
+                confirmedQty: 0,
+                readyToShipQty: 0,
+                shippedQty: 0,
+                holdQty: 0,
+              };
               map.set(skuKey, { ...existing, [key]: item.orderedQuantity! });
             }
           }
         };
         apply(datNew, 'newQty');
         apply(datConf, 'confirmedQty');
+        apply(datReady, 'readyToShipQty');
+        apply(datShipped, 'shippedQty');
         apply(datHold, 'holdQty');
         setPortionsBySku(map);
       } catch (err) {
@@ -183,7 +213,7 @@ export default function ProductsPage() {
       try {
         const params = new URLSearchParams({
           sku: ordersModalProduct.sku,
-          status: '1,2,9',
+          status: '1,2,3,4,9',
           splitMonolithic: 'true',
         });
         const res = await fetch(`/api/orders/products/orders?${params.toString()}`, {
@@ -724,8 +754,8 @@ export default function ProductsPage() {
         key: 'new',
         label: 'Нові',
         icon: 'sparkles' as const,
-        activeClassName: 'border-blue-600 text-blue-600',
-        badgeClassName: 'bg-blue-200/40 text-blue-900/75',
+        activeClassName: 'border-neutral-600 text-neutral-600',
+        badgeClassName: 'bg-neutral-100 text-neutral-600',
         orders: ordersByStatus('1'),
         quantityField: 'productQuantity' as const,
       },
@@ -733,17 +763,35 @@ export default function ProductsPage() {
         key: 'confirmed',
         label: 'Підтверджені',
         icon: 'check' as const,
-        activeClassName: 'border-green-600 text-green-600',
-        badgeClassName: 'bg-green-200/40 text-green-900/75',
+        activeClassName: 'border-yellow-950 text-yellow-950',
+        badgeClassName: 'bg-yellow-200 text-yellow-950',
         orders: ordersByStatus('2'),
+        quantityField: 'productQuantity' as const,
+      },
+      {
+        key: 'readyToShip',
+        label: 'Готові до відправки',
+        icon: 'package' as const,
+        activeClassName: 'border-orange-500 text-orange-500',
+        badgeClassName: 'bg-orange-100 text-orange-500',
+        orders: ordersByStatus('3'),
+        quantityField: 'productQuantity' as const,
+      },
+      {
+        key: 'shipped',
+        label: 'Відправлені',
+        icon: 'truck' as const,
+        activeClassName: 'border-sky-800/80 text-sky-800/80',
+        badgeClassName: 'bg-blue-100 text-sky-800/80',
+        orders: ordersByStatus('4'),
         quantityField: 'productQuantity' as const,
       },
       {
         key: 'hold',
         label: 'На утриманні',
         icon: 'pause' as const,
-        activeClassName: 'border-amber-600 text-amber-600',
-        badgeClassName: 'bg-amber-200/40 text-amber-800/80',
+        activeClassName: 'border-gray-800 text-gray-800',
+        badgeClassName: 'bg-[#e8d189] text-gray-800',
         orders: ordersByStatus('9'),
         quantityField: 'productQuantity' as const,
       },

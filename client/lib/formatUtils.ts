@@ -467,6 +467,10 @@ export const getStatusColor = (status: string): string => {
   }
 };
 
+/** Лише text-клас кольору статусу (для inline-значень без фону). */
+export const getStatusTextColor = (status: string): string =>
+  getStatusColor(status).split(" ").find((c) => c.startsWith("text-")) ?? "text-gray-600";
+
 export const ORDER_STATUSES = [
   { key: "all", label: "Усі статуси" },
   { key: "1", label: "Нове замовлення" },

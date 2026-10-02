@@ -17,6 +17,7 @@ import {
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { NumberInput } from '@/components/NumberInput';
+import { getStatusTextColor } from '@/lib/formatUtils';
 import { formatNumberInput, parseNumberInput } from '@/lib/numberInput';
 import {
   buildSpecColorMap,
@@ -52,9 +53,21 @@ import {
   isKitGood,
 } from '../ProductsUtils';
 
-export type CatalogOrdersTabKey = 'all' | 'new' | 'confirmed' | 'hold';
+export type CatalogOrdersTabKey =
+  | 'all'
+  | 'new'
+  | 'confirmed'
+  | 'readyToShip'
+  | 'shipped'
+  | 'hold';
 
-type PortionsStat = { newQty: number; confirmedQty: number; holdQty: number };
+type PortionsStat = {
+  newQty: number;
+  confirmedQty: number;
+  readyToShipQty: number;
+  shippedQty: number;
+  holdQty: number;
+};
 
 interface CatalogTableProps {
   rows: CatalogGoodDto[];
@@ -606,7 +619,13 @@ export function CatalogTable({
           return row.smallStock ?? 0;
         case 'inOrders': {
           const p = portionsBySku?.get(String(row.sku ?? '').trim().toLowerCase());
-          return (p?.newQty ?? 0) + (p?.confirmedQty ?? 0) + (p?.holdQty ?? 0);
+          return (
+            (p?.newQty ?? 0) +
+            (p?.confirmedQty ?? 0) +
+            (p?.readyToShipQty ?? 0) +
+            (p?.shippedQty ?? 0) +
+            (p?.holdQty ?? 0)
+          );
         }
         case 'weight':
           return row.weight ?? -1;
@@ -1449,13 +1468,50 @@ export function CatalogTable({
         if (row.isGroup) return <span className="text-default-300">—</span>;
         if (portionsLoading) return <span className="text-default-300 text-xs">…</span>;
         const p = portionsBySku?.get(String(row.sku ?? '').trim().toLowerCase());
-        const total = (p?.newQty ?? 0) + (p?.confirmedQty ?? 0) + (p?.holdQty ?? 0);
+        const total =
+          (p?.newQty ?? 0) +
+          (p?.confirmedQty ?? 0) +
+          (p?.readyToShipQty ?? 0) +
+          (p?.shippedQty ?? 0) +
+          (p?.holdQty ?? 0);
         if (total === 0) return <span className="text-default-300">—</span>;
         const asKits = isKitGood(row);
         const openOrders = (tab: CatalogOrdersTabKey) => {
           if (!row.sku || !onOpenOrders) return;
           onOpenOrders(row, tab);
         };
+        const statusQtyItems: Array<{
+          qty: number;
+          tab: CatalogOrdersTabKey;
+          status: string;
+          label: string;
+        }> = [
+          { qty: p?.newQty ?? 0, tab: 'new', status: '1', label: asKits ? 'Нові (комплекти)' : 'Нові замовлення' },
+          {
+            qty: p?.confirmedQty ?? 0,
+            tab: 'confirmed',
+            status: '2',
+            label: asKits ? 'Підтверджені (комплекти)' : 'Підтверджені',
+          },
+          {
+            qty: p?.readyToShipQty ?? 0,
+            tab: 'readyToShip',
+            status: '3',
+            label: asKits ? 'Готові до відправки (комплекти)' : 'Готові до відправки',
+          },
+          {
+            qty: p?.shippedQty ?? 0,
+            tab: 'shipped',
+            status: '4',
+            label: asKits ? 'Відправлені (комплекти)' : 'Відправлені',
+          },
+          {
+            qty: p?.holdQty ?? 0,
+            tab: 'hold',
+            status: '9',
+            label: asKits ? 'На утриманні (комплекти)' : 'На утриманні',
+          },
+        ];
         return (
           <div
             data-selection-ignore
@@ -1469,45 +1525,21 @@ export function CatalogTable({
               <span className="font-bold text-neutral-800 tabular-nums">{total}</span>
             </Tooltip>
             <div className="flex gap-1.5 text-xs px-1 py-0.5 rounded items-center bg-gray-100">
-              {(p?.newQty ?? 0) > 0 && (
-                <Tooltip color="secondary" content={asKits ? 'Нові (комплекти)' : 'Нові замовлення'}>
-                  <span
-                    className="text-blue-600 font-medium"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openOrders('new');
-                    }}
-                  >
-                    {p!.newQty}
-                  </span>
-                </Tooltip>
-              )}
-              {(p?.confirmedQty ?? 0) > 0 && (
-                <Tooltip color="secondary" content={asKits ? 'Підтверджені (комплекти)' : 'Підтверджені'}>
-                  <span
-                    className="text-green-600 font-medium"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openOrders('confirmed');
-                    }}
-                  >
-                    {p!.confirmedQty}
-                  </span>
-                </Tooltip>
-              )}
-              {(p?.holdQty ?? 0) > 0 && (
-                <Tooltip color="secondary" content={asKits ? 'На утриманні (комплекти)' : 'На утриманні'}>
-                  <span
-                    className="text-amber-600 font-medium"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openOrders('hold');
-                    }}
-                  >
-                    {p!.holdQty}
-                  </span>
-                </Tooltip>
-              )}
+              {statusQtyItems
+                .filter((item) => item.qty > 0)
+                .map((item) => (
+                  <Tooltip key={item.tab} color="secondary" content={item.label}>
+                    <span
+                      className={`${getStatusTextColor(item.status)} font-medium`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openOrders(item.tab);
+                      }}
+                    >
+                      {item.qty}
+                    </span>
+                  </Tooltip>
+                ))}
             </div>
           </div>
         );
