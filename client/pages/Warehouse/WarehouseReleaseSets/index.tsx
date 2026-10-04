@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tabs, Tab, Card, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button } from '@heroui/react';
+import { Tabs, Tab, Card, Button, Switch } from '@heroui/react';
 import PageTabs from '@/components/PageTabs';
 import useReleaseSets from './useReleaseSets';
 import SetSearchPanel from './components/SetSearchPanel';
@@ -13,14 +13,27 @@ import { useDebug } from '@/contexts/debug-context';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import { ToastService } from '@/services/ToastService';
+import ReleaseSendConfirmModal from './components/ReleaseSendConfirmModal';
+import {
+  buildCorrectionUnkitSummary,
+  buildKitSendSummary,
+  formatCorrectionBatchDateLabel,
+  type ReleaseConfirmMode,
+} from './releaseConfirmCopy';
+import type { KitOutputBatchInfo, ReleaseSendSummary } from '@shared/types/warehouseRelease';
 
+type PendingSimpleConfirm =
+  | { type: 'correctionOn' }
+  | { type: 'correctionOff' }
+  | { type: 'operationChange'; nextKey: 'goodKit' | 'goodUnKit' }
+  | { type: 'fillBatches'; sku: string };
 
 export default function ReleaseSetsPage() {
   const { isDebugMode } = useDebug();
   const { isAdmin } = useRoleAccess();
   const rs = useReleaseSets();
   const [operDate, setOperDate] = React.useState<string | null>(null);
-  const [pageTab, setPageTab] = React.useState<'main'|'history'|'archive'>('main');
+  const [pageTab, setPageTab] = React.useState<'main' | 'history' | 'archive'>('main');
   const [showPayloadPreview, setShowPayloadPreview] = React.useState(false);
   const [payloadPreview, setPayloadPreview] = React.useState<Record<string, any> | null>(null);
   const [isLoadingPayload, setIsLoadingPayload] = React.useState(false);
@@ -31,6 +44,16 @@ export default function ReleaseSetsPage() {
   const [pendingForceDeleteId, setPendingForceDeleteId] = React.useState<string | null>(null);
   const [isForceDeleting, setIsForceDeleting] = React.useState(false);
   const [showClearConfirm, setShowClearConfirm] = React.useState(false);
+  const [pendingSimpleConfirm, setPendingSimpleConfirm] = React.useState<PendingSimpleConfirm | null>(null);
+  const [isSimpleConfirmBusy, setIsSimpleConfirmBusy] = React.useState(false);
+  const [searchResetSignal, setSearchResetSignal] = React.useState(0);
+  const [kitOutputBatchPreview, setKitOutputBatchPreview] = React.useState<KitOutputBatchInfo | null>(null);
+  const [isKitBatchPreviewLoading, setIsKitBatchPreviewLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!rs.suggestedOperDate) return;
+    setOperDate(rs.suggestedOperDate);
+  }, [rs.suggestedOperDate]);
 
   const releaseReturns = React.useMemo(() => ({
     ...rs.returns,
@@ -42,24 +65,98 @@ export default function ReleaseSetsPage() {
   }), [rs.returns, operDate]);
 
   const isUnKitOperation = rs.operationKey === 'goodUnKit';
-  const operationItemsLabel = isUnKitOperation ? 'Набори для розукомплектування' : 'Набори для комплектування';
-  const operationTotalLabel = isUnKitOperation ? 'до повернення на склад' : 'до списання зі складу';
+  const operationItemsLabel = rs.correctionMode
+    ? (isUnKitOperation ? 'Крок 2: розукомплектування після перерахунку' : 'Крок 1: збір партій у інвентаризаційний набір')
+    : (isUnKitOperation ? 'Набори для розукомплектування' : 'Набори для комплектування');
+  const operationTotalLabel = isUnKitOperation ? 'до повернення на' : 'до списання з';
   const operationEmptyLabel = isUnKitOperation ? 'Немає компонентів для повернення' : 'Немає компонентів для списання';
   const sendButtonLabel = isUnKitOperation ? 'Створити розукомплектування' : 'Створити комплектування';
-  const confirmTitle = isUnKitOperation ? 'Підтвердження розукомплектування' : 'Підтвердження комплектування';
-  const confirmSubtitle = isUnKitOperation ? 'Перевірте короткий підсумок перед поверненням компонентів на склад.' : 'Перевірте короткий підсумок перед відправкою.';
   const payloadPreviewTitle = isUnKitOperation ? 'Перегляд Payload розукомплектування' : 'Перегляд Payload комплектування';
   const releaseDateLabel = isUnKitOperation ? 'Дата розукомплектування' : 'Дата комплектування';
 
-  const handleOperationChange = (key: string) => {
-    const nextKey = key === 'goodUnKit' ? 'goodUnKit' : 'goodKit';
-    if (nextKey === rs.operationKey) {
-      return;
+  const selectedSet = sendSnapshot ?? rs.items[0] ?? null;
+  const selectedReleaseDate = operDate ?? rs.returns?.returnDate ?? null;
+
+  const sendMode: ReleaseConfirmMode = rs.correctionMode
+    ? (isUnKitOperation ? 'correctionUnkit' : 'correctionKit')
+    : (isUnKitOperation ? 'unkit' : 'kit');
+
+  const sendSummary = React.useMemo<ReleaseSendSummary | null>(() => {
+    if (!selectedSet) return null;
+
+    const components = rs.previewComponents.map((component) => ({
+      sku: component.sku,
+      name: component.name,
+      quantity: Number(component.quantity ?? 0),
+      allocatedQuantity: Number(component.allocatedQuantity ?? 0),
+      batches: rs.componentBatches.find((allocation) => allocation.sku === component.sku)?.batches ?? component.batches ?? [],
+    }));
+
+    if (sendMode === 'correctionUnkit') {
+      return buildCorrectionUnkitSummary({
+        setSku: selectedSet.setSku,
+        setName: selectedSet.name,
+        quantity: Number(selectedSet.quantity ?? 0),
+        storageId: rs.selectedStorage,
+        storageName: rs.selectedStorageName,
+        operDate: selectedReleaseDate,
+        remark: rs.buildSetRemark?.(selectedSet) ?? null,
+        components,
+        expectedTotal: rs.correctionUnkitDiff.expected,
+        countedTotal: rs.correctionUnkitDiff.counted,
+        surplusBatchName: rs.correctionUnkitDiff.surplus > 0 ? formatCorrectionBatchDateLabel() : null,
+      });
     }
 
-    rs.setOperationKey(nextKey);
-    rs.clearAll();
-    setOperDate(null);
+    return buildKitSendSummary({
+      setSku: selectedSet.setSku,
+      setName: selectedSet.name,
+      quantity: Number(selectedSet.quantity ?? 0),
+      storageId: rs.selectedStorage,
+      storageName: rs.selectedStorageName,
+      operDate: selectedReleaseDate,
+      remark: rs.buildSetRemark?.(selectedSet) ?? null,
+      components,
+      kitOutputBatch: kitOutputBatchPreview,
+    });
+  }, [
+    selectedSet,
+    rs.previewComponents,
+    rs.componentBatches,
+    rs.selectedStorage,
+    rs.selectedStorageName,
+    selectedReleaseDate,
+    rs.correctionUnkitDiff,
+    sendMode,
+    rs.buildSetRemark,
+    kitOutputBatchPreview,
+  ]);
+
+  const sendWarnings = React.useMemo(() => {
+    const warnings: string[] = [];
+    for (const component of rs.previewComponents) {
+      const allocated = Number(component.allocatedQuantity ?? 0);
+      const required = Number(component.quantity ?? 0);
+      if (allocated > 0 && Math.abs(allocated - required) > 0.0001) {
+        warnings.push(`${component.sku}: обрано ${allocated} / потрібно ${required}`);
+      }
+      if (allocated === 0) {
+        warnings.push(`${component.sku}: партії не вказані`);
+      }
+    }
+    return warnings;
+  }, [rs.previewComponents]);
+
+  const sendDisabled = !rs.areComponentBatchesComplete
+    || (sendMode === 'correctionUnkit' && rs.correctionUnkitDiff.shortage > 0)
+    || (sendMode === 'kit' && isKitBatchPreviewLoading);
+
+  const hasUnsavedData = rs.items.length > 0
+    || rs.componentBatches.length > 0
+    || Boolean(rs.returns?.comment)
+    || Boolean(selectedReleaseDate);
+
+  const resetTransientUi = () => {
     setShowPayloadPreview(false);
     setPayloadPreview(null);
     setIsLoadingPayload(false);
@@ -70,29 +167,96 @@ export default function ReleaseSetsPage() {
     setIsForceDeleting(false);
   };
 
-  const selectedSet = sendSnapshot ?? rs.items[0] ?? null;
-  const selectedSetRemark = selectedSet ? (rs.buildSetRemark?.(selectedSet) ?? null) : null;
-  const selectedSetQuantity = Number(selectedSet?.quantity ?? 0);
-  const selectedSetComponentCount = Array.isArray(selectedSet?.componentsSnapshot) ? selectedSet.componentsSnapshot.length : 0;
-  const selectedReleaseDate = operDate ?? rs.returns?.returnDate ?? null;
+  const handleOperationChange = (key: string) => {
+    const nextKey = key === 'goodUnKit' ? 'goodUnKit' : 'goodKit';
+    if (nextKey === rs.operationKey) return;
 
-  const handleOpenSendConfirm = () => {
-    if (rs.items.length === 0) {
+    if (hasUnsavedData) {
+      setPendingSimpleConfirm({ type: 'operationChange', nextKey });
       return;
     }
 
+    rs.setOperationKey(nextKey);
+    setOperDate(null);
+    resetTransientUi();
+  };
+
+  const handleCorrectionSwitch = (enabled: boolean) => {
+    if (enabled === rs.correctionMode) return;
+
+    if (enabled) {
+      setPendingSimpleConfirm({ type: 'correctionOn' });
+      return;
+    }
+
+    if (hasUnsavedData) {
+      setPendingSimpleConfirm({ type: 'correctionOff' });
+      return;
+    }
+
+    rs.setCorrectionMode(false);
+    setSearchResetSignal((value) => value + 1);
+  };
+
+  const handleProductSelect = (product: any) => {
+    if (rs.correctionMode && rs.operationKey === 'goodKit') {
+      void rs.selectCorrectionProduct(product).catch((error) => {
+        const message = error instanceof Error ? error.message : 'Невідома помилка';
+        ToastService.show({ title: 'Помилка', description: message, color: 'danger' });
+      });
+      return;
+    }
+    void rs.addSet(product);
+  };
+
+  const handleOpenSendConfirm = () => {
+    if (rs.items.length === 0) return;
     setSendSnapshot(rs.items[0]);
     setSendResult(null);
+    setKitOutputBatchPreview(null);
     setShowSendConfirm(true);
+
+    if (sendMode === 'kit') {
+      setIsKitBatchPreviewLoading(true);
+      void rs.previewKitOutputBatch()
+        .then((preview) => setKitOutputBatchPreview(preview))
+        .catch(() => setKitOutputBatchPreview(null))
+        .finally(() => setIsKitBatchPreviewLoading(false));
+    }
   };
 
   const handleConfirmSend = async () => {
     setIsSendingRelease(true);
     try {
-      const result = await rs.requestSend();
+      const createSurplus = sendMode === 'correctionUnkit' && rs.correctionUnkitDiff.surplus > 0;
+      const result = await rs.requestSend({
+        createSurplusBatch: createSurplus,
+        surplusQuantity: createSurplus ? rs.correctionUnkitDiff.surplus : undefined,
+        surplusGoodId: createSurplus ? rs.correctionSourceGoodId : null,
+      });
       setSendResult(result ?? null);
       if (result?.success) {
-        setSendSnapshot((current) => current ?? rs.items[0] ?? null);
+        const snapshot = sendSnapshot ?? rs.items[0] ?? null;
+        const isCorrectionKitStep = rs.correctionMode && rs.operationKey === 'goodKit';
+
+        if (isCorrectionKitStep && snapshot) {
+          const shiftedDate = rs.transitionToCorrectionUnkitStep(snapshot, operDate ?? rs.returns?.returnDate);
+          if (shiftedDate) {
+            setOperDate(shiftedDate);
+          } else if (!operDate && rs.returns?.returnDate) {
+            setOperDate(rs.returns.returnDate);
+          }
+          ToastService.show({
+            title: 'Комплектування створено',
+            description: 'Перейдіть до кроку 2 — розукомплектування.',
+            color: 'success',
+          });
+          setShowSendConfirm(false);
+          setSendResult(null);
+          setSendSnapshot(null);
+        } else {
+          setSendSnapshot(snapshot);
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Невідома помилка';
@@ -126,34 +290,141 @@ export default function ReleaseSetsPage() {
     setShowClearConfirm(false);
     rs.clearAll();
     setOperDate(null);
-    setShowPayloadPreview(false);
-    setPayloadPreview(null);
-    setIsLoadingPayload(false);
-    setShowSendConfirm(false);
-    setSendResult(null);
-    setSendSnapshot(null);
+    resetTransientUi();
   };
+
+  const handleSimpleConfirm = async () => {
+    if (!pendingSimpleConfirm) return;
+    setIsSimpleConfirmBusy(true);
+
+    try {
+      switch (pendingSimpleConfirm.type) {
+        case 'correctionOn':
+          rs.setCorrectionMode(true);
+          rs.setOperationKey('goodKit');
+          setSearchResetSignal((value) => value + 1);
+          break;
+        case 'correctionOff':
+          rs.resetCorrectionState();
+          setOperDate(null);
+          setSearchResetSignal((value) => value + 1);
+          resetTransientUi();
+          break;
+        case 'operationChange':
+          rs.setOperationKey(pendingSimpleConfirm.nextKey);
+          rs.clearAll();
+          setOperDate(null);
+          resetTransientUi();
+          break;
+        case 'fillBatches': {
+          const result = await rs.applyFillBatches(pendingSimpleConfirm.sku);
+          ToastService.show({
+            title: 'Партії додано',
+            description: `Підставлено ${result.batchCount} партій (${result.totalQuantity} порцій)`,
+            color: 'success',
+          });
+          break;
+        }
+        default:
+          break;
+      }
+      setPendingSimpleConfirm(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Невідома помилка';
+      ToastService.show({ title: 'Помилка', description: message, color: 'danger' });
+    } finally {
+      setIsSimpleConfirmBusy(false);
+    }
+  };
+
+  const simpleConfirmCopy = React.useMemo(() => {
+    if (!pendingSimpleConfirm) return null;
+
+    switch (pendingSimpleConfirm.type) {
+      case 'correctionOn':
+        return {
+          title: 'Увімкнути коригування партійного обліку?',
+          message: 'Спочатку буде комплектування: усі партії зберуться в технічний набір `{sku}_rebatch`. Потім крок 2 — розукомплектування з розкладкою по порахованих партіях.',
+          confirmText: 'Увімкнути',
+        };
+      case 'correctionOff':
+        return {
+          title: 'Вийти з режиму коригування?',
+          message: 'Поточні дані форми буде очищено.',
+          confirmText: 'Вийти',
+        };
+      case 'operationChange':
+        return {
+          title: 'Змінити тип операції?',
+          message: 'Введені набори та партії буде скинуто.',
+          confirmText: 'Змінити',
+        };
+      case 'fillBatches': {
+        const storageName = rs.selectedStorageName ?? rs.selectedStorage ?? '—';
+        const productName =
+          rs.previewComponents.find((component) => component.sku === pendingSimpleConfirm.sku)?.name
+          ?? rs.previewComponents[0]?.name
+          ?? rs.items[0]?.name
+          ?? pendingSimpleConfirm.sku;
+        return {
+          title: 'Додати всі партії з залишком?',
+          message: (
+            <p>
+              Буде підставлено всі партії товару{' '}
+              <span className="font-semibold">{productName}</span>
+              {' '}<span className="text-xs text-gray-600 bg-amber-200/50 px-1 py-0.5 rounded">{productName !== pendingSimpleConfirm.sku ? ` SKU: ${pendingSimpleConfirm.sku}` : null}</span>
+              {' '}зі складу <span className="font-semibold">{`«${storageName}»`}</span>
+              {' '}(найбільші залишки першими).
+              Ви зможете відредагувати їх перед відправкою.
+            </p>
+          ),
+          confirmText: 'Додати',
+        };
+      }
+      default:
+        return null;
+    }
+  }, [pendingSimpleConfirm, rs.items, rs.previewComponents, rs.selectedStorage, rs.selectedStorageName]);
+
+  const correctionSourceSku = rs.correctionSourceSku ?? rs.previewComponents[0]?.sku ?? null;
 
   return (
     <div className="container">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-gray-500">Інтерфейс для комплектування готових наборів та їх розукомплектування. При комплектуванні наборів зі складу списується відповідна кількість компонентів набору. При розукомплектуванні наборів компоненти повертаються на склад.</p>
+        <p className="text-sm text-gray-500">
+          Інтерфейс для комплектування готових наборів та їх розукомплектування. При комплектуванні наборів зі складу списується відповідна кількість компонентів набору. При розукомплектуванні наборів компоненти повертаються на склад.
+        </p>
       </div>
 
-      <PageTabs className="mb-4" selectedKey={pageTab} onSelectionChange={(k) => {
-        const tab = k as 'main' | 'history' | 'archive';
-        setPageTab(tab);
-        if (tab === 'history' && rs.history.length === 0) {
-          void rs.loadHistory();
-        }
-        if (tab === 'archive' && rs.archiveSessions.length === 0) {
-          void rs.loadArchive();
-        }
-      }}>
-        <Tab key="main" title="Комплектація" />
-        <Tab key="history" title="Історія" />
-        {isAdmin() && <Tab key="archive" title="Архів" />}
-      </PageTabs>
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <PageTabs className="flex-1" selectedKey={pageTab} onSelectionChange={(key) => {
+          const tab = key as 'main' | 'history' | 'archive';
+          setPageTab(tab);
+          if (tab === 'history' && rs.history.length === 0) {
+            void rs.loadHistory();
+          }
+          if (tab === 'archive' && rs.archiveSessions.length === 0) {
+            void rs.loadArchive();
+          }
+        }}>
+          <Tab key="main" title="Комплектація" />
+          <Tab key="history" title="Історія" />
+          {isAdmin() && <Tab key="archive" title="Архів" />}
+        </PageTabs>
+
+        <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
+          <Switch
+            size="sm"
+            isSelected={rs.correctionMode}
+            onValueChange={handleCorrectionSwitch}
+            classNames={{
+              wrapper: 'group-data-[selected=true]:bg-blue-500!',
+            }}
+          >
+            Коригування партійного обліку
+          </Switch>
+        </div>
+      </div>
 
       {pageTab === 'main' && (
         <>
@@ -165,14 +436,35 @@ export default function ReleaseSetsPage() {
               fullWidth
               selectedKey={rs.operationKey}
               onSelectionChange={handleOperationChange}
-              classNames={{ base: "mb-6", cursor: "bg-white", tab: "h-12 font-medium [&>div]:flex [&>div]:items-center [&>div]:gap-1" }}
+              classNames={{
+                base: 'mb-6',
+                cursor: rs.correctionMode ? 'bg-blue-500' : 'bg-white',
+                tab: 'h-12 font-medium group [&>div]:flex [&>div]:items-center [&>div]:gap-1',
+                tabContent: rs.correctionMode
+                  ? 'group-data-[selected=true]:text-white text-blue-800 [&_svg]:group-data-[selected=true]:text-white'
+                  : undefined,
+                tabList: rs.correctionMode ? 'bg-blue-100' : undefined,
+              }}
             >
               <Tab key="goodKit" title={<><DynamicIcon name="package" size={20} strokeWidth={1.5} />Комплектування</>} />
               <Tab key="goodUnKit" title={<><DynamicIcon name="package-open" size={20} strokeWidth={1.5} />Розукомплектування</>} />
             </Tabs>
-            <SetSearchPanel onSelect={(s) => rs.addSet(s)} existingItems={rs.items} operationKey={rs.operationKey} />
+
+            <SetSearchPanel
+              onSelect={handleProductSelect}
+              onItemChange={rs.updateItem}
+              onItemRemove={rs.removeItem}
+              existingItems={rs.items}
+              resetSignal={searchResetSignal}
+              operationKey={rs.operationKey}
+              correctionMode={rs.correctionMode}
+              selectedStorage={rs.selectedStorage}
+              defaultSmallStorageId={rs.defaultSmallStorageId}
+              showAvailableQuantity={isUnKitOperation}
+            />
+
           </Card>
-        
+
           <WarehouseDetails
             returns={releaseReturns}
             storages={rs.storages}
@@ -185,17 +477,24 @@ export default function ReleaseSetsPage() {
           {rs.items.length > 0 && (
             <ReleaseItemsPanel
               items={rs.items}
-              onChange={rs.updateItem}
-              onRemove={rs.removeItem}
               selectedStorage={rs.selectedStorage}
               selectedStorageName={rs.selectedStorageName}
               smallStorageId={rs.defaultSmallStorageId}
-              returns={rs.returns}
-              title={operationItemsLabel}
+              returns={releaseReturns}
               summaryLabel={operationTotalLabel}
               emptyMessage={operationEmptyLabel}
-              showAvailableQuantity={isUnKitOperation}
               operationKey={rs.operationKey}
+              componentBatches={rs.componentBatches}
+              onComponentBatchesChange={rs.setComponentBatches}
+              previewComponents={rs.previewComponents}
+              lastKitPrefillInfo={rs.lastKitPrefillInfo}
+              correctionMode={rs.correctionMode}
+              correctionStep={rs.correctionStep}
+              onFillAllBatches={
+                rs.correctionMode && rs.correctionStep === 1 && correctionSourceSku
+                  ? () => setPendingSimpleConfirm({ type: 'fillBatches', sku: correctionSourceSku })
+                  : undefined
+              }
             />
           )}
 
@@ -204,7 +503,8 @@ export default function ReleaseSetsPage() {
             onSend={handleOpenSendConfirm}
             onCancel={rs.items.length > 0 ? () => setShowClearConfirm(true) : undefined}
             sendLabel={sendButtonLabel}
-            disabled={rs.items.length === 0}
+            sendDisabled={rs.items.length === 0 || sendDisabled}
+            previewDisabled={rs.items.length === 0}
           />
         </>
       )}
@@ -213,13 +513,16 @@ export default function ReleaseSetsPage() {
         <ReleaseHistoryTab
           records={rs.history}
           loading={rs.historyLoading}
-          onRefresh={rs.loadHistory}
+          pagination={rs.historyPagination}
+          onPageChange={(page) => void rs.loadHistory(page, rs.historyPagination.limit)}
+          onLimitChange={(limit) => void rs.loadHistory(1, limit)}
+          onRefresh={() => void rs.loadHistory(rs.historyPagination.page, rs.historyPagination.limit)}
           onDelete={async (recordId: number) => {
             try {
               const result = await rs.deleteRecord(recordId);
               if (result.ok && result.json?.success) {
                 ToastService.show({ title: 'Запис видалено', color: 'success' });
-                await rs.loadHistory();
+                await rs.loadHistory(rs.historyPagination.page, rs.historyPagination.limit);
                 return;
               }
 
@@ -243,9 +546,24 @@ export default function ReleaseSetsPage() {
           emptyMessage="Немає видалених випусків"
           records={rs.archiveSessions}
           loading={rs.archiveLoading}
-          onRefresh={rs.loadArchive}
+          pagination={rs.archivePagination}
+          onPageChange={(page) => void rs.loadArchive(page, rs.archivePagination.limit)}
+          onLimitChange={(limit) => void rs.loadArchive(1, limit)}
+          onRefresh={() => void rs.loadArchive(rs.archivePagination.page, rs.archivePagination.limit)}
         />
       )}
+
+      <ConfirmModal
+        isOpen={Boolean(pendingSimpleConfirm && simpleConfirmCopy)}
+        title={simpleConfirmCopy?.title ?? ''}
+        message={simpleConfirmCopy?.message ?? ''}
+        confirmText={simpleConfirmCopy?.confirmText ?? 'Підтвердити'}
+        cancelText="Скасувати"
+        confirmColor="primary"
+        confirmLoading={isSimpleConfirmBusy}
+        onConfirm={() => void handleSimpleConfirm()}
+        onCancel={() => setPendingSimpleConfirm(null)}
+      />
 
       <ConfirmModal
         isOpen={!!pendingForceDeleteId}
@@ -264,7 +582,7 @@ export default function ReleaseSetsPage() {
               throw new Error(result.json?.error || `Delete failed ${result.status}`);
             }
             ToastService.show({ title: 'Запис позначено як deleted', color: 'success' });
-            await rs.loadHistory();
+            await rs.loadHistory(rs.historyPagination.page, rs.historyPagination.limit);
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Невідома помилка';
             ToastService.show({ title: 'Не вдалося видалити локальний запис', description: message, color: 'danger' });
@@ -280,8 +598,8 @@ export default function ReleaseSetsPage() {
         isOpen={showClearConfirm}
         title="Скасувати поточний випуск?"
         message={isUnKitOperation
-          ? 'Усі вибрані набори та введені дані для розукомплектування буде очищено.'
-          : 'Усі вибрані набори та введені дані для комплектування буде очищено.'}
+          ? `Усі вибрані набори, партії та введені дані для розукомплектування буде очищено.${rs.componentBatches.length > 0 ? ' Обрані партії також буде скинуто.' : ''}`
+          : `Усі вибрані набори, партії та введені дані для комплектування буде очищено.${rs.componentBatches.length > 0 ? ' Обрані партії також буде скинуто.' : ''}`}
         confirmText="Скасувати випуск"
         cancelText="Залишити"
         confirmColor="danger"
@@ -297,109 +615,24 @@ export default function ReleaseSetsPage() {
         isLoading={isLoadingPayload}
       />
 
-      <Modal
+      <ReleaseSendConfirmModal
         isOpen={showSendConfirm}
+        mode={sendMode}
+        summary={sendSummary}
+        warnings={sendWarnings}
+        isSubmitting={isSendingRelease}
+        result={sendResult}
+        sendDisabled={sendDisabled}
+        kitBatchPreviewLoading={isKitBatchPreviewLoading}
+        sendLabel={sendButtonLabel}
+        onConfirm={() => void handleConfirmSend()}
         onClose={() => {
-          if (isSendingRelease) {
-            return;
-          }
+          if (isSendingRelease) return;
           setShowSendConfirm(false);
           setSendResult(null);
           setSendSnapshot(null);
         }}
-        size="lg"
-        backdrop="blur"
-        scrollBehavior="inside"
-      >
-        <ModalContent>
-          {(onClose) => (
-            <>
-              <ModalHeader className="flex flex-col gap-1">
-                <div className="text-xl font-semibold">{confirmTitle}</div>
-                <div className="text-sm font-normal text-gray-500">{confirmSubtitle}</div>
-              </ModalHeader>
-
-              <ModalBody className="gap-4">
-                {selectedSet ? (
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 space-y-2">
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Набір</span>
-                      <span className="font-semibold text-gray-900 text-right">{selectedSet.name || selectedSet.title || selectedSet.setSku || selectedSet.sku}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Кількість</span>
-                      <span className="font-semibold text-gray-900">{selectedSetQuantity} шт.</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Компонентів у наборі</span>
-                      <span className="font-semibold text-gray-900">{selectedSetComponentCount}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Склад</span>
-                      <span className="font-semibold text-gray-900 text-right">{rs.selectedStorageName ?? rs.selectedStorage ?? '—'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Дата випуску</span>
-                      <span className="font-semibold text-gray-900 text-right">{selectedReleaseDate ?? '—'}</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Примітка</span>
-                      <span className="font-semibold text-gray-900 text-right">{selectedSetRemark ?? '—'}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-900">
-                    Немає набору для підтвердження.
-                  </div>
-                )}
-
-                {sendResult && (
-                  <div
-                    className={`rounded-xl border p-4 text-sm ${sendResult.success ? 'border-lime-500/50 bg-lime-200 text-lime-800' : 'border-red-300/75 bg-red-200/80 text-red-900'}`}
-                  >
-                    <div className="text-lg font-semibold mb-2">
-                      {sendResult.success ? 'Відправка успішно виконана!' : 'Відправка не вдалася'}
-                    </div>
-                    <div className="space-y-1">
-                      <div className="opacity-80">Оновлення залишків: {sendResult.stockSyncTriggered ? 'запущено' : 'не запущено'}</div>
-                      {sendResult.error && <div>Помилка: {sendResult.error}</div>}
-                      {sendResult.errorFallback && <div>Деталі: {sendResult.errorFallback}</div>}
-                    </div>
-                  </div>
-                )}
-              </ModalBody>
-
-              <ModalFooter className="gap-2">
-                <Button
-                  variant="light"
-                  color="default"
-                  onPress={() => {
-                    if (isSendingRelease) {
-                      return;
-                    }
-                    onClose();
-                    setSendResult(null);
-                    setSendSnapshot(null);
-                  }}
-                  isDisabled={isSendingRelease}
-                >
-                  {sendResult?.success ? 'Закрити' : 'Скасувати'}
-                </Button>
-                {!sendResult?.success && (
-                  <Button
-                    color="primary"
-                    onPress={handleConfirmSend}
-                    isLoading={isSendingRelease}
-                    isDisabled={isSendingRelease || !selectedSet}
-                  >
-                    {sendButtonLabel}
-                  </Button>
-                )}
-              </ModalFooter>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
+      />
     </div>
   );
 }

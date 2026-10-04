@@ -176,14 +176,53 @@ await api.makeRequest({
 
 > **Не плутати** з `catalogs.employees` («Працівники») — це кадровий довідник для полів на кшталт `manager` у документах, не системні користувачі API/автори.
 
-## `catalogs.goodParts` — серійний № партії
+## `catalogs.goodParts` — партія товару
 
-У UI Dilovod поле **«Серійний № (серія)»** = API-поле **`code`**. `getMetadata` для `catalogs.goodParts` **не** віддає `name` / `number`, хоча `getObject` інколи їх повертає.
+Офіційний шаблон `saveObject`: [API Dilovod — saveObject](https://help.dilovod.ua/uk/article/api-dilovod-1gwt3m0/#1-saveobject-zberezhennya-danih-okremogo-obyektu).
+
+- **Новий запис:** `header.id = "catalogs.goodParts"` (ім'я метаданих).
+- **Оновлення:** `header.id = <числовий id>` (напр. `1112200000002148`).
+- **Мультимовний рядок:** `name: { uk: "…", ru: "…" }` — працює для довідників на кшталт `catalogs.units`, але **не** для `catalogs.goodParts` у базі NK Food.
+
+Приклад робочого створення kit-партії (перевірено live, 2026-10-03):
+
+```json
+{
+  "action": "saveObject",
+  "params": {
+    "header": {
+      "id": "catalogs.goodParts",
+      "owner": "1100300000001542",
+      "code": "K61003",
+      "date": "2026-10-03 00:00:00",
+      "expiration": "2027-10-03 00:00:00"
+    }
+  }
+}
+```
+
+Після збереження: `id__pr` у списку = `code`; `getObject` не повертає `name`/`number` навіть для ручних партій (напр. `61002`).
+
+У довіднику Dilovod (UI) є три окремі поля: **Найменування** (`name`), **Серійний №** (`code`), **Номер партії** (`number`).  
+У **live `getMetadata` NK Food** (перевірено 2026-10-03) через API доступні лише:
+
+| Поле UI (довідник) | Ключ API | У live `getMetadata` NK Food | `saveObject` |
+|---|---|---|---|
+| Серійний № | `code` | ✅ | ✅ Kit: `K` + YMMDD (`K61003`) |
+| Номер партії | `number` | ❌ | ❌ `cant set value of header.number` |
+| Найменування партії | `name` | ❌ | ❌ `cant set value of header.name` |
+| Термін придатності | `expiration` | ✅ | ✅ datetime `YYYY-MM-DD 00:00:00` |
+| Дата надходження | `date` | ✅ | ✅ datetime `YYYY-MM-DD HH:mm:ss` |
+| Товар | `owner` | ✅ | ✅ обовʼязковий |
+
+Відображення в списку Dilovod: `id.pr` = `code`. Ручні партії в UI можуть мати `name.uk` у JSON експорту, але `getObject` / `request` у цій базі поля `name`/`number` не повертають.
+
+Створення партій у backoffice: `DilovodGoodPartsService` — `resolveGoodPartWritableFields()` + `buildGoodPartCreateHeader()` (додає `name`/`number` лише якщо зʼявляться в метаданих). Утиліти: `formatGoodPartCodeForDilovod`, `formatGoodPartNumberForDilovod`, `formatBatchExpirationForDilovod` (`shared/utils/kitBatchName.ts`).
 
 | Ситуація | Джерело людської назви |
 |---|---|
 | `code` заповнений | `code` (канон) |
-| `code` порожній, є `name.uk` / `number` | `pickHumanBatchLabel` / `extractBatchLabelFromGoodPartHeader` |
+| `code` порожній, є `name.uk` / `number` у `getObject` | `pickHumanBatchLabel` / `extractBatchLabelFromGoodPartHeader` (лише читання) |
 | Усе порожнє | Альтернативи в balance / barcodes / documents **немає** — треба заповнити `code` |
 
 Аудит порожніх `code` (папка «Готова продукція»): Settings → Dilovod → `DilovodGoodPartsSerialAudit`.  

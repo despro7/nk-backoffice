@@ -30,6 +30,7 @@ import {
 } from '../../../shared/utils/dilovodBatchId.js';
 
 const router = Router();
+const warehouseOperate = requirePermission('warehouse', 'operate', 'Складські операції (відправка, чернетки)');
 
 requirePermission('warehouse', 'movement.edit', 'Редагувати чужі та відправлені переміщення');
 requirePermission('warehouse', 'movement.delete', 'Видаляти переміщення (у Dilovod — delMark)');
@@ -117,6 +118,27 @@ type BatchNumbersRow = {
 
 function batchLabelNeedsCatalogFallback(batch: Pick<BatchNumbersRow, 'batchId' | 'batchNumber'>): boolean {
   return batchNumberNeedsResolution(batch.batchNumber, batch.batchId);
+}
+
+async function enrichBatchesWithCatalogZeroBalance(
+  sku: string,
+  batches: BatchNumbersRow[],
+  options: {
+    includeNonPositiveQty: boolean;
+    storageId?: string;
+    firmId?: string;
+    allBalanceBatches?: BatchNumbersRow[];
+    dilovodService: InstanceType<typeof import('../../services/dilovod/DilovodService.js').DilovodService>;
+  },
+): Promise<BatchNumbersRow[]> {
+  if (!options.includeNonPositiveQty || !options.storageId) return batches;
+  return options.dilovodService.appendCatalogZeroBalanceBatches(
+    sku,
+    batches,
+    options.storageId,
+    options.firmId,
+    options.allBalanceBatches,
+  );
 }
 
 /** Dilovod balance може повертати кілька рядків на одну пару batchId+storage (різні firm). */
@@ -408,6 +430,36 @@ router.post('/resolve-batch-names', authenticateToken, async (req, res) => {
   }
 });
 
+// POST /api/warehouse/batches/create — створення нової партії в Dilovod
+router.post('/batches/create', authenticateToken, warehouseOperate, async (req, res) => {
+  try {
+    const goodId = String(req.body?.goodId ?? '').trim();
+    const batchName = String(req.body?.batchName ?? req.body?.name ?? '').trim();
+    const productionDate = req.body?.productionDate != null ? String(req.body.productionDate).trim() : null;
+
+    if (!goodId) {
+      return res.status(400).json({ success: false, error: 'goodId required' });
+    }
+    if (!batchName) {
+      return res.status(400).json({ success: false, error: 'batchName required' });
+    }
+
+    const result = await warehouseBatchesService.createCorrectionBatch({
+      goodId,
+      batchName,
+      productionDate,
+    });
+
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('🚨 [Warehouse] POST /batches/create:', error);
+    return res.status(422).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Внутрішня помилка сервера',
+    });
+  }
+});
+
 // GET /api/warehouse/batches — список партій готової продукції
 router.get('/batches', authenticateToken, async (req, res) => {
   try {
@@ -643,6 +695,9 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
       }
     }
 
+    const catalogEnrichStorageId = targetStorageId
+      ?? (shouldIncludeNonPositiveQty ? dilovodConfig.smallStorageId : undefined);
+
     // --- Кеш ---
     const storageMode: BatchStorageMode = shouldOnlySmallStorage
       ? 'small-only'
@@ -660,8 +715,25 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
         const ageLabel = ageSeconds < 60 ? `${ageSeconds}с` : (ageSeconds < 3600 ? `${Math.round(ageSeconds / 60)}хв` : `${Math.round(ageSeconds / 3600)}год`);
         const cachedTtlLabel = cached.ttl === BATCH_CACHE_TTL_LONG ? '12 год' : '5 хв';
         console.log(`✅ [Warehouse] Партії для SKU ${sku} отримані з кешу (вік: ${ageLabel}, TTL запису: ${cachedTtlLabel}). Дата переміщення ${parsedDate ? `${parsedDate.toLocaleString('uk-UA')}` : 'не вказана'}.`);
-        const cachedBatches = dedupeBatchesByStorage(
-          await enrichBatchNamesFromCatalog(cached.data as BatchNumbersRow[]),
+        let cachedBalanceBatches: BatchNumbersRow[] | undefined;
+        if (shouldIncludeNonPositiveQty && catalogEnrichStorageId) {
+          const rawBalanceBatches = await dilovodService.getBatchNumbersBySku(sku, finalFirmId, parsedDate, {
+            includeNonPositiveQty: true,
+          });
+          cachedBalanceBatches = await enrichBatchNamesFromCatalog(rawBalanceBatches);
+        }
+        const cachedBatches = await enrichBatchesWithCatalogZeroBalance(
+          sku,
+          dedupeBatchesByStorage(
+            await enrichBatchNamesFromCatalog(cached.data as BatchNumbersRow[]),
+          ),
+          {
+            includeNonPositiveQty: shouldIncludeNonPositiveQty,
+            storageId: catalogEnrichStorageId,
+            firmId: finalFirmId,
+            allBalanceBatches: cachedBalanceBatches,
+            dilovodService,
+          },
         );
         return res.json({
           success: true,
@@ -680,18 +752,28 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
 
     console.log(`📦 [Warehouse] GET /batch-numbers/:sku - запит партій для SKU: ${sku}${parsedDate ? ` на дату ${parsedDate.toLocaleString('uk-UA')}` : ''}${shouldIncludeNonPositiveQty ? ' (вкл. qty≤0)' : ''}`);
 
-    const batches = await dilovodService.getBatchNumbersBySku(sku, finalFirmId, parsedDate, {
-      includeNonPositiveQty: shouldIncludeNonPositiveQty,
-    });
+    const balanceBatches = await enrichBatchNamesFromCatalog(
+      await dilovodService.getBatchNumbersBySku(sku, finalFirmId, parsedDate, {
+        includeNonPositiveQty: shouldIncludeNonPositiveQty,
+      }),
+    );
 
-    const filteredBatches = dedupeBatchesByStorage(
-      await enrichBatchNamesFromCatalog(
-        filterBatchesByStorageMode(batches, dilovodConfig, {
+    const filteredBatches = await enrichBatchesWithCatalogZeroBalance(
+      sku,
+      dedupeBatchesByStorage(
+        filterBatchesByStorageMode(balanceBatches, dilovodConfig, {
           targetStorageId,
           shouldOnlySmallStorage,
           shouldIncludeSmallStorage,
         }),
       ),
+      {
+        includeNonPositiveQty: shouldIncludeNonPositiveQty,
+        storageId: catalogEnrichStorageId,
+        firmId: finalFirmId,
+        allBalanceBatches: balanceBatches,
+        dilovodService,
+      },
     );
 
     const filterLabel = targetStorageId
@@ -702,7 +784,7 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
           ? 'усі склади'
           : 'без малого складу';
 
-    console.log(`✅ [Warehouse] Отримано ${batches.length} партій для SKU: ${sku}, після фільтрації (${filterLabel}): ${filteredBatches.length}. Кешуємо на ${ttlLabel}`);
+    console.log(`✅ [Warehouse] Отримано ${balanceBatches.length} партій для SKU: ${sku}, після фільтрації (${filterLabel}): ${filteredBatches.length}. Кешуємо на ${ttlLabel}`);
 
     // Порожні відповіді не кешуємо довго — уникаємо «отруєного» кешу при тимчасових збоях Dilovod
     if (filteredBatches.length > 0) {

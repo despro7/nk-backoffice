@@ -1,30 +1,61 @@
 import { useMemo, useEffect, useState } from 'react';
-import { Button, Card, Popover, PopoverTrigger, PopoverContent } from '@heroui/react';
-import { DynamicIcon } from 'lucide-react/dynamic';
-import { StepperInput } from '../../shared/StepperInput';
+import { Card } from '@heroui/react';
 import { HistoryItemsTable, type HistoryItemsTableColumn } from '../../shared/HistoryItemsTable';
 import type { ReleaseSetsOperationKey } from '../useReleaseSets';
+import ReleaseComponentBatchesPanel from './ReleaseComponentBatchesPanel';
+import type { ReleaseComponentAllocation, ReleasePreviewComponent } from '@shared/types/warehouseRelease';
+
+function getBomPerSetQuantity(items: any[], sku: string): number | undefined {
+  for (const item of items) {
+    const components = Array.isArray(item.componentsSnapshot) ? item.componentsSnapshot : [];
+    for (const component of components) {
+      const componentSku = String(component.id ?? component.sku ?? component.code ?? '').trim();
+      if (componentSku !== sku) continue;
+      const quantity = Number(component.quantity ?? component.qty ?? NaN);
+      if (Number.isFinite(quantity) && quantity > 0) return quantity;
+    }
+  }
+  return undefined;
+}
 
 interface Props {
   items: any[];
-  onChange: (id: string, patch: Partial<any>) => void;
-  onRemove: (id: string) => void;
   selectedStorage?: string | null;
   selectedStorageName?: string | null;
   smallStorageId?: string | null;
   returns?: any;
-  title?: string;
   summaryLabel?: string;
   emptyMessage?: string;
-  showAvailableQuantity?: boolean;
   operationKey?: ReleaseSetsOperationKey;
+  componentBatches?: ReleaseComponentAllocation[];
+  onComponentBatchesChange?: (next: ReleaseComponentAllocation[]) => void;
+  previewComponents?: ReleasePreviewComponent[];
+  lastKitPrefillInfo?: { releaseId: number | null; dilovodDocId: string | null } | null;
+  correctionMode?: boolean;
+  correctionStep?: number | null;
+  onFillAllBatches?: () => void;
 }
 
-export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedStorage, selectedStorageName, smallStorageId, returns, title = 'Набори для випуску', summaryLabel = 'до списання зі складу', emptyMessage = 'Немає компонентів для списання', showAvailableQuantity = false, operationKey = 'goodKit' }: Props) {
+export default function ReleaseItemsPanel({
+  items,
+  selectedStorage,
+  selectedStorageName,
+  smallStorageId,
+  returns,
+  summaryLabel = 'до списання з',
+  emptyMessage = 'Немає компонентів для списання',
+  operationKey = 'goodKit',
+  componentBatches = [],
+  onComponentBatchesChange,
+  previewComponents = [],
+  lastKitPrefillInfo = null,
+  correctionMode = false,
+  correctionStep = null,
+  onFillAllBatches,
+}: Props) {
   const [namesMap, setNamesMap] = useState<Record<string, string>>({});
-  const [isSetMap, setIsSetMap] = useState<Record<string, boolean>>({});
-  const [setItemsMap, setSetItemsMap] = useState<Record<string, any[]>>({});
-  const [aggregatedServer, setAggregatedServer] = useState<Record<string, { name?: string; sku: string; total: number }> | null>(null);
+  const [portionsPerBoxMap, setPortionsPerBoxMap] = useState<Record<string, number>>({});
+  const [aggregatedServer, setAggregatedServer] = useState<Record<string, { name?: string; sku: string; total: number; perSet?: number }> | null>(null);
   const [storageQtyMap, setStorageQtyMap] = useState<Record<string, number | null>>({});
   const [aggLoading, setAggLoading] = useState(false);
 
@@ -67,30 +98,16 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
   useEffect(() => {
     // SKUs where we need to fetch names (only missing names)
     const nameNeededSkus = new Set<string>();
-    // SKUs to check whether product is a set (include all component SKUs + top-level set SKUs)
-    const setCheckSkus = new Set<string>();
-
     for (const it of items) {
       const comps = Array.isArray(it.componentsSnapshot) ? it.componentsSnapshot : [];
       for (const c of comps) {
         const compSku = String(c.id ?? c.sku ?? c.code ?? (c['id'] ?? c['sku'] ?? '')).trim();
         if (!compSku) continue;
-        setCheckSkus.add(compSku);
         if (!c.name) nameNeededSkus.add(compSku);
       }
     }
 
-    // Also include top-level set SKUs so we can detect nested sets
-    for (const it of items) {
-      if (it.setSku) {
-        const s = String(it.setSku).trim();
-        if (s) setCheckSkus.add(s);
-      }
-    }
-
-    // Combine SKUs to fetch (we always request `set` for all setCheckSkus;
-    // names are optional but harmless to request for the same set)
-    const skus = Array.from(new Set([...Array.from(setCheckSkus), ...Array.from(nameNeededSkus)]));
+    const skus = Array.from(nameNeededSkus);
     if (skus.length === 0) return;
 
     let cancelled = false;
@@ -105,7 +122,7 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
         for (let i = 0; i < normalized.length; i += chunkSize) chunks.push(normalized.slice(i, i + chunkSize));
 
         await Promise.all(chunks.map(async (chunk) => {
-          const res = await fetch(`/api/products/batch?skus=${encodeURIComponent(chunk.join(','))}&fields=name,set`, { credentials: 'include' });
+          const res = await fetch(`/api/products/batch?skus=${encodeURIComponent(chunk.join(','))}&fields=name`, { credentials: 'include' });
           if (!res.ok) return;
           const json = await res.json().catch(() => null);
           if (!json) return;
@@ -114,26 +131,14 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
         }));
 
         const map: Record<string, string> = {};
-        const setFlagMap: Record<string, boolean> = {};
-        const setItems: Record<string, any[]> = {};
         for (const p of allProducts) {
-          if (p && p.sku) {
-            const sku = String(p.sku).trim();
-            if (p.name) map[sku] = p.name;
-            const hasSet = !!(p.set && ((Array.isArray(p.set) && p.set.length > 0) || (typeof p.set === 'string' && p.set.trim().length > 0)));
-            setFlagMap[sku] = hasSet;
-            if (hasSet) {
-              // normalize set items to array of { id/sku, quantity, name }
-              const itemsArr = Array.isArray(p.set) ? p.set : [];
-              setItems[sku] = itemsArr.map((it: any) => ({ id: it.id ?? it.sku, sku: it.id ?? it.sku, quantity: it.quantity ?? 1, name: it.name }));
-            }
+          if (p && p.sku && p.name) {
+            map[String(p.sku).trim()] = p.name;
           }
         }
 
         if (!cancelled) {
           setNamesMap((prev) => ({ ...prev, ...map }));
-          setIsSetMap((prev) => ({ ...prev, ...setFlagMap }));
-          setSetItemsMap((prev) => ({ ...prev, ...setItems }));
         }
       } catch (e) {
         // ignore
@@ -142,6 +147,56 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
 
     return () => { cancelled = true; };
   }, [items]);
+
+  useEffect(() => {
+    const skus = new Set<string>();
+    for (const component of previewComponents) {
+      if (component.sku) skus.add(component.sku);
+    }
+    for (const it of items) {
+      const comps = Array.isArray(it.componentsSnapshot) ? it.componentsSnapshot : [];
+      for (const c of comps) {
+        const compSku = String(c.id ?? c.sku ?? c.code ?? '').trim();
+        if (compSku) skus.add(compSku);
+      }
+    }
+
+    const normalized = Array.from(skus).sort();
+    if (normalized.length === 0) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const chunkSize = 50;
+        const map: Record<string, number> = {};
+
+        for (let i = 0; i < normalized.length; i += chunkSize) {
+          const chunk = normalized.slice(i, i + chunkSize);
+          const res = await fetch(
+            `/api/products/batch?skus=${encodeURIComponent(chunk.join(','))}&fields=portionsPerBox`,
+            { credentials: 'include' },
+          );
+          if (!res.ok) continue;
+          const json = await res.json().catch(() => null);
+          const list = Array.isArray(json?.products) ? json.products : [];
+          for (const product of list) {
+            const sku = String(product?.sku ?? '').trim();
+            const portionsPerBox = Number(product?.portionsPerBox ?? NaN);
+            if (!sku || !Number.isFinite(portionsPerBox) || portionsPerBox <= 0) continue;
+            map[sku] = portionsPerBox;
+          }
+        }
+
+        if (!cancelled) {
+          setPortionsPerBoxMap((prev) => ({ ...prev, ...map }));
+        }
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [items, previewComponents]);
 
   // Compute aggregated totals per component SKU across all selected sets
   const aggregated = useMemo(() => {
@@ -194,7 +249,7 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
       try {
         const skusParam = skus.join(',');
         const firmId = returns?.receiveFirmId ?? undefined;
-        const parsedAsOfDate = parseLocalDate(returns?.returnDate);
+        const parsedAsOfDate = parseLocalDate(returns?.operDate ?? returns?.returnDate);
         const asOfDate = parsedAsOfDate ? parsedAsOfDate.toISOString() : undefined;
         const encodedLen =
           encodeURIComponent(skusParam).length +
@@ -246,11 +301,41 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [aggregatedSkuSignature, selectedStorage, smallStorageId, returns?.receiveFirmId, returns?.returnDate]);
+  }, [aggregatedSkuSignature, selectedStorage, smallStorageId, returns?.receiveFirmId, returns?.operDate, returns?.returnDate]);
 
   const stockColumnLabel = selectedStorageName
     ? `Залишки ${selectedStorageName}`
     : 'Залишки складу';
+
+  const batchPanelComponents = useMemo(() => {
+    const activeSetQuantity = Number(items[0]?.quantity ?? 1);
+
+    if (previewComponents.length > 0) {
+      return previewComponents.map((component) => {
+        const perSetQuantity = getBomPerSetQuantity(items, component.sku)
+          ?? aggregated[component.sku]?.perSet
+          ?? Number(component.quantity ?? 0);
+        const localRequired = perSetQuantity * activeSetQuantity;
+        const previewRequired = Number(component.quantity ?? 0);
+        const requiredQuantity = localRequired > 0 ? localRequired : previewRequired;
+        return {
+          sku: component.sku,
+          name: component.name,
+          requiredQuantity,
+          perSetQuantity,
+          portionsPerBox: portionsPerBoxMap[component.sku] ?? null,
+        };
+      });
+    }
+
+    return Object.values(aggregated).map((row) => ({
+      sku: row.sku,
+      name: row.name || namesMap[row.sku] || row.sku,
+      requiredQuantity: Number(row.total ?? 0),
+      perSetQuantity: Number(row.perSet ?? 1),
+      portionsPerBox: portionsPerBoxMap[row.sku] ?? null,
+    }));
+  }, [previewComponents, aggregated, namesMap, portionsPerBoxMap, items]);
 
   const summaryColumns: HistoryItemsTableColumn[] = [
     {
@@ -308,8 +393,33 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
       align: 'center',
     },
     {
+      key: 'batches',
+      label: 'Партія',
+      render: (item: any) => {
+        const allocation = componentBatches.find((entry) => entry.sku === item.sku);
+        const batches = allocation?.batches ?? [];
+        if (batches.length === 0) return <span className="text-xs text-gray-400">—</span>;
+        return (
+          <div className="space-y-1 text-xs text-gray-700">
+            {batches.map((batch, index) => (
+              <div key={`${item.sku}-${batch.batchId}-${index}`}>
+                {batch.batchNumber || batch.batchId} ({batch.quantity})
+              </div>
+            ))}
+          </div>
+        );
+      },
+      sortValue: (item: any) => {
+        const allocation = componentBatches.find((entry) => entry.sku === item.sku);
+        return allocation?.batches?.length ?? 0;
+      },
+      sortType: 'number',
+      className: 'text-left',
+      headerClassName: 'text-left',
+    },
+    {
       key: 'total',
-      label: 'До списання',
+      label: operationKey === 'goodUnKit' ? 'До повернення' : 'До списання',
       render: (item: any) => Number(item.total ?? 0),
       sortValue: (item: any) => Number(item.total ?? 0),
       sortType: 'number',
@@ -336,10 +446,16 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
         if (!resp.ok) return;
         const json = await resp.json().catch(() => null);
         if (!json || !json.success || !Array.isArray(json.data)) return;
-        const map: Record<string, { name?: string; sku: string; total: number }> = {};
+        const map: Record<string, { name?: string; sku: string; total: number; perSet?: number }> = {};
         for (const c of json.data) {
           if (!c || !c.sku) continue;
-          map[c.sku] = { name: c.name || undefined, sku: c.sku, total: Number(c.quantity || 0) };
+          const total = Number(c.quantity || 0);
+          map[c.sku] = {
+            name: c.name || undefined,
+            sku: c.sku,
+            total,
+            perSet: getBomPerSetQuantity(items, c.sku) ?? total,
+          };
         }
         if (!cancelled) setAggregatedServer(map);
       } catch (e) {
@@ -354,107 +470,37 @@ export default function ReleaseItemsPanel({ items, onChange, onRemove, selectedS
 
   return (
     <>
-		<h3 className="font-medium mb-2">{title}</h3>
-    <Card className="rounded-xl border border-gray-200 bg-white p-4 mb-6">
-      {items.map((it) => (
-        <div key={it.id} className="border-b border-gray-100 pb-6 mb-4 last:border-b-0 last:mb-0 last:pb-2">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1">
-              <span className="text-xs font-medium text-gray-500 mb-1">Товар</span>
-              <div className="flex flex-col items-start">
-                <span className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-gray-900">{it.name}</span>
-                  {showAvailableQuantity && (
-                    <span className="text-[11px] font-semibold bg-lime-200 text-emerald-800 px-2 py-1 rounded-full">
-                      Залишок {Number(it.availableQuantity ?? 0)} компл.
-                    </span>
-                  )}
-                </span>
-                <span className="text-xs font-normal text-gray-600 bg-amber-200/50 px-1 py-0.5 rounded">SKU: {it.setSku}</span>
-              </div>
-            </div>
+    {operationKey === 'goodUnKit' && lastKitPrefillInfo?.releaseId && (
+      <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+        Партії підставлено з останнього комплектування №{lastKitPrefillInfo.releaseId}
+        {lastKitPrefillInfo.dilovodDocId ? ` (Dilovod ${lastKitPrefillInfo.dilovodDocId})` : ''}.
+      </div>
+    )}
 
-            <div className="flex items-end gap-4">
-              <StepperInput
-                label="Кількість наборів"
-                value={Number(it.quantity ?? 0)}
-                onChange={(v:number) => onChange(it.id, { quantity: v })}
-                onIncrement={() => onChange(it.id, { quantity: Number(it.quantity ?? 0) + 1 })}
-                onDecrement={() => onChange(it.id, { quantity: Math.max(1, Number(it.quantity ?? 0) - 1) })}
-                max={showAvailableQuantity ? Number(it.availableQuantity ?? 0) : undefined}
-                size="sm"
-                className="w-32"
-                labelClassName="text-xs font-medium self-start"
-              />
-
-              <Button
-                color="danger"
-                variant="light"
-                className="min-w-0 p-3"
-                onPress={() => onRemove(it.id)}
-              >
-                <DynamicIcon name="trash-2" className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
-
-          {/* Components list for this set */}
-          <div className="mt-3">
-            <div className="text-xs font-medium text-gray-500 mb-2">Компоненти набору ({it.componentsSnapshot.length})</div>
-            {Array.isArray(it.componentsSnapshot) && it.componentsSnapshot.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {it.componentsSnapshot.map((c: any, idx: number) => {
-                  const compKey = String(c.id ?? c.sku ?? '').trim();
-                  return (
-                    <div key={compKey || idx} className="flex items-center justify-between gap-3 py-1 px-2 rounded-sm bg-indigo-50 border border-indigo-100">
-                      <div className="text-sm">
-                        <div className="flex items-center gap-2">
-                          <div className="font-medium text-gray-800">{c.name || c.title || namesMap[compKey] || c.id || c.sku}</div>
-                          {isSetMap[String(compKey)] && (
-                            <Popover showArrow placement="right">
-                              <PopoverTrigger>
-                                <button type="button" className="text-xs text-indigo-700 bg-indigo-100 border border-indigo-200 px-1 rounded">Набір</button>
-                              </PopoverTrigger>
-                              <PopoverContent className="p-3 bg-white border border-gray-200 shadow-lg">
-                                <div className="font-semibold mb-2 max-w-60 text-center leading-tight">Склад набору «{c.name || c.title || namesMap[compKey] || c.id || c.sku}»</div>
-                                <div className="max-h-80 overflow-auto text-[13px]">
-                                  {(setItemsMap[compKey] || []).map((s: any) => (
-                                    <div key={s.sku} className="flex items-end justify-between gap-4">
-                                      <div>{s.name || namesMap[s.sku] || s.sku}</div>
-                                      <div>{s.quantity} шт.</div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </PopoverContent>
-                            </Popover>
-                          )}
-                        </div>
-                        <div className="text-xs text-gray-500">SKU: {c.id || c.sku}</div>
-                      </div>
-                      <div className="text-right text-xs text-gray-700">
-                        <div>В наборі: <strong>{Number(c.quantity ?? c.qty ?? 1)} шт.</strong></div>
-                        <div>Разом: <strong>{Number(c.quantity ?? c.qty ?? 1) * Number(it.quantity ?? 0)} шт.</strong></div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="text-sm text-gray-500">Компоненти не вказані</div>
-            )}
-          </div>
-        </div>
-      ))}
-    </Card>
+    {onComponentBatchesChange && batchPanelComponents.length > 0 && (
+      <ReleaseComponentBatchesPanel
+        components={batchPanelComponents}
+        componentBatches={componentBatches}
+        onChange={onComponentBatchesChange}
+        selectedDateTime={parseLocalDate(returns?.operDate ?? returns?.returnDate)}
+        firmId={returns?.receiveFirmId}
+        storageId={selectedStorage ?? smallStorageId ?? null}
+        storageName={selectedStorageName}
+        operationKey={operationKey}
+        correctionMode={correctionMode}
+        correctionStep={correctionStep}
+        onFillAllBatches={onFillAllBatches}
+      />
+    )}
 
     {/* Aggregated totals across all sets */}
     <h3 className="text-lg font-medium mb-2">
       Сумарно {summaryLabel} {selectedStorageName ?? selectedStorage ?? 'не вказано'} – {totalToRelease} шт.
       {aggLoading && <span className="text-sm font-normal text-gray-500"> • оновлюємо залишки складу...</span>}
     </h3>
-    <Card className="rounded-xl border border-gray-200 bg-white p-4 mb-6">
+    <Card className="rounded-lg border border-gray-200 bg-white p-1 mb-6">
       {aggregatedRows.length === 0 ? (
-        <div className="text-sm text-gray-500">{emptyMessage}</div>
+        <div className="text-sm text-gray-500 p-3">{emptyMessage}</div>
       ) : (
         <HistoryItemsTable
           items={aggregatedRows}

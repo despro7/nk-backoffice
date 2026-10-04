@@ -254,7 +254,9 @@ export const HistoryAccordionItem = ({
 										<ConfirmModal
 											isOpen={confirmDeleteId === String(record.id)}
 											title="Видалити запис?"
-											message={`Запис №${record.id} буде видалений безповоротно.`}
+											message={recordType === 'releaseSet'
+                        ? `Запис №${record.id} буде видалений. Документ у Dilovod буде позначено на видалення (delMark).`
+                        : `Запис №${record.id} буде видалений безповоротно.`}
 											confirmText="Видалити"
 											cancelText="Скасувати"
 											confirmColor="danger"

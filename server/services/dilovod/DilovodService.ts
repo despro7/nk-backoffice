@@ -19,6 +19,7 @@ import { dilovodCacheService, type CacheType } from './DilovodCacheService.js';
 import { DilovodGoodsCacheManager } from './DilovodGoodsCacheManager.js';
 import { compactMetaLogData, DILOVOD_PRODUCTION_WORKSHOP_STORAGE_ID, isActiveDilovodStorage, mapBarCodesByObjectId } from './DilovodUtils.js';
 import { pluralize } from '../../lib/utils.js';
+import { pickHumanBatchLabel } from '../../../shared/utils/dilovodBatchId.js';
 
 export class DilovodService {
   // Глобальний AbortController для поточної синхронізації товарів
@@ -663,6 +664,100 @@ export class DilovodService {
       console.error('🚨 [Dilovod] Помилка отримання залишків для SKU:', error);
       throw error;
     }
+  }
+
+  /**
+   * Доповнює balance-партії каталожними з qty=0 (Dilovod balance не повертає нульові залишки).
+   * Використовується для коригування партійного обліку на розукомплектуванні.
+   */
+  async appendCatalogZeroBalanceBatches<
+    T extends {
+      batchId: string;
+      batchNumber: string;
+      storage: string;
+      storageDisplayName: string;
+      quantity: number;
+      firm: string;
+      firmDisplayName: string;
+      expiration: string | null;
+    },
+  >(
+    sku: string,
+    batches: T[],
+    storageId: string,
+    firmId?: string,
+    allBalanceBatches?: T[],
+  ): Promise<T[]> {
+    const normalizedSku = String(sku ?? '').trim();
+    const normalizedStorageId = String(storageId ?? '').trim();
+    if (!normalizedSku || !normalizedStorageId) return batches;
+
+    const balanceSources = (allBalanceBatches?.length ? allBalanceBatches : batches) ?? [];
+    const skuToGoodId = await this.findGoodsBySkuList([normalizedSku]);
+    const goodId = skuToGoodId.get(normalizedSku);
+
+    const catalogParts = goodId
+      ? await this.apiClient.findGoodPartsByOwnerIds([goodId])
+      : [];
+
+    const partCandidates = new Map<string, { id: string; code: string }>();
+    for (const part of catalogParts) {
+      partCandidates.set(part.id, { id: part.id, code: part.code });
+    }
+    for (const batch of balanceSources) {
+      const batchId = String(batch.batchId ?? '').trim();
+      if (!batchId) continue;
+      if (!partCandidates.has(batchId)) {
+        partCandidates.set(batchId, {
+          id: batchId,
+          code: String(batch.batchNumber ?? '').trim(),
+        });
+      }
+    }
+
+    if (partCandidates.size === 0) return batches;
+
+    const existingKeys = new Set(
+      batches.map((batch) => `${batch.batchId}:${batch.storage}`),
+    );
+    const template = batches[0] ?? balanceSources[0];
+    const firm = template?.firm ?? firmId ?? '';
+    const firmDisplayName = template?.firmDisplayName ?? 'невідома фірма';
+    let storageDisplayName = batches.find((batch) => batch.storage === normalizedStorageId)?.storageDisplayName
+      ?? balanceSources.find((batch) => batch.storage === normalizedStorageId)?.storageDisplayName;
+    if (!storageDisplayName) {
+      const storages = await this.getStorages();
+      const storageMatch = storages.find((storage) => String(storage.id) === normalizedStorageId);
+      storageDisplayName = String(storageMatch?.name ?? '').trim() || 'невідомий склад';
+    }
+
+    const appended: T[] = [];
+    for (const part of partCandidates.values()) {
+      const key = `${part.id}:${normalizedStorageId}`;
+      if (existingKeys.has(key)) continue;
+
+      const batchNumber = pickHumanBatchLabel(part.id, part.code) || part.code || part.id;
+
+      const balanceOnStorage = balanceSources.find(
+        (batch) => batch.batchId === part.id && batch.storage === normalizedStorageId,
+      );
+
+      appended.push({
+        batchId: part.id,
+        batchNumber,
+        storage: normalizedStorageId,
+        storageDisplayName,
+        quantity: Number(balanceOnStorage?.quantity ?? 0),
+        firm: balanceOnStorage?.firm ?? firm,
+        firmDisplayName: balanceOnStorage?.firmDisplayName ?? firmDisplayName,
+        expiration: balanceOnStorage?.expiration ?? null,
+      } as T);
+      existingKeys.add(key);
+    }
+
+    if (appended.length === 0) return batches;
+    console.log(`📦 [Dilovod] Додано ${appended.length} каталожних партій з qty=0 для SKU ${normalizedSku}`);
+    return [...batches, ...appended];
   }
 
   // Отримання доступних партій (goodPart) по SKU з залишками по складах

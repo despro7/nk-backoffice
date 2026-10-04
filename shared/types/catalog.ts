@@ -48,6 +48,9 @@ export const CATALOG_FINISHED_PRODUCTS_FOLDER_ID = '1100300000001026';
 /** Папка матеріалів (`/products#folder=…`). */
 export const CATALOG_MATERIALS_FOLDER_ID = '1100300000001651';
 
+/** Папка інвентаризаційних наборів для коригування партійного обліку. */
+export const CATALOG_INVENTORY_SETS_FOLDER_ID = '1100300000001398';
+
 export interface CatalogGoodImageDto {
   id: number;
   goodId: string;

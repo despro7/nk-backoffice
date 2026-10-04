@@ -17,6 +17,8 @@ export interface FetchBatchesOptions {
   includeSmallStorage?: boolean;
   /** Лише малий склад */
   onlySmallStorage?: boolean;
+  /** Показувати партії з qty ≤ 0 (від'ємні залишки на дату) */
+  includeNonPositiveQty?: boolean;
 }
 
 interface UseBatchNumbersResult {
@@ -72,13 +74,15 @@ export function useBatchNumbers(): UseBatchNumbersResult {
     try {
       const includeSmall = Boolean(options?.includeSmallStorage);
       const onlySmall = Boolean(options?.onlySmallStorage);
+      const includeNonPositive = Boolean(options?.includeNonPositiveQty);
       console.log(
         `📦 [useBatchNumbers] Запит партій для SKU: ${sku}` +
           `${firmId ? ` (фірма: ${firmId})` : ''}` +
           `${asOfDate ? ` на дату ${asOfDate.toLocaleDateString('uk-UA')}` : ''}` +
           `${force ? ' [force]' : ''}` +
           `${includeSmall ? ' [+МС]' : ''}` +
-          `${onlySmall ? ' [лише МС]' : ''}`
+          `${onlySmall ? ' [лише МС]' : ''}` +
+          `${includeNonPositive ? ' [+qty≤0]' : ''}`
       );
 
       // Формуємо URL з параметрами
@@ -100,6 +104,9 @@ export function useBatchNumbers(): UseBatchNumbersResult {
       }
       if (onlySmall) {
         url.searchParams.set('onlySmallStorage', 'true');
+      }
+      if (includeNonPositive) {
+        url.searchParams.set('includeNonPositiveQty', 'true');
       }
 
       const response = await fetch(url.toString(), {

@@ -497,6 +497,49 @@ export class DilovodApiClient {
    * Пошук товарів за списком SKU (productNum) - оптимізована версія
    * Повертає ID та productNum для мапінгу SKU → ID
    */
+  /** Партії з catalogs.goodParts для вказаних товарів (owner = good id). */
+  async findGoodPartsByOwnerIds(ownerIds: string[]): Promise<Array<{ id: string; code: string; owner: string }>> {
+    await this.ensureReady();
+
+    const uniqueOwnerIds = [...new Set(ownerIds.map((id) => String(id ?? '').trim()).filter(Boolean))];
+    if (uniqueOwnerIds.length === 0) return [];
+
+    const result: Array<{ id: string; code: string; owner: string }> = [];
+
+    for (const ownerChunk of this.chunkArray(uniqueOwnerIds, 20)) {
+      const resp = await this.makeRequest<unknown>({
+        version: '0.25',
+        key: this.apiKey,
+        action: 'request',
+        params: {
+          from: 'catalogs.goodParts',
+          fields: {
+            id: 'id',
+            code: 'code',
+            owner: 'owner',
+            delMark: 'delMark',
+          },
+          filters: [{ alias: 'owner', operator: 'IN', value: ownerChunk }],
+        },
+      });
+
+      const rows = this.normalizeToArray<Record<string, unknown>>(resp);
+      for (const row of rows) {
+        if (isDilovodDeletionMark(row.delMark)) continue;
+        const id = unwrapDilovodId(row.id);
+        const owner = unwrapDilovodId(row.owner);
+        if (!isUsableDilovodBatchId(id) || !owner) continue;
+        result.push({
+          id,
+          code: String(row.code ?? '').trim(),
+          owner,
+        });
+      }
+    }
+
+    return result;
+  }
+
   async findGoodsBySkuList(skuList: string[]): Promise<Array<{ id: string; productNum: string }>> {
     await this.ensureReady();
     
@@ -2031,7 +2074,7 @@ export class DilovodApiClient {
   }
 
   /** Добирає expiration з catalogs.goodParts; fallback — getObject(header.expiration). */
-  private async enrichBatchExpirationsFromGoodParts<
+  async enrichBatchExpirationsFromGoodParts<
     T extends { batchId: string; expiration?: string | null },
   >(batches: T[]): Promise<Array<T & { expiration: string | null }>> {
     const ids = [...new Set(batches.map((batch) => batch.batchId).filter(Boolean))];

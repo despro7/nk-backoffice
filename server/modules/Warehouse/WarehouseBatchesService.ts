@@ -1,5 +1,6 @@
 import { prisma, logServer } from '../../lib/utils.js';
 import { DilovodApiClient } from '../../services/dilovod/DilovodApiClient.js';
+import { dilovodGoodPartsService } from '../../services/dilovod/DilovodGoodPartsService.js';
 import { dilovodMetadataService } from '../../services/dilovod/DilovodMetadataService.js';
 import type {
   DilovodObjectMetadata,
@@ -22,6 +23,14 @@ import {
   isUsableDilovodBatchId,
   pickHumanBatchLabel,
 } from '../../../shared/utils/dilovodBatchId.js';
+import {
+  formatKitBatchBaseName,
+  type KitBatchCandidate,
+  normalizeBatchExpiration,
+  pickMinExpiration,
+  planKitOutputBatch,
+} from '../../../shared/utils/kitBatchName.js';
+import { productsDilovodGateway } from '../Products/ProductsDilovodGateway.js';
 import {
   warehouseStatementValueTypeIncludes,
   WAREHOUSE_STATEMENT_VALUE_TYPES,
@@ -187,6 +196,15 @@ function chunkArray<T>(items: T[], size: number): T[][] {
   }
   return chunks;
 }
+
+export type KitOutputBatchResult = {
+  batchId: string | null;
+  batchNumber: string;
+  barcode: string | null;
+  created: boolean;
+  expiration: string | null;
+  dryRun?: boolean;
+};
 
 export class WarehouseBatchesService {
   private readonly api = new DilovodApiClient();
@@ -476,6 +494,182 @@ export class WarehouseBatchesService {
       return (resp as { data: Record<string, unknown>[] }).data;
     }
     return [];
+  }
+
+  async resolveMinComponentExpiration(batchIds: string[]): Promise<string | null> {
+    const uniqueIds = [...new Set(batchIds.map((id) => String(id ?? '').trim()).filter(isUsableDilovodBatchId))];
+    if (uniqueIds.length === 0) return null;
+
+    const enriched = await this.api.enrichBatchExpirationsFromGoodParts(
+      uniqueIds.map((batchId) => ({ batchId, expiration: null })),
+    );
+    return pickMinExpiration(enriched.map((batch) => batch.expiration));
+  }
+
+  private async fetchGoodPartsForOwner(ownerId: string): Promise<KitBatchCandidate[]> {
+    const owner = String(ownerId ?? '').trim();
+    if (!owner) return [];
+
+    const parts = await this.api.findGoodPartsByOwnerIds([owner]);
+    if (parts.length === 0) return [];
+
+    const enriched = await this.api.enrichBatchExpirationsFromGoodParts(
+      parts.map((part) => ({ batchId: part.id, expiration: null })),
+    );
+    const expirationById = new Map(enriched.map((batch) => [batch.batchId, batch.expiration]));
+
+    return parts.map((part) => ({
+      id: part.id,
+      code: part.code,
+      expiration: normalizeBatchExpiration(expirationById.get(part.id)),
+    }));
+  }
+
+  async ensureKitOutputBatch(input: {
+    kitGoodId: string;
+    operDate: Date;
+    componentBatchIds: string[];
+    dryRun?: boolean;
+  }): Promise<KitOutputBatchResult> {
+    const kitGoodId = String(input.kitGoodId ?? '').trim();
+    if (!kitGoodId) {
+      throw new Error('kitGoodId обовʼязковий');
+    }
+
+    const baseName = formatKitBatchBaseName(input.operDate);
+    if (!baseName) {
+      throw new Error('Не вдалося сформувати назву партії комплекту');
+    }
+
+    const [minExpiration, existingParts] = await Promise.all([
+      this.resolveMinComponentExpiration(input.componentBatchIds),
+      this.fetchGoodPartsForOwner(kitGoodId),
+    ]);
+
+    const plan = planKitOutputBatch(baseName, existingParts, minExpiration);
+
+    if (plan.reuseExisting && plan.batchId) {
+      const barcodes = await this.loadBarcodesByPart([plan.batchId]);
+      return {
+        batchId: plan.batchId,
+        batchNumber: plan.batchName,
+        barcode: barcodes.get(plan.batchId)?.[0]?.code ?? null,
+        created: false,
+        expiration: minExpiration,
+      };
+    }
+
+    if (input.dryRun) {
+      return {
+        batchId: null,
+        batchNumber: plan.batchName,
+        barcode: null,
+        created: true,
+        expiration: minExpiration,
+        dryRun: true,
+      };
+    }
+
+    const pad = (value: number): string => String(value).padStart(2, '0');
+    const productionDate = `${input.operDate.getFullYear()}-${pad(input.operDate.getMonth() + 1)}-${pad(input.operDate.getDate())} ${pad(input.operDate.getHours())}:${pad(input.operDate.getMinutes())}:${pad(input.operDate.getSeconds())}`;
+
+    const created = await this.createGoodPartBatch({
+      goodId: kitGoodId,
+      batchName: plan.batchName,
+      productionDate,
+      expiration: minExpiration,
+    });
+
+    const barcode = await this.registerBatchBarcode({
+      goodId: kitGoodId,
+      batchId: created.batchId,
+      batchName: created.batchNumber,
+    });
+
+    return {
+      batchId: created.batchId,
+      batchNumber: created.batchNumber,
+      barcode,
+      created: true,
+      expiration: minExpiration,
+    };
+  }
+
+  private async registerBatchBarcode(input: {
+    goodId: string;
+    batchId: string;
+    batchName: string;
+  }): Promise<string> {
+    const goodId = String(input.goodId ?? '').trim();
+    const batchId = String(input.batchId ?? '').trim();
+    const batchName = String(input.batchName ?? '').trim();
+    if (!goodId || !batchId) {
+      throw new Error('goodId та batchId обовʼязкові для реєстрації ШК');
+    }
+
+    const existing = await this.loadBarcodesByPart([batchId]);
+    const current = existing.get(batchId)?.[0]?.code;
+    if (current) return current;
+
+    const code = await productsDilovodGateway.allocateNextBarcode();
+    const registerId = await productsDilovodGateway.saveBarcode({
+      goodId,
+      code,
+      goodPart: batchId,
+    });
+
+    await prisma.catalogGoodBarcode.upsert({
+      where: {
+        goodId_code_goodPart: {
+          goodId,
+          code,
+          goodPart: batchId,
+        },
+      },
+      create: {
+        goodId,
+        code,
+        goodPart: batchId,
+        goodPartName: batchName || null,
+        activity: true,
+        dilovodRegisterId: registerId,
+      },
+      update: {
+        goodPartName: batchName || null,
+        activity: true,
+        dilovodRegisterId: registerId,
+      },
+    });
+
+    return code;
+  }
+
+  /** Створює нову партію в Dilovod (catalogs.goodParts). */
+  async createGoodPartBatch(input: {
+    goodId: string;
+    batchName: string;
+    productionDate?: string | null;
+    expiration?: string | null;
+  }): Promise<{ batchId: string; batchNumber: string }> {
+    const result = await dilovodGoodPartsService.createGoodPart({
+      owner: input.goodId,
+      batchName: input.batchName,
+      productionDate: input.productionDate,
+      expiration: input.expiration,
+    });
+    listCache.clear();
+    return result;
+  }
+
+  /**
+   * Створює нову партію в Dilovod (catalogs.goodParts) для коригування обліку.
+   */
+  async createCorrectionBatch(input: {
+    goodId: string;
+    batchName: string;
+    productionDate?: string | null;
+  }): Promise<{ batchId: string; batchNumber: string }> {
+    return this.createGoodPartBatch(input);
   }
 }
 

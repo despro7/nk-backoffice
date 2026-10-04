@@ -17,6 +17,14 @@ export {
   DilovodGoodPartsSerialService,
   dilovodGoodPartsSerialService,
 } from './DilovodGoodPartsSerialService.js';
+export {
+  DilovodGoodPartsService,
+  dilovodGoodPartsService,
+  buildGoodPartCreateHeader,
+  resolveGoodPartWritableFields,
+  type CreateGoodPartInput,
+  type CreateGoodPartResult,
+} from './DilovodGoodPartsService.js';
 export { WarehouseStatementService, warehouseStatementService } from './WarehouseStatementService.js';
 export { DilovodExportBuilder, dilovodExportBuilder } from './DilovodExportBuilder.js';
 export { DilovodExportFlowService, dilovodExportFlowService } from './DilovodExportFlowService.js';

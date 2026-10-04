@@ -4,11 +4,13 @@
  */
 
 import { prisma, logServer } from '../../lib/utils.js';
+import { isRebatchSku } from '../../../shared/types/warehouseRelease.js';
 import {
   CATALOG_ACC_POLICY_GOOD,
   CATALOG_ACC_POLICY_KIT,
   CATALOG_DEFAULT_MAIN_UNIT_ID,
   CATALOG_FINISHED_PRODUCTS_FOLDER_ID,
+  CATALOG_INVENTORY_SETS_FOLDER_ID,
   CATALOG_MATERIALS_FOLDER_ID,
   CATALOG_TRASH_ID,
   CatalogCreateGoodInput,
@@ -37,6 +39,8 @@ import { compareSku, pickLatestSku } from './skuUtils.js';
 import { telegramAlertService } from '../../services/TelegramAlertService.js';
 import { catalogBarcodeRowKey, matchExistingBarcode } from './barcodeUtils.js';
 import { sanitizeStoredBatchName } from '../../../shared/utils/dilovodBatchId.js';
+import { buildRebatchSku, type EnsureInventorySetResult } from '../../../shared/types/warehouseRelease.js';
+import { formatRebatchSetName } from '../../../shared/utils/kitBatchName.js';
 import {
   DilovodCatalogGoodRow,
   DilovodDictItem,
@@ -2427,6 +2431,116 @@ export class ProductsCatalogService {
 
     const childGroupIds = goods.filter((g) => g.isGroup && g.id).map((g) => g.id);
     return { upserted, orphansResolved, childGroupIds };
+  }
+
+  /**
+   * Знаходить або створює технічний інвентаризаційний набір `{sku}_rebatch`
+   * у папці інвентаризаційних наборів з BOM `1 × sourceSku`.
+   */
+  /** Пошук інвентаризаційних наборів `{sku}_rebatch` для кроку 2 коригування партійного обліку. */
+  async searchInventoryRebatchSets(query: string, limit = 20): Promise<Array<{
+    id: string;
+    sku: string;
+    name: string;
+    set: Array<{ id: string; sku?: string; name?: string; quantity: number }>;
+    stockBalanceByStock: Record<string, number> | null;
+  }>> {
+    const q = String(query ?? '').trim();
+    if (q.length < 3) return [];
+
+    const rows = await this.search(q, Math.min(limit, 50), {
+      underFolderId: CATALOG_INVENTORY_SETS_FOLDER_ID,
+    });
+    const kits = rows.filter((row) => !row.isGroup && row.isKit && isRebatchSku(row.sku));
+    if (kits.length === 0) return [];
+
+    const kitIds = kits.map((kit) => kit.id);
+    const components = await prisma.catalogGoodComponent.findMany({
+      where: { parentGoodId: { in: kitIds } },
+      orderBy: { rowNum: 'asc' },
+      include: { componentGood: { select: { sku: true, name: true } } },
+    });
+
+    const byKit = new Map<string, Array<{ id: string; sku?: string; name?: string; quantity: number }>>();
+    for (const kit of kits) {
+      byKit.set(kit.id, []);
+    }
+    for (const row of components) {
+      const sku = row.componentGood?.sku?.trim() || row.componentGoodId;
+      const list = byKit.get(row.parentGoodId) ?? [];
+      list.push({
+        id: sku,
+        sku,
+        name: row.componentGood?.name,
+        quantity: row.qty,
+      });
+      byKit.set(row.parentGoodId, list);
+    }
+
+    return kits
+      .map((kit) => {
+        const set = byKit.get(kit.id) ?? [];
+        if (set.length === 0) return null;
+        return {
+          id: kit.id,
+          sku: String(kit.sku ?? '').trim(),
+          name: kit.name,
+          set,
+          stockBalanceByStock: kit.stockBalanceByStock,
+        };
+      })
+      .filter((kit): kit is NonNullable<typeof kit> => kit !== null);
+  }
+
+  async ensureInventorySetForSku(sourceSku: string): Promise<EnsureInventorySetResult> {
+    const normalizedSourceSku = String(sourceSku ?? '').trim();
+    if (!normalizedSourceSku) {
+      throw new Error('sourceSku обовʼязковий');
+    }
+
+    const setSku = buildRebatchSku(normalizedSourceSku);
+    const existing = await prisma.catalogGood.findFirst({
+      where: { sku: setSku, isGroup: false },
+      select: { id: true, name: true, sku: true },
+    });
+
+    if (existing) {
+      const normalizedName = formatRebatchSetName(existing.name);
+      if (normalizedName !== existing.name) {
+        await this.updateGood(existing.id, { name: normalizedName });
+      }
+      return {
+        sourceSku: normalizedSourceSku,
+        setSku,
+        setName: normalizedName,
+        dilovodId: existing.id,
+        created: false,
+      };
+    }
+
+    const source = await prisma.catalogGood.findFirst({
+      where: { sku: normalizedSourceSku, isGroup: false },
+      select: { id: true, name: true },
+    });
+    if (!source) {
+      throw new Error(`Товар ${normalizedSourceSku} не знайдено в каталозі`);
+    }
+
+    const setName = formatRebatchSetName(source.name);
+    const created = await this.createGood({
+      sku: setSku,
+      name: setName,
+      parentId: CATALOG_INVENTORY_SETS_FOLDER_ID,
+      components: [{ componentGoodId: source.id, qty: 1 }],
+    });
+
+    return {
+      sourceSku: normalizedSourceSku,
+      setSku,
+      setName: created.name,
+      dilovodId: created.id,
+      created: true,
+    };
   }
 }
 

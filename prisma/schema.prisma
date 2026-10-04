@@ -324,19 +324,20 @@ model WarehouseWriteOffHistory {
 }
 
 model WarehouseReleaseSet {
-  id            Int      @id @default(autoincrement())
-  setSku        String?  @db.VarChar(191)
-  quantity      Int
-  items         Json
-  storageId     String?  @db.VarChar(191)
-  firmId        String?  @db.VarChar(255)
-  dilovodDocId  String?  @db.VarChar(255)
-  operationType String   @default("kit") @db.VarChar(20)
-  comment       String?  @db.Text
-  status        String   @default("created")
-  createdBy     Int?
-  createdAt     DateTime @default(now())
-  operDate      DateTime @default(now())
+  id                Int      @id @default(autoincrement())
+  internalDocNumber String?  @unique @db.VarChar(32)
+  setSku            String?  @db.VarChar(191)
+  quantity          Int
+  items             Json
+  storageId         String?  @db.VarChar(191)
+  firmId            String?  @db.VarChar(255)
+  dilovodDocId      String?  @db.VarChar(255)
+  operationType     String   @default("kit") @db.VarChar(20)
+  comment           String?  @db.Text
+  status            String   @default("created")
+  createdBy         Int?
+  createdAt         DateTime @default(now())
+  operDate          DateTime @default(now())
 
   @@index([setSku])
   @@index([status])

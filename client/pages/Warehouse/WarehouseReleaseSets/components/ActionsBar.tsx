@@ -5,11 +5,19 @@ interface Props {
   onPreview?: () => void;
   onSend?: () => void;
   onCancel?: () => void;
-  disabled?: boolean;
+  sendDisabled?: boolean;
+  previewDisabled?: boolean;
   sendLabel?: string;
 }
 
-export default function ActionsBar({ onPreview, onSend, onCancel, disabled, sendLabel = 'Створити випуск' }: Props) {
+export default function ActionsBar({
+  onPreview,
+  onSend,
+  onCancel,
+  sendDisabled = false,
+  previewDisabled = false,
+  sendLabel = 'Створити випуск',
+}: Props) {
   return (
     <div className="flex justify-end gap-3">
       {/** Optional cancel button (clears inputs) */}
@@ -19,11 +27,24 @@ export default function ActionsBar({ onPreview, onSend, onCancel, disabled, send
         </Button>
       )}
       {onPreview && (
-        <Button color="secondary" size="lg" onPress={onPreview} startContent={<DynamicIcon name="code-2" className="w-5 h-5" />} disabled={disabled}>
+        <Button
+          color="secondary"
+          size="lg"
+          onPress={onPreview}
+          startContent={<DynamicIcon name="code-2" className="w-5 h-5" />}
+          isDisabled={previewDisabled}
+        >
           Payload
         </Button>
       )}
-      <Button color="primary" size="lg" onPress={onSend} startContent={<DynamicIcon name="package-plus" className="w-5 h-5" />} disabled={disabled}>
+      <Button
+        color="primary"
+        size="lg"
+        onPress={onSend}
+        startContent={<DynamicIcon name="package-plus" className="w-5 h-5" />}
+        isDisabled={sendDisabled}
+        className="data-[disabled=true]:opacity-50"
+      >
         {sendLabel}
       </Button>
     </div>
