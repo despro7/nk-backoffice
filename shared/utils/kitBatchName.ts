@@ -1,6 +1,6 @@
 import { generateBatchSerialFromDate, isMissingDilovodDate } from './dilovodBatchId.js';
 
-export const KIT_BATCH_PREFIX = 'K';
+export const KIT_BATCH_PREFIX = 'K-';
 export const REBATCH_NAME_PREFIX = 'REBATCH: ';
 
 export function formatKitBatchBaseName(date: Date | string): string | null {
@@ -33,17 +33,17 @@ function stripKitBatchPrefix(value: string): string {
   return trimmed.startsWith(KIT_BATCH_PREFIX) ? trimmed.slice(KIT_BATCH_PREFIX.length) : trimmed;
 }
 
-/** Код партії для Dilovod (`catalogs.goodParts.code`) — як у backoffice, з префіксом K. */
+/** Код партії для Dilovod (`catalogs.goodParts.code`) — як у backoffice, з префіксом K-. */
 export function formatGoodPartCodeForDilovod(batchName: string): string {
   return String(batchName ?? '').trim();
 }
 
-/** Номер партії (`catalogs.goodParts.number`) — YMMDD без префікса K. */
+/** Номер партії (`catalogs.goodParts.number`) — YMMDD без префікса K-. */
 export function formatGoodPartNumberForDilovod(batchName: string): string {
   return stripKitBatchPrefix(String(batchName ?? '').trim());
 }
 
-/** Відображувана назва kit-партії з префіксом K (лише для YMMDD-формату). */
+/** Відображувана назва kit-партії з префіксом K- (лише для YMMDD-формату). */
 export function formatKitBatchDisplayName(code: string): string {
   const trimmed = String(code ?? '').trim();
   if (!trimmed || trimmed.startsWith(KIT_BATCH_PREFIX)) return trimmed;
