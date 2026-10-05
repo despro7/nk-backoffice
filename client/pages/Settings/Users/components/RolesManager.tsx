@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Card,
@@ -282,6 +282,14 @@ export const RolesManager = forwardRef<RolesTabActions>(function RolesManager(_p
   );
 });
 
+function roleFormSnapshot(name: string, description: string, selected: Iterable<string>): string {
+  return JSON.stringify({
+    name: name.trim(),
+    description: description.trim(),
+    permissions: [...selected].sort(),
+  });
+}
+
 function RoleEditorDrawer({
   role,
   roles,
@@ -307,9 +315,31 @@ function RoleEditorDrawer({
   );
   const [saving, setSaving] = useState(false);
   const [cloneFrom, setCloneFrom] = useState('');
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const baselineRef = useRef(
+    roleFormSnapshot(
+      role?.name ?? '',
+      role?.description ?? '',
+      isAdminLocked ? catalog.map((item) => item.key) : (role?.permissions ?? []),
+    ),
+  );
 
   const pageGroups = useMemo(() => groupCatalog(catalog, 'page'), [catalog]);
   const actionGroups = useMemo(() => groupCatalog(catalog, 'action'), [catalog]);
+
+  const isDirty = useMemo(
+    () => roleFormSnapshot(name, description, selected) !== baselineRef.current,
+    [name, description, selected],
+  );
+
+  const requestClose = useCallback(() => {
+    if (saving) return;
+    if (isDirty) {
+      setDiscardConfirmOpen(true);
+      return;
+    }
+    onClose();
+  }, [isDirty, onClose, saving]);
 
   const toggle = (key: string, value: boolean) => {
     if (isAdminLocked) return;
@@ -398,9 +428,10 @@ function RoleEditorDrawer({
   };
 
   return (
+    <>
     <Drawer
       isOpen
-      onOpenChange={(open) => { if (!open) onClose(); }}
+      onOpenChange={(open) => { if (!open) requestClose(); }}
       placement="right"
       size="4xl"
       classNames={{
@@ -486,14 +517,37 @@ function RoleEditorDrawer({
                 onChange={setSelected}
               />
               <DrawerFooter className="border-t border-default-200 shrink-0">
-                <Button variant="light" onPress={onClose}>Скасувати</Button>
-                <Button color="primary" isLoading={saving} onPress={() => void handleSave()}>Зберегти</Button>
+                <Button variant="light" onPress={requestClose} isDisabled={saving}>Скасувати</Button>
+                <Button
+                  color="primary"
+                  isLoading={saving}
+                  isDisabled={!isDirty}
+                  onPress={() => void handleSave()}
+                >
+                  Зберегти
+                </Button>
               </DrawerFooter>
             </DrawerBody>
           </>
         )}
       </DrawerContent>
     </Drawer>
+
+    <ConfirmModal
+      isOpen={discardConfirmOpen}
+      title="Незбережені зміни"
+      message="У формі ролі є незбережені зміни. Закрити без збереження?"
+      confirmText="Закрити без збереження"
+      cancelText="Залишитись"
+      confirmColor="danger"
+      overlayZClassName="z-[2000]"
+      onConfirm={() => {
+        setDiscardConfirmOpen(false);
+        onClose();
+      }}
+      onCancel={() => setDiscardConfirmOpen(false)}
+    />
+    </>
   );
 }
 

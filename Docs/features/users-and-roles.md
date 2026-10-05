@@ -41,7 +41,7 @@
 
 **Dilovod user ID:** поле опційне; значення потрапляє в `users.dilovodUserId` і далі в `author` складських документів Dilovod. Зараз — ручний Input. Довідник Dilovod `catalogs.users` (див. `Docs/integrations/dilovod-metadata.md`) дозволяє замінити на Autocomplete з іменем і email.
 
-**Ролі:** таблиця (назва, slug, користувачі, сторінки/дії). Редактор у Drawer: метадані, «скопіювати права з ролі», дві колонки **Сторінки** (`page.*`) і **Дії** (`action.*`). Після зміни матриці інші сесії бачать жовтий банер «оновити сторінку» (як після деплою).
+**Ролі:** таблиця (назва, slug, користувачі, сторінки/дії). Редактор у Drawer: метадані, «скопіювати права з ролі», дві колонки **Сторінки** (`page.*`) і **Дії** (`action.*`). Після зміни матриці інші сесії бачать жовтий банер «оновити сторінку» (як після деплою). Закриття drawer з незбереженими змінами (назва, опис, права) — `isDirty` + `ConfirmModal` («Закрити без збереження» / «Залишитись»); кнопка «Зберегти» активна лише при `isDirty`.
 
 Адмінські налаштування (`/settings/admin`) лишаються для логів, JWT, статусу сервера тощо.
 
@@ -55,7 +55,7 @@ User.role  ──slug──►  Role  ──►  RolePermission.permissionKey
 
 `User.role` лишається string. При зміні ролі `roleName` синхронізується з `Role.name`. Невідомий slug на register/update — 400.
 
-Системні 6 ролей сіються зі старими slug (`admin`, `boss`, `shop-manager`, `warehouse-manager`, `storekeeper`, `ads-manager`), якщо таблиця `roles` порожня (`RoleService.ensureSeeded` на старті сервера).
+Системні 6 ролей сіються зі старими slug (`admin`, `boss`, `shop-manager`, `warehouse-manager`, `storekeeper`, `ads-manager`), якщо таблиця `roles` порожня (`RoleService.seedIfEmpty` на старті сервера). **Runtime auto-restore seed-прав немає** — зміни матриці в UI зберігаються; нові ключі для існуючих інстансів додаються через Prisma-міграцію (не через `ensureSeeded`).
 
 Обмеження:
 
@@ -81,9 +81,13 @@ npx prisma migrate deploy
 | `page.*` | `page.settings.users` | меню, `ProtectedRoute` |
 | `action.*` | `action.users.manage`, `action.storefront.read`, `action.products.editSpec` | API і кнопки, суворіші за сторінку |
 
-Групування API — за доменом, не 1:1 з handler. Seed системних ролей повторює стару матрицю `minRole` / `roles` (день релізу без зміни доступу). Далі адмін може звужувати/розширювати кастомні й системні (крім admin).
+Групування API — за доменом, не 1:1 з handler. `PERMISSION_SEEDS` задає початкову матрицю лише для **порожньої** таблиці `roles`. Далі адмін може звужувати/розширювати кастомні й системні (крім admin) через UI — зміни не відкочуються при наступному API-запиті.
 
-Новий ключ: додати в `PERMISSIONS` + `PERMISSION_CATALOG` (label, група, `seed`). Існуючі рядки в БД самі не підхоплять новий ключ — треба оновити матрицю ролі або пересіяти порожню таблицю.
+**Новий ключ** (чеклист релізу):
+
+1. `shared/constants/permissions.ts` — `PERMISSION_SEEDS`, `PERMISSIONS`, маршрут у `routes.config.tsx` (для `page.*`).
+2. **Prisma-міграція** — `INSERT` у `role_permissions` для потрібних системних ролей за seed-матрицею (`minRole` / `roles`). Еталон: `prisma/migrations/20261005120000_grant_product_movements_report_permission/`.
+3. Або вручну через UI **Налаштування → Користувачі → Ролі** (без міграції, якщо достатньо одноразового оновлення).
 
 ---
 

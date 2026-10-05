@@ -175,29 +175,18 @@ describe('RoleService', () => {
     expect(await service.hasPermission(created.slug, PERMISSIONS.PAGE_ORDERS)).toBe(true);
   });
 
-  it('syncs missing seed permissions for system roles on startup', async () => {
-    memory.roles.length = 0;
-    memory.perms.length = 0;
+  it('does not restore removed seed permissions for system roles on ensureSeeded', async () => {
+    const storekeeper = await service.getRoleBySlug(ROLES.STOREKEEPER);
+    expect(storekeeper).toBeDefined();
+    expect(await service.hasPermission(ROLES.STOREKEEPER, PERMISSIONS.PAGE_ORDERS)).toBe(true);
 
-    const bossRole = {
-      id: 1,
-      slug: ROLES.BOSS,
-      name: 'Директор',
-      description: null,
-      rank: 50,
-      isSystem: true,
-    };
-    memory.roles.push(bossRole);
-    memory.perms.push({
-      roleId: bossRole.id,
-      permissionKey: PERMISSIONS.PAGE_HR_TIMESHEET,
-    });
+    const withoutOrders = storekeeper!.permissions.filter((key) => key !== PERMISSIONS.PAGE_ORDERS);
+    await service.setPermissions(storekeeper!.id, withoutOrders);
 
-    const resynced = new RoleService(memory.db as never);
-    await resynced.ensureSeeded();
+    await service.ensureSeeded();
+    await service.listRoles();
 
-    expect(await resynced.hasPermission(ROLES.BOSS, PERMISSIONS.ACTION_HR_TIMESHEET_EDIT)).toBe(true);
-    expect(await resynced.hasPermission(ROLES.BOSS, PERMISSIONS.PAGE_HR_TIMESHEET)).toBe(true);
+    expect(await service.hasPermission(ROLES.STOREKEEPER, PERMISSIONS.PAGE_ORDERS)).toBe(false);
   });
 
   it('keeps dynamic catalog folder view/edit keys', async () => {

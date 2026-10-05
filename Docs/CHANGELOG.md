@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-10-05 — RBAC: збереження прав ролей і unsaved guard у редакторі
+
+**Files:** `server/services/RoleService.ts`, `server/services/RoleService.spec.ts`, `client/pages/Settings/Users/components/RolesManager.tsx`, `prisma/migrations/20261005120000_grant_product_movements_report_permission/`, `Docs/features/users-and-roles.md`
+
+### Виправлення збереження прав
+
+- Прибрано `syncSystemRoleMissingSeedPermissions` — більше не відновлює seed-права системних ролей на кожному `ensureSeeded()` / після `PUT /api/roles/:id/permissions`.
+- `PERMISSION_SEEDS` лишається лише для початкового `seedIfEmpty` (порожня таблиця `roles`).
+- Адмін може звужувати/розширювати матрицю системних ролей через UI без відкату змін.
+
+### Міграція
+
+- `20261005120000_grant_product_movements_report_permission` — `page.reports.productMovements` для ролей `storekeeper` … `boss`.
+
+### UI
+
+- Редактор ролі: `isDirty` + `ConfirmModal` при закритті drawer з незбереженими змінами; «Зберегти» активна лише при `isDirty`.
+
+---
+
 ## 2026-10-05 — Звіт «Рухи по товару», Drawer і оптимізація Dilovod
 
 **Files:** `client/features/product-movements/`, `client/pages/Reports/ReportsProductMovements/`, `server/services/dilovod/ProductMovementsService.ts`, `shared/types/productMovements.ts`, `server/routes/reports-warehouse.ts`, `MovementMobProductCard.tsx`, `ReleaseComponentBatchesPanel.tsx`, `DilovodUtils.ts`
