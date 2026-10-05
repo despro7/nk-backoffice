@@ -29,7 +29,6 @@ interface ResultDrawerProps {
  * Підтримує різні типи результатів: валідація, експорт, перевірка, логи
  */
 export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Результат операції', type = 'result', getChannelName }: ResultDrawerProps) {
-	if (!result) return null;
 	const { apiCall } = useApi();
 
 	// Для логів - це масив
@@ -37,8 +36,18 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 	const [selectedLogIdx, setSelectedLogIdx] = useState(0);
 	const [productLookup, setProductLookup] = useState<Record<string, { name: string; isSet: boolean }>>({});
 
+	useEffect(() => {
+		if (isOpen) {
+			setSelectedLogIdx(0);
+		}
+	}, [isOpen, result]);
+
+	const selectedLog = isLogsMode && result.length > 0
+		? result[Math.min(selectedLogIdx, result.length - 1)]
+		: null;
+
 	const normalizedSkuList = useMemo(() => {
-		if (type !== 'orderDetails') {
+		if (type !== 'orderDetails' || !result || Array.isArray(result)) {
 			return [];
 		}
 
@@ -110,16 +119,19 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 		return normalizedSku ? (productLookup[normalizedSku] ?? null) : null;
 	}, [productLookup]);
 
-	// Визначаємо тип результату
-	const isValidationError = result.type === 'critical_validation_error';
-	const hasData = result.data && Array.isArray(result.data) && result.data.length > 0;
-	const hasErrors = result.errors && Array.isArray(result.errors) && result.errors.length > 0;
-
-
 	// Визначення стилів для інформаційних блоків
 	const infoBox = "flex flex-col gap-1 min-h-[90px] justify-between border-1 rounded-md p-3";
 	const infoBoxLabel = "text-gray-400 text-xs";
 	const infoBoxText = "text-sm font-medium leading-tight";
+
+	if (!result) {
+		return null;
+	}
+
+	// Визначаємо тип результату (result гарантовано не null нижче)
+	const isValidationError = result.type === 'critical_validation_error';
+	const hasData = result.data && Array.isArray(result.data) && result.data.length > 0;
+	const hasErrors = result.errors && Array.isArray(result.errors) && result.errors.length > 0;
 
 	return (
 		<Drawer
@@ -138,6 +150,12 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 							<div className="space-y-4">
 								{/* Режим відображення логів */}
 								{isLogsMode ? (
+									!selectedLog ? (
+										<div className="flex flex-col items-center justify-center gap-2 py-12 text-default-500">
+											<DynamicIcon name="file-text" size={32} className="opacity-40" />
+											<p className="text-sm">Логи для цього документа відсутні</p>
+										</div>
+									) : (
 									<>
 										{/* Селектор логів (якщо більше одного) */}
 										{result.length > 1 && (
@@ -158,52 +176,50 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 										)}
 
 										{/* Заголовок лога зі статусом */}
-										<div className={`p-4 rounded-lg border-1 ${result[selectedLogIdx].status === 'success' ? 'bg-green-200 border-green-300' : 'bg-red-200 border-red-300'}`}>
+										<div className={`p-4 rounded-lg border-1 ${selectedLog.status === 'success' ? 'bg-green-200 border-green-300' : 'bg-red-200 border-red-300'}`}>
 											<div className="flex items-center gap-3">
 												<DynamicIcon
-													name={result[selectedLogIdx].status === 'success' ? "check-circle" : "x-circle"}
-													size={24} className={`shrink-0 ${result[selectedLogIdx].status === 'success' ? 'text-green-600' : 'text-red-600'}`}
+													name={selectedLog.status === 'success' ? "check-circle" : "x-circle"}
+													size={24} className={`shrink-0 ${selectedLog.status === 'success' ? 'text-green-600' : 'text-red-600'}`}
 												/>
-												<div className={`flex-1 ${result[selectedLogIdx].status === 'success' ? 'text-green-600' : 'text-red-600'}`}>
-													<h3 className="font-semibold text-lg">{result[selectedLogIdx].title || 'No title provided'}</h3>
-													<div className="text-sm">{result[selectedLogIdx].message || 'No message provided'}</div>
+												<div className={`flex-1 ${selectedLog.status === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+													<h3 className="font-semibold text-lg">{selectedLog.title || 'No title provided'}</h3>
+													<div className="text-sm">{selectedLog.message || 'No message provided'}</div>
 												</div>
 											</div>
 										</div>
 
 										<div className="flex items-center gap-6 text-gray-400 pl-3.5 -mt-2">
 											<div className="flex items-center gap-1">
-												{result[selectedLogIdx].datetime && (
+												{selectedLog.datetime && (
 													<>
 													<DynamicIcon name="clock-9" size={13} className={`shrink-0`} />
 													<div className="text-[13px]">
-														{new Date(result[selectedLogIdx].datetime).toLocaleString('uk-UA')}
+														{new Date(selectedLog.datetime).toLocaleString('uk-UA')}
 													</div>
 													</>
 												)}
 											</div>
 											<div className="flex items-center gap-1">
-												{(result[selectedLogIdx].initiatedBy?.raw || result[selectedLogIdx].initiatedBy?.name) && (
+												{(selectedLog.initiatedBy?.raw || selectedLog.initiatedBy?.name) && (
 													<>
 													<DynamicIcon name="user-round" size={13} className={`shrink-0`} />
 													<div className="text-[13px]">
-														{result[selectedLogIdx].initiatedBy.name
-															? `${result[selectedLogIdx].initiatedBy.name} (${result[selectedLogIdx].initiatedBy.email})`
-															: result[selectedLogIdx].initiatedBy.raw}
+														{selectedLog.initiatedBy.name
+															? `${selectedLog.initiatedBy.name} (${selectedLog.initiatedBy.email})`
+															: selectedLog.initiatedBy.raw}
 													</div>
 													</>
 												)}
 											</div>
 										</div>
 
-										{/* <pre>{JSON.stringify(result[selectedLogIdx], null, 2)}</pre> */}
-
 										{/* Блок приміток */}
-										{result[selectedLogIdx].data?.warnings && result[selectedLogIdx].data.warnings.length > 0 && (
+										{selectedLog.data?.warnings && selectedLog.data.warnings.length > 0 && (
 											<div>
 												<h4 className="font-semibold text-sm mb-3">Примітки:</h4>
 												<div className="space-y-2 max-h-48 overflow-y-auto">
-													{result[selectedLogIdx].data.warnings.map((warning: string, idx: number) => (
+													{selectedLog.data.warnings.map((warning: string, idx: number) => (
 														<div key={idx} className="p-3 bg-amber-100 rounded-lg border-1 border-amber-600/20">
 															<div className="flex items-start gap-2">
 																<DynamicIcon name="info" size={16} className="text-amber-800/50 shrink-0 mt-0.5" />
@@ -218,9 +234,10 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 										{/* Деталі лога */}
 										<div>
 											<h4 className="font-semibold text-sm mb-3">Деталі:</h4>
-											<MetaLogJsonView value={result[selectedLogIdx]} className="max-h-[60vh]" />
+											<MetaLogJsonView value={selectedLog} className="max-h-[60vh]" />
 										</div>
 									</>
+									)
 								) : (
 									<>
 										{type === 'orderDetails' ? (
