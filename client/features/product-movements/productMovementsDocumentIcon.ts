@@ -9,6 +9,7 @@ export function resolveDocumentIconName(label: string): string {
   if (text.includes('переміщен')) return 'arrow-left-right';
   if (text.includes('оприбуткуван')) return 'package-plus';
   if (text.includes('списан')) return 'trash-2';
+  if (text.includes('випуск')) return 'tag';
   return 'file-text';
 }
 
@@ -23,5 +24,6 @@ export function resolveDocumentIconClass(label: string): string {
   if (text.includes('розкомплект') || text.includes('розукомплект')) return 'text-purple-500';
   if (text.includes('оприбуткуван')) return 'text-cyan-500';
   if (text.includes('списан')) return 'text-danger-500';
+  if (text.includes('випуск')) return 'text-lime-500';
   return 'text-default-400';
 }

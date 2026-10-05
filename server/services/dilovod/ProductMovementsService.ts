@@ -385,9 +385,10 @@ export class ProductMovementsService {
     const allKeys = new Set<string>([...buckets.keys(), ...openingByGroup.keys()]);
     const orderedKeys = [...allKeys]
       .filter((key) => {
-        const hasMovements = (buckets.get(key)?.length ?? 0) > 0;
+        const rows = buckets.get(key) ?? [];
+        const hasMeaningfulMovements = rows.some((row) => isMeaningfulMovementRow(row, qtyName));
         const opening = openingByGroup.get(key) ?? 0;
-        return hasMovements || Math.abs(opening) > 1e-9;
+        return hasMeaningfulMovements || Math.abs(opening) > 1e-9;
       })
       .sort((a, b) => {
         const aMovements = buckets.get(a)?.length ?? 0;
@@ -407,17 +408,19 @@ export class ProductMovementsService {
       let totalExpense = 0;
       const lines: ProductMovementsLine[] = [];
 
-      for (const [index, row] of rows.entries()) {
-        const qty = num(row.qty ?? row[qtyName]);
-        const documentLabel = resolveRecorderLabel(row);
-        const { receiptQty, expenseQty, signedQty } = splitQty(qty, row.recordType, documentLabel);
+      let rowNum = 0;
+      for (const row of rows) {
+        const { documentLabel, receiptQty, expenseQty, signedQty } = evaluateMovementRow(row, qtyName);
+        if (!isMeaningfulMovementEffect({ receiptQty, expenseQty, signedQty })) continue;
+
         balance += signedQty;
         if (receiptQty != null) totalReceipt += receiptQty;
         if (expenseQty != null) totalExpense += expenseQty;
+        rowNum += 1;
 
         const recorderId = str(row.recorder ?? row[resolved.recorderAttributeName as string]);
         lines.push({
-          rowNum: index + 1,
+          rowNum,
           date: formatDisplayDate(row.period),
           documentId: recorderId || null,
           documentLabel,
@@ -769,6 +772,27 @@ function groupLabel(groupKey: string, groupDims: string[], labels: Map<string, s
     return dim ? `${name}` : name;
   });
   return named.join(' · ');
+}
+
+function evaluateMovementRow(row: RawMovementRow, qtyName: string) {
+  const qty = num(row.qty ?? row[qtyName]);
+  const documentLabel = resolveRecorderLabel(row);
+  const { receiptQty, expenseQty, signedQty } = splitQty(qty, row.recordType, documentLabel);
+  return { documentLabel, receiptQty, expenseQty, signedQty };
+}
+
+function isMeaningfulMovementEffect(effect: {
+  receiptQty: number | null;
+  expenseQty: number | null;
+  signedQty: number;
+}): boolean {
+  return effect.receiptQty != null
+    || effect.expenseQty != null
+    || Math.abs(effect.signedQty) > 1e-9;
+}
+
+function isMeaningfulMovementRow(row: RawMovementRow, qtyName: string): boolean {
+  return isMeaningfulMovementEffect(evaluateMovementRow(row, qtyName));
 }
 
 function isCustomerReturnDocument(label: string): boolean {
