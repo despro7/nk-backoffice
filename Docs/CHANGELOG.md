@@ -5,6 +5,43 @@
 
 ---
 
+## 2026-10-05 — Звіт «Рухи по товару», Drawer і оптимізація Dilovod
+
+**Files:** `client/features/product-movements/`, `client/pages/Reports/ReportsProductMovements/`, `server/services/dilovod/ProductMovementsService.ts`, `shared/types/productMovements.ts`, `server/routes/reports-warehouse.ts`, `MovementMobProductCard.tsx`, `ReleaseComponentBatchesPanel.tsx`, `DilovodUtils.ts`
+
+### Новий звіт
+
+- **Маршрут** `/reports/product-movements` — рухи товару по регістру Dilovod `goods` з групуванням по партіях, running balance, accordion «Старі партії» (партії без рухів за період, але з залишком).
+- **API** `GET/POST /api/reports/product-movements` — дозвіл `page.reports.productMovements` (`STOREKEEPER`+).
+- **Фільтри** — товар (пошук каталогу ГП), партія, склад, фірма, пресет періоду; останні 10 запитів у `localStorage`.
+- **Заголовок звіту** — блок загальної статистики по всіх партіях: початковий залишок, надходження, витрата, залишок.
+
+### Глобальний Drawer
+
+- **`ProductMovementsDrawerProvider`** у `App.tsx` — відкриття рухів з будь-якої сторінки через `useProductMovementsDrawer()`.
+- **`autoGenerate`** — автоматичне формування звіту після відкриття (використовується в movement-mob).
+- **Точки входу:** клік по партії в `MovementMobProductCard`; кнопка «Рухи партії» в `ReleaseComponentBatchesPanel`.
+
+### Бекенд
+
+- **`ProductMovementsService`** — shape з metadata, паралельне завантаження рядків і opening balance, кеш довідників складів/фірм (TTL 5 хв + dedup promise).
+- **`extractGoodPartIdPresentation`** у `DilovodUtils` — коректний резолв назви партії з `id__pr` / `id.pr`.
+
+### Оптимізація запитів
+
+- Стабілізація `generate`/`reset` через `mutationRef` — усунено дубльовані POST при відкритті Drawer.
+- `openSessionRef` / `autoGenerateSessionRef` — один виклик generate на сесію відкриття.
+- `useProductMovementsMeta.loading` — лише `isLoading`, без фонового `isFetching`.
+
+### UI Drawer (compact)
+
+- Таблиця без `p-2` у блоці групи.
+- Вирівняна висота фільтрів (`h-8` для періоду, дат і товару в compact-режимі).
+
+**Документація:** [`Docs/features/product-movements.md`](features/product-movements.md).
+
+---
+
 ## 2026-10-02 — Склад: спільний QtyPills (коробки + розсип)
 
 **Files:** `client/pages/Warehouse/shared/QtyPills.tsx`, `BatchNumbersAutocomplete.tsx`, `MovementProductRow.tsx`, `MovementMobDocumentCard.tsx`, `Docs/features/warehouse-movement-mob.md`

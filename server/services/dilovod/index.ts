@@ -26,6 +26,7 @@ export {
   type CreateGoodPartResult,
 } from './DilovodGoodPartsService.js';
 export { WarehouseStatementService, warehouseStatementService } from './WarehouseStatementService.js';
+export { ProductMovementsService, ProductMovementsQueryError, productMovementsService } from './ProductMovementsService.js';
 export { DilovodExportBuilder, dilovodExportBuilder } from './DilovodExportBuilder.js';
 export { DilovodExportFlowService, dilovodExportFlowService } from './DilovodExportFlowService.js';
 export { acquireSaleShipmentLock, completeSaleShipmentLock, releaseSaleShipmentLock } from './DilovodShipmentLockService.js';

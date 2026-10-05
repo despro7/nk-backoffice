@@ -10,6 +10,7 @@ import { ScrollToTop } from "./components/ScrollToTop";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { AuthProvider } from "./contexts/AuthContext";
+import { ProductMovementsDrawerProvider } from './features/product-movements/context/ProductMovementsDrawerContext';
 import { useAuth, useEquipmentFromAuth } from "./contexts/auth-context";
 import { DilovodDirectoriesProvider } from './contexts/DilovodDirectoriesContext';
 import { useDilovodDirectories } from './contexts/DilovodDirectoriesContext';
@@ -202,6 +203,7 @@ export default function App() {
       <BrowserRouter>
         <DilovodDirectoriesProvider>
           <AuthProvider>
+            <ProductMovementsDrawerProvider>
             <DebugProvider>
             <RolePreviewProvider>
             <ServerStatusProvider>
@@ -214,6 +216,7 @@ export default function App() {
               </ServerStatusProvider>
             </RolePreviewProvider>
             </DebugProvider>
+            </ProductMovementsDrawerProvider>
           </AuthProvider>
         </DilovodDirectoriesProvider>
       </BrowserRouter>

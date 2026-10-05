@@ -8,6 +8,7 @@ import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { BatchNumbersAutocomplete } from '../../WarehouseMovement/components/BatchNumbersAutocomplete';
 import { useBatchNumbers, type BatchNumber } from '../../WarehouseMovement/hooks/useBatchNumbers';
 import { ToastService } from '@/services/ToastService';
+import { useProductMovementsDrawer } from '@/features/product-movements/context/ProductMovementsDrawerContext';
 import type { ReleaseComponentAllocation, ReleaseComponentBatch } from '@shared/types/warehouseRelease';
 import type { ReleaseSetsOperationKey } from '../useReleaseSets';
 import { breakdownStockPortions } from '../../WarehouseMovementMob/WarehouseMovementMobUtils';
@@ -37,6 +38,38 @@ interface Props {
 
 function formatPortionQty(value: number): string {
   return String(Math.round(value));
+}
+
+function ReleaseBatchMovementsButton({
+  sku,
+  productName,
+  batchId,
+  batchLabel,
+  storageId,
+}: {
+  sku: string;
+  productName: string | null;
+  batchId: string;
+  batchLabel: string;
+  storageId?: string | null;
+}) {
+  const { open } = useProductMovementsDrawer();
+  return (
+    <Button
+      size="sm"
+      variant="light"
+      startContent={<DynamicIcon name="arrow-left-right" size={14} />}
+      onPress={() => open({
+        sku,
+        productName: productName ?? undefined,
+        goodPartId: batchId,
+        batchLabel,
+        storageId: storageId ?? undefined,
+      })}
+    >
+      Рухи партії
+    </Button>
+  );
 }
 
 function getOtherAllocatedQuantity(batches: ReleaseComponentBatch[], excludeIndex: number): number {
@@ -457,6 +490,13 @@ export default function ReleaseComponentBatchesPanel({
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
+                          <ReleaseBatchMovementsButton
+                            sku={component.sku}
+                            productName={component.name}
+                            batchId={batch.batchId}
+                            batchLabel={batch.batchNumber || batch.batchId}
+                            storageId={storageId}
+                          />
                           {!correctionMode && isBatchStockMax && (
                             <span className="text-xs font-medium uppercase tracking-wide text-fuchsia-700/60 bg-fuchsia-300/15 px-1.5 py-0.5 rounded">
                               max

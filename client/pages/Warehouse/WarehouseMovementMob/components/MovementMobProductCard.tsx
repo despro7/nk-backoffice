@@ -1,12 +1,14 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Button, Card, CardBody, Skeleton } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { StockBadge } from '@/components/StockBadge';
 import { useDebug } from '@/contexts/debug-context';
+import { useProductMovementsDrawer } from '@/features/product-movements/context/ProductMovementsDrawerContext';
 import type { MovementMobProductLineViewModel } from '../WarehouseMovementMobTypes';
 import { pluralize } from '@/lib/formatUtils';
 import {
   computeProjectedLineStock,
+  effectiveBatchId,
   isHumanBatchLabel,
   lineReceiptState,
   movementQtyForStockProjection,
@@ -68,9 +70,11 @@ function LineStockCard({
 function BatchLabel({
   line,
   loading,
+  onOpenMovements,
 }: {
   line: MovementMobProductLineViewModel;
   loading: boolean;
+  onOpenMovements?: () => void;
 }) {
   if (loading) {
     return <Skeleton className="h-4 w-28 rounded-md opacity-60" />;
@@ -86,6 +90,18 @@ function BatchLabel({
       Партія:{' '}
       {showWarning ? (
         <span className="text-danger-500 font-medium">не обрано!</span>
+      ) : onOpenMovements ? (
+        <button
+          type="button"
+          className="inline-flex max-w-full items-center gap-1 text-default-500 transition-colors hover:text-primary-600"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenMovements();
+          }}
+        >
+          <span className="truncate">{label}</span>
+          <DynamicIcon name="arrow-left-right" size={12} strokeWidth={1.75} className="shrink-0 opacity-70" />
+        </button>
       ) : (
         <span className="text-default-500">{label}</span>
       )}
@@ -114,6 +130,7 @@ export default function MovementMobProductCard({
   batchRefreshing = false,
 }: MovementMobProductCardProps) {
   const { isDebugMode } = useDebug();
+  const { open: openProductMovements } = useProductMovementsDrawer();
   const totalStockLoading = stockLoading || stockRefreshing;
   const batchQtyLoading = batchLoading || batchRefreshing;
   const batchLabelLoading = batchLoading || batchRefreshing;
@@ -161,6 +178,29 @@ export default function MovementMobProductCard({
       ? line.receivedPortionQuantity
       : line.portionQuantity;
   const canEditProduct = Boolean(onEditProduct && line.catalogGoodId);
+  const batchPartId = effectiveBatchId(line.batchId, line.batchNumber);
+  const canOpenBatchMovements = line.batchLinked === true && Boolean(batchPartId);
+  const openBatchMovements = useCallback(() => {
+    if (!canOpenBatchMovements) return;
+    openProductMovements({
+      sku: line.sku,
+      productName: line.productName,
+      dilovodGoodId: line.catalogGoodId ?? undefined,
+      goodPartId: batchPartId,
+      batchLabel: line.batchNumber || batchPartId,
+      storageId: sourceStorageId || undefined,
+      autoGenerate: true,
+    });
+  }, [
+    batchPartId,
+    canOpenBatchMovements,
+    line.batchNumber,
+    line.catalogGoodId,
+    line.productName,
+    line.sku,
+    openProductMovements,
+    sourceStorageId,
+  ]);
 
   return (
     <Card
@@ -262,7 +302,11 @@ export default function MovementMobProductCard({
                 )}
               </>
             )}
-            <BatchLabel line={line} loading={batchLabelLoading} />
+            <BatchLabel
+              line={line}
+              loading={batchLabelLoading}
+              onOpenMovements={canOpenBatchMovements ? openBatchMovements : undefined}
+            />
           </div>
           {canEditProduct && !batchLabelLoading && (
             <Button

@@ -19,6 +19,7 @@ const ReportsShipment = lazyPage(() => import('./pages/Reports/ReportsShipment')
 const ReportsSalesDynamics = lazyPage(() => import('./pages/Reports/ReportsSalesDynamics'));
 const LalAudiences = lazyPage(() => import('./pages/Reports/LalAudiences'));
 const ReportsWarehouseStatement = lazyPage(() => import('./pages/Reports/ReportsWarehouseStatement'));
+const ReportsProductMovements = lazyPage(() => import('./pages/Reports/ReportsProductMovements'));
 const DesignSystem = lazyPage(() => import('./pages/DesignSystem'));
 const OrderView = lazyPage(() => import('./pages/OrderView'));
 const SettingsTestAuth = lazyPage(() => import('./pages/SettingsTestAuth'));
@@ -372,6 +373,23 @@ export const appRoutes: AppRoute[] = [
       label: 'NEW',
       color: 'danger',
       until: '2026-09-15',
+    },
+  },
+  {
+    path: '/reports/product-movements',
+    component: ReportsProductMovements,
+    title: 'Рухи по товару',
+    pageTitle: 'Рухи по товару | NK Backoffice',
+    navLabel: 'Рухи по товару',
+    icon: <DynamicIcon name="arrow-left-right" size={16} />,
+    inNav: true,
+    parent: 'reports',
+    order: 6,
+    permission: { name: 'productMovements' },
+    navBadge: {
+      label: 'NEW',
+      color: 'danger',
+      until: '2026-10-15',
     },
   },
   {

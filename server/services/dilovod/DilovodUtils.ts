@@ -714,23 +714,44 @@ export function extractBatchExpirationFromGoodPartHeader(
   return expiration || null;
 }
 
+/** Презентація партії з `id__pr` (request) або `id.pr` (getObject). */
+export function extractGoodPartIdPresentation(
+  header: Record<string, unknown> | null | undefined,
+  batchId = '',
+): string | null {
+  if (!header || typeof header !== 'object') return null;
+
+  const flat = unwrapDilovodName(header.id__pr);
+  const fromFlat = pickHumanBatchLabel(batchId, flat);
+  if (fromFlat) return fromFlat;
+
+  const directPr = pickHumanBatchLabel(batchId, unwrapDilovodName((header as { pr?: unknown }).pr));
+  if (directPr) return directPr;
+
+  const headerId = header.id;
+  if (headerId && typeof headerId === 'object') {
+    const pr = unwrapDilovodName((headerId as { pr?: unknown }).pr);
+    const fromNested = pickHumanBatchLabel(batchId, pr);
+    if (fromNested) return fromNested;
+  }
+
+  return null;
+}
+
 export function extractBatchLabelFromGoodPartHeader(
   header: Record<string, unknown> | null | undefined,
   batchId: string,
 ): string | null {
   if (!header || typeof header !== 'object') return null;
 
+  const fromIdPr = extractGoodPartIdPresentation(header, batchId);
+  if (fromIdPr) return fromIdPr;
+
   const code = unwrapDilovodName(header.code);
   const name = unwrapDilovodName(header.name);
   const number = unwrapDilovodName(header.number);
   const printName = unwrapDilovodName(header.printName);
   const sysName = unwrapDilovodName(header.sysName);
-
-  let idPresentation = '';
-  const headerId = header.id;
-  if (headerId && typeof headerId === 'object') {
-    idPresentation = unwrapDilovodName((headerId as { pr?: unknown }).pr);
-  }
 
   return pickHumanBatchLabel(
     batchId,
@@ -739,7 +760,6 @@ export function extractBatchLabelFromGoodPartHeader(
     number,
     printName,
     sysName,
-    idPresentation,
   );
 }
 
