@@ -19,11 +19,8 @@ import {
   type HrBonusKind,
   type HrBonusWritePayload,
 } from '@shared/types/hr';
-import type { HrPeriodOption } from '@shared/utils/hrWorkWeekPeriods';
-import { formatHrPeriodOptionLabel } from '@shared/utils/hrProductionWeek';
+import { formatMoney } from '@/lib/formatUtils';
 import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
-
-export type BonusPeriodOption = HrPeriodOption;
 
 interface EmploymentOption {
   id: number;
@@ -35,11 +32,52 @@ interface BonusDrawerProps {
   isOpen: boolean;
   bonus: HrBonusDto | null;
   employments: EmploymentOption[];
-  periods: BonusPeriodOption[];
-  defaultPeriodId?: string | null;
+  defaultYear: number;
+  defaultMonth: number;
   saving: boolean;
   onClose: () => void;
   onSave: (payload: HrBonusWritePayload) => Promise<void>;
+}
+
+const MONTH_OPTIONS = [
+  'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
+  'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень',
+] as const;
+
+function buildPeriodOptions(now: Date): Array<{ key: string; year: number; month: number; label: string }> {
+  const options: Array<{ key: string; year: number; month: number; label: string }> = [];
+  for (let offset = 0; offset < 3; offset += 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    options.push({
+      key: `${year}-${month}`,
+      year,
+      month,
+      label: `${MONTH_OPTIONS[month - 1]} ${year}`,
+    });
+  }
+  return options;
+}
+
+function normalizeMoneyInput(raw: string): string {
+  const cleaned = raw.replace(/[^\d,.\s]/g, '').replace(/\s/g, '').replace(',', '.');
+  if (!cleaned) return '';
+  const parts = cleaned.split('.');
+  const intPart = parts[0] ?? '';
+  const decPart = parts[1] ?? '';
+  if (parts.length > 2) return raw;
+  return decPart ? `${intPart}.${decPart.slice(0, 2)}` : intPart;
+}
+
+function formatMoneyInput(raw: string): string {
+  const normalized = normalizeMoneyInput(raw);
+  if (!normalized) return '';
+  const [intPart, decPart] = normalized.split('.');
+  const intNum = Number(intPart);
+  if (!Number.isFinite(intNum)) return raw;
+  const formattedInt = intNum.toLocaleString('uk-UA');
+  return decPart !== undefined ? `${formattedInt},${decPart}` : formattedInt;
 }
 
 const emptyForm = (): HrBonusWritePayload => ({
@@ -49,19 +87,9 @@ const emptyForm = (): HrBonusWritePayload => ({
   status: 'draft',
 });
 
-function periodToPayload(period: BonusPeriodOption | null): Pick<HrBonusWritePayload, 'productionWeekId' | 'calendarWeekId'> {
-  if (!period) {
-    return { productionWeekId: null, calendarWeekId: null };
-  }
-  if (period.kind === 'production') {
-    return { productionWeekId: Number(period.id) || null, calendarWeekId: null };
-  }
-  return { productionWeekId: null, calendarWeekId: period.id };
-}
-
 function snapshotBonusState(
   form: HrBonusWritePayload,
-  selectedPeriodId: string | null,
+  periodKey: string | null,
   isEdit: boolean,
 ): string {
   return JSON.stringify({
@@ -70,7 +98,7 @@ function snapshotBonusState(
     kind: form.kind,
     note: form.note?.trim() ?? '',
     status: form.status,
-    periodId: isEdit ? null : selectedPeriodId,
+    periodKey: isEdit ? null : periodKey,
   });
 }
 
@@ -78,20 +106,22 @@ export function BonusDrawer({
   isOpen,
   bonus,
   employments,
-  periods,
-  defaultPeriodId,
+  defaultYear,
+  defaultMonth,
   saving,
   onClose,
   onSave,
 }: BonusDrawerProps) {
   const [form, setForm] = useState<HrBonusWritePayload>(emptyForm());
-  const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null);
+  const [amountDisplay, setAmountDisplay] = useState('');
+  const [selectedPeriodKey, setSelectedPeriodKey] = useState<string | null>(null);
   const baselineRef = useRef('');
   const [baselineVersion, setBaselineVersion] = useState(0);
   const isEdit = bonus != null;
+  const periodOptions = useMemo(() => buildPeriodOptions(new Date()), []);
 
-  const commitBaseline = useCallback((nextForm: HrBonusWritePayload, periodId: string | null) => {
-    baselineRef.current = snapshotBonusState(nextForm, periodId, isEdit);
+  const commitBaseline = useCallback((nextForm: HrBonusWritePayload, periodKey: string | null) => {
+    baselineRef.current = snapshotBonusState(nextForm, periodKey, isEdit);
     setBaselineVersion((version) => version + 1);
   }, [isEdit]);
 
@@ -107,44 +137,49 @@ export function BonusDrawer({
         kind: bonus.kind,
         note: bonus.note,
         status: bonus.status,
-        productionWeekId: bonus.productionWeekId,
-        calendarWeekId: bonus.calendarWeekId,
+        periodYear: bonus.periodYear,
+        periodMonth: bonus.periodMonth,
       };
       setForm(nextForm);
-      setSelectedPeriodId(null);
+      setAmountDisplay(formatMoney(bonus.amount));
+      setSelectedPeriodKey(null);
       commitBaseline(nextForm, null);
       return;
     }
     const nextForm = emptyForm();
     setForm(nextForm);
-    const presetId = defaultPeriodId && periods.some((item) => item.id === defaultPeriodId)
-      ? defaultPeriodId
-      : periods[0]?.id ?? null;
-    setSelectedPeriodId(presetId);
-    commitBaseline(nextForm, presetId);
-  }, [bonus, commitBaseline, defaultPeriodId, isOpen, periods]);
+    setAmountDisplay('');
+    const presetKey = `${defaultYear}-${defaultMonth}`;
+    const periodKey = periodOptions.some((item) => item.key === presetKey)
+      ? presetKey
+      : periodOptions[0]?.key ?? null;
+    setSelectedPeriodKey(periodKey);
+    commitBaseline(nextForm, periodKey);
+  }, [bonus, commitBaseline, defaultMonth, defaultYear, isOpen, periodOptions]);
 
   const isDirty = useMemo(() => {
     if (!isOpen) return false;
     if (!baselineRef.current) return false;
     void baselineVersion;
-    return snapshotBonusState(form, selectedPeriodId, isEdit) !== baselineRef.current;
-  }, [form, isEdit, isOpen, selectedPeriodId, baselineVersion]);
+    return snapshotBonusState(form, selectedPeriodKey, isEdit) !== baselineRef.current;
+  }, [form, isEdit, isOpen, selectedPeriodKey, baselineVersion]);
 
   const handleSave = useCallback(async () => {
     if (!form.employmentId || !form.amount) {
       throw new Error('Заповніть обовʼязкові поля');
     }
     if (!isEdit) {
-      const period = periods.find((item) => item.id === selectedPeriodId) ?? null;
-      if (!period) {
-        throw new Error('Оберіть тиждень');
-      }
-      await onSave({ ...form, ...periodToPayload(period) });
+      const period = periodOptions.find((item) => item.key === selectedPeriodKey);
+      if (!period) throw new Error('Оберіть місяць');
+      await onSave({
+        ...form,
+        periodYear: period.year,
+        periodMonth: period.month,
+      });
       return;
     }
     await onSave(form);
-  }, [form, isEdit, onSave, periods, selectedPeriodId]);
+  }, [form, isEdit, onSave, periodOptions, selectedPeriodKey]);
 
   const guard = useUnsavedGuard({
     isDirty,
@@ -163,10 +198,6 @@ export function BonusDrawer({
     if (saving) return;
     requestClose();
   }, [requestClose, saving]);
-
-  const submitSave = () => {
-    void handleSave();
-  };
 
   return (
     <>
@@ -192,21 +223,18 @@ export function BonusDrawer({
               <DrawerBody className="gap-5 py-5 overflow-y-auto">
                 {!isEdit ? (
                   <Select
-                    label="Тиждень"
-                    selectedKeys={selectedPeriodId ? [selectedPeriodId] : []}
+                    label="Місяць"
+                    selectedKeys={selectedPeriodKey ? [selectedPeriodKey] : []}
                     onSelectionChange={(keys) => {
                       const value = String(Array.from(keys)[0] ?? '');
-                      if (value) setSelectedPeriodId(value);
+                      if (value) setSelectedPeriodKey(value);
                     }}
                   >
-                    {periods.map((period) => {
-                      const label = formatHrPeriodOptionLabel(period);
-                      return (
-                        <SelectItem key={period.id} textValue={label}>
-                          {label}
-                        </SelectItem>
-                      );
-                    })}
+                    {periodOptions.map((period) => (
+                      <SelectItem key={period.key} textValue={period.label}>
+                        {period.label}
+                      </SelectItem>
+                    ))}
                   </Select>
                 ) : null}
                 <Select
@@ -226,8 +254,15 @@ export function BonusDrawer({
                 </Select>
                 <Input
                   label="Сума"
-                  value={form.amount}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, amount: value }))}
+                  value={amountDisplay}
+                  onValueChange={(value) => {
+                    const normalized = normalizeMoneyInput(value);
+                    setAmountDisplay(formatMoneyInput(value));
+                    setForm((prev) => ({ ...prev, amount: normalized }));
+                  }}
+                  onBlur={() => {
+                    if (form.amount) setAmountDisplay(formatMoney(form.amount));
+                  }}
                   endContent={<span className="text-secondary text-sm">грн</span>}
                 />
                 <Select
@@ -256,7 +291,7 @@ export function BonusDrawer({
                 </Button>
                 <Button
                   className={HR_BTN_PRIMARY}
-                  onPress={submitSave}
+                  onPress={() => void handleSave()}
                   isLoading={saving}
                   isDisabled={!isDirty}
                 >

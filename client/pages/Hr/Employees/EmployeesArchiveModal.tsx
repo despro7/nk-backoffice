@@ -19,6 +19,7 @@ import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { ToastService } from '@/services/ToastService';
 import { HR_PAY_GROUP_LABELS, type HrEmployeeListItemDto } from '@shared/types/hr';
 import { HR_BTN_NEUTRAL, HR_TABLE_CLASS_NAMES, HrLinkedAccountIndicator, HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens } from '../hrUi';
+import { useHrPayGroupHues } from '../useHrPayGroupHues';
 
 interface EmployeesArchiveModalProps {
   isOpen: boolean;
@@ -42,6 +43,7 @@ function formatDeletedAt(value: string | null | undefined): string {
 }
 
 export function EmployeesArchiveModal({ isOpen, onClose, onRestored }: EmployeesArchiveModalProps) {
+  const { hueOverrides: payGroupHueOverrides } = useHrPayGroupHues();
   const [employees, setEmployees] = useState<HrEmployeeListItemDto[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
@@ -151,7 +153,7 @@ export function EmployeesArchiveModal({ isOpen, onClose, onRestored }: Employees
                       </TableCell>
                       <TableCell>
                         {employee.currentPayGroup ? (
-                          <HrSpecChip tokens={hrPayGroupTokens(employee.currentPayGroup)}>
+                          <HrSpecChip tokens={hrPayGroupTokens(employee.currentPayGroup, 'soft', payGroupHueOverrides)}>
                             {HR_PAY_GROUP_LABELS[employee.currentPayGroup]}
                           </HrSpecChip>
                         ) : (

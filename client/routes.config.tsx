@@ -459,8 +459,8 @@ export const appRoutes: AppRoute[] = [
   {
     path: '/hr/payroll',
     component: HrPayrollPage,
-    title: 'Розрахунок',
-    pageTitle: 'Розрахунок | NK Backoffice',
+    title: 'Розрахунок фонду заробітної плати',
+    pageTitle: 'Розрахунок фонду заробітної плати | NK Backoffice',
     navLabel: 'Розрахунок',
     icon: <DynamicIcon name="calculator" size={16} />,
     inNav: true,

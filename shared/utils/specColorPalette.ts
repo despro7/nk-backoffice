@@ -302,6 +302,26 @@ export function resolveSpecColorTokens(
   return next;
 }
 
+/** Градієнт для hover-кнопки редагування на SpecChip (колір відповідає hue чіпа). */
+const SPEC_CHIP_EDIT_GRADIENT: Record<string, string> = {
+  emerald: 'bg-gradient-to-l from-emerald-100 from-35% via-emerald-100/85 to-transparent',
+  blue: 'bg-gradient-to-l from-blue-100 from-35% via-blue-100/85 to-transparent',
+  violet: 'bg-gradient-to-l from-violet-100 from-35% via-violet-100/85 to-transparent',
+  amber: 'bg-gradient-to-l from-amber-100 from-35% via-amber-100/85 to-transparent',
+  rose: 'bg-gradient-to-l from-rose-100 from-35% via-rose-100/85 to-transparent',
+  cyan: 'bg-gradient-to-l from-cyan-100 from-35% via-cyan-100/85 to-transparent',
+  orange: 'bg-gradient-to-l from-orange-100 from-35% via-orange-100/85 to-transparent',
+  teal: 'bg-gradient-to-l from-teal-100 from-35% via-teal-100/85 to-transparent',
+  indigo: 'bg-gradient-to-l from-indigo-100 from-35% via-indigo-100/85 to-transparent',
+  pink: 'bg-gradient-to-l from-pink-100 from-35% via-pink-100/85 to-transparent',
+  lime: 'bg-gradient-to-l from-lime-100 from-35% via-lime-100/85 to-transparent',
+  slate: 'bg-gradient-to-l from-slate-100 from-35% via-slate-100/85 to-transparent',
+};
+
+export function specChipEditGradient(hue: string): string {
+  return SPEC_CHIP_EDIT_GRADIENT[hue] ?? SPEC_CHIP_EDIT_GRADIENT.slate;
+}
+
 /**
  * Будує мапінг id → кольорові токени для масиву специфікацій/довідників.
  * Порядок стабільний: спочатку за `code` (числово, якщо можливо), інакше за name/id.

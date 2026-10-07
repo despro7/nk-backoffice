@@ -10,50 +10,10 @@ import {
   type HrBonusWritePayload,
   type HrPayGroup,
 } from '../../../shared/types/hr.js';
-import { productionWeekEnd } from '../../../shared/utils/hrProductionWeek.js';
+import { countCalendarWorkDays } from '../../../shared/utils/hrWorkWeekPeriods.js';
+import { roundMoney } from './payrollCalc.js';
 import { hrAuditService } from './HrAuditService.js';
-import { hrProductionCalendarService } from './HrProductionCalendarService.js';
 import { HrError } from './HrService.js';
-
-function parseDateOnly(raw: string): string {
-  const value = raw.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    throw new HrError('Некоректна дата (очікується YYYY-MM-DD)');
-  }
-  return value;
-}
-
-function bonusPeriodBounds(row: {
-  calendarWeekId: string | null;
-  productionWeek: { startDate: Date; endDate: Date } | null;
-}): { start: string; end: string } | null {
-  if (row.productionWeek) {
-    return {
-      start: row.productionWeek.startDate.toISOString().slice(0, 10),
-      end: row.productionWeek.endDate.toISOString().slice(0, 10),
-    };
-  }
-  if (row.calendarWeekId) {
-    return {
-      start: row.calendarWeekId,
-      end: productionWeekEnd(row.calendarWeekId),
-    };
-  }
-  return null;
-}
-
-function bonusOverlapsRange(
-  row: {
-    calendarWeekId: string | null;
-    productionWeek: { startDate: Date; endDate: Date } | null;
-  },
-  dateFrom: string,
-  dateTo: string,
-): boolean {
-  const bounds = bonusPeriodBounds(row);
-  if (!bounds) return false;
-  return bounds.start <= dateTo && bounds.end >= dateFrom;
-}
 
 function isBonusKind(value: string): value is HrBonusKind {
   return (HR_BONUS_KINDS as readonly string[]).includes(value);
@@ -75,11 +35,31 @@ function parseMoney(raw: string): Prisma.Decimal {
   return new Prisma.Decimal(normalized);
 }
 
+function parsePeriodYearMonth(year?: number, month?: number): { year: number; month: number } {
+  const now = new Date();
+  const periodYear = year ?? now.getFullYear();
+  const periodMonth = month ?? now.getMonth() + 1;
+  if (!Number.isInteger(periodYear) || periodYear < 2000 || periodYear > 2100) {
+    throw new HrError('Некоректний рік періоду');
+  }
+  if (!Number.isInteger(periodMonth) || periodMonth < 1 || periodMonth > 12) {
+    throw new HrError('Некоректний місяць періоду');
+  }
+  return { year: periodYear, month: periodMonth };
+}
+
+function monthBounds(year: number, month: number): { start: string; end: string } {
+  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return { start: monthStart, end: monthEnd };
+}
+
 function toDto(row: {
   id: number;
   employmentId: number;
-  productionWeekId: number | null;
-  calendarWeekId: string | null;
+  periodYear: number;
+  periodMonth: number;
   amount: Prisma.Decimal;
   kind: string;
   note: string | null;
@@ -99,8 +79,8 @@ function toDto(row: {
     displayName: row.employment.employee.displayName,
     payGroup,
     legalEntityName: row.employment.legalEntity.name,
-    productionWeekId: row.productionWeekId,
-    calendarWeekId: row.calendarWeekId,
+    periodYear: row.periodYear,
+    periodMonth: row.periodMonth,
     amount: row.amount.toFixed(2),
     kind: isBonusKind(row.kind) ? row.kind : 'manual',
     note: row.note,
@@ -150,35 +130,15 @@ export class HrBonusService {
   }
 
   async list(params: {
-    productionWeekId?: number;
-    calendarWeekId?: string;
+    year?: number;
+    month?: number;
     employmentId?: number;
-    dateFrom?: string;
-    dateTo?: string;
   }): Promise<HrBonusDto[]> {
-    if (params.dateFrom && params.dateTo) {
-      const dateFrom = parseDateOnly(params.dateFrom);
-      const dateTo = parseDateOnly(params.dateTo);
-      if (dateFrom > dateTo) {
-        throw new HrError('Дата початку не може бути пізніше дати кінця');
-      }
-      const rows = await prisma.hrBonus.findMany({
-        where: {
-          ...(params.employmentId != null ? { employmentId: params.employmentId } : {}),
-        },
-        include: {
-          ...bonusInclude,
-          productionWeek: { select: { startDate: true, endDate: true } },
-        },
-        orderBy: [{ createdAt: 'desc' }],
-      });
-      return rows.filter((row) => bonusOverlapsRange(row, dateFrom, dateTo)).map(toDto);
-    }
-
+    const { year, month } = parsePeriodYearMonth(params.year, params.month);
     const rows = await prisma.hrBonus.findMany({
       where: {
-        ...(params.productionWeekId != null ? { productionWeekId: params.productionWeekId } : {}),
-        ...(params.calendarWeekId ? { calendarWeekId: params.calendarWeekId } : {}),
+        periodYear: year,
+        periodMonth: month,
         ...(params.employmentId != null ? { employmentId: params.employmentId } : {}),
       },
       include: bonusInclude,
@@ -187,24 +147,47 @@ export class HrBonusService {
     return rows.map(toDto);
   }
 
-  async sumByEmploymentForMonth(
-    year: number,
-    month: number,
-  ): Promise<Map<number, number>> {
-    const bonuses = await this.list({});
+  async sumByEmploymentForMonth(year: number, month: number): Promise<Map<number, number>> {
+    const rows = await prisma.hrBonus.findMany({
+      where: {
+        periodYear: year,
+        periodMonth: month,
+        status: { in: ['approved', 'locked'] },
+      },
+      select: { employmentId: true, amount: true },
+    });
     const sums = new Map<number, number>();
-    const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
-
-    for (const bonus of bonuses) {
-      if (bonus.status !== 'approved' && bonus.status !== 'locked') continue;
-      const periodKey = bonus.calendarWeekId ?? String(bonus.productionWeekId ?? '');
-      if (!periodKey.startsWith(monthPrefix) && !periodKey.includes(monthPrefix)) {
-        // For production weeks, include if overlapping month — simplified: include all approved for now
-      }
-      const current = sums.get(bonus.employmentId) ?? 0;
-      sums.set(bonus.employmentId, current + Number(bonus.amount));
+    for (const row of rows) {
+      const current = sums.get(row.employmentId) ?? 0;
+      sums.set(row.employmentId, current + Number(row.amount.toFixed(2)));
     }
     return sums;
+  }
+
+  async sumProportionalByEmploymentForRange(
+    year: number,
+    month: number,
+    rangeStart: string,
+    rangeEnd: string,
+  ): Promise<Map<number, number>> {
+    const monthly = await this.sumByEmploymentForMonth(year, month);
+    const { start: monthStart, end: monthEnd } = monthBounds(year, month);
+    const monthWorkDays = countCalendarWorkDays(monthStart, monthEnd);
+    const periodWorkDays = countCalendarWorkDays(rangeStart, rangeEnd);
+    if (monthWorkDays <= 0 || periodWorkDays <= 0) return new Map();
+
+    const ratio = periodWorkDays / monthWorkDays;
+    const result = new Map<number, number>();
+    for (const [employmentId, amount] of monthly) {
+      result.set(employmentId, roundMoney(amount * ratio));
+    }
+    return result;
+  }
+
+  async countDraftForMonth(year: number, month: number): Promise<number> {
+    return prisma.hrBonus.count({
+      where: { periodYear: year, periodMonth: month, status: 'draft' },
+    });
   }
 
   async sumApprovedByEmploymentForDateRange(
@@ -213,64 +196,47 @@ export class HrBonusService {
     dateTo: string,
   ): Promise<Map<number, number>> {
     if (employmentIds.length === 0) return new Map();
-
-    const rows = await prisma.hrBonus.findMany({
-      where: {
-        employmentId: { in: employmentIds },
-        status: { in: ['approved', 'locked'] },
-      },
-      include: {
-        productionWeek: { select: { startDate: true, endDate: true } },
-      },
-    });
-
-    const sums = new Map<number, number>();
-    for (const row of rows) {
-      if (!bonusOverlapsRange(row, dateFrom, dateTo)) continue;
-      const current = sums.get(row.employmentId) ?? 0;
-      sums.set(row.employmentId, current + Number(row.amount.toFixed(2)));
+    const year = Number(dateFrom.slice(0, 4));
+    const month = Number(dateFrom.slice(5, 7));
+    const all = await this.sumProportionalByEmploymentForRange(year, month, dateFrom, dateTo);
+    const filtered = new Map<number, number>();
+    for (const id of employmentIds) {
+      const value = all.get(id);
+      if (value != null) filtered.set(id, value);
     }
-    return sums;
+    return filtered;
   }
 
   async countDraftOverlappingRange(dateFrom: string, dateTo: string): Promise<number> {
-    const rows = await prisma.hrBonus.findMany({
-      where: { status: 'draft' },
-      include: {
-        productionWeek: { select: { startDate: true, endDate: true } },
-      },
-    });
-    return rows.filter((row) => bonusOverlapsRange(row, dateFrom, dateTo)).length;
-  }
-
-  async sumApprovedByEmployment(employmentIds: number[], periodId: string, periodKind: 'production' | 'calendar'): Promise<Map<number, number>> {
-    const rows = await prisma.hrBonus.findMany({
-      where: {
-        employmentId: { in: employmentIds },
-        status: { in: ['approved', 'locked'] },
-        ...(periodKind === 'production'
-          ? { OR: [{ productionWeekId: Number(periodId) || undefined }, { calendarWeekId: periodId }] }
-          : { calendarWeekId: periodId }),
-      },
-    });
-    const sums = new Map<number, number>();
-    for (const row of rows) {
-      const current = sums.get(row.employmentId) ?? 0;
-      sums.set(row.employmentId, current + Number(row.amount.toFixed(2)));
+    const startYear = Number(dateFrom.slice(0, 4));
+    const startMonth = Number(dateFrom.slice(5, 7));
+    const endYear = Number(dateTo.slice(0, 4));
+    const endMonth = Number(dateTo.slice(5, 7));
+    let count = 0;
+    let year = startYear;
+    let month = startMonth;
+    while (year < endYear || (year === endYear && month <= endMonth)) {
+      count += await this.countDraftForMonth(year, month);
+      month += 1;
+      if (month > 12) {
+        month = 1;
+        year += 1;
+      }
     }
-    return sums;
+    return count;
   }
 
   async create(payload: HrBonusWritePayload, userId?: number): Promise<HrBonusDto> {
     const employmentId = Number(payload.employmentId);
     const employment = await prisma.hrEmployment.findUnique({ where: { id: employmentId } });
     if (!employment) throw new HrError('Зайнятість не знайдено', 404);
+    const { year, month } = parsePeriodYearMonth(payload.periodYear, payload.periodMonth);
 
     const created = await prisma.hrBonus.create({
       data: {
         employmentId,
-        productionWeekId: payload.productionWeekId ?? null,
-        calendarWeekId: payload.calendarWeekId?.trim() || null,
+        periodYear: year,
+        periodMonth: month,
         amount: parseMoney(payload.amount),
         kind: payload.kind && isBonusKind(payload.kind) ? payload.kind : 'manual',
         note: payload.note?.trim() || null,
@@ -285,7 +251,7 @@ export class HrBonusService {
       entityId: employmentId,
       action: 'bonus_created',
       userId,
-      payload: { bonusId: created.id, amount: created.amount.toFixed(2) },
+      payload: { bonusId: created.id, amount: created.amount.toFixed(2), periodYear: year, periodMonth: month },
     });
     logServer('[hr] bonus created', { id: created.id, employmentId });
     return toDto(created);
@@ -308,8 +274,9 @@ export class HrBonusService {
         ...(payload.kind && isBonusKind(payload.kind) ? { kind: payload.kind } : {}),
         ...(payload.note !== undefined ? { note: payload.note?.trim() || null } : {}),
         ...(payload.status && isBonusStatus(payload.status) ? { status: payload.status } : {}),
-        ...(payload.productionWeekId !== undefined ? { productionWeekId: payload.productionWeekId } : {}),
-        ...(payload.calendarWeekId !== undefined ? { calendarWeekId: payload.calendarWeekId?.trim() || null } : {}),
+        ...(payload.periodYear != null && payload.periodMonth != null
+          ? parsePeriodYearMonth(payload.periodYear, payload.periodMonth)
+          : {}),
       },
       include: bonusInclude,
     });
@@ -338,15 +305,6 @@ export class HrBonusService {
       userId,
       payload: { bonusId: id },
     });
-  }
-
-  async resolvePeriodIds(dateStr: string): Promise<{ productionWeekId: number | null; calendarWeekId: string | null }> {
-    const resolved = await hrProductionCalendarService.resolveWeekId(dateStr);
-    if (resolved.periodKind === 'calendar') {
-      return { productionWeekId: null, calendarWeekId: resolved.periodId };
-    }
-    const weekId = resolved.week?.id && resolved.week.id > 0 ? resolved.week.id : null;
-    return { productionWeekId: weekId, calendarWeekId: null };
   }
 }
 

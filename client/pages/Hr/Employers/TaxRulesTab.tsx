@@ -41,20 +41,28 @@ import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
 import {
   HR_TABLE_CLASS_NAMES,
   HR_TAX_BASE_LABELS,
-  HrSpecChip,
+  SpecChip,
   hrPayGroupTokens,
   hrStatusTokens,
   hrTaxPayerTokens,
   hrTaxRuleTokens,
 } from '../hrUi';
+import { useHrPayGroupHues } from '../useHrPayGroupHues';
 
 interface TaxRulesTabProps {
   canManage: boolean;
 }
 
+function formatRatePercent(rate: string | number | undefined): string {
+  const value = typeof rate === 'number' ? rate : Number(rate);
+  if (!Number.isFinite(value)) return '';
+  return (value * 100).toFixed(2);
+}
+
 const emptyForm = (): HrTaxRuleWritePayload => ({
   code: '',
   label: '',
+  shortLabel: '',
   rate: '0.22',
   payer: 'employer',
   base: 'gross',
@@ -67,6 +75,7 @@ function snapshotTaxRuleForm(form: HrTaxRuleWritePayload, isCreate: boolean): st
   return JSON.stringify({
     code: isCreate ? form.code?.trim() ?? '' : undefined,
     label: form.label?.trim() ?? '',
+    shortLabel: form.shortLabel?.trim() ?? '',
     rate: form.rate?.trim() ?? '',
     payer: form.payer,
     base: form.base,
@@ -79,6 +88,7 @@ function snapshotTaxRuleForm(form: HrTaxRuleWritePayload, isCreate: boolean): st
 }
 
 export function TaxRulesTab({ canManage }: TaxRulesTabProps) {
+  const { hueOverrides: payGroupHueOverrides } = useHrPayGroupHues();
   const [rules, setRules] = useState<HrTaxRuleDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -120,6 +130,7 @@ export function TaxRulesTab({ canManage }: TaxRulesTabProps) {
   const openEdit = (rule: HrTaxRuleDto) => {
     const nextForm: HrTaxRuleWritePayload = {
       label: rule.label,
+      shortLabel: rule.shortLabel ?? '',
       rate: rule.rate,
       payer: rule.payer,
       base: rule.base,
@@ -230,7 +241,7 @@ export function TaxRulesTab({ canManage }: TaxRulesTabProps) {
               <TableColumn>Платник</TableColumn>
               <TableColumn>База</TableColumn>
               <TableColumn>Групи</TableColumn>
-              <TableColumn>З</TableColumn>
+              <TableColumn>Діє з</TableColumn>
               <TableColumn>Статус</TableColumn>
               {canManage ? <TableColumn width={96} align="center"> </TableColumn> : null}
             </TableHeader>
@@ -238,34 +249,34 @@ export function TaxRulesTab({ canManage }: TaxRulesTabProps) {
               {rules.map((rule) => (
                 <TableRow key={rule.id} className={!rule.isActive ? 'opacity-50' : undefined}>
                   <TableCell>
-                    <HrSpecChip tokens={hrTaxRuleTokens(rule.code)} rounded="sm">
+                    <SpecChip tokens={hrTaxRuleTokens(rule.code)} rounded="sm">
                       {rule.label}
-                    </HrSpecChip>
+                    </SpecChip>
                   </TableCell>
                   <TableCell className="tabular-nums font-medium">{(Number(rule.rate) * 100).toFixed(2)}%</TableCell>
                   <TableCell>
-                    <HrSpecChip tokens={hrTaxPayerTokens(rule.payer)} rounded="sm">
+                    <SpecChip tokens={hrTaxPayerTokens(rule.payer)} rounded="sm">
                       {rule.payer === 'employer' ? 'Роботодавець' : 'Працівник'}
-                    </HrSpecChip>
+                    </SpecChip>
                   </TableCell>
                   <TableCell>{HR_TAX_BASE_LABELS[rule.base]}</TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
                       {rule.payGroups.map((group) => (
-                        <HrSpecChip key={group} tokens={hrPayGroupTokens(group)} className="h-5 text-xs">
+                        <SpecChip key={group} tokens={hrPayGroupTokens(group, 'soft', payGroupHueOverrides)} className="h-5 text-xs">
                           {HR_PAY_GROUP_LABELS[group]}
-                        </HrSpecChip>
+                        </SpecChip>
                       ))}
                     </div>
                   </TableCell>
                   <TableCell className="text-xs text-default-500">{rule.effectiveFrom}</TableCell>
                   <TableCell>
-                    <HrSpecChip
+                    <SpecChip
                       tokens={hrStatusTokens(rule.isActive ? 'active' : 'inactive')}
                       icon={rule.isActive ? 'success' : 'error'}
                     >
                       {rule.isActive ? 'активне' : 'неактивне'}
-                    </HrSpecChip>
+                    </SpecChip>
                   </TableCell>
                   {canManage ? (
                     <TableCell>
@@ -357,7 +368,14 @@ export function TaxRulesTab({ canManage }: TaxRulesTabProps) {
                   onValueChange={(value) => setForm((prev) => ({ ...prev, label: value }))}
                 />
                 <Input
-                  label="Ставка (0.22 = 22%)"
+                  label="Коротка назва"
+                  description="Для заголовків колонок у розрахунку ФОП"
+                  value={form.shortLabel ?? ''}
+                  onValueChange={(value) => setForm((prev) => ({ ...prev, shortLabel: value }))}
+                />
+                <Input
+                  label="Ставка"
+                  description={`${formatRatePercent(form.rate)}% (0.22 = 22%)`}
                   value={form.rate ?? ''}
                   onValueChange={(value) => setForm((prev) => ({ ...prev, rate: value }))}
                 />

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Button, Input, Spinner, Tab } from '@heroui/react';
+import { Button, DateRangePicker, Select, SelectItem, Spinner, Tab } from '@heroui/react';
+import { parseDate, type DateValue } from '@internationalized/date';
+import { I18nProvider } from '@react-aria/i18n';
+import type { DateRange } from '@react-types/datepicker';
 import PageTabs from '@/components/PageTabs';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { MonthSwitcher } from '@/components/MonthSwitcher';
@@ -14,15 +17,19 @@ import {
   HR_TIMESHEET_GROUP_TO_PAY,
   HR_PAY_GROUP_TO_FILTER,
   type HrPayrollLineDto,
+  HR_PAYROLL_PERIOD_MODES,
   type HrPayrollLoadDto,
+  type HrPayrollPeriodMode,
+  type HrPayrollPeriodOptions,
   type HrTimesheetGroupFilter,
 } from '@shared/types/hr';
+import { useHrSettings } from '@/hooks/useHrSettings';
+import { TableBuilder } from '@/components/table/TableBuilder';
 import { getSpecColorByHue } from '@shared/utils/specColorPalette';
 import { formatYearMonth, parseYearMonth } from '@shared/utils/hrTimesheetCalendar';
 import { PayrollTable } from './Payroll/PayrollTable';
 import { PayrollLineDrawer } from './Payroll/PayrollLineDrawer';
 import { PayrollHelpDrawer } from './Payroll/PayrollHelpDrawer';
-import { PayrollFormulaDrawer } from './Payroll/PayrollFormulaDrawer';
 import { HR_BTN_PRIMARY, HR_BTN_WARNING } from '@/lib/buttonStyles';
 import { HR_BTN_NEUTRAL, HrSpecChip } from './hrUi';
 
@@ -39,6 +46,19 @@ function formatMoney(value: string): string {
   return n.toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function ymdToDateValue(value: string): DateValue | null {
+  if (!value) return null;
+  try {
+    return parseDate(value);
+  } catch {
+    return null;
+  }
+}
+
+function dateValueToYmd(value: DateValue): string {
+  return `${value.year}-${String(value.month).padStart(2, '0')}-${String(value.day).padStart(2, '0')}`;
+}
+
 export default function HrPayrollPage() {
   const { hasPermission } = useRoleAccess();
   const canView = hasPermission(PERMISSIONS.PAGE_HR_PAYROLL);
@@ -49,12 +69,9 @@ export default function HrPayrollPage() {
   const [data, setData] = useState<HrPayrollLoadDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<HrPayrollLineDto | null>(null);
   const [lockOpen, setLockOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [formulaOpen, setFormulaOpen] = useState(false);
-  const [formulaSaving, setFormulaSaving] = useState(false);
 
   const monthKey = (() => {
     const raw = params.get('month');
@@ -69,11 +86,41 @@ export default function HrPayrollPage() {
   const { year, month } = parseYearMonth(monthKey);
   const monthDate = new Date(year, month - 1, 1);
   const groupFilter = parseGroupParam(params.get('group'));
+  const periodMode = (() => {
+    const raw = params.get('periodMode');
+    return raw && (HR_PAYROLL_PERIOD_MODES as readonly string[]).includes(raw)
+      ? (raw as HrPayrollPeriodMode)
+      : 'production';
+  })();
+  const dateFrom = params.get('dateFrom') ?? '';
+  const dateTo = params.get('dateTo') ?? '';
+
+  const periodOptionsPayload = useMemo((): HrPayrollPeriodOptions => {
+    const payload: HrPayrollPeriodOptions = { periodMode };
+    if (periodMode === 'custom' && dateFrom && dateTo) {
+      payload.dateFrom = dateFrom;
+      payload.dateTo = dateTo;
+    }
+    return payload;
+  }, [periodMode, dateFrom, dateTo]);
+
+  const {
+    effectiveSettings,
+    canSaveGlobal,
+    saveGlobal,
+    saving: savingSettings,
+    setLocalOverrides,
+  } = useHrSettings('payroll');
 
   const load = useCallback(async (key: string) => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/hr/payroll?month=${encodeURIComponent(key)}`, {
+      const query = new URLSearchParams({ month: key, periodMode });
+      if (periodMode === 'custom' && dateFrom && dateTo) {
+        query.set('dateFrom', dateFrom);
+        query.set('dateTo', dateTo);
+      }
+      const response = await fetch(`/api/hr/payroll?${query.toString()}`, {
         credentials: 'include',
       });
       const json = await response.json().catch(() => ({}));
@@ -85,12 +132,12 @@ export default function HrPayrollPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [dateFrom, dateTo, periodMode]);
 
   useEffect(() => {
     if (!canView) return;
     void load(monthKey);
-  }, [canView, load, monthKey]);
+  }, [canView, load, monthKey, periodMode, dateFrom, dateTo]);
 
   useEffect(() => {
     setSelected((current) => {
@@ -101,13 +148,11 @@ export default function HrPayrollPage() {
 
   const visibleLines = useMemo(() => {
     if (!data) return [];
-    const q = search.trim().toLowerCase();
     return data.lines.filter((line) => {
       if (groupFilter && HR_PAY_GROUP_TO_FILTER[line.payGroup] !== groupFilter) return false;
-      if (q && !line.displayName.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [data, groupFilter, search]);
+  }, [data, groupFilter]);
 
   const paidByEmployment = useMemo(() => {
     const map = new Map<number, number>();
@@ -122,6 +167,45 @@ export default function HrPayrollPage() {
     const key = formatYearMonth(next.getFullYear(), next.getMonth() + 1);
     const nextParams = new URLSearchParams(params);
     nextParams.set('month', key);
+    setParams(nextParams);
+  };
+
+  const setPeriodMode = (next: HrPayrollPeriodMode) => {
+    const nextParams = new URLSearchParams(params);
+    nextParams.set('periodMode', next);
+    if (next !== 'custom') {
+      nextParams.delete('dateFrom');
+      nextParams.delete('dateTo');
+    } else if (!dateFrom || !dateTo) {
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const from = `${year}-${String(month).padStart(2, '0')}-01`;
+      const to = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+      nextParams.set('dateFrom', from);
+      nextParams.set('dateTo', to);
+    }
+    setParams(nextParams);
+  };
+
+  const customDateRange = useMemo((): DateRange | null => {
+    const start = ymdToDateValue(dateFrom);
+    const end = ymdToDateValue(dateTo);
+    if (start && end) return { start, end };
+    return null;
+  }, [dateFrom, dateTo]);
+
+  const setCustomDateRange = (range: DateRange | null) => {
+    const nextParams = new URLSearchParams(params);
+    nextParams.set('periodMode', 'custom');
+    if (range?.start && range?.end) {
+      const from = dateValueToYmd(range.start);
+      const to = dateValueToYmd(range.end);
+      nextParams.set('dateFrom', from);
+      nextParams.set('dateTo', to);
+      nextParams.set('month', formatYearMonth(range.start.year, range.start.month));
+    } else {
+      nextParams.delete('dateFrom');
+      nextParams.delete('dateTo');
+    }
     setParams(nextParams);
   };
 
@@ -141,7 +225,7 @@ export default function HrPayrollPage() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ month: monthKey, version: data?.period?.version }),
+        body: JSON.stringify({ month: monthKey, version: data?.period?.version, ...periodOptionsPayload }),
       });
       const json = await response.json().catch(() => ({}));
       if (response.status === 409) {
@@ -168,7 +252,7 @@ export default function HrPayrollPage() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ version: data.period.version }),
+        body: JSON.stringify({ version: data.period.version, ...periodOptionsPayload }),
       });
       const json = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -180,39 +264,6 @@ export default function HrPayrollPage() {
       ToastService.show({ title: 'Розрахунок заблоковано', color: 'success' });
     } finally {
       setBusy(false);
-    }
-  };
-
-  const saveFormula = async (extraRate: string, grossDivisor: string) => {
-    if (!canCalculate || locked) return;
-    setFormulaSaving(true);
-    try {
-      const response = await fetch('/api/hr/payroll/formula', {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          month: monthKey,
-          extraRate,
-          grossDivisor,
-          version: data?.period?.version,
-        }),
-      });
-      const json = await response.json().catch(() => ({}));
-      if (response.status === 409) {
-        ToastService.show({ title: json.message || 'Розрахунок змінено. Оновіть дані.', color: 'warning' });
-        await load(monthKey);
-        return;
-      }
-      if (!response.ok) {
-        ToastService.show({ title: json.message || 'Не вдалося зберегти формулу', color: 'danger' });
-        return;
-      }
-      setData(json.data as HrPayrollLoadDto);
-      setFormulaOpen(false);
-      ToastService.show({ title: 'Налаштування формули збережено', color: 'success' });
-    } finally {
-      setFormulaSaving(false);
     }
   };
 
@@ -234,15 +285,39 @@ export default function HrPayrollPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="bg-white rounded-xl p-3 md:p-4 flex flex-wrap items-center gap-3">
-        <Input
+        <Select
           size="sm"
-          placeholder="Пошук за ПІБ"
-          value={search}
-          onValueChange={setSearch}
-          className="w-full sm:w-56"
-          startContent={<DynamicIcon name="search" size={14} className="text-default-400" />}
-        />
-        <MonthSwitcher value={monthDate} onChange={setMonthParam} disableFuture={false} size="sm" />
+          className="w-52"
+          aria-label="Режим періоду"
+          selectedKeys={[periodMode]}
+          onSelectionChange={(keys) => {
+            const value = Array.from(keys)[0];
+            if (typeof value === 'string') setPeriodMode(value as HrPayrollPeriodMode);
+          }}
+        >
+          <SelectItem key="production">По виробничих тижнях</SelectItem>
+          <SelectItem key="month">По місяцях</SelectItem>
+          <SelectItem key="custom">Довільний період</SelectItem>
+        </Select>
+        {periodMode === 'custom' ? (
+          <I18nProvider locale="uk-UA">
+            <DateRangePicker
+              aria-label="Довільний період"
+              size="sm"
+              value={customDateRange}
+              onChange={setCustomDateRange}
+              selectorButtonPlacement="start"
+              selectorIcon={<DynamicIcon name="calendar" size={16} />}
+              classNames={{
+                base: 'w-auto',
+                inputWrapper: 'h-8 min-h-8',
+                segment: 'rounded-[4px]',
+              }}
+            />
+          </I18nProvider>
+        ) : (
+          <MonthSwitcher value={monthDate} onChange={setMonthParam} disableFuture={false} size="sm" />
+        )}
         <div className="flex flex-wrap items-center gap-2 ml-auto">
           {locked ? (
             <HrSpecChip tokens={getSpecColorByHue('amber', 'light', 'soft')}>Заблоковано</HrSpecChip>
@@ -259,15 +334,6 @@ export default function HrPayrollPage() {
             startContent={<DynamicIcon name="circle-question-mark" size={14} />}
           >
             Довідка
-          </Button>
-          <Button
-            size="sm"
-            variant="flat"
-            className={HR_BTN_NEUTRAL}
-            onPress={() => setFormulaOpen(true)}
-            startContent={<DynamicIcon name="calculator" size={14} />}
-          >
-            Формула
           </Button>
           <Button
             size="sm"
@@ -289,9 +355,24 @@ export default function HrPayrollPage() {
         </div>
       </div>
 
-      <p className="text-sm text-gray-600 px-1">
-        Внутрішній розрахунок як у файлі Табель 2026. Це не податковий облік. Зміна годин – лише в табелі.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+        <p className="text-sm text-gray-600">
+          Розрахунок за ставкою, годинами табеля та правилами податків. Це не податковий облік. Зміна годин – лише в табелі.
+        </p>
+        {data ? (
+          <div className="flex flex-wrap gap-2">
+            <HrSpecChip tokens={getSpecColorByHue('blue', 'light', 'medium')} className="rounded-sm">
+              До виплати: {formatMoney(data.summary.toPay)}
+            </HrSpecChip>
+            <HrSpecChip tokens={getSpecColorByHue('lime', 'light', 'medium')} className="rounded-sm">
+              Виплачено: {formatMoney(data.summary.paid)}
+            </HrSpecChip>
+            <HrSpecChip tokens={getSpecColorByHue('orange', 'light', 'medium')} className="rounded-sm">
+              Готівкою: {formatMoney(data.summary.cash)}
+            </HrSpecChip>
+          </div>
+        ) : null}
+      </div>
 
       {loading && !data ? (
         <div className="flex justify-center py-16">
@@ -299,7 +380,7 @@ export default function HrPayrollPage() {
         </div>
       ) : data ? (
         <div className="flex flex-col min-w-0">
-          <div className="flex flex-row items-center justify-between gap-2">
+          <div className="flex flex-row items-center justify-between gap-2 flex-wrap">
             <PageTabs
               selectedKey={groupFilter ?? 'all'}
               onSelectionChange={(key) => {
@@ -319,18 +400,14 @@ export default function HrPayrollPage() {
                 <Tab key={key} title={HR_PAY_GROUP_LABELS[HR_TIMESHEET_GROUP_TO_PAY[key]]} />
               ))}
             </PageTabs>
-            {data ? (
-              <div className="flex flex-wrap gap-2 px-1">
-                <HrSpecChip tokens={getSpecColorByHue('blue', 'light', 'medium')} className="rounded-sm">
-                  До виплати: {formatMoney(data.summary.toPay)}
-                </HrSpecChip>
-                <HrSpecChip tokens={getSpecColorByHue('lime', 'light', 'medium')} className="rounded-sm">
-                  Виплачено: {formatMoney(data.summary.paid)}
-                </HrSpecChip>
-                <HrSpecChip tokens={getSpecColorByHue('orange', 'light', 'medium')} className="rounded-sm">
-                  Готівкою: {formatMoney(data.summary.cash)}
-                </HrSpecChip>
-              </div>
+            {periodMode !== 'custom' ? (
+              <TableBuilder
+                config={effectiveSettings.tableBuilder}
+                onChange={(config) => setLocalOverrides({ tableBuilder: config })}
+                canSaveGlobal={canSaveGlobal}
+                savingGlobal={savingSettings}
+                onSaveGlobal={() => void saveGlobal({ tableBuilder: effectiveSettings.tableBuilder })}
+              />
             ) : null}
           </div>
           <PayrollTable
@@ -339,6 +416,8 @@ export default function HrPayrollPage() {
             payouts={data.payouts}
             paidByEmployment={paidByEmployment}
             periodId={data.period?.id ?? null}
+            periodMode={data.periodMode ?? periodMode}
+            tableConfig={effectiveSettings.tableBuilder}
             canEditPayouts={canEditPayouts}
             onSelect={setSelected}
             onPayoutsChanged={() => void load(monthKey)}
@@ -358,16 +437,6 @@ export default function HrPayrollPage() {
       />
 
       <PayrollHelpDrawer isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
-      <PayrollFormulaDrawer
-        isOpen={formulaOpen}
-        formula={data?.formula ?? { formulaId: 'tabell-2026-v1', extraRate: '0.23', grossDivisor: '0.77' }}
-        locked={locked}
-        canEdit={canCalculate}
-        saving={formulaSaving}
-        onClose={() => setFormulaOpen(false)}
-        onSave={(extraRate, grossDivisor) => void saveFormula(extraRate, grossDivisor)}
-      />
-
       <ConfirmModal
         isOpen={lockOpen}
         title="Заблокувати розрахунок?"

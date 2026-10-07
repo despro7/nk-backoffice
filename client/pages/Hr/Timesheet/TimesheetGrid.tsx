@@ -35,7 +35,12 @@ import {
   TimesheetCellContextMenu,
   type TimesheetCellContextMenuState,
 } from './TimesheetCellContextMenu';
+import {
+  TimesheetDayHeaderContextMenu,
+  type TimesheetDayHeaderContextMenuState,
+} from './TimesheetDayHeaderContextMenu';
 
+const INDEX_W = 40;
 const NAME_W = 220;
 const DAY_W = 36;
 const TOTAL_W = 42;
@@ -162,7 +167,10 @@ interface TimesheetGridProps {
   liveMessage: string;
   onLiveMessage: (message: string) => void;
   kindHues: Partial<Record<HrTimesheetKindCode, string>>;
+  payGroupHueOverrides?: Partial<Record<HrPayGroup, string>>;
   canViewAudit?: boolean;
+  onFillWeekendForDate?: (date: string) => void;
+  onClearWeekendForDate?: (date: string) => void;
 }
 
 function ariaCellLabel(name: string, day: HrTimesheetDayDto, value: HrTimesheetCellValue): string {
@@ -189,11 +197,15 @@ export function TimesheetGrid({
   liveMessage,
   onLiveMessage,
   kindHues,
+  payGroupHueOverrides,
   canViewAudit = false,
+  onFillWeekendForDate,
+  onClearWeekendForDate,
 }: TimesheetGridProps) {
   const [focus, setFocus] = useState<TimesheetFocus>({ row: 0, col: 0 });
   const [hoursEdit, setHoursEdit] = useState<{ row: number; col: number; text: string } | null>(null);
   const [contextMenu, setContextMenu] = useState<TimesheetCellContextMenuState | null>(null);
+  const [dayHeaderMenu, setDayHeaderMenu] = useState<TimesheetDayHeaderContextMenuState | null>(null);
   const [totalsSidebarExpanded, setTotalsSidebarExpanded] = useState(readTotalsSidebarExpanded);
   const [scrolled, setScrolled] = useState(false);
   const [isStuck, setIsStuck] = useState(false);
@@ -227,7 +239,7 @@ export function TimesheetGrid({
     (index: number) => (totalsSidebarExpanded ? (TOTAL_CODES.length - index) * TOTAL_W : 0),
     [totalsSidebarExpanded],
   );
-  const tableMinWidth = NAME_W + days.length * DAY_W + TOTAL_W + kindColsWidth;
+  const tableMinWidth = INDEX_W + NAME_W + days.length * DAY_W + TOTAL_W + kindColsWidth;
 
   const getValue = useCallback(
     (employmentId: number, date: string): HrTimesheetCellValue => {
@@ -479,6 +491,7 @@ export function TimesheetGrid({
 
   const renderColGroup = () => (
     <colgroup>
+      <col style={{ width: INDEX_W }} />
       <col style={{ width: NAME_W }} />
       {days.map((day) => (
         <col key={day.date} style={{ width: DAY_W }} />
@@ -496,12 +509,27 @@ export function TimesheetGrid({
     </colgroup>
   );
 
+  const openDayHeaderMenu = (event: MouseEvent, date: string) => {
+    if (!canEdit || !onFillWeekendForDate) return;
+    event.preventDefault();
+    setContextMenu(null);
+    setDayHeaderMenu({ date, x: event.clientX, y: event.clientY });
+  };
+
   const renderHeader = () => (
     <thead className="bg-neutral-800">
       <tr>
         <th
           rowSpan={2}
-          className="sticky left-0 z-40 bg-neutral-800 px-3 py-2 text-left font-semibold text-white border-b border-r-2 border-white/20"
+          className="sticky left-0 z-40 bg-neutral-800 px-1 py-2 text-center text-[11px] font-semibold text-white border-b border-r border-white/15"
+          style={{ width: INDEX_W, minWidth: INDEX_W, maxWidth: INDEX_W }}
+        >
+          №
+        </th>
+        <th
+          rowSpan={2}
+          className="sticky z-40 bg-neutral-800 px-3 py-2 text-left font-semibold text-white border-b border-r-2 border-white/20"
+          style={{ left: INDEX_W }}
         >
           ПІБ
         </th>
@@ -536,7 +564,11 @@ export function TimesheetGrid({
             key={day.date}
             className={`bg-neutral-800 px-0 py-1 text-center font-medium border-b border-r border-white/10 ${
               day.isWeekend ? 'text-white/45' : 'text-white'
-            }`}
+            } ${canEdit && day.isWeekend ? 'cursor-context-menu' : ''}`}
+            onContextMenu={(event) => openDayHeaderMenu(event, day.date)}
+            onClick={(event) => {
+              if (canEdit && day.isWeekend && event.detail > 1) openDayHeaderMenu(event, day.date);
+            }}
           >
             <div className="leading-none">{day.day}</div>
             <div className="text-[10px] font-normal uppercase opacity-70">{day.weekdayLabel}</div>
@@ -598,7 +630,7 @@ export function TimesheetGrid({
                 {renderColGroup()}
                 {renderHeader()}
               </table>
-              <NameColumnScrollShadow visible={scrolled} offset={NAME_W} />
+              <NameColumnScrollShadow visible={scrolled} offset={INDEX_W + NAME_W} />
             </div>
           </div>
         </div>
@@ -643,14 +675,26 @@ export function TimesheetGrid({
                     }}
                     onContextMenu={openContextMenu}
                     kindHues={kindHues}
+                    payGroupHueOverrides={payGroupHueOverrides}
                   />
                 ))}
               </tbody>
             </table>
-            <NameColumnScrollShadow visible={scrolled} offset={NAME_W} />
+            <NameColumnScrollShadow visible={scrolled} offset={INDEX_W + NAME_W} />
           </div>
         </div>
       </div>
+
+      <TimesheetDayHeaderContextMenu
+        state={dayHeaderMenu}
+        onClose={() => setDayHeaderMenu(null)}
+        onFillWeekend={() => {
+          if (dayHeaderMenu && onFillWeekendForDate) onFillWeekendForDate(dayHeaderMenu.date);
+        }}
+        onClearWeekend={() => {
+          if (dayHeaderMenu && onClearWeekendForDate) onClearWeekendForDate(dayHeaderMenu.date);
+        }}
+      />
 
       <TimesheetCellContextMenu
         state={contextMenu}
@@ -700,6 +744,7 @@ function GroupBlock({
   onStartHours,
   onContextMenu,
   kindHues,
+  payGroupHueOverrides,
 }: {
   group: HrPayGroup;
   rows: HrTimesheetRowDto[];
@@ -718,14 +763,22 @@ function GroupBlock({
   onStartHours: (row: number, col: number) => void;
   onContextMenu: (event: MouseEvent, row: number, col: number) => void;
   kindHues: Partial<Record<HrTimesheetKindCode, string>>;
+  payGroupHueOverrides?: Partial<Record<HrPayGroup, string>>;
 }) {
-  const tokens = hrPayGroupTokens(group);
+  const tokens = hrPayGroupTokens(group, 'soft', payGroupHueOverrides);
   const groupRowBg = tokens.bg;
 
   return (
     <>
       <tr className={`border-b ${tokens.border}`}>
-        <td className={`sticky left-0 z-10 ${groupRowBg} px-3 py-1.5 border-r border-slate-200/70`}>
+        <td
+          className={`sticky left-0 z-10 ${groupRowBg} border-r border-slate-200/70`}
+          style={{ width: INDEX_W, minWidth: INDEX_W, maxWidth: INDEX_W }}
+        />
+        <td
+          className={`sticky z-10 ${groupRowBg} px-3 py-1.5 border-r border-slate-200/70`}
+          style={{ left: INDEX_W }}
+        >
           <span className={`text-[11px] font-semibold uppercase tracking-wide ${tokens.text}`}>
             {HR_PAY_GROUP_LABELS[group]}
           </span>
@@ -749,7 +802,16 @@ function GroupBlock({
         const rowIndex = flatRows.findIndex((item) => item.employmentId === row.employmentId);
         return (
           <tr key={row.employmentId} className="group hover:bg-white">
-            <td className="sticky left-0 z-10 bg-slate-100 px-2 py-0 border-b border-r border-slate-200 group-hover:bg-slate-200/90">
+            <td
+              className="sticky left-0 z-10 bg-slate-100 px-1 py-0 text-center text-[11px] text-slate-400 tabular-nums border-b border-r border-slate-200 group-hover:bg-slate-200/90"
+              style={{ width: INDEX_W, minWidth: INDEX_W, maxWidth: INDEX_W }}
+            >
+              {rowIndex + 1}
+            </td>
+            <td
+              className="sticky z-10 bg-slate-100 px-2 py-0 border-b border-r border-slate-200 group-hover:bg-slate-200/90"
+              style={{ left: INDEX_W }}
+            >
               <span className="block truncate font-medium text-slate-800 capitalize" title={row.displayName}>
                 {row.displayName}
               </span>

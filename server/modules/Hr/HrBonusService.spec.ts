@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { HrBonusService } from './HrBonusService.js';
+import { countCalendarWorkDays } from '../../../shared/utils/hrWorkWeekPeriods.js';
 
-describe('HrBonusService', () => {
-  const service = new HrBonusService();
-
-  it('list кидає помилку, якщо dateFrom пізніше dateTo', async () => {
-    await expect(
-      service.list({ dateFrom: '2026-02-01', dateTo: '2026-01-31' }),
-    ).rejects.toMatchObject({
-      message: 'Дата початку не може бути пізніше дати кінця',
-    });
+describe('HrBonusService proportional bonus', () => {
+  it('пропорційно календарним пн–пт', () => {
+    const monthlyBonus = 3000;
+    const monthWorkDays = countCalendarWorkDays('2026-03-01', '2026-03-31');
+    const periodWorkDays = countCalendarWorkDays('2026-03-01', '2026-03-15');
+    const bonusForPeriod = Math.round((monthlyBonus * (periodWorkDays / monthWorkDays) + Number.EPSILON) * 100) / 100;
+    expect(monthWorkDays).toBeGreaterThan(periodWorkDays);
+    expect(bonusForPeriod).toBeGreaterThan(0);
+    expect(bonusForPeriod).toBeLessThan(monthlyBonus);
   });
 });

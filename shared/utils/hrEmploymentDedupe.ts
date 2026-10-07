@@ -1,6 +1,11 @@
 /** Базові seed-коди юрособ — не конкретні роботодавці з Excel. */
 export const HR_SEED_LEGAL_ENTITY_CODES = new Set(['fop', 'tov', 'unofficial_cash']);
 
+/** Роботодавці для вибору в UI (без seed-типів ФОП / ТОВ / Нештатні). */
+export function filterSelectableLegalEntities<T extends { code: string }>(entities: readonly T[]): T[] {
+  return entities.filter((entity) => !HR_SEED_LEGAL_ENTITY_CODES.has(entity.code));
+}
+
 export type EmploymentDedupeRow = {
   id: number;
   payGroupId: number;

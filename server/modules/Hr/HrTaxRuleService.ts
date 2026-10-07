@@ -13,6 +13,7 @@ import { HrError } from './HrService.js';
 export interface TaxRuleCalc {
   code: string;
   label: string;
+  shortLabel: string | null;
   rate: number;
   payer: HrTaxPayer;
   base: HrTaxBase;
@@ -40,6 +41,7 @@ function toDto(row: {
   id: number;
   code: string;
   label: string;
+  shortLabel: string | null;
   rate: Prisma.Decimal;
   payer: string;
   base: string;
@@ -53,6 +55,7 @@ function toDto(row: {
     id: row.id,
     code: row.code,
     label: row.label,
+    shortLabel: row.shortLabel,
     rate: row.rate.toFixed(6),
     payer: isPayer(row.payer) ? row.payer : 'employee',
     base: isBase(row.base) ? row.base : 'gross',
@@ -92,6 +95,7 @@ export class HrTaxRuleService {
       .map((row) => ({
         code: row.code,
         label: row.label,
+        shortLabel: row.shortLabel,
         rate: Number(row.rate),
         payer: isPayer(row.payer) ? row.payer : 'employee',
         base: isBase(row.base) ? row.base : 'gross',
@@ -113,6 +117,7 @@ export class HrTaxRuleService {
       data: {
         code,
         label,
+        shortLabel: payload.shortLabel?.trim() || null,
         rate: new Prisma.Decimal(payload.rate),
         payer: payload.payer,
         base: payload.base,
@@ -135,6 +140,7 @@ export class HrTaxRuleService {
       where: { id },
       data: {
         ...(payload.label ? { label: payload.label.trim() } : {}),
+        ...(payload.shortLabel !== undefined ? { shortLabel: payload.shortLabel?.trim() || null } : {}),
         ...(payload.rate ? { rate: new Prisma.Decimal(payload.rate) } : {}),
         ...(payload.payer && isPayer(payload.payer) ? { payer: payload.payer } : {}),
         ...(payload.base && isBase(payload.base) ? { base: payload.base } : {}),

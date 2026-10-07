@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Accordion,
+  AccordionItem,
   Alert,
   Button,
   Card,
@@ -56,7 +58,10 @@ import {
   overlappingPayTerms,
 } from '@shared/utils/hrPayHealth';
 import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
-import { HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
+import { filterSelectableLegalEntities } from '@shared/utils/hrEmploymentDedupe';
+import { EditableSpecChip, hrEmployerTokensFromName, hrPayGroupTokens } from '../hrUi';
+import { useHrPayGroupHues } from '../useHrPayGroupHues';
+import { EmploymentTransferModal } from './EmploymentTransferModal';
 
 interface EmployeeDrawerProps {
   isOpen: boolean;
@@ -325,9 +330,13 @@ export function EmployeeDrawer({
   onClose,
   onSaved,
 }: EmployeeDrawerProps) {
+  const { hueOverrides: payGroupHueOverrides } = useHrPayGroupHues();
   const { hasPermission } = useRoleAccess();
   const canCreateUser = hasPermission(PERMISSIONS.ACTION_USERS_MANAGE);
   const canManagePersons = hasPermission(PERMISSIONS.ACTION_HR_PERSONS_MANAGE);
+  const canTransferEmployment = hasPermission(PERMISSIONS.ACTION_HR_EMPLOYMENT_TRANSFER);
+  const canChangeEmploymentGroup = hasPermission(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_GROUP);
+  const canChangeEmploymentEmployer = hasPermission(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_EMPLOYER);
   const isCreate = employeeId == null;
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [detail, setDetail] = useState<HrEmployeeDetailDto | null>(null);
@@ -344,6 +353,8 @@ export function EmployeeDrawer({
     validTo: '',
   });
   const [deleteEmploymentId, setDeleteEmploymentId] = useState<number | null>(null);
+  const [transferEmploymentId, setTransferEmploymentId] = useState<number | null>(null);
+  const [transferringEmployment, setTransferringEmployment] = useState(false);
   const [deletePayId, setDeletePayId] = useState<number | null>(null);
   const [addingEmployment, setAddingEmployment] = useState(false);
   const [dirtyRateEmploymentIds, setDirtyRateEmploymentIds] = useState<Set<number>>(() => new Set());
@@ -428,7 +439,10 @@ export function EmployeeDrawer({
       setPersonSearch('');
       commitBaseline(EMPTY_FORM);
       setEmploymentForm({
-        legalEntityId: legalEntities[0] ? String(legalEntities[0].id) : '',
+        legalEntityId: (() => {
+          const first = filterSelectableLegalEntities(legalEntities)[0];
+          return first ? String(first.id) : '';
+        })(),
         payGroup: 'official_salary',
         validFrom: todayYmd(),
         validTo: '',
@@ -501,19 +515,41 @@ export function EmployeeDrawer({
     [userOptions],
   );
 
+  const selectableLegalEntities = useMemo(
+    () => filterSelectableLegalEntities(legalEntities),
+    [legalEntities],
+  );
+
   const legalEntityOptions = useMemo(
     () =>
-      legalEntities.map((entity) => ({
+      selectableLegalEntities.map((entity) => ({
         key: String(entity.id),
         label: entity.name,
         textValue: entity.name,
       })),
-    [legalEntities],
+    [selectableLegalEntities],
   );
 
+  const today = todayYmd();
   const sortedEmployments = useMemo(
-    () => sortEmployments(detail?.employments ?? [], todayYmd()),
-    [detail?.employments],
+    () => sortEmployments(detail?.employments ?? [], today),
+    [detail?.employments, today],
+  );
+  const activeEmployments = useMemo(
+    () => sortedEmployments.filter((employment) => isEmploymentActive(employment, today)),
+    [sortedEmployments, today],
+  );
+  const completedEmployments = useMemo(
+    () => sortedEmployments.filter((employment) => !isEmploymentActive(employment, today)),
+    [sortedEmployments, today],
+  );
+  const transferSourceEmployment = useMemo(
+    () => (detail?.employments ?? []).find((employment) => employment.id === transferEmploymentId) ?? null,
+    [detail?.employments, transferEmploymentId],
+  );
+  const transferTargetEmployments = useMemo(
+    () => (detail?.employments ?? []).filter((employment) => employment.id !== transferEmploymentId),
+    [detail?.employments, transferEmploymentId],
   );
 
   const mergePair = useMemo(() => {
@@ -718,18 +754,48 @@ export function EmployeeDrawer({
 
   const confirmDeleteEmployment = async () => {
     if (deleteEmploymentId == null) return;
-    const response = await fetch(`/api/hr/employments/${deleteEmploymentId}`, {
+    const employmentIdToDelete = deleteEmploymentId;
+    const response = await fetch(`/api/hr/employments/${employmentIdToDelete}`, {
       method: 'DELETE',
       credentials: 'include',
     });
     const data = await readJson(response);
     if (!response.ok) {
+      if (response.status === 409 && data.code === 'EMPLOYMENT_HAS_TIMESHEET' && canTransferEmployment) {
+        setDeleteEmploymentId(null);
+        setTransferEmploymentId(employmentIdToDelete);
+        return;
+      }
       ToastService.show({ title: errorMessage(data, 'Не вдалося видалити зайнятість'), color: 'danger' });
       return;
     }
     setDeleteEmploymentId(null);
     if (employeeId != null) await loadDetail(employeeId);
     onSaved();
+  };
+
+  const confirmTransferDeleteEmployment = async (targetEmploymentId: number) => {
+    if (transferEmploymentId == null) return;
+    setTransferringEmployment(true);
+    try {
+      const response = await fetch(`/api/hr/employments/${transferEmploymentId}/transfer-and-delete`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetEmploymentId }),
+      });
+      const data = await readJson(response);
+      if (!response.ok) {
+        ToastService.show({ title: errorMessage(data, 'Не вдалося перенести табель'), color: 'danger' });
+        return;
+      }
+      ToastService.show({ title: 'Зайнятість видалено, дані перенесено', color: 'success' });
+      setTransferEmploymentId(null);
+      if (employeeId != null) await loadDetail(employeeId);
+      onSaved();
+    } finally {
+      setTransferringEmployment(false);
+    }
   };
 
   const confirmDeletePay = async () => {
@@ -747,6 +813,78 @@ export function EmployeeDrawer({
     if (employeeId != null) await loadDetail(employeeId);
     onSaved();
   };
+
+  const handleChangeEmploymentPayGroup = async (employmentId: number, payGroup: HrPayGroup) => {
+    const response = await fetch(`/api/hr/employments/${employmentId}/pay-group`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payGroup }),
+    });
+    const data = await readJson(response);
+    if (!response.ok) {
+      ToastService.show({ title: errorMessage(data, 'Не вдалося змінити групу оплати'), color: 'danger' });
+      return false;
+    }
+    ToastService.show({ title: 'Групу оплати змінено', color: 'success' });
+    if (employeeId != null) await loadDetail(employeeId);
+    onSaved();
+    return true;
+  };
+
+  const handleChangeEmploymentEmployer = async (employmentId: number, legalEntityId: number) => {
+    const response = await fetch(`/api/hr/employments/${employmentId}/employer`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ legalEntityId }),
+    });
+    const data = await readJson(response);
+    if (!response.ok) {
+      ToastService.show({ title: errorMessage(data, 'Не вдалося змінити роботодавця'), color: 'danger' });
+      return false;
+    }
+    ToastService.show({ title: 'Роботодавця змінено', color: 'success' });
+    if (employeeId != null) await loadDetail(employeeId);
+    onSaved();
+    return true;
+  };
+
+  const renderEmploymentBlock = (employment: HrEmploymentDto) => (
+    <EmploymentBlock
+      key={employment.id}
+      employment={employment}
+      legalEntities={selectableLegalEntities}
+      payGroupHueOverrides={payGroupHueOverrides}
+      canManage={canManage}
+      canManagePayTerms={canManagePayTerms}
+      canChangeGroup={canChangeEmploymentGroup}
+      canChangeEmployer={canChangeEmploymentEmployer}
+      showMerge={employmentIdsWithMergeOption.has(employment.id)}
+      onRateDirtyChange={handleRateDirtyChange}
+      onDelete={() => setDeleteEmploymentId(employment.id)}
+      onMerge={() => setMergeSourceId(employment.id)}
+      onDeletePay={(id) => setDeletePayId(id)}
+      onAddPayTerms={handleAddPayTerms}
+      onChangePayGroup={(payGroup) => handleChangeEmploymentPayGroup(employment.id, payGroup)}
+      onChangeEmployer={(legalEntityId) => handleChangeEmploymentEmployer(employment.id, legalEntityId)}
+      onUpdateEmployment={async (payload) => {
+        const response = await fetch(`/api/hr/employments/${employment.id}`, {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await readJson(response);
+        if (!response.ok) {
+          ToastService.show({ title: errorMessage(data, 'Не вдалося оновити'), color: 'danger' });
+          return false;
+        }
+        if (employeeId) await loadDetail(employeeId);
+        return true;
+      }}
+    />
+  );
 
   const guard = useUnsavedGuard({
     isDirty,
@@ -861,35 +999,29 @@ export function EmployeeDrawer({
                             <p className="text-sm text-default-500">Немає зайнятості</p>
                           ) : (
                             <div className="space-y-3">
-                              {sortedEmployments.map((employment) => (
-                                <EmploymentBlock
-                                  key={employment.id}
-                                  employment={employment}
-                                  canManage={canManage}
-                                  canManagePayTerms={canManagePayTerms}
-                                  showMerge={employmentIdsWithMergeOption.has(employment.id)}
-                                  onRateDirtyChange={handleRateDirtyChange}
-                                  onDelete={() => setDeleteEmploymentId(employment.id)}
-                                  onMerge={() => setMergeSourceId(employment.id)}
-                                  onDeletePay={(id) => setDeletePayId(id)}
-                                  onAddPayTerms={handleAddPayTerms}
-                                  onUpdateEmployment={async (payload) => {
-                                    const response = await fetch(`/api/hr/employments/${employment.id}`, {
-                                      method: 'PUT',
-                                      credentials: 'include',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify(payload),
-                                    });
-                                    const data = await readJson(response);
-                                    if (!response.ok) {
-                                      ToastService.show({ title: errorMessage(data, 'Не вдалося оновити'), color: 'danger' });
-                                      return false;
-                                    }
-                                    if (employeeId) await loadDetail(employeeId);
-                                    return true;
-                                  }}
-                                />
-                              ))}
+                              {activeEmployments.map((employment) => renderEmploymentBlock(employment))}
+                              {completedEmployments.length > 0 ? (
+                                <Accordion
+                                  variant="light"
+                                  selectionMode="multiple"
+                                  defaultExpandedKeys={[]}
+                                  className="px-0"
+                                >
+                                  <AccordionItem
+                                    key="completed"
+                                    aria-label="Завершені зайнятості"
+                                    title={`Завершені зайнятості (${completedEmployments.length})`}
+                                    classNames={{
+                                      trigger: 'py-2 flex-row-reverse gap-2',
+                                      title: 'text-sm font-medium text-default-600 hover:underline underline-offset-3 decoration-dashed decoration-1',
+                                      content: 'space-y-3 pb-2',
+                                      indicator: '-rotate-180',
+                                    }}
+                                  >
+                                    {completedEmployments.map((employment) => renderEmploymentBlock(employment))}
+                                  </AccordionItem>
+                                </Accordion>
+                              ) : null}
                             </div>
                           )}
                           {canManage ? (
@@ -976,7 +1108,7 @@ export function EmployeeDrawer({
                                 size="sm"
                                 variant="flat"
                                 className={HR_ADD_BUTTON_CLASS}
-                                startContent={<DynamicIcon name="plus" size={14} />}
+                                startContent={<DynamicIcon name="briefcase" size={14} />}
                                 onPress={() => setAddingEmployment(true)}
                               >
                                 Додати зайнятість
@@ -1094,6 +1226,17 @@ export function EmployeeDrawer({
           setMergeSourceId(null);
         }}
       />
+      <EmploymentTransferModal
+        isOpen={transferEmploymentId != null}
+        sourceEmployment={transferSourceEmployment}
+        targetEmployments={transferTargetEmployments}
+        loading={transferringEmployment}
+        onConfirm={(targetEmploymentId) => void confirmTransferDeleteEmployment(targetEmploymentId)}
+        onCancel={() => {
+          if (transferringEmployment) return;
+          setTransferEmploymentId(null);
+        }}
+      />
       <ConfirmModal
         isOpen={deletePayId != null}
         title="Видалити ставку?"
@@ -1141,25 +1284,37 @@ function isPayFormDirty(form: PayFormState, addingRate: boolean): boolean {
 
 function EmploymentBlock({
   employment,
+  legalEntities,
+  payGroupHueOverrides,
   canManage,
   canManagePayTerms,
+  canChangeGroup = false,
+  canChangeEmployer = false,
   showMerge = false,
   onRateDirtyChange,
   onDelete,
   onMerge,
   onDeletePay,
   onAddPayTerms,
+  onChangePayGroup,
+  onChangeEmployer,
   onUpdateEmployment,
 }: {
   employment: HrEmploymentDto;
+  legalEntities: HrLegalEntityDto[];
+  payGroupHueOverrides?: Partial<Record<HrPayGroup, string>>;
   canManage: boolean;
   canManagePayTerms: boolean;
+  canChangeGroup?: boolean;
+  canChangeEmployer?: boolean;
   showMerge?: boolean;
   onRateDirtyChange?: (employmentId: number, dirty: boolean) => void;
   onDelete: () => void;
   onMerge: () => void;
   onDeletePay: (id: number) => void;
   onAddPayTerms: (employmentId: number, payload: PayFormState, closePrevious?: boolean) => Promise<boolean>;
+  onChangePayGroup: (payGroup: HrPayGroup) => Promise<boolean>;
+  onChangeEmployer: (legalEntityId: number) => Promise<boolean>;
   onUpdateEmployment: (payload: Partial<HrEmploymentWritePayload>) => Promise<boolean>;
 }) {
   const [payForm, setPayForm] = useState<PayFormState>(emptyPayForm);
@@ -1168,6 +1323,12 @@ function EmploymentBlock({
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   const [pushingPersonnel, setPushingPersonnel] = useState(false);
   const [personnelConflict, setPersonnelConflict] = useState<{ local: string; remote: string } | null>(null);
+  const [changeGroupOpen, setChangeGroupOpen] = useState(false);
+  const [changeEmployerOpen, setChangeEmployerOpen] = useState(false);
+  const [pendingPayGroup, setPendingPayGroup] = useState<HrPayGroup>(employment.payGroup);
+  const [pendingEmployerId, setPendingEmployerId] = useState(String(employment.legalEntityId));
+  const [changingGroup, setChangingGroup] = useState(false);
+  const [changingEmployer, setChangingEmployer] = useState(false);
   const [localPersonnelNumber, setLocalPersonnelNumber] = useState(employment.personnelNumber ?? '');
   useEffect(() => {
     setLocalPersonnelNumber(employment.personnelNumber ?? '');
@@ -1273,7 +1434,8 @@ function EmploymentBlock({
                 <Button
                   size="sm"
                   variant="light"
-                  className="text-primary-500 bg-primary-500/10 hover:bg-primary-500/20! gap-1"
+                  data-btn-tone="primary-blue-flat"
+                  className="gap-1"
                   startContent={<DynamicIcon name="merge" size={14} />}
                   onPress={onMerge}
                 >
@@ -1345,12 +1507,36 @@ function EmploymentBlock({
             />
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <HrSpecChip tokens={hrPayGroupTokens(employment.payGroup)} rounded="sm">
+            <EditableSpecChip
+              tokens={hrPayGroupTokens(employment.payGroup, 'soft', payGroupHueOverrides)}
+              rounded="sm"
+              editLabel="Змінити групу оплати"
+              onEdit={
+                canChangeGroup
+                  ? () => {
+                      setPendingPayGroup(employment.payGroup);
+                      setChangeGroupOpen(true);
+                    }
+                  : undefined
+              }
+            >
               {HR_PAY_GROUP_LABELS[employment.payGroup]}
-            </HrSpecChip>
-            <HrSpecChip tokens={hrEmployerTokensFromName(employment.legalEntity.name)} rounded="sm">
+            </EditableSpecChip>
+            <EditableSpecChip
+              tokens={hrEmployerTokensFromName(employment.legalEntity.name)}
+              rounded="sm"
+              editLabel="Змінити роботодавця"
+              onEdit={
+                canChangeEmployer
+                  ? () => {
+                      setPendingEmployerId(String(employment.legalEntityId));
+                      setChangeEmployerOpen(true);
+                    }
+                  : undefined
+              }
+            >
               {employment.legalEntity.name}
-            </HrSpecChip>
+            </EditableSpecChip>
           </div>
 
           <div className="space-y-2">
@@ -1452,7 +1638,7 @@ function EmploymentBlock({
                   size="sm"
                   variant="flat"
                   className={HR_ADD_BUTTON_CLASS}
-                  startContent={<DynamicIcon name="plus" size={14} />}
+                  startContent={<DynamicIcon name="wallet" size={14} />}
                   onPress={() => setAddingRate(true)}
                 >
                   Додати ставку
@@ -1474,6 +1660,101 @@ function EmploymentBlock({
         overlayZClassName="z-[2000]"
         onConfirm={() => void saveRate(true)}
         onCancel={() => setCloseConfirmOpen(false)}
+      />
+      <ConfirmModal
+        isOpen={changeGroupOpen}
+        title="Змінити групу оплати?"
+        message={
+          <Select
+            label="Нова група оплати"
+            labelPlacement="outside"
+            items={PAY_GROUP_OPTIONS}
+            selectedKeys={[pendingPayGroup]}
+            onSelectionChange={(keys) => {
+              const selected = Array.from(keys)[0];
+              if (typeof selected === 'string' && HR_PAY_GROUPS.includes(selected as HrPayGroup)) {
+                setPendingPayGroup(selected as HrPayGroup);
+              }
+            }}
+          >
+            {(item) => (
+              <SelectItem key={item.key} textValue={item.textValue}>
+                {item.label}
+              </SelectItem>
+            )}
+          </Select>
+        }
+        confirmText="Змінити"
+        cancelText="Скасувати"
+        confirmColor="warning"
+        confirmLoading={changingGroup}
+        overlayZClassName="z-[2000]"
+        onConfirm={async () => {
+          if (pendingPayGroup === employment.payGroup) {
+            setChangeGroupOpen(false);
+            return;
+          }
+          setChangingGroup(true);
+          try {
+            const ok = await onChangePayGroup(pendingPayGroup);
+            if (ok) setChangeGroupOpen(false);
+          } finally {
+            setChangingGroup(false);
+          }
+        }}
+        onCancel={() => {
+          if (changingGroup) return;
+          setChangeGroupOpen(false);
+        }}
+      />
+      <ConfirmModal
+        isOpen={changeEmployerOpen}
+        title="Змінити роботодавця?"
+        message={
+          <Select
+            label="Новий роботодавець"
+            labelPlacement="outside"
+            items={legalEntities.map((entity) => ({
+              key: String(entity.id),
+              label: entity.name,
+              textValue: entity.name,
+            }))}
+            selectedKeys={pendingEmployerId ? [pendingEmployerId] : []}
+            onSelectionChange={(keys) => {
+              const selected = Array.from(keys)[0];
+              if (typeof selected === 'string') setPendingEmployerId(selected);
+            }}
+          >
+            {(item) => (
+              <SelectItem key={item.key} textValue={item.textValue}>
+                {item.label}
+              </SelectItem>
+            )}
+          </Select>
+        }
+        confirmText="Змінити"
+        cancelText="Скасувати"
+        confirmColor="warning"
+        confirmLoading={changingEmployer}
+        overlayZClassName="z-[2000]"
+        onConfirm={async () => {
+          const nextId = Number(pendingEmployerId);
+          if (!Number.isInteger(nextId) || nextId === employment.legalEntityId) {
+            setChangeEmployerOpen(false);
+            return;
+          }
+          setChangingEmployer(true);
+          try {
+            const ok = await onChangeEmployer(nextId);
+            if (ok) setChangeEmployerOpen(false);
+          } finally {
+            setChangingEmployer(false);
+          }
+        }}
+        onCancel={() => {
+          if (changingEmployer) return;
+          setChangeEmployerOpen(false);
+        }}
       />
       <ConfirmModal
         isOpen={personnelConflict != null}

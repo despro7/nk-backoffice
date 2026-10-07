@@ -1,8 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { HR_PAY_GROUP_LABELS, type HrPayGroup, type HrPayrollLineDto, type HrPayoutDto } from '@shared/types/hr';
-import type { HrTimesheetWeekDto } from '@shared/types/hr';
+import {
+  HR_PAY_GROUP_LABELS,
+  type HrPayGroup,
+  type HrPayrollLineDto,
+  type HrPayrollPeriodMode,
+  type HrPayoutDto,
+  type HrTimesheetWeekDto,
+} from '@shared/types/hr';
+import {
+  DEFAULT_PAYROLL_TABLE_BUILDER_CONFIG,
+  type PayrollTableBuilderConfig,
+} from '@shared/types/tableBuilder';
+import {
+  adjustWeekAmountsForDisplay,
+  buildPayrollExtraColumns,
+  lineGrandTotalForDisplay,
+} from './payrollTableColumns';
 import { HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens } from '../hrUi';
+import { useHrPayGroupHues } from '../useHrPayGroupHues';
 import { HR_SEED_LEGAL_ENTITY_CODES } from '@shared/utils/hrEmploymentDedupe';
+import {
+  calendarWeekSequenceFromYearStart,
+  formatHrWorkWeekLabel,
+} from '@shared/utils/hrWorkWeekPeriods';
 import { PayrollCellActionModal } from './PayrollCellActionModal';
 import { ToastService } from '@/services/ToastService';
 
@@ -47,6 +67,8 @@ interface PayrollTableProps {
   payouts: HrPayoutDto[];
   paidByEmployment: Map<number, number>;
   periodId: number | null;
+  periodMode?: HrPayrollPeriodMode;
+  tableConfig?: PayrollTableBuilderConfig;
   canEditPayouts: boolean;
   onSelect: (line: HrPayrollLineDto) => void;
   onPayoutsChanged: () => void;
@@ -61,10 +83,12 @@ type PayrollGroupRow = {
 type PayrollLineRow = {
   type: 'line';
   key: string;
+  lineIndex: number;
   line: HrPayrollLineDto;
   weekRaw: Record<string, string>;
   weekValues: Record<string, string>;
   paid: string;
+  grandTotal: string;
 };
 
 type PayrollSubtotalRow = {
@@ -99,16 +123,26 @@ const SUBTOTAL_TD = `px-3 py-1.5 whitespace-nowrap font-bold text-sm text-right 
 const GRANDTOTAL_TD = `${SUBTOTAL_TD} pt-3 pb-2.5 text-neutral-50 bg-neutral-800! border-0!`;
 const AMOUNT_TD = `${TD_CLASS} text-right tabular-nums`;
 const PAID_CELL = 'bg-lime-100!';
+const INDEX_W = 40;
 const NAME_W = 220;
 const WEEK_W = 96;
-const TOTAL_W = 104;
-const ESV_W = 88;
-const FOP_W = 96;
 const PAID_W = 104;
+
 const TABLE_CLASS = 'w-full border-collapse text-sm table-fixed';
 
 function payoutKey(employmentId: number, weekId: string | null): string {
   return `${employmentId}:${weekId ?? '__total__'}`;
+}
+
+function ProductionWeekHeader({ week }: { week: HrTimesheetWeekDto }) {
+  const dateLabel = formatHrWorkWeekLabel(week.startDate, week.endDate);
+  const weekNum = calendarWeekSequenceFromYearStart(week.startDate);
+  return (
+    <div className="text-center leading-tight normal-case">
+      <div>{dateLabel}</div>
+      <div className="text-[10px] font-normal text-white/55">{weekNum} тиж.</div>
+    </div>
+  );
 }
 
 export function PayrollTable({
@@ -117,10 +151,17 @@ export function PayrollTable({
   payouts,
   paidByEmployment,
   periodId,
+  periodMode = 'production',
+  tableConfig = DEFAULT_PAYROLL_TABLE_BUILDER_CONFIG,
   canEditPayouts,
   onSelect,
   onPayoutsChanged,
 }: PayrollTableProps) {
+  const { hueOverrides: payGroupHueOverrides } = useHrPayGroupHues();
+  const extraColumns = useMemo(
+    () => buildPayrollExtraColumns(tableConfig, periodMode),
+    [periodMode, tableConfig],
+  );
   const sentinelRef = useRef<HTMLDivElement>(null);
   const headerScrollRef = useRef<HTMLDivElement>(null);
   const bodyScrollRef = useRef<HTMLDivElement>(null);
@@ -141,6 +182,7 @@ export function PayrollTable({
     const rows: PayrollTableRow[] = [];
     let lastGroup: HrPayGroup | null = null;
     let groupLines: HrPayrollLineDto[] = [];
+    let lineCounter = 0;
 
     const pushSubtotal = (payGroup: HrPayGroup) => {
       if (groupLines.length === 0) return;
@@ -161,13 +203,7 @@ export function PayrollTable({
         lastGroup = line.payGroup;
       }
 
-      const weekMap = new Map(line.weekAmounts.map((item) => [item.weekId, item]));
-      const weekRaw: Record<string, string> = Object.fromEntries(
-        weeks.map((week) => {
-          const cell = weekMap.get(week.id);
-          return [week.id, cell?.toPay ?? ''];
-        }),
-      );
+      const weekRaw = adjustWeekAmountsForDisplay(line, weeks, tableConfig);
       const weekValues: Record<string, string> = Object.fromEntries(
         weeks.map((week) => {
           const raw = weekRaw[week.id];
@@ -177,13 +213,17 @@ export function PayrollTable({
       const paid = paidByEmployment.get(line.employmentId) ?? 0;
 
       groupLines.push(line);
+      const lineIndex = lineCounter;
+      lineCounter += 1;
       rows.push({
         type: 'line',
         key: `line-${line.employmentId}`,
+        lineIndex,
         line,
         weekRaw,
         weekValues,
         paid: formatMoney(paid.toFixed(2)),
+        grandTotal: lineGrandTotalForDisplay(line, tableConfig, periodMode),
       });
     }
 
@@ -198,22 +238,42 @@ export function PayrollTable({
     }
 
     return rows;
-  }, [lines, paidByEmployment, weeks]);
+  }, [lines, paidByEmployment, periodMode, tableConfig, weeks]);
 
-  const tableMinWidth = NAME_W + weeks.length * WEEK_W + TOTAL_W + ESV_W + FOP_W + PAID_W;
+  const tableMinWidth =
+    INDEX_W + NAME_W + weeks.length * WEEK_W + extraColumns.reduce((sum, col) => sum + col.width, 0) + PAID_W;
 
   const renderColGroup = () => (
     <colgroup>
+      <col style={{ width: INDEX_W }} />
       <col style={{ width: NAME_W }} />
       {weeks.map((week) => (
         <col key={week.id} style={{ width: WEEK_W }} />
       ))}
-      <col style={{ width: TOTAL_W }} />
-      <col style={{ width: ESV_W }} />
-      <col style={{ width: FOP_W }} />
+      {extraColumns.map((column) => (
+        <col key={column.id} style={{ width: column.width }} />
+      ))}
       <col style={{ width: PAID_W }} />
     </colgroup>
   );
+
+  const renderExtraHeader = () =>
+    extraColumns.map((column) => (
+      <th key={column.id} className={`${TH_CLASS} text-right`}>
+        {column.label}
+      </th>
+    ));
+
+  const renderExtraCells = (line: HrPayrollLineDto, grandTotal?: string) =>
+    extraColumns.map((column) => {
+      const raw = column.id === 'total' && grandTotal ? grandTotal : column.getRaw(line);
+      const value = raw ? formatMoney(raw) : '—';
+      return (
+        <td key={column.id} className={`${AMOUNT_TD} font-medium group-hover:bg-slate-50`}>
+          {value === '—' ? <span className="text-neutral-300">—</span> : value}
+        </td>
+      );
+    });
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -323,15 +383,17 @@ export function PayrollTable({
 
   const headerRow = (
     <tr>
+      <th className={`${TH_CLASS} text-center`}>№</th>
       <th className={`${TH_CLASS} text-left`}>ПІБ</th>
       {weeks.map((week) => (
-        <th key={week.id} className={`${TH_CLASS} text-right`}>
-          {week.label}
+        <th
+          key={week.id}
+          className={`${TH_CLASS} ${periodMode !== 'custom' ? 'text-center' : 'text-right'}`}
+        >
+          {periodMode !== 'custom' ? <ProductionWeekHeader week={week} /> : week.label}
         </th>
       ))}
-      <th className={`${TH_CLASS} text-right`}>Разом</th>
-      <th className={`${TH_CLASS} text-right`}>ЄСВ</th>
-      <th className={`${TH_CLASS} text-right`}>ФОП</th>
+      {renderExtraHeader()}
       <th className={`${TH_CLASS} text-right rounded-tr-lg!`}>Виплачено</th>
     </tr>
   );
@@ -340,10 +402,10 @@ export function PayrollTable({
     <tbody>
       {tableRows.map((row) => {
         if (row.type === 'group') {
-          const groupTokens = hrPayGroupTokens(row.payGroup);
+          const groupTokens = hrPayGroupTokens(row.payGroup, 'soft', payGroupHueOverrides);
           return (
             <tr key={row.key} className={`border-b ${groupTokens.border}`}>
-              <td colSpan={weeks.length + 5} className={`${groupTokens.bg} px-3 py-1.5`}>
+              <td colSpan={weeks.length + extraColumns.length + 3} className={`${groupTokens.bg} px-3 py-1.5`}>
                 <span className={`text-sm font-semibold uppercase tracking-wide ${groupTokens.text}`}>
                   Група: {HR_PAY_GROUP_LABELS[row.payGroup]}
                 </span>
@@ -353,9 +415,10 @@ export function PayrollTable({
         }
 
         if (row.type === 'subtotal') {
-          const groupTokens = hrPayGroupTokens(row.payGroup);
+          const groupTokens = hrPayGroupTokens(row.payGroup, 'soft', payGroupHueOverrides);
           return (
             <tr key={row.key} className="[&>td]:bg-neutral-700/90! [&>td]:text-neutral-50!">
+              <td className={`${SUBTOTAL_TD} ${groupTokens.text} ${groupTokens.bg}`} />
               <td className={`${SUBTOTAL_TD} text-left! ${groupTokens.text} ${groupTokens.bg}`}>
                 Разом · {HR_PAY_GROUP_LABELS[row.payGroup]}
               </td>
@@ -364,11 +427,11 @@ export function PayrollTable({
                   {renderAmount(formatMoney(row.weekTotals[week.id] ?? 0), false)}
                 </td>
               ))}
-              <td className={`${SUBTOTAL_TD} ${groupTokens.text} ${groupTokens.bg}`}>
-                {formatMoney(row.total)}
-              </td>
-              <td className={`${SUBTOTAL_TD} ${groupTokens.text} ${groupTokens.bg}`}>—</td>
-              <td className={`${SUBTOTAL_TD} ${groupTokens.text} ${groupTokens.bg}`}>—</td>
+              {extraColumns.map((column) => (
+                <td key={column.id} className={`${SUBTOTAL_TD} ${groupTokens.text} ${groupTokens.bg}`}>
+                  {column.id === 'total' ? formatMoney(row.total) : '—'}
+                </td>
+              ))}
               <td className={`${SUBTOTAL_TD} ${groupTokens.text} ${groupTokens.bg}`}>{formatMoney(row.paidTotal)}</td>
             </tr>
           );
@@ -377,23 +440,29 @@ export function PayrollTable({
         if (row.type === 'grandtotal') {
           return (
             <tr key={row.key}>
+              <td className={`${GRANDTOTAL_TD}`} />
               <td className={`${GRANDTOTAL_TD} text-left!`}>Загалом</td>
               {weeks.map((week) => (
                 <td key={week.id} className={`${GRANDTOTAL_TD} font-medium`}>
                   {renderAmount(formatMoney(row.weekTotals[week.id] ?? 0), false)}
                 </td>
               ))}
-              <td className={`${GRANDTOTAL_TD} font-bold`}>{formatMoney(row.total)}</td>
-              <td className={`${GRANDTOTAL_TD} font-medium`}>—</td>
-              <td className={`${GRANDTOTAL_TD} font-medium`}>—</td>
+              {extraColumns.map((column) => (
+                <td key={column.id} className={`${GRANDTOTAL_TD} font-medium`}>
+                  {column.id === 'total' ? formatMoney(row.total) : '—'}
+                </td>
+              ))}
               <td className={`${GRANDTOTAL_TD} font-medium`}>{formatMoney(row.paidTotal)}</td>
             </tr>
           );
         }
 
-        const { line } = row;
+        const { line, lineIndex, grandTotal } = row;
         return (
           <tr key={row.key} className="group hover:bg-slate-50">
+            <td className={`${TD_CLASS} text-center text-xs text-default-400 tabular-nums group-hover:bg-slate-50`}>
+              {lineIndex + 1}
+            </td>
             <td
               className={`${TD_CLASS} font-medium border-r border-slate-200 cursor-pointer group-hover:bg-slate-50`}
               onClick={() => onSelect(line)}
@@ -418,23 +487,7 @@ export function PayrollTable({
                 </td>
               );
             })}
-            <td
-              className={`${AMOUNT_TD} font-medium group-hover:bg-slate-50 ${
-                isCellPaid(line.employmentId, null) ? PAID_CELL : ''
-              }`}
-            >
-              {renderAmount(
-                formatMoney(line.toPayAmount),
-                isCellPaid(line.employmentId, null),
-                line.toPayAmount ? () => openCellAction(line, null, line.toPayAmount) : undefined,
-              )}
-            </td>
-            <td className={`${AMOUNT_TD} text-default-500 group-hover:bg-slate-50`}>
-              {line.esvAmount && line.esvAmount !== '0.00' ? formatMoney(line.esvAmount) : '—'}
-            </td>
-            <td className={`${AMOUNT_TD} font-medium text-default-900 group-hover:bg-slate-50`}>
-              {line.employerTotalCost && line.employerTotalCost !== '0.00' ? formatMoney(line.employerTotalCost) : '—'}
-            </td>
+            {renderExtraCells(line, grandTotal)}
             <td className={`${AMOUNT_TD} text-neutral-500 group-hover:bg-slate-50`}>{row.paid}</td>
           </tr>
         );

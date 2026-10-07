@@ -13,8 +13,12 @@ import {
   type HrPayrollFormulaSnapshot,
   type HrPayrollHoursByKind,
   type HrPayrollLineDto,
+  HR_PAYROLL_PERIOD_MODES,
   type HrPayrollLoadDto,
   type HrPayrollPeriodDto,
+  type HrPayrollPeriodMode,
+  type HrPayrollPeriodOptions,
+  type HrTimesheetWeekDto,
   type HrPayrollSkipReason,
   type HrPayrollStatus,
   type HrPayrollSummaryDto,
@@ -33,17 +37,25 @@ import {
 import {
   buildTimesheetMonthMeta,
   parseYearMonth,
+  shiftYearMonth,
   toDateOnlyUtc,
   utcDate,
 } from '../../../shared/utils/hrTimesheetCalendar.js';
 import { isTimesheetKind } from '../../../shared/utils/hrTimesheetCell.js';
+import { listProductionWeeksOverlappingMonth } from '../../../shared/utils/hrProductionWeek.js';
+import {
+  calendarWeekSequenceFromYearStart,
+  formatHrWorkWeekLabel,
+} from '../../../shared/utils/hrWorkWeekPeriods.js';
 import { decryptCardNumber, maskCardLast4 } from './HrCardCrypto.js';
 import { HrError } from './HrService.js';
 import { hrBonusService } from './HrBonusService.js';
+import { hrProductionCalendarService } from './HrProductionCalendarService.js';
 import { hrTaxRuleService } from './HrTaxRuleService.js';
 import {
   HR_PAYROLL_FORMULA_V1,
   calculatePayrollLineWithTaxes,
+  taxAmountsFromBreakdown,
   type PayrollEntryInput,
 } from './payrollCalc.js';
 
@@ -248,6 +260,150 @@ const employmentInclude = {
 
 type EmploymentRow = Prisma.HrEmploymentGetPayload<{ include: typeof employmentInclude }>;
 
+function parsePeriodMode(value: string | undefined): HrPayrollPeriodMode {
+  if (value && (HR_PAYROLL_PERIOD_MODES as readonly string[]).includes(value)) {
+    return value as HrPayrollPeriodMode;
+  }
+  return 'production';
+}
+
+function parseDateOnly(raw: string): string {
+  const value = raw.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new HrError('Некоректна дата (очікується YYYY-MM-DD)');
+  }
+  return value;
+}
+
+function daysBetweenInclusive(start: string, end: string): number {
+  const startMs = Date.parse(`${start}T00:00:00Z`);
+  const endMs = Date.parse(`${end}T00:00:00Z`);
+  return Math.floor((endMs - startMs) / (24 * 60 * 60 * 1000)) + 1;
+}
+
+function withWeekLabels(weeks: HrTimesheetWeekDto[]): HrTimesheetWeekDto[] {
+  return weeks.map((week) => ({
+    ...week,
+    label: `${calendarWeekSequenceFromYearStart(week.startDate)} · ${formatHrWorkWeekLabel(week.startDate, week.endDate)}`,
+  }));
+}
+
+type PayrollWeeksResolveResult = {
+  periodMode: HrPayrollPeriodMode;
+  dateFrom: string | null;
+  dateTo: string | null;
+  weeks: HrTimesheetWeekDto[];
+};
+
+async function resolvePayrollWeeks(
+  year: number,
+  month: number,
+  options?: HrPayrollPeriodOptions,
+): Promise<PayrollWeeksResolveResult> {
+  const periodMode = parsePeriodMode(options?.periodMode);
+  const meta = buildTimesheetMonthMeta(year, month);
+  const monthStartStr = toDateOnlyUtc(utcDate(year, month, 1));
+  const monthEndStr = toDateOnlyUtc(utcDate(year, month, meta.days.length));
+
+  let dateFrom: string | null = null;
+  let dateTo: string | null = null;
+  let weeks: HrTimesheetWeekDto[] = meta.weeks;
+
+  if (periodMode === 'custom') {
+    dateFrom = options?.dateFrom ? parseDateOnly(options.dateFrom) : monthStartStr;
+    dateTo = options?.dateTo ? parseDateOnly(options.dateTo) : monthEndStr;
+    if (dateFrom > dateTo) throw new HrError('Дата початку не може бути пізніше дати кінця');
+    if (daysBetweenInclusive(dateFrom, dateTo) > 31) {
+      throw new HrError('Довільний період не може перевищувати 31 день');
+    }
+    weeks = [
+      { id: 'salary', label: 'ЗП', startDate: dateFrom, endDate: dateTo, colSpan: 1 },
+      { id: 'taxes', label: 'Податки', startDate: dateFrom, endDate: dateTo, colSpan: 1 },
+      { id: 'bonus', label: 'Премії', startDate: dateFrom, endDate: dateTo, colSpan: 1 },
+      { id: 'total', label: 'Разом', startDate: dateFrom, endDate: dateTo, colSpan: 1 },
+    ];
+  } else if (periodMode === 'production') {
+    const calendar = await hrProductionCalendarService.get();
+    const productionWeeks = listProductionWeeksOverlappingMonth(year, month, calendar);
+    weeks = productionWeeks.map((week) => ({
+      id: week.startDate,
+      label: `${calendarWeekSequenceFromYearStart(week.startDate)} · ${formatHrWorkWeekLabel(week.startDate, week.endDate)}`,
+      startDate: week.startDate,
+      endDate: week.endDate,
+      colSpan: daysBetweenInclusive(week.startDate, week.endDate),
+    }));
+  } else {
+    weeks = withWeekLabels(meta.weeks);
+  }
+
+  return { periodMode, dateFrom, dateTo, weeks };
+}
+
+type TimesheetEntryRow = {
+  employmentId: number;
+  date: Date;
+  kind: string;
+  hours: Prisma.Decimal | null;
+};
+
+type TimesheetEntryDb = Pick<typeof prisma, 'hrTimesheetMonth' | 'hrTimesheetEntry'>;
+
+/** Записи табеля для payroll: у режимі production додає сусідні місяці для тижнів на межі. */
+async function loadTimesheetEntriesForPayroll(
+  year: number,
+  month: number,
+  weeks: HrTimesheetWeekDto[],
+  periodMode: HrPayrollPeriodMode,
+  timesheetId: number | null,
+  db: TimesheetEntryDb = prisma,
+): Promise<TimesheetEntryRow[]> {
+  if (!timesheetId) return [];
+
+  const meta = buildTimesheetMonthMeta(year, month);
+  const monthStartStr = toDateOnlyUtc(utcDate(year, month, 1));
+  const monthEndStr = toDateOnlyUtc(utcDate(year, month, meta.days.length));
+  const monthIds = new Set<number>([timesheetId]);
+
+  if (periodMode === 'production') {
+    const needsPrev = weeks.some((week) => week.startDate < monthStartStr);
+    const needsNext = weeks.some((week) => week.endDate > monthEndStr);
+
+    if (needsPrev) {
+      const prev = shiftYearMonth(year, month, -1);
+      const prevTimesheet = await db.hrTimesheetMonth.findUnique({
+        where: { year_month: { year: prev.year, month: prev.month } },
+        select: { id: true },
+      });
+      if (prevTimesheet) monthIds.add(prevTimesheet.id);
+    }
+    if (needsNext) {
+      const next = shiftYearMonth(year, month, 1);
+      const nextTimesheet = await db.hrTimesheetMonth.findUnique({
+        where: { year_month: { year: next.year, month: next.month } },
+        select: { id: true },
+      });
+      if (nextTimesheet) monthIds.add(nextTimesheet.id);
+    }
+  }
+
+  return db.hrTimesheetEntry.findMany({
+    where: { monthId: { in: [...monthIds] } },
+  });
+}
+
+/** Чи відповідає збережений знімок поточній структурі колонок (режиму періоду). */
+function snapshotFitsWeeks(lines: HrPayrollLineDto[], weeks: HrTimesheetWeekDto[]): boolean {
+  const sample = lines.find((line) => line.weekAmounts.length > 0);
+  if (!sample) return true;
+  const expected = new Set(weeks.map((week) => week.id));
+  const actual = new Set(sample.weekAmounts.map((item) => item.weekId));
+  if (actual.size !== expected.size) return false;
+  for (const id of expected) {
+    if (!actual.has(id)) return false;
+  }
+  return true;
+}
+
 function toLineDtoFromCalc(
   employment: EmploymentRow,
   calc: ReturnType<typeof calculatePayrollLineWithTaxes>,
@@ -257,6 +413,7 @@ function toLineDtoFromCalc(
   revealCard: boolean,
   lineId: number | null,
 ): HrPayrollLineDto {
+  const { pdfoAmount, militaryTaxAmount } = taxAmountsFromBreakdown(calc.taxBreakdown);
   const payGroup = isPayGroup(employment.payGroup.slug) ? employment.payGroup.slug : 'official_salary';
   const employeeKey = hrEmployeeImportKey(
     employment.employee.lastName,
@@ -298,6 +455,8 @@ function toLineDtoFromCalc(
     bonusAmount: calc.bonusAmount,
     esvAmount: calc.esvAmount,
     taxAmount: calc.taxAmount,
+    pdfoAmount,
+    militaryTaxAmount,
     taxBreakdown: calc.taxBreakdown,
     skipReason: calc.skipReason,
     cardMasked: maskCardLast4(employment.employee.cardLast4),
@@ -306,11 +465,16 @@ function toLineDtoFromCalc(
 }
 
 export class HrPayrollService {
-  async loadMonth(monthParam: string | undefined, revealCard: boolean): Promise<HrPayrollLoadDto> {
+  async loadMonth(
+    monthParam: string | undefined,
+    revealCard: boolean,
+    options?: HrPayrollPeriodOptions,
+  ): Promise<HrPayrollLoadDto> {
     const { year, month } = this.parseMonth(monthParam);
     const meta = buildTimesheetMonthMeta(year, month);
     const monthStart = utcDate(year, month, 1);
     const monthEnd = utcDate(year, month, meta.days.length);
+    const { periodMode, dateFrom, dateTo, weeks } = await resolvePayrollWeeks(year, month, options);
 
     const [period, timesheet, employmentBundle] = await Promise.all([
       prisma.hrPayrollPeriod.findUnique({
@@ -330,13 +494,15 @@ export class HrPayrollService {
     const { employments, idRemap } = employmentBundle;
 
     const payouts = period ? period.payouts.map(toPayoutDto) : [];
-    const useSnapshot = period && (period.status === 'calculated' || period.status === 'locked');
+    const hasSnapshot = period && (period.status === 'calculated' || period.status === 'locked');
 
     let lines: HrPayrollLineDto[];
-    if (useSnapshot && period) {
+    let source: HrPayrollLoadDto['source'] = 'preview';
+
+    if (hasSnapshot && period) {
       const byEmployment = new Map(employments.map((row) => [row.id, row]));
       const seenEmployment = new Set<number>();
-      lines = period.lines
+      const snapshotLines = period.lines
         .map((line) => {
           const canonicalId = remapEmploymentId(idRemap, line.employmentId);
           if (seenEmployment.has(canonicalId)) return null;
@@ -346,21 +512,56 @@ export class HrPayrollService {
           return this.lineFromSnapshot(employment, line, revealCard);
         })
         .filter((item): item is HrPayrollLineDto => item != null);
+
+      if (snapshotFitsWeeks(snapshotLines, weeks)) {
+        lines = snapshotLines;
+        source = 'snapshot';
+      } else {
+        lines = await this.buildPreviewLines(
+          employments,
+          timesheet,
+          idRemap,
+          weeks,
+          monthStart,
+          monthEnd,
+          period,
+          meta.normHours,
+          revealCard,
+          periodMode,
+          dateFrom,
+          dateTo,
+          year,
+          month,
+        );
+      }
     } else {
-      const entries = timesheet
-        ? await prisma.hrTimesheetEntry.findMany({ where: { monthId: timesheet.id } })
-        : [];
-      const formula = period ? asFormulaSnapshot(period.formulaSnapshot) : HR_PAYROLL_FORMULA_V1;
-      const normHours = timesheet ? Number(timesheet.normHours.toFixed(2)) : Number(meta.normHours);
-      lines = await this.previewLines(employments, entries, idRemap, meta.weeks, monthStart, monthEnd, formula, normHours, revealCard);
+      lines = await this.buildPreviewLines(
+        employments,
+        timesheet,
+        idRemap,
+        weeks,
+        monthStart,
+        monthEnd,
+        period,
+        meta.normHours,
+        revealCard,
+        periodMode,
+        dateFrom,
+        dateTo,
+        year,
+        month,
+      );
     }
 
     this.sortLines(lines);
 
     return {
-      source: useSnapshot ? 'snapshot' : 'preview',
+      source,
+      periodMode,
+      dateFrom,
+      dateTo,
       period: period ? toPeriodDto(period) : null,
-      weeks: meta.weeks,
+      weeks,
       days: meta.days,
       lines,
       payouts,
@@ -382,11 +583,13 @@ export class HrPayrollService {
     monthParam: string | undefined,
     version: number | undefined,
     revealCard: boolean,
+    options?: HrPayrollPeriodOptions,
   ): Promise<HrPayrollLoadDto> {
     const { year, month } = this.parseMonth(monthParam);
     const meta = buildTimesheetMonthMeta(year, month);
     const monthStart = utcDate(year, month, 1);
     const monthEnd = utcDate(year, month, meta.days.length);
+    const { periodMode, dateFrom, dateTo, weeks } = await resolvePayrollWeeks(year, month, options);
 
     await prisma.$transaction(async (tx) => {
       const existing = await tx.hrPayrollPeriod.findUnique({ where: { year_month: { year, month } } });
@@ -413,20 +616,30 @@ export class HrPayrollService {
         include: employmentInclude,
       });
       const { employments, idRemap } = dedupeEmploymentsByEmployeePayGroup(rawEmployments);
-      const entries = timesheet
-        ? await tx.hrTimesheetEntry.findMany({ where: { monthId: timesheet.id } })
-        : [];
+      const entries = await loadTimesheetEntriesForPayroll(
+        year,
+        month,
+        weeks,
+        periodMode,
+        timesheet?.id ?? null,
+        tx,
+      );
       const normHours = timesheet ? Number(timesheet.normHours.toFixed(2)) : Number(meta.normHours);
       const preview = await this.previewLines(
         employments,
         entries,
         idRemap,
-        meta.weeks,
+        weeks,
         monthStart,
         monthEnd,
         formula,
         normHours,
         false,
+        periodMode,
+        dateFrom,
+        dateTo,
+        year,
+        month,
       );
       const employmentById = new Map(employments.map((row) => [row.id, row]));
 
@@ -490,7 +703,7 @@ export class HrPayrollService {
       logServer(`[hr] payroll calculated periodId=${period.id} year=${year} month=${month} lines=${preview.length}`);
     });
 
-    return this.loadMonth(monthParam, revealCard);
+    return this.loadMonth(monthParam, revealCard, options);
   }
 
   async updateFormula(
@@ -499,6 +712,7 @@ export class HrPayrollService {
     grossDivisor: string,
     version: number | undefined,
     revealCard: boolean,
+    options?: HrPayrollPeriodOptions,
   ): Promise<HrPayrollLoadDto> {
     const { year, month } = this.parseMonth(monthParam);
     const formula = buildFormulaSnapshot(extraRate, grossDivisor);
@@ -536,7 +750,7 @@ export class HrPayrollService {
     });
 
     logServer(`[hr] payroll formula updated year=${year} month=${month}`);
-    return this.loadMonth(monthParam, revealCard);
+    return this.loadMonth(monthParam, revealCard, options);
   }
 
   async lock(
@@ -544,6 +758,7 @@ export class HrPayrollService {
     version: number,
     userId: number | undefined,
     revealCard: boolean,
+    options?: HrPayrollPeriodOptions,
   ): Promise<HrPayrollLoadDto> {
     const period = await prisma.hrPayrollPeriod.findUnique({ where: { id: periodId } });
     if (!period) throw new HrError('Період розрахунку не знайдено', 404);
@@ -569,7 +784,7 @@ export class HrPayrollService {
       throw new HrError('Розрахунок змінено іншим користувачем. Оновіть дані.', 409, 'PAYROLL_VERSION');
     }
     logServer(`[hr] payroll locked periodId=${periodId}`);
-    return this.loadMonth(`${period.year}-${String(period.month).padStart(2, '0')}`, revealCard);
+    return this.loadMonth(`${period.year}-${String(period.month).padStart(2, '0')}`, revealCard, options);
   }
 
   async addPayout(periodId: number, payload: HrPayoutWritePayload): Promise<HrPayoutDto> {
@@ -653,6 +868,49 @@ export class HrPayrollService {
     return dedupeEmploymentsByEmployeePayGroup(rows);
   }
 
+  private async buildPreviewLines(
+    employments: EmploymentRow[],
+    timesheet: { id: number; normHours: Prisma.Decimal } | null,
+    idRemap: Map<number, number>,
+    weeks: HrTimesheetWeekDto[],
+    monthStart: Date,
+    monthEnd: Date,
+    period: { formulaSnapshot: unknown } | null,
+    defaultNormHours: string,
+    revealCard: boolean,
+    periodMode: HrPayrollPeriodMode,
+    customFrom: string | null,
+    customTo: string | null,
+    year: number,
+    month: number,
+  ): Promise<HrPayrollLineDto[]> {
+    const entries = await loadTimesheetEntriesForPayroll(
+      year,
+      month,
+      weeks,
+      periodMode,
+      timesheet?.id ?? null,
+    );
+    const formula = period ? asFormulaSnapshot(period.formulaSnapshot) : HR_PAYROLL_FORMULA_V1;
+    const normHours = timesheet ? Number(timesheet.normHours.toFixed(2)) : Number(defaultNormHours);
+    return this.previewLines(
+      employments,
+      entries,
+      idRemap,
+      weeks,
+      monthStart,
+      monthEnd,
+      formula,
+      normHours,
+      revealCard,
+      periodMode,
+      customFrom,
+      customTo,
+      year,
+      month,
+    );
+  }
+
   private async previewLines(
     employments: EmploymentRow[],
     entries: Array<{ employmentId: number; date: Date; kind: string; hours: Prisma.Decimal | null }>,
@@ -663,6 +921,11 @@ export class HrPayrollService {
     formula: HrPayrollFormulaSnapshot,
     normHours: number,
     revealCard: boolean,
+    periodMode: HrPayrollPeriodMode = 'month',
+    customFrom: string | null = null,
+    customTo: string | null = null,
+    year?: number,
+    month?: number,
   ): Promise<HrPayrollLineDto[]> {
     const entriesByEmployment = new Map<number, PayrollEntryInput[]>();
     for (const entry of entries) {
@@ -676,10 +939,17 @@ export class HrPayrollService {
       entriesByEmployment.set(canonicalId, list);
     }
 
-    const bonusSums = await hrBonusService.sumByEmploymentForMonth(
-      monthStart.getUTCFullYear(),
-      monthStart.getUTCMonth() + 1,
-    );
+    const bonusYear = year ?? monthStart.getUTCFullYear();
+    const bonusMonth = month ?? monthStart.getUTCMonth() + 1;
+    const bonusSums =
+      periodMode === 'custom' && customFrom && customTo
+        ? await hrBonusService.sumProportionalByEmploymentForRange(bonusYear, bonusMonth, customFrom, customTo)
+        : await hrBonusService.sumByEmploymentForMonth(bonusYear, bonusMonth);
+
+    const calcWeeks =
+      periodMode === 'custom' && customFrom && customTo
+        ? [{ id: 'custom', label: 'custom', startDate: customFrom, endDate: customTo, colSpan: 1 }]
+        : weeks;
 
     const results: HrPayrollLineDto[] = [];
     for (const employment of employments) {
@@ -689,17 +959,43 @@ export class HrPayrollService {
       const rateKind: HrPayTermsKind = terms && isRateKind(terms.kind) ? terms.kind : payGroup === 'official_salary' ? 'salary' : 'hourly';
       const taxRules = await hrTaxRuleService.getActiveForDate(payGroup, monthEnd);
       const bonusAmount = bonusSums.get(employment.id) ?? 0;
+      let employmentEntries = entriesByEmployment.get(employment.id) ?? [];
+      if (periodMode === 'custom' && customFrom && customTo) {
+        employmentEntries = employmentEntries.filter(
+          (entry) => entry.date >= customFrom && entry.date <= customTo,
+        );
+      }
       const calc = calculatePayrollLineWithTaxes({
         payGroup,
         rateKind,
         rate,
         normHours,
-        entries: entriesByEmployment.get(employment.id) ?? [],
-        weeks,
+        entries: employmentEntries,
+        weeks: calcWeeks,
         formula,
         taxRules,
         bonusAmount,
+        monthStart: periodMode === 'production' ? toDateOnlyUtc(monthStart) : undefined,
+        monthEnd: periodMode === 'production' ? toDateOnlyUtc(monthEnd) : undefined,
       });
+
+      if (periodMode === 'custom') {
+        const salary = Number(calc.toPayAmount);
+        const employerTaxes = (calc.taxBreakdown ?? [])
+          .filter((item) => item.payer === 'employer')
+          .reduce((sum, item) => sum + Number(item.amount), 0);
+        const taxes = Number(calc.taxAmount) + employerTaxes;
+        const bonus = Number(calc.bonusAmount);
+        const total = salary + taxes + bonus;
+        calc.weekAmounts = [
+          { weekId: 'salary', hours: calc.weekAmounts[0]?.hours ?? '0.00', accrued: calc.accruedAmount, extra: '0.00', toPay: salary.toFixed(2) },
+          { weekId: 'taxes', hours: '0.00', accrued: '0.00', extra: '0.00', toPay: taxes.toFixed(2) },
+          { weekId: 'bonus', hours: '0.00', accrued: '0.00', extra: '0.00', toPay: bonus.toFixed(2) },
+          { weekId: 'total', hours: '0.00', accrued: '0.00', extra: '0.00', toPay: total.toFixed(2) },
+        ];
+        calc.toPayAmount = total.toFixed(2);
+      }
+
       results.push(
         toLineDtoFromCalc(
           employment,
@@ -782,6 +1078,7 @@ export class HrPayrollService {
       bonusAmount: moneyFromDecimal(line.bonusAmount ?? new Prisma.Decimal(0)),
       esvAmount: moneyFromDecimal(line.esvAmount ?? line.extraAmount),
       taxAmount: moneyFromDecimal(line.taxAmount ?? new Prisma.Decimal(0)),
+      ...taxAmountsFromBreakdown(asTaxBreakdown(line.taxBreakdown)),
       taxBreakdown: asTaxBreakdown(line.taxBreakdown),
       skipReason: isSkipReason(line.skipReason) ? line.skipReason : null,
       cardMasked: maskCardLast4(employment.employee.cardLast4),

@@ -5,6 +5,7 @@ import {
   type HrPayGroupDto,
   type HrPayGroupWritePayload,
 } from '../../../shared/types/hr.js';
+import { SPEC_COLOR_HUE_NAMES } from '../../../shared/utils/specColorPalette.js';
 import { hrAuditService } from './HrAuditService.js';
 import { HrError } from './HrService.js';
 
@@ -12,10 +13,19 @@ function isPayGroupSlug(value: string): value is HrPayGroup {
   return (HR_PAY_GROUPS as readonly string[]).includes(value);
 }
 
+function parseChipHue(value: string | null | undefined): string | null {
+  if (value == null || value === '') return null;
+  if (!SPEC_COLOR_HUE_NAMES.includes(value)) {
+    throw new HrError('Невідомий колір чіпа');
+  }
+  return value;
+}
+
 function toDto(row: {
   id: number;
   slug: string;
   label: string;
+  chipHue: string | null;
   sortOrder: number;
   isActive: boolean;
   formulaProfile: string;
@@ -24,6 +34,7 @@ function toDto(row: {
     id: row.id,
     slug: isPayGroupSlug(row.slug) ? row.slug : 'official_salary',
     label: row.label,
+    chipHue: row.chipHue,
     sortOrder: row.sortOrder,
     isActive: row.isActive,
     formulaProfile: row.formulaProfile,
@@ -90,10 +101,14 @@ export class HrPayGroupService {
     const label = payload.label?.trim() ?? existing.label;
     if (!label) throw new HrError('Вкажіть назву групи оплати');
 
+    const chipHue =
+      payload.chipHue === undefined ? existing.chipHue : parseChipHue(payload.chipHue);
+
     const updated = await prisma.hrPayGroup.update({
       where: { id },
       data: {
         label,
+        chipHue,
         sortOrder: payload.sortOrder ?? existing.sortOrder,
         isActive: payload.isActive ?? existing.isActive,
         ...(payload.formulaProfile ? { formulaProfile: payload.formulaProfile } : {}),

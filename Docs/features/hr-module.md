@@ -1,6 +1,6 @@
 # HR: табель, розрахунок, співробітники, роботодавці
 
-**Дата:** 2026-09-14 (оновлено: HR UX Фаза 2+, фонд оплати праці, dedupe табеля)  
+**Дата:** 2026-09-14 (оновлено: 2026-10-07 — розрахунок, премії, перенесення зайнятості, TableBuilder)  
 **Маршрути:** `/hr/timesheet`, `/hr/payroll`, `/hr/employees`, `/hr/employers`, `/hr/persons`, `/hr/bonuses`, `/hr/fop`  
 **API:** `/api/hr/*`  
 **Модуль сервера:** `server/modules/Hr/`  
@@ -42,6 +42,10 @@
 | `action.hr.payroll.view` | admin, boss | Розрахунок / блокування / виплати |
 | `action.hr.payterms.manage` | boss+ | Ставки |
 | `action.hr.payouts.view` | admin, boss | Повний номер картки |
+| `action.hr.settings.manage` | admin, boss | HR-налаштування (TableBuilder тощо) |
+| `action.hr.employment.transfer` | admin, boss | Перенесення зайнятості |
+| `action.hr.employment.change-group` | admin, boss | Зміна групи оплати |
+| `action.hr.employment.change-employer` | admin, boss | Зміна роботодавця |
 
 ---
 
@@ -65,7 +69,7 @@ HrAuditLog — журнал дій користувача (окремо від m
 - **`HrEmployee`** — працівник табеля: ПІБ, `personId?`, `userId?`, картка для виплат.
 - **`HrLegalEntity`** — роботодавець: `code`, `name`, `kind`, `dilovodFirmId?`, `isActive`.
 - **`HrEmployment`** — зайнятість: працівник × роботодавець × `payGroupId` × період; `personnelNumber`, `dilovodEmployeeId`, посади.
-- **`HrPayGroup`** — довідник груп оплати (`slug`, `label`, `formulaProfile`, `sortOrder`); seed: `official_salary`, `hourly`, `unofficial_cash`.
+- **`HrPayGroup`** — довідник груп оплати (`slug`, `label`, `formulaProfile`, `sortOrder`, `chipHue?`); seed: `official_salary`, `hourly`, `hourly_unofficial`, `unofficial_cash`.
 
 Seed-записи (міграція `20260903010000_add_hr_employees`):
 
@@ -104,9 +108,10 @@ Seed-записи (міграція `20260903010000_add_hr_employees`):
 
 ### Податки та ЄСВ
 
-- Довідник `hr_tax_rules`: ЄСВ (22%), ПДФО (18%), військовий (5%) для `official_salary`.
-- Розрахунок: `gross = accrued / (1 - pdfo - military)`, `employerTotalCost = gross + ЄСВ + премія (+ ЄСВ на премію)`.
+- Довідник `hr_tax_rules`: ЄСВ (22%), ПДФО (18%), військовий (5%) для `official_salary`; поле **`shortLabel`** — короткий заголовок колонки в розрахунку.
+- Розрахунок: `gross = accrued / (1 - pdfo - military)`, `employerTotalCost = gross + ЄСВ + премія (+ ЄСВ на премію)`. **`esvAmount`** — лише правило з `code === 'esv'`, не всі податки роботодавця.
 - API: `GET/POST/PATCH/DELETE /api/hr/tax-rules` — право `action.hr.taxrules.manage`.
+- Групи оплати: редагування **`chipHue`** для бейджів (`SpecHueSelect`).
 
 ### Виробничий календар
 
@@ -120,10 +125,11 @@ Seed-записи (міграція `20260903010000_add_hr_employees`):
 ## Премії (`/hr/bonuses`)
 
 - Drawer створення/редагування: `useUnsavedGuard` + `ConfirmModal` для видалення й затвердження.
-- Таблиця `hr_bonuses`: привʼязка до `productionWeekId` або `calendarWeekId`.
+- Таблиця `hr_bonuses`: привʼязка до **календарного місяця** (`periodYear`, `periodMonth`).
 - Статуси: `draft` → `approved` → `locked`. Незатверджені — warning у фонді оплати праці, не блокують calculate.
-- Фільтр періоду: робочий тиждень (пн–пт) + діапазон дат — через спільний хук `useHrWorkWeekPeriodFilter`.
-- API: `GET/POST/PATCH/DELETE /api/hr/bonuses?dateFrom=&dateTo=`, `GET /api/hr/bonuses/employments`.
+- Фільтр періоду: **`MonthSwitcher`** (місяць), не робочий тиждень.
+- Сума в drawer — money input з форматуванням.
+- API: `GET/POST/PATCH/DELETE /api/hr/bonuses?year=&month=`, `GET /api/hr/bonuses/employments`.
 
 ---
 
@@ -275,7 +281,8 @@ Accordion у картках: `client/components/hr/HrAuditAccordion.tsx`.
 
 1. Пошук за ПІБ  
 2. Перемикач місяця  
-3. Дії (заповнити вихідні, зберегти, до розрахунку)
+3. Дії (заповнити вихідні, зберегти, до розрахунку)  
+4. Масові дії по дню — **контекстне меню** на заголовку колонки дати (`TimesheetDayHeaderContextMenu`)
 
 ### Фільтри груп
 
@@ -287,6 +294,7 @@ Accordion у картках: `client/components/hr/HrAuditAccordion.tsx`.
 - Згортання правого сайдбару підсумків (за замовч. згорнутий; лише колонка «год»).
 - Кольорові заголовки груп (`hrPayGroupTokens`).
 - Редагування: цифра — години, літера — код; F2 / подвійний клік / контекстне меню — години.
+- Нумерація рядків (`RowIndexCell`).
 - Легенда кодів дня з налаштуванням hue (`TimesheetKindLegend`, `useHrTimesheetKindColors`).
 
 ### API
@@ -304,7 +312,24 @@ Accordion у картках: `client/components/hr/HrAuditAccordion.tsx`.
 
 1. Пошук за ПІБ  
 2. Перемикач місяця  
-3. Статус (попередній перегляд / знімок / заблоковано), «До табеля», «Розрахувати», «Заблокувати»
+3. **Режим періоду:** «По виробничих тижнях» / «За місяць» / «Довільний період»  
+4. Статус (попередній перегляд / знімок / заблоковано), «До табеля», «Розрахувати», «Заблокувати», **TableBuilder** (колонки)
+
+### Режими періоду (`periodMode`)
+
+| Режим | Колонки | Примітка |
+| --- | --- | --- |
+| `production` | Виробничі тижні з `hr_production_calendar` | Номер тижня + діапазон дат; на межі місяців підвантажуються записи сусідніх табелів |
+| `month` | Календарні тижні всередині місяця (як табель) | |
+| `custom` | ЗП / Податки / Премії / Разом | Діапазон до 31 дня; пропорційні премії |
+
+Місячний підсумок (нарахування, податки) — **лише дні поточного місяця**. Тижневі колонки в режимі `production` показують **повний виробничий тиждень** (усі 7 днів), щоб збігатися з виробничим циклом.
+
+### Формула розрахунку
+
+- Офіційна ставка: `accrued = rate × workHours / normHours`; погодинна: `rate × workHours`.
+- Gross для податків: `accrued / (1 − Σ withholdingRates)` за активними `hr_tax_rules`.
+- Застарілий UI «Формула Tabell 2026» (коефіцієнти 0.23 / 0.77) **видалено**; знімок у БД лишається сумісним (`extraRate: 0`, `grossDivisor: 1`).
 
 ### Фільтри груп
 
@@ -312,14 +337,16 @@ Accordion у картках: `client/components/hr/HrAuditAccordion.tsx`.
 
 ### Таблиця (`PayrollTable`)
 
-- Темна sticky-шапка, кольорові рядки-групи.
+- Темна sticky-шапка, кольорові рядки-групи, **нумерація рядків**.
 - Бейдж роботодавця за **конкретною назвою** (`legalEntityName`).
-- Клік по рядку — drawer з деталями і виплатами.
+- Опційні колонки податків (`taxesSeparate`): ПДФО+ВЗ, ЄСВ, премія, разом — логіка в `payrollTableColumns.ts`.
+- Клік по рядку — drawer з деталями, тижнями (години + сума) і виплатами.
+- Налаштування колонок — **`TableBuilder`** + `useHrSettings` (`GET/PUT /api/settings/hr`).
 
 ### API
 
-- `GET /api/hr/payroll?month=YYYY-MM`
-- `POST /api/hr/payroll/calculate`
+- `GET /api/hr/payroll?month=YYYY-MM&periodMode=&dateFrom=&dateTo=`
+- `POST /api/hr/payroll/calculate` — тіло з `periodMode`, `dateFrom`, `dateTo`
 - `POST /api/hr/payroll/:id/lock`
 - CRUD виплат: `/api/hr/payroll/:id/payouts`, `/api/hr/payouts/:id`
 
@@ -350,6 +377,8 @@ Accordion у картках: `client/components/hr/HrAuditAccordion.tsx`.
 - Ширина `size="3xl"`, основні поля в 2 колонки на десктопі.
 - Кожна зайнятість — `Card`: у `CardHeader` період + статус (активна / завершена); кнопка **«Обʼєднати»** лише якщо є кілька активних зайнятостей в одній групі оплати.
 - Merge: `POST /api/hr/employments/:id/merge` — перенос табеля, ставок, payroll; видалення дублів ставок; audit `employment_merged`.
+- **Перенесення:** `POST /api/hr/employments/:id/transfer` — перенос записів табеля/payroll на іншу зайнятість, видалення джерела (`EmploymentTransferModal`, право `action.hr.employment.transfer`).
+- **Зміна групи / роботодавця** — окремі дії з правами `change-group`, `change-employer`.
 - Форми «Додати зайнятість» / «Додати ставку» сховані під спойлер (кнопка відкриває форму, «Зберегти» пише в API).
 - Заголовок «Ставка» / «Ставки» залежить від кількості записів.
 - Сума ставки: маска `00 000` (пробіл тисяч, без копійок), `endContent` «грн».
@@ -413,8 +442,10 @@ Accordion у картках: `client/components/hr/HrAuditAccordion.tsx`.
 | Область | Шлях |
 | --- | --- |
 | Типи | `shared/types/hr.ts` |
-| Розрахунок | `server/modules/Hr/payrollCalc.ts` |
-| Сервіси | `HrService`, `HrTimesheetService`, `HrPayrollService`, `HrPersonService`, `HrPersonSyncService`, `HrDilovodSyncService`, `HrAuditService`, `HrPayGroupService` |
+| Розрахунок | `server/modules/Hr/payrollCalc.ts`, `payrollTableColumns.ts` |
+| HR settings | `server/modules/Hr/HrSettingsService.ts`, `shared/types/hrSettings.ts` |
+| TableBuilder | `client/components/table/TableBuilder.tsx`, `shared/types/tableBuilder.ts` |
+| Сервіси | `HrService`, `HrTimesheetService`, `HrPayrollService`, `HrPersonService`, `HrPersonSyncService`, `HrDilovodSyncService`, `HrAuditService`, `HrPayGroupService`, `HrSettingsService` |
 | Маршрути API | `server/modules/Hr/HrController.ts` |
 | Audit формат | `shared/utils/hrAuditFormat.ts` |
 | Календар місяця | `shared/utils/hrTimesheetCalendar.ts` |

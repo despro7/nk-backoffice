@@ -10,6 +10,7 @@ import {
 import { supportReportSettingsService } from '../services/SupportReportSettingsService.js';
 import { telegramAlertService } from '../services/TelegramAlertService.js';
 import type { SupportReportSettings } from '../../shared/types/supportReport.js';
+import { hrSettingsService } from '../modules/Hr/HrSettingsService.js';
 
 const router = express.Router();
 const settingsAdmin = requirePermission('settings', 'admin', 'Змінювати адмінські налаштування');
@@ -965,6 +966,38 @@ router.delete('/:key', authenticateToken, async (req, res) => {
       success: false,
       error: 'Failed to delete setting'
     });
+  }
+});
+
+// === HR SETTINGS ===
+
+const hrSettingsManage = requirePermission('hr', 'settings.manage', 'Керувати глобальними налаштуваннями HR');
+
+router.get('/hr/:section', authenticateToken, async (req, res) => {
+  try {
+    const section = String(req.params.section);
+    if (section !== 'payroll') {
+      return res.status(404).json({ success: false, error: 'Section not found' });
+    }
+    const data = await hrSettingsService.getSection('payroll');
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error getting HR settings:', error);
+    res.status(500).json({ success: false, error: 'Failed to get HR settings' });
+  }
+});
+
+router.put('/hr/:section', authenticateToken, hrSettingsManage, async (req, res) => {
+  try {
+    const section = String(req.params.section);
+    if (section !== 'payroll') {
+      return res.status(404).json({ success: false, error: 'Section not found' });
+    }
+    const data = await hrSettingsService.saveSection('payroll', req.body ?? {});
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error saving HR settings:', error);
+    res.status(500).json({ success: false, error: 'Failed to save HR settings' });
   }
 });
 

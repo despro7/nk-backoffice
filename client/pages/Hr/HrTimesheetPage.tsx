@@ -27,6 +27,7 @@ import {
 } from '@shared/utils/hrTimesheetCell';
 import { TimesheetGrid } from './Timesheet/TimesheetGrid';
 import { TimesheetKindLegend } from './Timesheet/TimesheetKindLegend';
+import { useHrPayGroupHues } from './useHrPayGroupHues';
 import { useHrTimesheetKindColors } from './useHrTimesheetKindColors';
 import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
 import { HR_BTN_NEUTRAL, HrSpecChip, hrPayGroupTokens } from './hrUi';
@@ -76,6 +77,7 @@ export default function HrTimesheetPage() {
   const [liveMessage, setLiveMessage] = useState('');
   const saveInFlight = useRef(false);
   const kindColors = useHrTimesheetKindColors();
+  const { hueOverrides: payGroupHueOverrides } = useHrPayGroupHues();
 
   const monthKey = (() => {
     const raw = params.get('month');
@@ -221,17 +223,31 @@ export default function HrTimesheetPage() {
     });
   };
 
-  const fillWeekends = () => {
+  const fillWeekendForDate = (date: string) => {
     if (!data || !canEdit) return;
+    const day = data.days.find((item) => item.date === date);
+    if (!day?.isWeekend) return;
     setDraft((current) => {
       const next = { ...current };
       for (const row of visibleRows) {
-        for (const day of data.days) {
-          if (!day.isWeekend) continue;
-          const key = `${row.employmentId}:${day.date}`;
-          const value = next[key] ?? emptyCell();
-          if (value.kind == null) next[key] = codeCell('В');
-        }
+        const key = `${row.employmentId}:${date}`;
+        const value = next[key] ?? emptyCell();
+        if (value.kind == null) next[key] = codeCell('В');
+      }
+      return next;
+    });
+  };
+
+  const clearWeekendForDate = (date: string) => {
+    if (!data || !canEdit) return;
+    const day = data.days.find((item) => item.date === date);
+    if (!day?.isWeekend) return;
+    setDraft((current) => {
+      const next = { ...current };
+      for (const row of visibleRows) {
+        const key = `${row.employmentId}:${date}`;
+        const value = next[key] ?? emptyCell();
+        if (value.kind === 'В') delete next[key];
       }
       return next;
     });
@@ -276,7 +292,7 @@ export default function HrTimesheetPage() {
         <MonthSwitcher value={monthDate} onChange={setMonthParam} disableFuture={false} size="sm" />
         <div className="flex flex-wrap items-center gap-2 ml-auto">
           {data?.month.status === 'closed' ? (
-            <HrSpecChip tokens={hrPayGroupTokens('unofficial_cash')}>Закрито</HrSpecChip>
+            <HrSpecChip tokens={hrPayGroupTokens('unofficial_cash', 'soft', payGroupHueOverrides)}>Закрито</HrSpecChip>
           ) : null}
           {!canEditPerm ? (
             <span className="text-xs font-medium text-rose-700 bg-rose-100 border border-rose-200 rounded-full px-2 py-0.5">
@@ -286,9 +302,6 @@ export default function HrTimesheetPage() {
           {data ? (
             <span className="text-xs text-slate-500">Норма {data.month.normWorkDays} дн. / {data.month.normHours} год</span>
           ) : null}
-          <Button size="sm" className={HR_BTN_NEUTRAL} onPress={fillWeekends} isDisabled={!canEdit}>
-            Заповнити вихідні В
-          </Button>
           <Button
             size="sm"
             className={HR_BTN_PRIMARY}
@@ -346,7 +359,10 @@ export default function HrTimesheetPage() {
           liveMessage={liveMessage}
           onLiveMessage={setLiveMessage}
           kindHues={kindColors.overrides}
+          payGroupHueOverrides={payGroupHueOverrides}
           canViewAudit={canViewAudit}
+          onFillWeekendForDate={fillWeekendForDate}
+          onClearWeekendForDate={clearWeekendForDate}
         />
         </div>
       ) : null}

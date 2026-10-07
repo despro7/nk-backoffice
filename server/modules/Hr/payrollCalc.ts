@@ -14,10 +14,11 @@ import {
 } from '../../../shared/types/hr.js';
 import type { TaxRuleCalc } from './HrTaxRuleService.js';
 
+/** Залишено для знімків у БД; коефіцієнти більше не застосовуються в розрахунку. */
 export const HR_PAYROLL_FORMULA_V1: HrPayrollFormulaSnapshot = {
   formulaId: HR_PAYROLL_FORMULA_TABELL_2026_V1,
-  extraRate: '0.23',
-  grossDivisor: '0.77',
+  extraRate: '0',
+  grossDivisor: '1',
 };
 
 const LEAVE_KINDS: ReadonlySet<string> = new Set(['О', 'ТН']);
@@ -29,6 +30,39 @@ export function roundMoney(value: number): number {
 
 export function moneyStr(value: number): string {
   return roundMoney(value).toFixed(2);
+}
+
+export function taxAmountsFromBreakdown(breakdown: HrTaxBreakdownItem[]): {
+  pdfoAmount: string;
+  militaryTaxAmount: string;
+} {
+  let pdfo = 0;
+  let military = 0;
+  for (const item of breakdown) {
+    if (item.code === 'pdfo') pdfo += Number(item.amount);
+    if (item.code === 'military') military += Number(item.amount);
+  }
+  return { pdfoAmount: moneyStr(pdfo), militaryTaxAmount: moneyStr(military) };
+}
+
+export function esvAmountFromBreakdown(breakdown: HrTaxBreakdownItem[]): string {
+  let esv = 0;
+  for (const item of breakdown) {
+    if (item.code === 'esv') esv += Number(item.amount);
+  }
+  return moneyStr(esv);
+}
+
+export function employerTaxAmountFromBreakdown(breakdown: HrTaxBreakdownItem[]): string {
+  let total = 0;
+  for (const item of breakdown) {
+    if (item.payer === 'employer') total += Number(item.amount);
+  }
+  return moneyStr(total);
+}
+
+function withholdingTaxRules(taxRules: TaxRuleCalc[]): TaxRuleCalc[] {
+  return taxRules.filter((rule) => rule.code === 'pdfo' || rule.code === 'military');
 }
 
 export function hoursStr(value: number): string {
@@ -50,6 +84,9 @@ export interface PayrollCalcInput {
   entries: PayrollEntryInput[];
   weeks: HrTimesheetWeekDto[];
   formula?: HrPayrollFormulaSnapshot;
+  /** Якщо задано — місячні підсумки лише за цим діапазоном; тижневі колонки — з усіх entries. */
+  monthStart?: string;
+  monthEnd?: string;
 }
 
 export interface PayrollTaxResult {
@@ -133,6 +170,14 @@ function hoursInWeek(entries: PayrollEntryInput[], week: HrTimesheetWeekDto): nu
   return sum;
 }
 
+function filterEntriesByDateRange(
+  entries: PayrollEntryInput[],
+  startDate: string,
+  endDate: string,
+): PayrollEntryInput[] {
+  return entries.filter((entry) => entry.date >= startDate && entry.date <= endDate);
+}
+
 function accruedFromRate(
   rateKind: HrPayTermsKind,
   rate: number,
@@ -158,14 +203,6 @@ function applyGroupAmounts(
   }
 
   const accrued = accruedFromRate(rateKind, rate, workHours, normHours);
-
-  if (payGroup === 'official_salary') {
-    const extra = roundMoney(accrued * Number(formula.extraRate));
-    const divisor = Number(formula.grossDivisor);
-    const toPay = roundMoney(divisor > 0 ? accrued / divisor : accrued);
-    return { accrued, extra, toPay };
-  }
-
   return { accrued, extra: 0, toPay: accrued };
 }
 
@@ -189,31 +226,13 @@ function breakdownFor(
     return [{ id: 'no_rate', label: 'Немає ставки на період', amount: '0.00' }];
   }
 
-  if (payGroup === 'official_salary') {
-    return [
-      {
-        id: 'accrued',
-        label: 'Нараховано: ставка × години періоду / норма',
-        amount: moneyStr(amounts.accrued),
-      },
-      {
-        id: 'extra',
-        label: `Коефіцієнт формули ×${formula.extraRate.replace('.', ',')}`,
-        amount: moneyStr(amounts.extra),
-      },
-      {
-        id: 'gross',
-        label: `Дільник формули /${formula.grossDivisor.replace('.', ',')}`,
-        amount: moneyStr(amounts.toPay),
-      },
-    ];
-  }
-
   const accruedLabel =
     rateKind === 'salary'
-      ? payGroup === 'unofficial_cash'
-        ? 'Нараховано: місячна ставка × години / норма (готівка)'
-        : 'Нараховано: місячна ставка × години / норма'
+      ? payGroup === 'official_salary'
+        ? 'Нараховано: ставка × години / норма'
+        : payGroup === 'unofficial_cash'
+          ? 'Нараховано: місячна ставка × години / норма (готівка)'
+          : 'Нараховано: місячна ставка × години / норма'
       : payGroup === 'unofficial_cash'
         ? 'Нараховано: погодинна ставка × години (готівка)'
         : 'Нараховано: погодинна ставка × години';
@@ -236,9 +255,9 @@ function emptyTaxResult(bonusAmount = 0): PayrollTaxResult {
   };
 }
 
-function reverseGrossFromAccrued(accrued: number, employeeRules: TaxRuleCalc[]): number {
-  const employeeRate = employeeRules.reduce((sum, rule) => sum + rule.rate, 0);
-  const divisor = 1 - employeeRate;
+function reverseGrossFromAccrued(accrued: number, withholdingRules: TaxRuleCalc[]): number {
+  const withholdingRate = withholdingRules.reduce((sum, rule) => sum + rule.rate, 0);
+  const divisor = 1 - withholdingRate;
   if (divisor <= 0) return accrued;
   return roundMoney(accrued / divisor);
 }
@@ -253,7 +272,7 @@ export function applyTaxRules(
     return emptyTaxResult(bonusAmount);
   }
 
-  if (payGroup !== 'official_salary' || taxRules.length === 0) {
+  if (taxRules.length === 0) {
     const total = roundMoney(accrued + bonusAmount);
     return {
       grossAccrued: moneyStr(accrued),
@@ -266,12 +285,15 @@ export function applyTaxRules(
     };
   }
 
-  const employeeRules = taxRules.filter((rule) => rule.payer === 'employee');
   const employerRules = taxRules.filter((rule) => rule.payer === 'employer');
-  const gross = reverseGrossFromAccrued(accrued, employeeRules);
+  const gross =
+    payGroup === 'official_salary'
+      ? reverseGrossFromAccrued(accrued, withholdingTaxRules(taxRules))
+      : roundMoney(accrued);
 
   const breakdown: HrTaxBreakdownItem[] = [];
   let esvAmount = 0;
+  let employerTaxAmount = 0;
   let taxAmount = 0;
 
   for (const rule of taxRules) {
@@ -284,8 +306,11 @@ export function applyTaxRules(
       amount: moneyStr(amount),
       payer: rule.payer,
     });
-    if (rule.code === 'esv' || rule.payer === 'employer') {
+    if (rule.code === 'esv') {
       esvAmount += amount;
+    }
+    if (rule.payer === 'employer') {
+      employerTaxAmount += amount;
     }
     if (rule.payer === 'employee') {
       taxAmount += amount;
@@ -296,15 +321,18 @@ export function applyTaxRules(
     .filter((rule) => rule.code === 'esv')
     .reduce((sum, rule) => sum + roundMoney(bonusAmount * rule.rate), 0);
 
+  esvAmount = roundMoney(esvAmount + bonusEsv);
+  employerTaxAmount = roundMoney(employerTaxAmount + bonusEsv);
+
   const net = roundMoney(gross - taxAmount);
-  const employerTotalCost = roundMoney(gross + esvAmount + bonusAmount + bonusEsv);
+  const employerTotalCost = roundMoney(gross + employerTaxAmount + bonusAmount);
 
   return {
     grossAccrued: moneyStr(gross),
     netToPay: moneyStr(net),
     employerTotalCost: moneyStr(employerTotalCost),
     bonusAmount: moneyStr(bonusAmount),
-    esvAmount: moneyStr(esvAmount + bonusEsv),
+    esvAmount: moneyStr(esvAmount),
     taxAmount: moneyStr(taxAmount),
     taxBreakdown: breakdown,
   };
@@ -347,7 +375,11 @@ export function calculatePayrollLineWithTaxes(input: PayrollCalcWithTaxesInput):
 
 export function calculatePayrollLine(input: PayrollCalcInput): PayrollCalcResult {
   const formula = input.formula ?? HR_PAYROLL_FORMULA_V1;
-  const { hoursByKind, workHours, leaveDays } = collectHoursByKind(input.entries);
+  const monthScoped = input.monthStart && input.monthEnd;
+  const monthEntries = monthScoped
+    ? filterEntriesByDateRange(input.entries, input.monthStart!, input.monthEnd!)
+    : input.entries;
+  const { hoursByKind, workHours, leaveDays } = collectHoursByKind(monthEntries);
 
   let skipReason: HrPayrollSkipReason | null = null;
   if (!(input.rate > 0)) {
@@ -370,9 +402,18 @@ export function calculatePayrollLine(input: PayrollCalcInput): PayrollCalcResult
     };
   });
 
-  const accruedAmount = roundMoney(weekAmounts.reduce((sum, week) => sum + Number(week.accrued), 0));
-  const extraAmount = roundMoney(weekAmounts.reduce((sum, week) => sum + Number(week.extra), 0));
-  const toPayAmount = roundMoney(weekAmounts.reduce((sum, week) => sum + Number(week.toPay), 0));
+  const monthAmounts = skipReason
+    ? { accrued: 0, extra: 0, toPay: 0 }
+    : applyGroupAmounts(input.payGroup, input.rateKind, input.rate, workHours, input.normHours, formula);
+  const accruedAmount = monthScoped
+    ? monthAmounts.accrued
+    : roundMoney(weekAmounts.reduce((sum, week) => sum + Number(week.accrued), 0));
+  const extraAmount = monthScoped
+    ? monthAmounts.extra
+    : roundMoney(weekAmounts.reduce((sum, week) => sum + Number(week.extra), 0));
+  const toPayAmount = monthScoped
+    ? monthAmounts.toPay
+    : roundMoney(weekAmounts.reduce((sum, week) => sum + Number(week.toPay), 0));
 
   const tax = applyTaxRules(input.payGroup, accruedAmount, [], 0);
 

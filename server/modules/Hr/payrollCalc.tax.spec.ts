@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { applyTaxRules, calculatePayrollLineWithTaxes } from './payrollCalc';
 
 const DEFAULT_TAX_RULES = [
-  { code: 'esv', label: 'ЄСВ', rate: 0.22, payer: 'employer' as const, base: 'gross' as const, sortOrder: 0 },
-  { code: 'pdfo', label: 'ПДФО', rate: 0.18, payer: 'employee' as const, base: 'gross' as const, sortOrder: 1 },
-  { code: 'military', label: 'Військовий', rate: 0.05, payer: 'employee' as const, base: 'gross' as const, sortOrder: 2 },
+  { code: 'esv', label: 'ЄСВ', shortLabel: null, rate: 0.22, payer: 'employer' as const, base: 'gross' as const, sortOrder: 0 },
+  { code: 'pdfo', label: 'ПДФО', shortLabel: null, rate: 0.18, payer: 'employee' as const, base: 'gross' as const, sortOrder: 1 },
+  { code: 'military', label: 'Військовий', shortLabel: null, rate: 0.05, payer: 'employee' as const, base: 'gross' as const, sortOrder: 2 },
 ];
 
 describe('payrollCalc taxes', () => {
@@ -27,6 +27,39 @@ describe('payrollCalc taxes', () => {
     expect(tax.grossAccrued).toBe('1350.00');
     expect(tax.employerTotalCost).toBe('1550.00');
     expect(tax.esvAmount).toBe('0.00');
+  });
+
+  it('для hourly з привʼязаними rules — рахує податки', () => {
+    const hourlyRules = [
+      { code: 'esv', label: 'ЄСВ', shortLabel: null, rate: 0.22, payer: 'employer' as const, base: 'gross' as const, sortOrder: 0 },
+    ];
+    const tax = applyTaxRules('hourly', 1000, hourlyRules, 0);
+    expect(Number(tax.esvAmount)).toBeCloseTo(220, 0);
+    expect(tax.taxBreakdown).toHaveLength(1);
+  });
+
+  it('official_salary: ЄСВ не включає ПДФО/ВЗ, навіть якщо вони — платник роботодавець', () => {
+    const employerPaidRules = DEFAULT_TAX_RULES.map((rule) => ({ ...rule, payer: 'employer' as const }));
+    const result = calculatePayrollLineWithTaxes({
+      payGroup: 'official_salary',
+      rateKind: 'salary',
+      rate: 17000,
+      normHours: 176,
+      weeks: [{ id: 'w1', label: 'тест', startDate: '2026-10-01', endDate: '2026-10-07', colSpan: 7 }],
+      entries: [{ date: '2026-10-01', kind: 'work', hours: 20.5 }],
+      taxRules: employerPaidRules,
+    });
+    expect(Number(result.accruedAmount)).toBeCloseTo(1980.11, 1);
+    expect(Number(result.toPayAmount)).toBeCloseTo(1980.11, 1);
+    expect(Number(result.grossAccrued)).toBeCloseTo(2571.57, 1);
+    const esv = result.taxBreakdown.find((item) => item.code === 'esv');
+    const pdfo = result.taxBreakdown.find((item) => item.code === 'pdfo');
+    const military = result.taxBreakdown.find((item) => item.code === 'military');
+    expect(Number(esv?.amount)).toBeCloseTo(565.75, 0);
+    expect(Number(pdfo?.amount)).toBeCloseTo(462.88, 0);
+    expect(Number(military?.amount)).toBeCloseTo(128.58, 0);
+    expect(Number(result.esvAmount)).toBeCloseTo(565.75, 0);
+    expect(Number(result.netToPay)).toBeCloseTo(2571.57, 1);
   });
 
   it('calculatePayrollLineWithTaxes інтегрує податки в результат', () => {

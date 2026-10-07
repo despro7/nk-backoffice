@@ -5,6 +5,57 @@
 
 ---
 
+## 2026-10-07 — HR: персонал, розрахунок, премії, табель
+
+**Files:** `server/modules/Hr/`, `client/pages/Hr/`, `shared/types/hr.ts`, `shared/utils/hr*`, `prisma/migrations/20261007120000_hr_personnel_improvements/`, `prisma/migrations/20261007140000_hr_pay_group_chip_hue/`, `client/components/table/TableBuilder.tsx`, `Docs/features/hr-module.md`
+
+### Міграції та модель
+
+- **`hourly_unofficial`** — нова група оплати «Неофіційна погодинна»; `hourly` перейменовано на «Офіційна погодинна».
+- **`hr_pay_groups.chipHue`** — колір бейджа групи (UI `SpecHueSelect`).
+- **`hr_bonuses`** — період премії за календарним місяцем (`periodYear`, `periodMonth`); прибрано `productionWeekId` / `calendarWeekId`.
+- **`hr_tax_rules.shortLabel`** — короткий заголовок для колонок розрахунку.
+- Нові права: `action.hr.settings.manage`, `action.hr.employment.transfer`, `change-group`, `change-employer` (seed: admin, boss).
+
+### Розрахунок (`/hr/payroll`)
+
+- **Режими періоду:** «По виробничих тижнях» / «За місяць» / «Довільний період» (`periodMode` у API).
+- **TableBuilder** — налаштування видимих колонок (збереження в HR settings).
+- Колонки податків (ПДФО+ВЗ, ЄСВ, премія, разом) за прапорцем `taxesSeparate`.
+- Нумерація рядків, номери календарних тижнів у заголовках.
+- **Прибрано** drawer «Формула Tabell 2026» — застаріла схема; розрахунок: `ставка × години / норма` (або `ставка × години` для погодинних), gross через правила податків.
+- **ЄСВ** рахується лише за правилом `code === 'esv'`, не змішується з ПДФО/ВЗ роботодавця.
+- **Виробничі тижні на межі місяців:** для колонок тижня підвантажуються записи табеля сусідніх місяців; тижнева колонка показує повний виробничий тиждень, місячний підсумок — лише дні поточного місяця.
+
+### Премії (`/hr/bonuses`)
+
+- Фільтр за **місяцем** (`MonthSwitcher`) замість робочого тижня.
+- Сума в drawer — money input з форматуванням.
+
+### Табель (`/hr/timesheet`)
+
+- Контекстне меню на заголовках днів (`TimesheetDayHeaderContextMenu`).
+- Нумерація рядків співробітників.
+
+### Співробітники (`/hr/employees`)
+
+- **Перенесення зайнятості** (`EmploymentTransferModal`) — перенос табеля/payroll на іншу зайнятість з видаленням джерела.
+- Зміна групи оплати / роботодавця в drawer (окремі права).
+- Оновлений accordion зайнятостей, іконки дій.
+
+### Роботодавці
+
+- Редагування `chipHue` груп оплати, `shortLabel` податкових правил, rate з 2 десятковими.
+
+### Інфраструктура
+
+- `HrSettingsService` + `GET/PUT /api/settings/hr` — збереження TableBuilder та інших HR-налаштувань.
+- Спільні компоненти: `TableBuilder`, `RowIndexCell`, `useHrSettings`, `useHrPayGroupHues`.
+
+**Документація:** [`Docs/features/hr-module.md`](features/hr-module.md).
+
+---
+
 ## 2026-10-05 — RBAC: збереження прав ролей і unsaved guard у редакторі
 
 **Files:** `server/services/RoleService.ts`, `server/services/RoleService.spec.ts`, `client/pages/Settings/Users/components/RolesManager.tsx`, `prisma/migrations/20261005120000_grant_product_movements_report_permission/`, `Docs/features/users-and-roles.md`

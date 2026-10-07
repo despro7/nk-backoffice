@@ -1,5 +1,5 @@
 import { Tooltip } from '@heroui/react';
-import { HrSpecChip, SpecChip } from '@/components/SpecChip';
+import { EditableSpecChip, HrSpecChip, SpecChip } from '@/components/SpecChip';
 import {
   HR_PAY_GROUPS,
   HR_TIMESHEET_KIND_CODES,
@@ -17,12 +17,13 @@ import {
 } from '@shared/utils/specColorPalette';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
-export { HrSpecChip, SpecChip };
+export { EditableSpecChip, HrSpecChip, SpecChip };
 
 /** Закріплені hue як у довіднику «Облік (тип номенклатури)». */
 export const HR_PAY_GROUP_HUES: Record<HrPayGroup, string> = {
   official_salary: 'indigo',
   hourly: 'lime',
+  hourly_unofficial: 'cyan',
   unofficial_cash: 'orange',
 };
 
@@ -73,8 +74,19 @@ export const HR_TABLE_CLASS_NAMES = {
   td: 'first:rounded-s-md last:rounded-e-md',
 };
 
-export function hrPayGroupTokens(group: HrPayGroup, intensity: SpecColorIntensity = 'soft'): SpecColorTokens {
-  return getSpecColorByHue(HR_PAY_GROUP_HUES[group], 'light', intensity);
+export function payGroupHueOrDefault(
+  group: HrPayGroup,
+  overrides?: Partial<Record<HrPayGroup, string>>,
+): string {
+  return overrides?.[group] ?? HR_PAY_GROUP_HUES[group];
+}
+
+export function hrPayGroupTokens(
+  group: HrPayGroup,
+  intensity: SpecColorIntensity = 'soft',
+  overrides?: Partial<Record<HrPayGroup, string>>,
+): SpecColorTokens {
+  return getSpecColorByHue(payGroupHueOrDefault(group, overrides), 'light', intensity);
 }
 
 export function hrTaxRuleTokens(code: string, intensity: SpecColorIntensity = 'soft'): SpecColorTokens {
@@ -118,8 +130,10 @@ export function hrKindClassName(hue: string): string {
   return specColorToClassNames(hrKindTokens(hue), { border: true });
 }
 
-export function payGroupTokensMap(): Record<HrPayGroup, SpecColorTokens> {
-  return Object.fromEntries(HR_PAY_GROUPS.map((group) => [group, hrPayGroupTokens(group)])) as Record<
+export function payGroupTokensMap(
+  overrides?: Partial<Record<HrPayGroup, string>>,
+): Record<HrPayGroup, SpecColorTokens> {
+  return Object.fromEntries(HR_PAY_GROUPS.map((group) => [group, hrPayGroupTokens(group, 'soft', overrides)])) as Record<
     HrPayGroup,
     SpecColorTokens
   >;

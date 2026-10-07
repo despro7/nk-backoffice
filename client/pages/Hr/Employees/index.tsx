@@ -28,6 +28,7 @@ import { EmployeesArchiveModal } from './EmployeesArchiveModal';
 import { DEFAULT_EMPLOYEE_SORT, sortHrEmployees } from './employeeTableSort';
 import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
 import { HR_BTN_NEUTRAL, HR_TABLE_CLASS_NAMES, HrLinkedAccountIndicator, HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
+import { useHrPayGroupHues } from '../useHrPayGroupHues';
 
 export default function HrEmployeesPage() {
   const { hasPermission } = useRoleAccess();
@@ -35,6 +36,7 @@ export default function HrEmployeesPage() {
   const canManagePayTerms = hasPermission(PERMISSIONS.ACTION_HR_PAYTERMS_MANAGE);
   const canRevealCard = hasPermission(PERMISSIONS.ACTION_HR_PAYOUTS_VIEW);
 
+  const { hueOverrides: payGroupHueOverrides } = useHrPayGroupHues();
   const [employees, setEmployees] = useState<HrEmployeeListItemDto[]>([]);
   const [legalEntities, setLegalEntities] = useState<HrLegalEntityDto[]>([]);
   const [search, setSearch] = useState('');
@@ -220,6 +222,7 @@ export default function HrEmployeesPage() {
               onSortChange={setSortDescriptor}
             >
               <TableHeader>
+                <TableColumn key="index" width={48}>№</TableColumn>
                 <TableColumn key="displayName" allowsSorting>ПІБ</TableColumn>
                 <TableColumn key="currentLegalEntityName" allowsSorting>Роботодавець</TableColumn>
                 <TableColumn key="currentPayGroup" allowsSorting>Група</TableColumn>
@@ -228,8 +231,9 @@ export default function HrEmployeesPage() {
                 <TableColumn key="actions">Керування</TableColumn>
               </TableHeader>
               <TableBody>
-                {sortedEmployees.map((employee) => (
+                {sortedEmployees.map((employee, index) => (
                   <TableRow key={employee.id} className={employee.status === 'active' ? undefined : 'opacity-40'}>
+                    <TableCell className="text-default-400 tabular-nums text-sm">{index + 1}</TableCell>
                     <TableCell>
                       <button type="button" className="text-left max-w-full" onClick={() => openEdit(employee.id)}>
                         <div className="flex items-center gap-1.5 font-medium">
@@ -260,7 +264,7 @@ export default function HrEmployeesPage() {
                     </TableCell>
                     <TableCell>
                       {employee.currentPayGroup ? (
-                        <HrSpecChip tokens={hrPayGroupTokens(employee.currentPayGroup)} rounded="sm">
+                        <HrSpecChip tokens={hrPayGroupTokens(employee.currentPayGroup, 'soft', payGroupHueOverrides)} rounded="sm">
                           {HR_PAY_GROUP_LABELS[employee.currentPayGroup]}
                         </HrSpecChip>
                       ) : (

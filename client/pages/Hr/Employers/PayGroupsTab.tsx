@@ -19,9 +19,17 @@ import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { ToastService } from '@/services/ToastService';
-import type { HrPayGroupDto, HrPayGroupWritePayload } from '@shared/types/hr';
+import { SpecHueSelect } from '@/components/SpecHueSelect';
+import { SpecChip } from '@/components/SpecChip';
+import type { HrPayGroup, HrPayGroupDto, HrPayGroupWritePayload } from '@shared/types/hr';
 import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
-import { HrSpecChip, hrStatusTokens } from '../hrUi';
+import {
+  HR_PAY_GROUP_HUES,
+  HrSpecChip,
+  hrPayGroupTokens,
+  hrStatusTokens,
+} from '../hrUi';
+import { notifyPayGroupHuesChanged } from '../useHrPayGroupHues';
 
 interface PayGroupsTabProps {
   canManage: boolean;
@@ -32,8 +40,13 @@ const PAY_GROUP_ROW_GRID = 'grid grid-cols-[24px_minmax(0,1fr)_160px_140px_96px]
 function snapshotPayGroupForm(form: HrPayGroupWritePayload): string {
   return JSON.stringify({
     label: form.label?.trim() ?? '',
+    chipHue: form.chipHue ?? null,
     isActive: form.isActive ?? true,
   });
+}
+
+function effectiveChipHue(slug: HrPayGroup, chipHue: string | null | undefined): string {
+  return chipHue ?? HR_PAY_GROUP_HUES[slug];
 }
 
 export function PayGroupsTab({ canManage }: PayGroupsTabProps) {
@@ -41,7 +54,7 @@ export function PayGroupsTab({ canManage }: PayGroupsTabProps) {
   const [loading, setLoading] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
   const [editing, setEditing] = useState<HrPayGroupDto | null>(null);
-  const [form, setForm] = useState<HrPayGroupWritePayload>({ label: '', isActive: true });
+  const [form, setForm] = useState<HrPayGroupWritePayload>({ label: '', chipHue: null, isActive: true });
   const [open, setOpen] = useState(false);
   const [deactivateTarget, setDeactivateTarget] = useState<HrPayGroupDto | null>(null);
   const baselineRef = useRef('');
@@ -68,7 +81,7 @@ export function PayGroupsTab({ canManage }: PayGroupsTabProps) {
   }, []);
 
   const openEdit = (group: HrPayGroupDto) => {
-    const nextForm = { label: group.label, isActive: group.isActive };
+    const nextForm = { label: group.label, chipHue: group.chipHue, isActive: group.isActive };
     setEditing(group);
     setForm(nextForm);
     commitBaseline(nextForm);
@@ -105,6 +118,7 @@ export function PayGroupsTab({ canManage }: PayGroupsTabProps) {
       throw new Error(message);
     }
     ToastService.show({ title: 'Збережено', color: 'success' });
+    notifyPayGroupHuesChanged();
     closeDrawer();
     await fetchGroups();
   }, [closeDrawer, editing, fetchGroups, form]);
@@ -221,7 +235,16 @@ export function PayGroupsTab({ canManage }: PayGroupsTabProps) {
                               >
                                 <DynamicIcon name="grip-vertical" size={16} />
                               </div>
-                              <div className="font-medium text-default-900">{group.label}</div>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <SpecChip
+                                  tokens={hrPayGroupTokens(group.slug, 'soft', {
+                                    [group.slug]: group.chipHue ?? undefined,
+                                  })}
+                                  rounded="sm"
+                                >
+                                  {group.label}
+                                </SpecChip>
+                              </div>
                               <div>
                                 <span className="font-mono text-xs text-default-500">{group.slug}</span>
                               </div>
@@ -310,6 +333,37 @@ export function PayGroupsTab({ canManage }: PayGroupsTabProps) {
                   value={form.label ?? ''}
                   onValueChange={(value) => setForm((prev) => ({ ...prev, label: value }))}
                 />
+                {editing ? (
+                  <div className="flex flex-col gap-2">
+                    <span className="text-sm text-foreground">Колір чіпа</span>
+                    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-default-200 bg-default-50 px-3 py-2">
+                      <SpecChip
+                        tokens={hrPayGroupTokens(editing.slug, 'soft', {
+                          [editing.slug]: form.chipHue ?? undefined,
+                        })}
+                        rounded="sm"
+                      >
+                        {form.label?.trim() || editing.label}
+                      </SpecChip>
+                      <SpecHueSelect
+                        hue={effectiveChipHue(editing.slug, form.chipHue)}
+                        defaultHue={HR_PAY_GROUP_HUES[editing.slug]}
+                        ariaLabel={`Колір для ${editing.label}`}
+                        onChange={(hue) => {
+                          const defaultHue = HR_PAY_GROUP_HUES[editing.slug];
+                          setForm((prev) => ({
+                            ...prev,
+                            chipHue: hue === defaultHue ? null : hue,
+                          }));
+                        }}
+                        onReset={() => setForm((prev) => ({ ...prev, chipHue: null }))}
+                      />
+                    </div>
+                    <p className="text-xs text-default-500">
+                      Колір відображається в табелі, співробітниках і розрахунку зарплати.
+                    </p>
+                  </div>
+                ) : null}
                 <Switch
                   size="sm"
                   className="pl-1"

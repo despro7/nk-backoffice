@@ -112,7 +112,7 @@ export function PayrollLineDrawer({
               </DrawerHeader>
               <DrawerBody className="space-y-4">
                 <p className="text-xs text-gray-500">
-                  Внутрішній розрахунок як у файлі Табель 2026. Години змінюються лише в табелі.
+                  Розрахунок за ставкою, годинами табеля та правилами податків. Години змінюються лише в табелі.
                 </p>
                 <div className="flex flex-wrap gap-2 text-sm">
                   <Chip size="sm" variant="flat">
@@ -120,9 +120,6 @@ export function PayrollLineDrawer({
                   </Chip>
                   <Chip size="sm" variant="flat">
                     Норма {line.normHours} год
-                  </Chip>
-                  <Chip size="sm" variant="flat">
-                    Формула {line.formulaId}
                   </Chip>
                   {line.skipReason ? (
                     <Chip size="sm" color="warning" variant="flat">
@@ -156,11 +153,20 @@ export function PayrollLineDrawer({
                     <div className="tabular-nums font-medium">{formatMoney(line.netToPay)}</div>
                   </div>
                   <div>
-                    <div className="text-xs uppercase text-gray-500 mb-1">ЄСВ</div>
-                    <div className="tabular-nums font-medium">{formatMoney(line.esvAmount)}</div>
+                    <div className="text-xs uppercase text-gray-500 mb-1">Податки роб.</div>
+                    <div className="tabular-nums font-medium">
+                      {formatMoney(
+                        (() => {
+                          const total = (line.taxBreakdown ?? [])
+                            .filter((item) => item.payer === 'employer')
+                            .reduce((sum, item) => sum + Number(item.amount), 0);
+                          return total > 0 ? total.toFixed(2) : line.esvAmount;
+                        })(),
+                      )}
+                    </div>
                   </div>
                   <div>
-                    <div className="text-xs uppercase text-gray-500 mb-1">ФОП</div>
+                    <div className="text-xs uppercase text-gray-500 mb-1">Вартість роботодавця</div>
                     <div className="tabular-nums font-semibold">{formatMoney(line.employerTotalCost)}</div>
                   </div>
                 </div>
@@ -181,7 +187,7 @@ export function PayrollLineDrawer({
                   </div>
                 ) : null}
 
-                <div>
+                {/* <div>
                   <div className="text-xs uppercase text-gray-500 mb-2">Розкладка формули</div>
                   <ul className="space-y-1 text-sm">
                     {line.breakdown.map((step) => (
@@ -191,7 +197,7 @@ export function PayrollLineDrawer({
                       </li>
                     ))}
                   </ul>
-                </div>
+                </div> */}
 
                 <div>
                   <div className="text-xs uppercase text-gray-500 mb-2">Тижні</div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Card,
@@ -23,14 +23,19 @@ import {
   type HrBonusStatus,
   type HrBonusWritePayload,
 } from '@shared/types/hr';
-import type { HrPeriodOption } from '@shared/utils/hrWorkWeekPeriods';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
-import { ReportsFilterBuilder } from '@/pages/Reports/shared/filters';
+import { MonthSwitcher } from '@/components/MonthSwitcher';
 import { BonusDrawer } from './BonusDrawer';
-import { useHrWorkWeekPeriodFilter } from '../shared/useHrWorkWeekPeriodFilter';
 import { formatMoney } from '@/lib/formatUtils';
 import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
 import { HR_TABLE_CLASS_NAMES, HrSpecChip, hrKindTokens, hrStatusTokens } from '../hrUi';
+import { formatYearMonth, parseYearMonth } from '@shared/utils/hrTimesheetCalendar';
+import { useSearchParams } from 'react-router-dom';
+
+const MONTH_NAMES = [
+  'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень',
+  'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень',
+] as const;
 
 interface EmploymentOption {
   id: number;
@@ -42,20 +47,24 @@ export default function HrBonusesPage() {
   const { hasPermission } = useRoleAccess();
   const canView = hasPermission(PERMISSIONS.PAGE_HR_BONUSES);
   const canManage = hasPermission(PERMISSIONS.ACTION_HR_BONUSES_MANAGE);
+  const [params, setParams] = useSearchParams();
 
-  const {
-    dateFrom,
-    dateTo,
-    datePresetKey,
-    activeMonth,
-    initialized,
-    filters,
-    workWeekPeriods,
-  } = useHrWorkWeekPeriodFilter();
+  const monthKey = useMemo(() => {
+    const raw = params.get('month');
+    try {
+      const parsed = parseYearMonth(raw ?? undefined);
+      return formatYearMonth(parsed.year, parsed.month);
+    } catch {
+      const now = new Date();
+      return formatYearMonth(now.getFullYear(), now.getMonth() + 1);
+    }
+  }, [params]);
+
+  const { year, month } = parseYearMonth(monthKey);
+  const monthDate = new Date(year, month - 1, 1);
 
   const [bonuses, setBonuses] = useState<HrBonusDto[]>([]);
   const [employments, setEmployments] = useState<EmploymentOption[]>([]);
-  const [weekPeriods, setWeekPeriods] = useState<HrPeriodOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -63,15 +72,12 @@ export default function HrBonusesPage() {
   const [deleteTarget, setDeleteTarget] = useState<HrBonusDto | null>(null);
   const [approveTarget, setApproveTarget] = useState<HrBonusDto | null>(null);
 
-  const fetchWeekPeriods = useCallback(async (month: string) => {
-    const response = await fetch(`/api/hr/fop/periods?month=${month}`, { credentials: 'include' });
-    const json = await response.json().catch(() => ({}));
-    if (!response.ok) return [];
-    const items = Array.isArray(json.data)
-      ? (json.data as HrPeriodOption[])
-      : [];
-    return items;
-  }, []);
+  const setMonthParam = (next: Date) => {
+    const key = formatYearMonth(next.getFullYear(), next.getMonth() + 1);
+    const nextParams = new URLSearchParams(params);
+    nextParams.set('month', key);
+    setParams(nextParams);
+  };
 
   const fetchEmployments = useCallback(async () => {
     const response = await fetch('/api/hr/bonuses/employments', { credentials: 'include' });
@@ -88,34 +94,24 @@ export default function HrBonusesPage() {
     }
   }, []);
 
-  useEffect(() => {
-    void fetchWeekPeriods(activeMonth).then(setWeekPeriods);
-  }, [activeMonth, fetchWeekPeriods]);
-
   const fetchBonuses = useCallback(async () => {
-    if (!dateFrom || !dateTo) {
-      setBonuses([]);
-      return;
-    }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ dateFrom, dateTo });
-      const response = await fetch(`/api/hr/bonuses?${params.toString()}`, { credentials: 'include' });
+      const response = await fetch(`/api/hr/bonuses?year=${year}&month=${month}`, { credentials: 'include' });
       const json = await response.json().catch(() => ({}));
       if (response.ok) setBonuses(Array.isArray(json.data) ? json.data : []);
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [month, year]);
 
   useEffect(() => {
     void fetchEmployments();
   }, [fetchEmployments]);
 
   useEffect(() => {
-    if (!initialized) return;
     void fetchBonuses();
-  }, [fetchBonuses, initialized]);
+  }, [fetchBonuses]);
 
   const openCreate = () => {
     setEditingBonus(null);
@@ -134,7 +130,6 @@ export default function HrBonusesPage() {
 
   const save = async (form: HrBonusWritePayload) => {
     if (!form.employmentId || !form.amount) return;
-    if (!editingBonus && !form.productionWeekId && !form.calendarWeekId) return;
 
     setSaving(true);
     try {
@@ -206,13 +201,12 @@ export default function HrBonusesPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-end gap-3">
-        <ReportsFilterBuilder filters={filters} className="flex flex-wrap gap-2 items-end" />
+        <MonthSwitcher value={monthDate} onChange={setMonthParam} disableFuture={false} size="sm" />
         {canManage ? (
           <Button
             className={HR_BTN_PRIMARY}
             startContent={<DynamicIcon name="plus" size={16} />}
             onPress={openCreate}
-            isDisabled={!dateFrom || !dateTo}
           >
             Додати премію
           </Button>
@@ -230,16 +224,18 @@ export default function HrBonusesPage() {
               <TableHeader>
                 <TableColumn>Працівник</TableColumn>
                 <TableColumn>Роботодавець</TableColumn>
+                <TableColumn>Місяць</TableColumn>
                 <TableColumn>Сума</TableColumn>
                 <TableColumn>Тип</TableColumn>
                 <TableColumn>Статус</TableColumn>
                 {canManage ? <TableColumn width={120} align="center"> </TableColumn> : null}
               </TableHeader>
-              <TableBody emptyContent="Немає премій за обраний період">
+              <TableBody emptyContent="Немає премій за обраний місяць">
                 {bonuses.map((bonus) => (
                   <TableRow key={bonus.id}>
                     <TableCell className="capitalize">{bonus.displayName}</TableCell>
                     <TableCell>{bonus.legalEntityName}</TableCell>
+                    <TableCell>{MONTH_NAMES[bonus.periodMonth - 1]} {bonus.periodYear}</TableCell>
                     <TableCell className="tabular-nums">{formatMoney(bonus.amount)}</TableCell>
                     <TableCell>{HR_BONUS_KIND_LABELS[bonus.kind]}</TableCell>
                     <TableCell>
@@ -267,15 +263,7 @@ export default function HrBonusesPage() {
                         <div className="flex justify-center gap-0.5">
                           {bonus.status === 'draft' ? (
                             <>
-                              <Tooltip
-                                content="Редагувати премію"
-                                placement="top-end"
-                                showArrow
-                                classNames={{
-                                  base: 'before:bg-slate-700 before:rounded-[3px]',
-                                  content: 'bg-slate-700 border-0 text-white text-xs',
-                                }}
-                              >
+                              <Tooltip content="Редагувати премію" placement="top-end" showArrow>
                                 <Button
                                   size="sm"
                                   variant="light"
@@ -287,15 +275,7 @@ export default function HrBonusesPage() {
                                   <DynamicIcon name="pencil" size={16} />
                                 </Button>
                               </Tooltip>
-                              <Tooltip
-                                content="Затвердити премію"
-                                placement="top-end"
-                                showArrow
-                                classNames={{
-                                  base: 'before:bg-slate-700 before:rounded-[3px]',
-                                  content: 'bg-slate-700 border-0 text-white text-xs',
-                                }}
-                              >
+                              <Tooltip content="Затвердити премію" placement="top-end" showArrow>
                                 <Button
                                   size="sm"
                                   variant="light"
@@ -310,15 +290,7 @@ export default function HrBonusesPage() {
                             </>
                           ) : null}
                           {bonus.status !== 'locked' ? (
-                            <Tooltip
-                              content="Видалити премію"
-                              placement="top-end"
-                              showArrow
-                              classNames={{
-                                base: 'before:bg-danger before:rounded-[3px]',
-                                content: 'bg-danger border-0 text-white text-xs',
-                              }}
-                            >
+                            <Tooltip content="Видалити премію" placement="top-end" showArrow>
                               <Button
                                 size="sm"
                                 variant="light"
@@ -346,8 +318,8 @@ export default function HrBonusesPage() {
         isOpen={drawerOpen}
         bonus={editingBonus}
         employments={employments}
-        periods={weekPeriods.length > 0 ? weekPeriods : workWeekPeriods}
-        defaultPeriodId={datePresetKey !== 'custom' ? datePresetKey : null}
+        defaultYear={year}
+        defaultMonth={month}
         saving={saving}
         onClose={closeDrawer}
         onSave={save}

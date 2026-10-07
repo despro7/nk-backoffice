@@ -6,26 +6,21 @@ import {
   calculatePayrollLine,
   collectHoursByKind,
   moneyStr,
-  roundMoney,
 } from './payrollCalc';
 
 /**
  * Фікстури з Табель 2026.xlsx (аркуш «Серпень 08»), не читати xlsx у runtime.
- * Офіційні: BE = ставка / 168 * години_періоду; BF = BE * 0.23; BG = BE / 0.77
- * Погодинні: BE = ставка * години
- * Нештатні: BE = ставка * години, без коефіцієнтів
+ * Офіційні та інші групи: нараховано = ставка × години / норма (або × години для погодинних).
  */
 const AUGUST_NORM_HOURS = 168;
 const FORMULA = HR_PAYROLL_FORMULA_V1;
 
-describe('payrollCalc — Excel Табель 2026', () => {
+describe('payrollCalc', () => {
   it('округлює як копійки', () => {
     expect(moneyStr(22000 * 40 / 168)).toBe('5238.10');
-    expect(roundMoney(5238.1 * 0.23)).toBe(1204.76);
-    expect(roundMoney(5238.1 / 0.77)).toBe(6802.73);
   });
 
-  it('офіційна ставка: ставка × години / норма, ×0.23 і /0.77 (Прокопенко 22000 / 168 × 40)', () => {
+  it('офіційна ставка: ставка × години / норма (Прокопенко 22000 / 168 × 40)', () => {
     const weeks = [
       { id: 'w1', label: 'тест', startDate: '2026-08-03', endDate: '2026-08-07', colSpan: 5 },
     ];
@@ -48,8 +43,8 @@ describe('payrollCalc — Excel Табель 2026', () => {
     expect(result.ratesUsed).toEqual(FORMULA);
     expect(result.hoursByKind.work).toBe('40.00');
     expect(result.accruedAmount).toBe('5238.10');
-    expect(result.extraAmount).toBe('1204.76');
-    expect(result.toPayAmount).toBe('6802.73');
+    expect(result.extraAmount).toBe('0.00');
+    expect(result.toPayAmount).toBe('5238.10');
     expect(result.skipReason).toBeNull();
     expect(result.breakdown.some((step) => /ЄСВ|ПДФО/i.test(step.label))).toBe(false);
   });
@@ -152,7 +147,7 @@ describe('payrollCalc — Excel Табель 2026', () => {
     expect(result.hoursByKind.ТН).toBe('1.00');
   });
 
-  it('знімок формули не залежить від дефолтних констант', () => {
+  it('знімок формули зберігається в ratesUsed, але не змінює суми', () => {
     const weeks = [
       { id: 'w1', label: 'тест', startDate: '2026-08-03', endDate: '2026-08-03', colSpan: 1 },
     ];
@@ -167,8 +162,8 @@ describe('payrollCalc — Excel Табель 2026', () => {
       entries: [{ date: '2026-08-03', kind: 'work', hours: 8 }],
     });
     expect(result.accruedAmount).toBe('80.00');
-    expect(result.extraAmount).toBe('8.00');
-    expect(result.toPayAmount).toBe('160.00');
+    expect(result.extraAmount).toBe('0.00');
+    expect(result.toPayAmount).toBe('80.00');
     expect(result.ratesUsed).toEqual(lockedFormula);
   });
 

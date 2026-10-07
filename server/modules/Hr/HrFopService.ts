@@ -119,6 +119,7 @@ export class HrFopService {
     const byPayGroup: Record<HrPayGroup, number> = {
       official_salary: 0,
       hourly: 0,
+      hourly_unofficial: 0,
       unofficial_cash: 0,
     };
     const byLegalEntity = new Map<string, { legalEntityCode: string; legalEntityName: string; employerTotalCost: number }>();
@@ -178,13 +179,15 @@ export class HrFopService {
       const payrollLines = payrollLoad.lines;
       const employmentIds = payrollLines.map((line) => line.employmentId);
 
+      const overlapStart = periodStart > monthStart.toISOString().slice(0, 10)
+        ? periodStart
+        : monthStart.toISOString().slice(0, 10);
+      const overlapEnd = periodEnd < monthEnd.toISOString().slice(0, 10)
+        ? periodEnd
+        : monthEnd.toISOString().slice(0, 10);
       const bonusSums = useDateRangeBonuses
         ? (periodBonusSums ?? new Map<number, number>())
-        : await hrBonusService.sumApprovedByEmployment(
-          employmentIds,
-          bonusPeriodId,
-          bonusPeriodKind,
-        );
+        : await hrBonusService.sumProportionalByEmploymentForRange(year, month, overlapStart, overlapEnd);
 
       const entriesByEmployment = new Map<number, Array<{ date: string; kind: string; hours: number | null }>>();
       for (const entry of timesheet?.entries ?? []) {
@@ -218,16 +221,7 @@ export class HrFopService {
       }
     }
 
-    const draftBonuses = useDateRangeBonuses
-      ? await hrBonusService.countDraftOverlappingRange(periodStart, periodEnd)
-      : await prisma.hrBonus.count({
-        where: {
-          status: 'draft',
-          ...(bonusPeriodKind === 'production'
-            ? { productionWeekId: Number(bonusPeriodId) || undefined }
-            : { calendarWeekId: bonusPeriodId }),
-        },
-      });
+    const draftBonuses = await hrBonusService.countDraftOverlappingRange(periodStart, periodEnd);
     if (draftBonuses > 0) {
       warnings.push(`Є ${draftBonuses} незатверджених премій (draft) — вони не включені у фонд оплати праці.`);
     }
@@ -250,6 +244,7 @@ export class HrFopService {
       byPayGroup: {
         official_salary: money(byPayGroup.official_salary),
         hourly: money(byPayGroup.hourly),
+        hourly_unofficial: money(byPayGroup.hourly_unofficial),
         unofficial_cash: money(byPayGroup.unofficial_cash),
       },
       byLegalEntity: [...byLegalEntity.values()].map((item) => ({

@@ -22,11 +22,13 @@ import { ToastService } from '@/services/ToastService';
 import { ReportsFilterBuilder } from '@/pages/Reports/shared/filters';
 import { useHrWorkWeekPeriodFilter } from '../shared/useHrWorkWeekPeriodFilter';
 import { HR_TABLE_CLASS_NAMES, HrSpecChip, hrKindTokens, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
+import { useHrPayGroupHues } from '../useHrPayGroupHues';
 
 export default function HrFopPage() {
   const { hasPermission } = useRoleAccess();
   const canView = hasPermission(PERMISSIONS.PAGE_HR_FOP);
 
+  const { hueOverrides: payGroupHueOverrides } = useHrPayGroupHues();
   const { dateFrom, dateTo, initialized, filters } = useHrWorkWeekPeriodFilter();
   const [summary, setSummary] = useState<HrFopSummaryDto | null>(null);
   const [loading, setLoading] = useState(false);
@@ -129,7 +131,7 @@ export default function HrFopPage() {
                     <TableRow key={line.employmentId}>
                       <TableCell className="capitalize">{line.displayName}</TableCell>
                       <TableCell>
-                        <HrSpecChip tokens={hrPayGroupTokens(line.payGroup)} rounded="sm">
+                        <HrSpecChip tokens={hrPayGroupTokens(line.payGroup, 'soft', payGroupHueOverrides)} rounded="sm">
                           {HR_PAY_GROUP_LABELS[line.payGroup]}
                         </HrSpecChip>
                       </TableCell>

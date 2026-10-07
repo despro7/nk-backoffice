@@ -29,22 +29,13 @@ export interface EmploymentMergeStats {
   payTermsDeleted: number;
 }
 
-/** Переносить табель, ставки, розрахунок і виплати з однієї зайнятості в іншу. */
-export async function mergeEmploymentRecords(
+/** Переносить лише записи табеля між зайнятостями (конфлікти видаляються). */
+export async function transferTimesheetEntries(
   tx: Prisma.TransactionClient,
   fromId: number,
   toId: number,
-): Promise<EmploymentMergeStats> {
-  if (fromId === toId) {
-    return {
-      timesheetEntriesMoved: 0,
-      timesheetEntriesDeleted: 0,
-      payrollLinesMoved: 0,
-      payrollLinesDeleted: 0,
-      payTermsMoved: 0,
-      payTermsDeleted: 0,
-    };
-  }
+): Promise<{ moved: number; deleted: number }> {
+  if (fromId === toId) return { moved: 0, deleted: 0 };
 
   const [fromEntries, toEntries] = await Promise.all([
     tx.hrTimesheetEntry.findMany({
@@ -78,6 +69,28 @@ export async function mergeEmploymentRecords(
       data: { employmentId: toId },
     });
   }
+
+  return { moved: entryIdsToMove.length, deleted: entryIdsToDelete.length };
+}
+
+/** Переносить табель, ставки, розрахунок і виплати з однієї зайнятості в іншу. */
+export async function mergeEmploymentRecords(
+  tx: Prisma.TransactionClient,
+  fromId: number,
+  toId: number,
+): Promise<EmploymentMergeStats> {
+  if (fromId === toId) {
+    return {
+      timesheetEntriesMoved: 0,
+      timesheetEntriesDeleted: 0,
+      payrollLinesMoved: 0,
+      payrollLinesDeleted: 0,
+      payTermsMoved: 0,
+      payTermsDeleted: 0,
+    };
+  }
+
+  const timesheet = await transferTimesheetEntries(tx, fromId, toId);
 
   const [fromPayrollLines, toPayrollLines] = await Promise.all([
     tx.hrPayrollLine.findMany({
@@ -150,8 +163,8 @@ export async function mergeEmploymentRecords(
   logServer(`[hr] merged employment ${fromId} -> ${toId}`);
 
   return {
-    timesheetEntriesMoved: entryIdsToMove.length,
-    timesheetEntriesDeleted: entryIdsToDelete.length,
+    timesheetEntriesMoved: timesheet.moved,
+    timesheetEntriesDeleted: timesheet.deleted,
     payrollLinesMoved: lineIdsToMove.length,
     payrollLinesDeleted: lineIdsToDelete.length,
     payTermsMoved: payTermIdsToMove.length,

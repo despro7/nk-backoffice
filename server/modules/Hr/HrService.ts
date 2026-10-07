@@ -837,9 +837,13 @@ export class HrService {
   async deleteEmployment(id: number, userId?: number): Promise<void> {
     const existing = await prisma.hrEmployment.findUnique({ where: { id } });
     if (!existing) throw new HrError('Зайнятість не знайдено', 404);
-    const hasTimesheet = await prisma.hrTimesheetEntry.count({ where: { employmentId: id } });
-    if (hasTimesheet > 0) {
-      throw new HrError('Неможливо видалити зайнятість: є записи табеля');
+    const [timesheetCount, payrollLineCount, payoutCount] = await Promise.all([
+      prisma.hrTimesheetEntry.count({ where: { employmentId: id } }),
+      prisma.hrPayrollLine.count({ where: { employmentId: id } }),
+      prisma.hrPayout.count({ where: { employmentId: id } }),
+    ]);
+    if (timesheetCount > 0 || payrollLineCount > 0 || payoutCount > 0) {
+      throw new HrError('Неможливо видалити зайнятість: є повʼязані дані', 409, 'EMPLOYMENT_HAS_TIMESHEET');
     }
     await prisma.hrEmployment.delete({ where: { id } });
     await hrAuditService.log({
@@ -848,6 +852,85 @@ export class HrService {
       action: 'deleted',
       userId,
     });
+  }
+
+  async transferAndDeleteEmployment(
+    fromId: number,
+    targetEmploymentId: number,
+    userId?: number,
+  ): Promise<void> {
+    if (fromId === targetEmploymentId) {
+      throw new HrError('Оберіть іншу зайнятість для переносу табеля');
+    }
+    const [from, target] = await Promise.all([
+      prisma.hrEmployment.findUnique({ where: { id: fromId } }),
+      prisma.hrEmployment.findUnique({ where: { id: targetEmploymentId } }),
+    ]);
+    if (!from || !target) throw new HrError('Зайнятість не знайдено', 404);
+    if (from.employeeId !== target.employeeId) {
+      throw new HrError('Переносити табель можна лише на іншу зайнятість того ж співробітника');
+    }
+
+    await prisma.$transaction(
+      async (tx) => mergeEmploymentRecords(tx, fromId, targetEmploymentId),
+      { maxWait: 10_000, timeout: 60_000 },
+    );
+
+    await hrAuditService.log({
+      entityType: 'employment',
+      entityId: fromId,
+      action: 'employment_transferred_deleted',
+      userId,
+      payload: { targetEmploymentId },
+    });
+  }
+
+  async changeEmploymentPayGroup(
+    id: number,
+    payGroup: HrPayGroup,
+    userId?: number,
+  ): Promise<HrEmploymentDto> {
+    if (!isPayGroup(payGroup)) throw new HrError('Невідома група оплати');
+    const existing = await prisma.hrEmployment.findUnique({ where: { id } });
+    if (!existing) throw new HrError('Зайнятість не знайдено', 404);
+    const payGroupId = await hrPayGroupService.resolveId(payGroup);
+    const updated = await prisma.hrEmployment.update({
+      where: { id },
+      data: { payGroupId },
+      include: employmentInclude,
+    });
+    await hrAuditService.log({
+      entityType: 'employment',
+      entityId: id,
+      action: 'pay_group_changed',
+      userId,
+      payload: { payGroup },
+    });
+    return toEmploymentDto(updated);
+  }
+
+  async changeEmploymentLegalEntity(
+    id: number,
+    legalEntityId: number,
+    userId?: number,
+  ): Promise<HrEmploymentDto> {
+    const existing = await prisma.hrEmployment.findUnique({ where: { id } });
+    if (!existing) throw new HrError('Зайнятість не знайдено', 404);
+    const legalEntity = await prisma.hrLegalEntity.findUnique({ where: { id: legalEntityId } });
+    if (!legalEntity || !legalEntity.isActive) throw new HrError('Юрособу не знайдено');
+    const updated = await prisma.hrEmployment.update({
+      where: { id },
+      data: { legalEntityId },
+      include: employmentInclude,
+    });
+    await hrAuditService.log({
+      entityType: 'employment',
+      entityId: id,
+      action: 'employer_changed',
+      userId,
+      payload: { legalEntityId },
+    });
+    return toEmploymentDto(updated);
   }
 
   async createPayTerms(

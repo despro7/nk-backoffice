@@ -1,9 +1,10 @@
-export const HR_PAY_GROUPS = ['official_salary', 'hourly', 'unofficial_cash'] as const;
+export const HR_PAY_GROUPS = ['official_salary', 'hourly', 'hourly_unofficial', 'unofficial_cash'] as const;
 export type HrPayGroup = (typeof HR_PAY_GROUPS)[number];
 
 export const HR_PAY_GROUP_LABELS: Record<HrPayGroup, string> = {
   official_salary: 'Офіційна ставка',
-  hourly: 'Погодинні',
+  hourly: 'Офіційна погодинна',
+  hourly_unofficial: 'Неофіційна погодинна',
   unofficial_cash: 'Неофіційна ставка',
 };
 
@@ -11,6 +12,7 @@ export interface HrPayGroupDto {
   id: number;
   slug: HrPayGroup;
   label: string;
+  chipHue: string | null;
   sortOrder: number;
   isActive: boolean;
   formulaProfile: string;
@@ -19,6 +21,7 @@ export interface HrPayGroupDto {
 export interface HrPayGroupWritePayload {
   slug?: HrPayGroup;
   label?: string;
+  chipHue?: string | null;
   sortOrder?: number;
   isActive?: boolean;
   formulaProfile?: string;
@@ -263,18 +266,20 @@ export const HR_TIMESHEET_KIND_LABELS: Record<HrTimesheetKind, string> = {
   Св: 'Свято',
 };
 
-export const HR_TIMESHEET_GROUP_FILTERS = ['official', 'hourly', 'cash'] as const;
+export const HR_TIMESHEET_GROUP_FILTERS = ['official', 'hourly', 'hourly_unofficial', 'cash'] as const;
 export type HrTimesheetGroupFilter = (typeof HR_TIMESHEET_GROUP_FILTERS)[number];
 
 export const HR_TIMESHEET_GROUP_TO_PAY: Record<HrTimesheetGroupFilter, HrPayGroup> = {
   official: 'official_salary',
   hourly: 'hourly',
+  hourly_unofficial: 'hourly_unofficial',
   cash: 'unofficial_cash',
 };
 
 export const HR_PAY_GROUP_TO_FILTER: Record<HrPayGroup, HrTimesheetGroupFilter> = {
   official_salary: 'official',
   hourly: 'hourly',
+  hourly_unofficial: 'hourly_unofficial',
   unofficial_cash: 'cash',
 };
 
@@ -428,6 +433,7 @@ export interface HrTaxRuleDto {
   id: number;
   code: string;
   label: string;
+  shortLabel: string | null;
   rate: string;
   payer: HrTaxPayer;
   base: HrTaxBase;
@@ -441,6 +447,7 @@ export interface HrTaxRuleDto {
 export interface HrTaxRuleWritePayload {
   code?: string;
   label?: string;
+  shortLabel?: string | null;
   rate?: string;
   payer?: HrTaxPayer;
   base?: HrTaxBase;
@@ -484,8 +491,8 @@ export interface HrBonusDto {
   displayName: string;
   payGroup: HrPayGroup;
   legalEntityName: string;
-  productionWeekId: number | null;
-  calendarWeekId: string | null;
+  periodYear: number;
+  periodMonth: number;
   amount: string;
   kind: HrBonusKind;
   note: string | null;
@@ -496,8 +503,8 @@ export interface HrBonusDto {
 
 export interface HrBonusWritePayload {
   employmentId: number;
-  productionWeekId?: number | null;
-  calendarWeekId?: string | null;
+  periodYear?: number;
+  periodMonth?: number;
   amount: string;
   kind?: HrBonusKind;
   note?: string | null;
@@ -580,6 +587,8 @@ export interface HrPayrollLineDto {
   bonusAmount: string;
   esvAmount: string;
   taxAmount: string;
+  pdfoAmount: string;
+  militaryTaxAmount: string;
   taxBreakdown: HrTaxBreakdownItem[];
   skipReason: HrPayrollSkipReason | null;
   cardMasked: string | null;
@@ -612,8 +621,14 @@ export interface HrPayrollSummaryDto {
   cash: string;
 }
 
+export const HR_PAYROLL_PERIOD_MODES = ['production', 'month', 'custom'] as const;
+export type HrPayrollPeriodMode = (typeof HR_PAYROLL_PERIOD_MODES)[number];
+
 export interface HrPayrollLoadDto {
   source: 'preview' | 'snapshot';
+  periodMode: HrPayrollPeriodMode;
+  dateFrom: string | null;
+  dateTo: string | null;
   period: HrPayrollPeriodDto | null;
   weeks: HrTimesheetWeekDto[];
   days: HrTimesheetDayDto[];
@@ -624,16 +639,27 @@ export interface HrPayrollLoadDto {
   formula: HrPayrollFormulaSnapshot;
 }
 
-export interface HrPayrollCalculatePayload {
+/** Параметри режиму періоду для завантаження/розрахунку payroll. */
+export interface HrPayrollPeriodOptions {
+  periodMode?: HrPayrollPeriodMode | string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export interface HrPayrollCalculatePayload extends HrPayrollPeriodOptions {
   month: string;
   version?: number;
 }
 
-export interface HrPayrollFormulaUpdatePayload {
+export interface HrPayrollFormulaUpdatePayload extends HrPayrollPeriodOptions {
   month: string;
   extraRate: string;
   grossDivisor: string;
   version?: number;
+}
+
+export interface HrPayrollLockPayload extends HrPayrollPeriodOptions {
+  version: number;
 }
 
 /** Нормалізований ключ людини для зіставлення з Excel (PR4). */

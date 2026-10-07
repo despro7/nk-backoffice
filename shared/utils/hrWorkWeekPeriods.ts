@@ -99,6 +99,28 @@ export function hrWorkWeekDateRange(
   };
 }
 
+/** Календарні пн–пт у діапазоні дат. */
+export function countCalendarWorkDays(startDate: string, endDate: string): number {
+  if (startDate > endDate) return 0;
+  let count = 0;
+  let cursor = startDate;
+  while (cursor <= endDate) {
+    const weekday = weekdayUtc(cursor);
+    if (weekday >= 1 && weekday <= 5) count += 1;
+    cursor = addDaysYmd(cursor, 1);
+  }
+  return count;
+}
+
+/** Порядковий номер календарного тижня (пн–нд) з початку року. */
+export function calendarWeekSequenceFromYearStart(dateStr: string): number {
+  const year = Number(dateStr.slice(0, 4));
+  const yearStartMonday = mondayOfWeek(`${year}-01-01`);
+  const weekMonday = mondayOfWeek(dateStr);
+  const diffMs = Date.parse(`${weekMonday}T00:00:00Z`) - Date.parse(`${yearStartMonday}T00:00:00Z`);
+  return Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1;
+}
+
 export function matchHrWorkWeekPresetKey(
   dateFrom: string | null,
   dateTo: string | null,

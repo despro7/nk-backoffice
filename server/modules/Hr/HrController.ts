@@ -24,6 +24,7 @@ import type {
   HrLegalEntityDeletePayload,
   HrPayGroupWritePayload,
   HrPayrollFormulaUpdatePayload,
+  HrPayrollPeriodOptions,
   HrPayTermsWritePayload,
   HrPayoutWritePayload,
   HrPersonWritePayload,
@@ -57,6 +58,18 @@ function parseId(raw: string | string[] | undefined): number {
 function userId(req: Request): number | undefined {
   const id = req.user?.userId;
   return id && id > 0 ? id : undefined;
+}
+
+function parsePayrollPeriodOptions(source: {
+  periodMode?: unknown;
+  dateFrom?: unknown;
+  dateTo?: unknown;
+}): HrPayrollPeriodOptions {
+  return {
+    periodMode: typeof source.periodMode === 'string' ? source.periodMode : undefined,
+    dateFrom: typeof source.dateFrom === 'string' ? source.dateFrom : undefined,
+    dateTo: typeof source.dateTo === 'string' ? source.dateTo : undefined,
+  };
 }
 
 async function resolveRevealCard(req: Request): Promise<boolean> {
@@ -406,6 +419,46 @@ router.delete('/employments/:id', authenticateToken, manageEmployees, async (req
   }
 });
 
+const transferEmployment = requirePermissionKey(PERMISSIONS.ACTION_HR_EMPLOYMENT_TRANSFER);
+const changeEmploymentGroup = requirePermissionKey(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_GROUP);
+const changeEmploymentEmployer = requirePermissionKey(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_EMPLOYER);
+
+router.post('/employments/:id/transfer-and-delete', authenticateToken, transferEmployment, async (req: Request, res: Response) => {
+  try {
+    const targetEmploymentId = Number(req.body?.targetEmploymentId);
+    if (!Number.isInteger(targetEmploymentId) || targetEmploymentId <= 0) {
+      throw new HrError('Вкажіть targetEmploymentId');
+    }
+    await hrService.transferAndDeleteEmployment(parseId(req.params.id), targetEmploymentId, userId(req));
+    res.json({ success: true });
+  } catch (error) {
+    sendHrError(res, error, 'transfer and delete employment');
+  }
+});
+
+router.patch('/employments/:id/pay-group', authenticateToken, changeEmploymentGroup, async (req: Request, res: Response) => {
+  try {
+    const payGroup = typeof req.body?.payGroup === 'string' ? req.body.payGroup : '';
+    const data = await hrService.changeEmploymentPayGroup(parseId(req.params.id), payGroup as import('../../../shared/types/hr.js').HrPayGroup, userId(req));
+    res.json({ success: true, data });
+  } catch (error) {
+    sendHrError(res, error, 'change employment pay group');
+  }
+});
+
+router.patch('/employments/:id/employer', authenticateToken, changeEmploymentEmployer, async (req: Request, res: Response) => {
+  try {
+    const legalEntityId = Number(req.body?.legalEntityId);
+    if (!Number.isInteger(legalEntityId) || legalEntityId <= 0) {
+      throw new HrError('Вкажіть legalEntityId');
+    }
+    const data = await hrService.changeEmploymentLegalEntity(parseId(req.params.id), legalEntityId, userId(req));
+    res.json({ success: true, data });
+  } catch (error) {
+    sendHrError(res, error, 'change employment employer');
+  }
+});
+
 router.post('/employments/:id/merge', authenticateToken, manageEmployees, async (req: Request, res: Response) => {
   try {
     const targetEmploymentId = Number(req.body?.targetEmploymentId);
@@ -487,8 +540,9 @@ router.put('/timesheet/:id', authenticateToken, editTimesheet, async (req: Reque
 router.get('/payroll', authenticateToken, pagePayroll, async (req: Request, res: Response) => {
   try {
     const month = typeof req.query.month === 'string' ? req.query.month : undefined;
+    const periodOptions = parsePayrollPeriodOptions(req.query);
     const revealCard = await resolveRevealCard(req);
-    const data = await hrPayrollService.loadMonth(month, revealCard);
+    const data = await hrPayrollService.loadMonth(month, revealCard, periodOptions);
     res.json({ success: true, data });
   } catch (error) {
     sendHrError(res, error, 'load payroll');
@@ -499,8 +553,9 @@ router.post('/payroll/calculate', authenticateToken, viewPayroll, async (req: Re
   try {
     const month = typeof req.body?.month === 'string' ? req.body.month : undefined;
     const version = req.body?.version != null ? Number(req.body.version) : undefined;
+    const periodOptions = parsePayrollPeriodOptions(req.body ?? {});
     const revealCard = await resolveRevealCard(req);
-    const data = await hrPayrollService.calculate(month, version, revealCard);
+    const data = await hrPayrollService.calculate(month, version, revealCard, periodOptions);
     res.json({ success: true, data });
   } catch (error) {
     sendHrError(res, error, 'calculate payroll');
@@ -510,6 +565,7 @@ router.post('/payroll/calculate', authenticateToken, viewPayroll, async (req: Re
 router.put('/payroll/formula', authenticateToken, viewPayroll, async (req: Request, res: Response) => {
   try {
     const body = req.body as HrPayrollFormulaUpdatePayload;
+    const periodOptions = parsePayrollPeriodOptions(body);
     const revealCard = await resolveRevealCard(req);
     const data = await hrPayrollService.updateFormula(
       body.month,
@@ -517,6 +573,7 @@ router.put('/payroll/formula', authenticateToken, viewPayroll, async (req: Reque
       body.grossDivisor,
       body.version != null ? Number(body.version) : undefined,
       revealCard,
+      periodOptions,
     );
     res.json({ success: true, data });
   } catch (error) {
@@ -527,8 +584,9 @@ router.put('/payroll/formula', authenticateToken, viewPayroll, async (req: Reque
 router.post('/payroll/:id/lock', authenticateToken, viewPayroll, async (req: Request, res: Response) => {
   try {
     const version = Number(req.body?.version);
+    const periodOptions = parsePayrollPeriodOptions(req.body ?? {});
     const revealCard = await resolveRevealCard(req);
-    const data = await hrPayrollService.lock(parseId(req.params.id), version, userId(req), revealCard);
+    const data = await hrPayrollService.lock(parseId(req.params.id), version, userId(req), revealCard, periodOptions);
     res.json({ success: true, data });
   } catch (error) {
     sendHrError(res, error, 'lock payroll');
@@ -638,12 +696,11 @@ router.get('/bonuses/employments', authenticateToken, pageEmployees, async (_req
 
 router.get('/bonuses', authenticateToken, pageEmployees, async (req: Request, res: Response) => {
   try {
+    const now = new Date();
     const data = await hrBonusService.list({
-      productionWeekId: req.query.productionWeekId != null ? Number(req.query.productionWeekId) : undefined,
-      calendarWeekId: typeof req.query.calendarWeekId === 'string' ? req.query.calendarWeekId : undefined,
+      year: req.query.year != null ? Number(req.query.year) : now.getFullYear(),
+      month: req.query.month != null ? Number(req.query.month) : now.getMonth() + 1,
       employmentId: req.query.employmentId != null ? Number(req.query.employmentId) : undefined,
-      dateFrom: typeof req.query.dateFrom === 'string' ? req.query.dateFrom : undefined,
-      dateTo: typeof req.query.dateTo === 'string' ? req.query.dateTo : undefined,
     });
     res.json({ success: true, data });
   } catch (error) {

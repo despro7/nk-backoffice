@@ -43,6 +43,11 @@ export function formatYearMonth(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, '0')}`;
 }
 
+export function shiftYearMonth(year: number, month: number, delta: number): { year: number; month: number } {
+  const date = utcDate(year, month + delta, 1);
+  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1 };
+}
+
 /** Усі календарні місяці (year, month), що перетинають діапазон дат включно. */
 export function listYearMonthsInRange(startDate: string, endDate: string): Array<{ year: number; month: number }> {
   const months: Array<{ year: number; month: number }> = [];
