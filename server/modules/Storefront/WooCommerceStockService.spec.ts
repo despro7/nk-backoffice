@@ -71,6 +71,7 @@ describe('WooCommerceStockService', () => {
       wooProductId: null,
     } as never);
     getProductBySku.mockResolvedValue(null);
+    getProductById.mockResolvedValue({ id: 99, stock_quantity: 8 });
     batchUpdateProducts.mockResolvedValue({ update: [] });
   });
 
@@ -90,6 +91,7 @@ describe('WooCommerceStockService', () => {
     vi.mocked(prisma.catalogGood.findUnique).mockResolvedValue({
       wooProductId: 77,
     } as never);
+    getProductById.mockResolvedValue({ id: 77, stock_quantity: 8 });
 
     const result = await service.syncStock({ skus: ['SKU-1'], mode: 'wc_only' });
     expect(result.updated).toBe(1);

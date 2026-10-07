@@ -14,6 +14,7 @@ import type {
   StorefrontDescriptionDoc,
   StorefrontDryRunPushPayload,
   StorefrontPullApplyFlags,
+  WooCommerceProduct,
   WooInspectResult,
   WooInspectSummary,
   WooPullApplyInput,
@@ -109,6 +110,17 @@ function parseWeight(value: string | null | undefined): number | null {
   if (!value) return null;
   const parsed = Number.parseFloat(value.replace(',', '.'));
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Resolve WC product by stored id, then by SKU (handles stale wooProductId). */
+async function resolveWooProduct(
+  client: WooCommerceApiClient,
+  sku: string,
+  wooProductId: number | null | undefined,
+): Promise<WooCommerceProduct | null> {
+  const byId = wooProductId ? await client.getProductById(wooProductId) : null;
+  if (byId) return byId;
+  return client.getProductBySku(sku);
 }
 
 function resolveDoNotPublishFromWcStatus(status: string | null | undefined): boolean {
@@ -361,9 +373,7 @@ export class WooCommerceSyncService {
 
     const creds = await storefrontService.getWooCredentialsConfigured();
     const client = createWooCommerceClient(creds);
-    const product =
-      (good.wooProductId ? await client.getProductById(good.wooProductId) : null) ||
-      (await client.getProductBySku(good.sku));
+    const product = await resolveWooProduct(client, good.sku, good.wooProductId);
     if (!product) throw new Error(`Товар з SKU «${good.sku}» не знайдено на WooCommerce`);
 
     const settings = await storefrontService.getSettings();
@@ -635,10 +645,17 @@ export class WooCommerceSyncService {
     const wcPayload = await this.buildWcPayload(preview.payload, client);
     const now = new Date();
 
-    let wooProductId = preview.wooProductId;
+    const existing = await resolveWooProduct(client, preview.sku, preview.wooProductId);
+    let wooProductId: number;
     let created = false;
 
-    if (wooProductId) {
+    if (existing) {
+      wooProductId = existing.id;
+      if (preview.wooProductId && preview.wooProductId !== existing.id) {
+        logServer(
+          `[WooCommerceSyncService] push ${goodId}: stale wooProductId ${preview.wooProductId}, resolved via SKU → WC#${existing.id}`,
+        );
+      }
       await client.updateProduct(wooProductId, wcPayload);
     } else {
       const createdProduct = await client.createProduct({

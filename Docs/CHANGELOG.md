@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-10-07 — Storefront: push на WooCommerce при застарілому wooProductId
+
+**Files:** `server/modules/Storefront/WooCommerceSyncService.ts`, `WooCommerceApiClient.ts`, `WooCommerceStockService.ts`
+
+### Синхронізація товарів
+
+- **`pushApply`** — перед оновленням перевіряє товар на WC за `wooProductId`, потім за SKU; застарілий ID виправляється автоматично.
+- **`getProductById`** — `woocommerce_rest_product_invalid_id` (HTTP 400) трактується як «товар не знайдено».
+- **`resolveWooProductId` (stock)** — аналогічна валідація ID перед синхронізацією залишків.
+- **`uploadMedia`** — `Buffer` → `Uint8Array` для сумісності з `fetch` у TypeScript.
+
+---
+
 ## 2026-10-07 — HR: знімки payroll по режимах, очищення вихідних у табелі
 
 **Files:** `server/modules/Hr/HrPayrollService.ts`, `server/modules/Hr/HrTimesheetService.ts`, `shared/utils/hrEmploymentDedupe.ts`, `shared/utils/hrPayrollPeriodKey.ts`, `prisma/migrations/20261007150000_hr_payroll_period_key/`, `Docs/features/hr-module.md`

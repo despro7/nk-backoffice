@@ -122,7 +122,9 @@ export class WooCommerceApiClient {
       return await fetchWc<WooCommerceProduct>(this.creds, `/products/${id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (message.includes('404')) return null;
+      if (message.includes('404') || message.includes('woocommerce_rest_product_invalid_id')) {
+        return null;
+      }
       throw err;
     }
   }
@@ -212,7 +214,7 @@ export class WooCommerceApiClient {
         'Content-Disposition': `attachment; filename="${fileName}"`,
         'Content-Type': mimeType,
       },
-      body: buffer,
+      body: new Uint8Array(buffer),
       signal: AbortSignal.timeout(60_000),
     });
     if (!res.ok) {

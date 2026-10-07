@@ -78,10 +78,12 @@ export class WooCommerceStockService {
     goodId: string | null,
     wooProductId: number | null,
   ): Promise<number | null> {
-    if (wooProductId) return wooProductId;
-
     const creds = await storefrontService.getWooCredentialsInternal();
     const client = createWooCommerceClient(creds);
+
+    const byId = wooProductId ? await client.getProductById(wooProductId) : null;
+    if (byId) return byId.id;
+
     const found = await client.getProductBySku(sku);
     if (found) {
       if (goodId) {

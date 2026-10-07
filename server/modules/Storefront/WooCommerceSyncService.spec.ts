@@ -72,6 +72,20 @@ vi.mock('./WooCommerceApiClient.js', () => ({
   })),
 }));
 
+vi.mock('./StorefrontDescriptionBuilder.js', () => ({
+  storefrontDescriptionBuilder: {
+    dryRunPush: vi.fn().mockResolvedValue({
+      name: 'Товар',
+      status: 'publish',
+      shortDescription: 'short',
+      descriptionHtml: '<p>desc</p>',
+      weight: 0.3,
+      meta: {},
+      categoryName: 'Другі страви',
+    }),
+  },
+}));
+
 vi.mock('./WooCommerceCategoryService.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./WooCommerceCategoryService.js')>();
   return {
@@ -805,5 +819,91 @@ describe('WooCommerceSyncService', () => {
       skipped: true,
       action: 'skip',
     });
+  });
+
+  it('pushApply updates existing WC product when wooProductId is valid', async () => {
+    vi.mocked(prisma.catalogGood.findUnique).mockResolvedValue({
+      id: 'good-1',
+      sku: 'SKU-1',
+      wooProductId: 77,
+      isGroup: false,
+    } as never);
+    vi.mocked(prisma.catalogGood.update).mockResolvedValue({} as never);
+
+    const { createWooCommerceClient } = await import('./WooCommerceApiClient.js');
+    const getProductById = vi.fn().mockResolvedValue({ id: 77, sku: 'SKU-1' });
+    const getProductBySku = vi.fn();
+    const updateProduct = vi.fn().mockResolvedValue({ id: 77 });
+    vi.mocked(createWooCommerceClient).mockReturnValue({
+      getProductById,
+      getProductBySku,
+      updateProduct,
+      createProduct: vi.fn(),
+    } as never);
+
+    const result = await service.pushApply('good-1');
+
+    expect(getProductById).toHaveBeenCalledWith(77);
+    expect(getProductBySku).not.toHaveBeenCalled();
+    expect(updateProduct).toHaveBeenCalledWith(77, expect.objectContaining({ name: 'Товар' }));
+    expect(result).toMatchObject({ wooProductId: 77, created: false });
+  });
+
+  it('pushApply resolves stale wooProductId via SKU and updates correct WC product', async () => {
+    vi.mocked(prisma.catalogGood.findUnique).mockResolvedValue({
+      id: 'good-1',
+      sku: 'SKU-1',
+      wooProductId: 999,
+      isGroup: false,
+    } as never);
+    vi.mocked(prisma.catalogGood.update).mockResolvedValue({} as never);
+
+    const { createWooCommerceClient } = await import('./WooCommerceApiClient.js');
+    const getProductById = vi.fn().mockResolvedValue(null);
+    const getProductBySku = vi.fn().mockResolvedValue({ id: 77, sku: 'SKU-1' });
+    const updateProduct = vi.fn().mockResolvedValue({ id: 77 });
+    vi.mocked(createWooCommerceClient).mockReturnValue({
+      getProductById,
+      getProductBySku,
+      updateProduct,
+      createProduct: vi.fn(),
+    } as never);
+
+    const result = await service.pushApply('good-1');
+
+    expect(getProductById).toHaveBeenCalledWith(999);
+    expect(getProductBySku).toHaveBeenCalledWith('SKU-1');
+    expect(updateProduct).toHaveBeenCalledWith(77, expect.objectContaining({ name: 'Товар' }));
+    expect(prisma.catalogGood.update).toHaveBeenCalledWith({
+      where: { id: 'good-1' },
+      data: { wooProductId: 77, wooLastSyncedAt: expect.any(Date) },
+    });
+    expect(result).toMatchObject({ wooProductId: 77, created: false });
+  });
+
+  it('pushApply creates WC product when neither id nor sku match', async () => {
+    vi.mocked(prisma.catalogGood.findUnique).mockResolvedValue({
+      id: 'good-1',
+      sku: 'SKU-1',
+      wooProductId: null,
+      isGroup: false,
+    } as never);
+    vi.mocked(prisma.catalogGood.update).mockResolvedValue({} as never);
+
+    const { createWooCommerceClient } = await import('./WooCommerceApiClient.js');
+    const createProduct = vi.fn().mockResolvedValue({ id: 88 });
+    vi.mocked(createWooCommerceClient).mockReturnValue({
+      getProductById: vi.fn(),
+      getProductBySku: vi.fn().mockResolvedValue(null),
+      updateProduct: vi.fn(),
+      createProduct,
+    } as never);
+
+    const result = await service.pushApply('good-1');
+
+    expect(createProduct).toHaveBeenCalledWith(
+      expect.objectContaining({ sku: 'SKU-1', type: 'simple' }),
+    );
+    expect(result).toMatchObject({ wooProductId: 88, created: true });
   });
 });

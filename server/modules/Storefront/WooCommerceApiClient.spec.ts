@@ -43,6 +43,20 @@ describe('WooCommerceApiClient', () => {
     expect(product).toBeNull();
   });
 
+  it('returns null for invalid product id (400)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: async () =>
+        '{"code":"woocommerce_rest_product_invalid_id","message":"Invalid ID.","data":{"status":400}}',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new WooCommerceApiClient(creds);
+    const product = await client.getProductById(0);
+    expect(product).toBeNull();
+  });
+
   it('testConnection returns ok on success', async () => {
     const fetchMock = vi
       .fn()
