@@ -47,6 +47,7 @@ import {
   calendarWeekSequenceFromYearStart,
   formatHrWorkWeekLabel,
 } from '../../../shared/utils/hrWorkWeekPeriods.js';
+import { buildPayrollPeriodKey } from '../../../shared/utils/hrPayrollPeriodKey.js';
 import { decryptCardNumber, maskCardLast4 } from './HrCardCrypto.js';
 import { HrError } from './HrService.js';
 import { hrBonusService } from './HrBonusService.js';
@@ -205,6 +206,7 @@ function toPeriodDto(
     id: row.id,
     year: row.year,
     month: row.month,
+    periodKey: row.periodKey,
     status: isPayrollStatus(row.status) ? row.status : 'draft',
     version: row.version,
     formulaId: row.formulaId,
@@ -475,10 +477,11 @@ export class HrPayrollService {
     const monthStart = utcDate(year, month, 1);
     const monthEnd = utcDate(year, month, meta.days.length);
     const { periodMode, dateFrom, dateTo, weeks } = await resolvePayrollWeeks(year, month, options);
+    const periodKey = buildPayrollPeriodKey(periodMode, dateFrom, dateTo);
 
     const [period, timesheet, employmentBundle] = await Promise.all([
       prisma.hrPayrollPeriod.findUnique({
-        where: { year_month: { year, month } },
+        where: { year_month_periodKey: { year, month, periodKey } },
         include: {
           ...periodInclude,
           lines: true,
@@ -590,9 +593,12 @@ export class HrPayrollService {
     const monthStart = utcDate(year, month, 1);
     const monthEnd = utcDate(year, month, meta.days.length);
     const { periodMode, dateFrom, dateTo, weeks } = await resolvePayrollWeeks(year, month, options);
+    const periodKey = buildPayrollPeriodKey(periodMode, dateFrom, dateTo);
 
     await prisma.$transaction(async (tx) => {
-      const existing = await tx.hrPayrollPeriod.findUnique({ where: { year_month: { year, month } } });
+      const existing = await tx.hrPayrollPeriod.findUnique({
+        where: { year_month_periodKey: { year, month, periodKey } },
+      });
       if (existing?.status === 'locked') {
         throw new HrError('Розрахунок заблоковано. Перерахунок неможливий.', 409, 'PAYROLL_LOCKED');
       }
@@ -658,6 +664,7 @@ export class HrPayrollService {
             data: {
               year,
               month,
+              periodKey,
               status: 'calculated',
               version: 1,
               formulaId: formula.formulaId,
@@ -715,10 +722,14 @@ export class HrPayrollService {
     options?: HrPayrollPeriodOptions,
   ): Promise<HrPayrollLoadDto> {
     const { year, month } = this.parseMonth(monthParam);
+    const { periodMode, dateFrom, dateTo } = await resolvePayrollWeeks(year, month, options);
+    const periodKey = buildPayrollPeriodKey(periodMode, dateFrom, dateTo);
     const formula = buildFormulaSnapshot(extraRate, grossDivisor);
 
     await prisma.$transaction(async (tx) => {
-      const existing = await tx.hrPayrollPeriod.findUnique({ where: { year_month: { year, month } } });
+      const existing = await tx.hrPayrollPeriod.findUnique({
+        where: { year_month_periodKey: { year, month, periodKey } },
+      });
       if (existing?.status === 'locked') {
         throw new HrError('Період заблоковано. Налаштування формули не можна змінити.', 409, 'PAYROLL_LOCKED');
       }
@@ -740,6 +751,7 @@ export class HrPayrollService {
           data: {
             year,
             month,
+            periodKey,
             status: 'draft',
             version: 1,
             formulaId: formula.formulaId,

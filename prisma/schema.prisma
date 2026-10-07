@@ -889,6 +889,8 @@ model HrPayrollPeriod {
   id               Int              @id @default(autoincrement())
   year             Int
   month            Int
+  /// Ключ режиму періоду: production | month | custom:YYYY-MM-DD:YYYY-MM-DD
+  periodKey        String           @default("production") @db.VarChar(80)
   status           String           @default("draft") @db.VarChar(16)
   version          Int              @default(1)
   formulaId        String           @db.VarChar(64)
@@ -904,7 +906,7 @@ model HrPayrollPeriod {
   lines            HrPayrollLine[]
   payouts          HrPayout[]
 
-  @@unique([year, month])
+  @@unique([year, month, periodKey])
   @@index([status])
   @@map("hr_payroll_periods")
 }

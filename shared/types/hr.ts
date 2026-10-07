@@ -413,6 +413,7 @@ export interface HrPayrollPeriodDto {
   id: number;
   year: number;
   month: number;
+  periodKey: string;
   status: HrPayrollStatus;
   version: number;
   formulaId: string;

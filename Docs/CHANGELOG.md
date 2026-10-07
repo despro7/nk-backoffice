@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-10-07 — HR: знімки payroll по режимах, очищення вихідних у табелі
+
+**Files:** `server/modules/Hr/HrPayrollService.ts`, `server/modules/Hr/HrTimesheetService.ts`, `shared/utils/hrEmploymentDedupe.ts`, `shared/utils/hrPayrollPeriodKey.ts`, `prisma/migrations/20261007150000_hr_payroll_period_key/`, `Docs/features/hr-module.md`
+
+### Розрахунок — окремий знімок на режим періоду
+
+- **`hr_payroll_periods.periodKey`** — унікальність `year + month + periodKey` замість одного знімка на місяць.
+- Ключі: `production`, `month`, `custom:YYYY-MM-DD:YYYY-MM-DD` (`buildPayrollPeriodKey`).
+- Перемикання «По виробничих тижнях» ↔ «По місяцях» завантажує **свій** знімок; якщо для режиму ще не рахували — показується актуальний preview.
+- Після зміни схеми: `npm run db:migrate:prod` + `npm run db:generate` + перезапуск сервера.
+
+### Табель — очищення вихідних при дублях зайнятості
+
+- Записи `В` на дублікатах `employmentId` (seed-ФОП + конкретний роботодавець) більше не «повертаються» після збереження.
+- `saveMonth` видаляє/оновлює всі id групи дедуплікації; автозаповнення вихідних при створенні місяця — лише для канонічної зайнятості.
+
+**Документація:** [`Docs/features/hr-module.md`](features/hr-module.md).
+
+---
+
 ## 2026-10-07 — HR: персонал, розрахунок, премії, табель
 
 **Files:** `server/modules/Hr/`, `client/pages/Hr/`, `shared/types/hr.ts`, `shared/utils/hr*`, `prisma/migrations/20261007120000_hr_personnel_improvements/`, `prisma/migrations/20261007140000_hr_pay_group_chip_hue/`, `client/components/table/TableBuilder.tsx`, `Docs/features/hr-module.md`

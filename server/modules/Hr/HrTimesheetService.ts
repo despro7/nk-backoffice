@@ -20,7 +20,9 @@ import {
 import { isTimesheetKind, parseTimesheetHours } from '../../../shared/utils/hrTimesheetCell.js';
 import {
   dedupeEmploymentsByEmployeePayGroup,
+  employmentIdsInSameGroup,
   remapEmploymentId,
+  resolveCanonicalEmploymentId,
 } from '../../../shared/utils/hrEmploymentDedupe.js';
 import { hrAuditService } from './HrAuditService.js';
 import { HrError } from './HrService.js';
@@ -151,13 +153,19 @@ export class HrTimesheetService {
               OR: [{ validTo: null }, { validTo: { gte: monthStart } }],
               employee: { deletedAt: null },
             },
-            select: { id: true },
+            select: {
+              id: true,
+              payGroupId: true,
+              employee: { select: { id: true } },
+              legalEntity: { select: { code: true, name: true } },
+            },
           });
+          const { employments: canonicalEmployments } = dedupeEmploymentsByEmployeePayGroup(employments);
 
           const weekendDates = meta.days.filter((day) => day.isWeekend).map((day) => day.date);
-          if (employments.length > 0 && weekendDates.length > 0) {
+          if (canonicalEmployments.length > 0 && weekendDates.length > 0) {
             await tx.hrTimesheetEntry.createMany({
-              data: employments.flatMap((employment) =>
+              data: canonicalEmployments.flatMap((employment) =>
                 weekendDates.map((date) => ({
                   monthId: existing!.id,
                   employmentId: employment.id,
@@ -285,8 +293,23 @@ export class HrTimesheetService {
       }
 
       const meta = buildTimesheetMonthMeta(current.year, current.month);
+      const monthStart = utcDate(current.year, current.month, 1);
+      const monthEnd = utcDate(current.year, current.month, meta.days.length);
       const allowedDates = new Set(meta.days.map((day) => day.date));
       const employmentIds = [...new Set(writes.map((item) => Number(item.employmentId)))];
+      const monthEmployments = await tx.hrEmployment.findMany({
+        where: {
+          validFrom: { lte: monthEnd },
+          OR: [{ validTo: null }, { validTo: { gte: monthStart } }],
+          employee: { deletedAt: null },
+        },
+        select: {
+          id: true,
+          payGroupId: true,
+          employee: { select: { id: true } },
+          legalEntity: { select: { code: true, name: true } },
+        },
+      });
       if (employmentIds.some((id) => !Number.isInteger(id) || id <= 0)) {
         throw new HrError('Некоректна зайнятість');
       }
@@ -315,9 +338,13 @@ export class HrTimesheetService {
         }
         const dateValue = new Date(`${date}T00:00:00.000Z`);
         const employmentId = Number(item.employmentId);
-        const existing = await tx.hrTimesheetEntry.findUnique({
+        const canonicalEmploymentId = resolveCanonicalEmploymentId(monthEmployments, employmentId);
+        const aliasEmploymentIds = employmentIdsInSameGroup(monthEmployments, employmentId);
+        const existing = await tx.hrTimesheetEntry.findFirst({
           where: {
-            monthId_employmentId_date: { monthId, employmentId, date: dateValue },
+            monthId,
+            employmentId: { in: aliasEmploymentIds },
+            date: dateValue,
           },
         });
         const parsed = parseEntryKind(item);
@@ -325,7 +352,7 @@ export class HrTimesheetService {
           if (existing) {
             auditDiffs.push({
               entryId: existing.id,
-              employmentId,
+              employmentId: canonicalEmploymentId,
               date,
               before: {
                 kind: existing.kind,
@@ -335,7 +362,7 @@ export class HrTimesheetService {
             });
           }
           await tx.hrTimesheetEntry.deleteMany({
-            where: { monthId, employmentId, date: dateValue },
+            where: { monthId, employmentId: { in: aliasEmploymentIds }, date: dateValue },
           });
           continue;
         }
@@ -346,7 +373,7 @@ export class HrTimesheetService {
         if (!existing || existing.kind !== after.kind || existing.hours?.toFixed(2) !== after.hours) {
           auditDiffs.push({
             entryId: existing?.id,
-            employmentId,
+            employmentId: canonicalEmploymentId,
             date,
             before: existing
               ? { kind: existing.kind, hours: existing.hours?.toFixed(2) ?? null }
@@ -354,17 +381,27 @@ export class HrTimesheetService {
             after,
           });
         }
+        const duplicateAliasIds = aliasEmploymentIds.filter((id) => id !== canonicalEmploymentId);
+        if (duplicateAliasIds.length > 0) {
+          await tx.hrTimesheetEntry.deleteMany({
+            where: {
+              monthId,
+              employmentId: { in: duplicateAliasIds },
+              date: dateValue,
+            },
+          });
+        }
         await tx.hrTimesheetEntry.upsert({
           where: {
             monthId_employmentId_date: {
               monthId,
-              employmentId,
+              employmentId: canonicalEmploymentId,
               date: dateValue,
             },
           },
           create: {
             monthId,
-            employmentId,
+            employmentId: canonicalEmploymentId,
             date: dateValue,
             kind: parsed.kind,
             hours: parsed.hours,

@@ -65,3 +65,28 @@ export function dedupeEmploymentsByEmployeePayGroup<T extends EmploymentDedupeRo
 export function remapEmploymentId(idRemap: Map<number, number>, employmentId: number): number {
   return idRemap.get(employmentId) ?? employmentId;
 }
+
+/** Усі id зайнятостей однієї групи (співробітник × група оплати). */
+export function employmentIdsInSameGroup<T extends EmploymentDedupeRow>(
+  employments: T[],
+  employmentId: number,
+): number[] {
+  const row = employments.find((item) => item.id === employmentId);
+  if (!row) return [employmentId];
+  const key = employmentDedupeKey(row);
+  const ids = employments
+    .filter((item) => employmentDedupeKey(item) === key)
+    .map((item) => item.id);
+  return ids.length > 0 ? ids : [employmentId];
+}
+
+/** Канонічний id зайнятості в групі (пріоритет конкретному роботодавцю). */
+export function resolveCanonicalEmploymentId<T extends EmploymentDedupeRow>(
+  employments: T[],
+  employmentId: number,
+): number {
+  const groupIds = new Set(employmentIdsInSameGroup(employments, employmentId));
+  const group = employments.filter((item) => groupIds.has(item.id));
+  if (group.length === 0) return employmentId;
+  return pickCanonicalEmployment(group).id;
+}
