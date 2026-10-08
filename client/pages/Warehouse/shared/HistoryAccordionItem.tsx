@@ -10,6 +10,7 @@ import { normalizeSetsArray } from './historyNormalize';
 import { getFirmDisplayName, getStorageDisplayName } from '@shared/utils/directoryUtils';
 import { useDilovodSettings } from '@/hooks/useDilovodSettings';
 import useUserNames from '@/hooks/useUserNames';
+import { WarehouseReleaseAuditAccordion } from '@/pages/Warehouse/WarehouseReleaseSets/components/WarehouseReleaseAuditAccordion';
 
 interface HistoryAccordionItemProps {
   records: any[];
@@ -21,6 +22,9 @@ interface HistoryAccordionItemProps {
   onLoadRecord?: (record: any) => Promise<void>;
   onDeleteRecord?: (recordId: string) => Promise<void>;
   onEditRecord?: (record: any) => Promise<void>;
+  onRetryRelease?: (record: any) => Promise<void>;
+  canEditRecord?: (record: any) => boolean;
+  auditRefreshKey?: number;
   recordType?: 'return' | 'writeOff' | 'releaseSet';
 }
 
@@ -31,6 +35,9 @@ export const HistoryAccordionItem = ({
   showEdit = false,
   onDeleteRecord,
   onEditRecord,
+  onRetryRelease,
+  canEditRecord,
+  auditRefreshKey = 0,
   recordType,
 }: HistoryAccordionItemProps) => {
   const { hasPermission } = useRoleAccess();
@@ -39,8 +46,10 @@ export const HistoryAccordionItem = ({
   const [loadingLoadId, setLoadingLoadId] = useState<string | null>(null);
   const [loadingDeleteId, setLoadingDeleteId] = useState<string | null>(null);
   const [loadingEditId, setLoadingEditId] = useState<string | null>(null);
+  const [loadingRetryId, setLoadingRetryId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [contentHeights, setContentHeights] = useState<Record<string, number>>({});
+  const [layoutTick, setLayoutTick] = useState(0);
   const contentRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Utility to safely parse items (may be string, double-encoded, or array)
@@ -61,11 +70,25 @@ export const HistoryAccordionItem = ({
   
 
   useEffect(() => {
-    if (expandedRecordId && contentRefs.current[expandedRecordId]) {
-      const h = contentRefs.current[expandedRecordId]?.scrollHeight || 0;
-      setContentHeights((p) => ({ ...p, [expandedRecordId]: h }));
-    }
-  }, [expandedRecordId]);
+    const id = expandedRecordId;
+    if (!id) return;
+    const el = contentRefs.current[id];
+    if (!el) return;
+
+    const publish = () => {
+      const next = el.scrollHeight;
+      setContentHeights((prev) => (prev[id] === next ? prev : { ...prev, [id]: next }));
+    };
+
+    publish();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(publish) : null;
+    observer?.observe(el);
+    const followUp = window.setTimeout(publish, 320);
+    return () => {
+      observer?.disconnect();
+      window.clearTimeout(followUp);
+    };
+  }, [expandedRecordId, layoutTick, records]);
 
   const handleEditRecord = async (recordId: string) => {
     if (!onEditRecord) return;
@@ -149,6 +172,11 @@ export const HistoryAccordionItem = ({
         const primaryDateValue = record.createdAt || record.created_at || (isReleaseSetRecord ? (record.operDate || record.oper_date) : null);
         const secondaryDateValue = isReleaseSetRecord ? (record.operDate || record.oper_date || null) : null;
         const shouldShowSecondaryDate = isReleaseSetRecord && secondaryDateValue && formatDate(primaryDateValue) !== formatDate(secondaryDateValue);
+        const recordEditable = Boolean(showEdit && onEditRecord && (!canEditRecord || canEditRecord(record)));
+        const operationDocNumber = record.internalDocNumber || record.internal_doc_number || null;
+        const releaseStatus = String(record.status ?? '').toLowerCase();
+        const sendFailed = releaseStatus === 'send_failed';
+        const sendError = record.sendError || null;
         const totalPortions = recordType === 'releaseSet' ? setsForCount.reduce((sum: number, set: any) => {
           const componentsTotal = Number(set.componentsTotal ?? 0);
           const setQty = Number(set.setQty ?? 0);
@@ -185,6 +213,11 @@ export const HistoryAccordionItem = ({
 									<div className="flex gap-2">
 										{reason && (
 											<Chip size="sm" color="default" variant="flat" className="bg-gray-200 text-gray-700">{reason}</Chip>
+										)}
+										{sendFailed && (
+											<Chip size="sm" color="danger" variant="flat" className="text-sm text-red-700">
+												Помилка Dilovod
+											</Chip>
 										)}
 										{record.comment && (
 											<Chip size="sm" color="warning" variant="flat" className="text-sm text-amber-700 ml-0.5 text-[13px]" startContent={<DynamicIcon name="message-circle-more" className="w-3 h-3 ml-1 mr-0.5" />}>{truncateText(record.comment, 25)}</Chip>
@@ -232,7 +265,12 @@ export const HistoryAccordionItem = ({
               <div ref={(el) => { if (el) contentRefs.current[String(record.id)] = el; }} className="p-4">
                 <div className="mb-6">
                   <div className="flex items-center gap-4 mb-2">
-                    <h3 className="text-lg font-semibold text-gray-700">Деталі операції</h3>
+                    <h3 className="text-lg font-semibold text-gray-700 flex flex-wrap items-baseline gap-2">
+                      <span>Деталі операції</span>
+                      {operationDocNumber ? (
+                        <span className="text-sm font-normal text-default-500">{operationDocNumber}</span>
+                      ) : null}
+                    </h3>
 										{/* Delete button (only visible to admin) */}
 										{canDeleteHistory && showDelete && onDeleteRecord && (
 											<div className="ml-2" onClick={(e) => e.stopPropagation()}>
@@ -240,7 +278,7 @@ export const HistoryAccordionItem = ({
 													size="sm"
 													variant="flat"
 													color="danger"
-													className="bg-red-200 h-auto px-2.5 py-1.5 gap-1.5 opacity-60"
+													className="bg-red-200/80 text-red-700 h-auto px-2.5 py-1.5 gap-1 min-w-0"
 													isLoading={loadingDeleteId === String(record.id)}
 													isDisabled={!!loadingLoadId}
 													startContent={loadingDeleteId !== String(record.id) ? <DynamicIcon name="trash-2" className="w-3 h-3" /> : undefined}
@@ -264,19 +302,41 @@ export const HistoryAccordionItem = ({
 											onCancel={handleCancelDelete}
 										/>
                     {/* Edit button (optional) */}
-                    {canDeleteHistory && showEdit && onEditRecord && (
+                    {recordEditable && (
                       <div className="ml-2" onClick={(e) => e.stopPropagation()}>
                         <Button
                           size="sm"
                           variant="flat"
-                          color="default"
-                          className="h-auto px-2.5 py-1.5 gap-1.5"
+                          color="secondary"
+                          className="bg-blue-200/75 text-blue-800 h-auto px-2.5 py-1.5 gap-1 min-w-0"
                           isLoading={loadingEditId === String(record.id)}
                           isDisabled={!!loadingLoadId}
                           startContent={<DynamicIcon name="edit-3" className="w-3 h-3" />}
                           onPress={() => handleEditRecord(String(record.id))}
                         >
                           Редагувати
+                        </Button>
+                      </div>
+                    )}
+                    {sendFailed && onRetryRelease && (
+                      <div className="ml-2" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          color="primary"
+                          className="h-auto px-2.5 py-1.5 gap-1.5"
+                          isLoading={loadingRetryId === String(record.id)}
+                          startContent={<DynamicIcon name="refresh-cw" className="w-3 h-3" />}
+                          onPress={async () => {
+                            setLoadingRetryId(String(record.id));
+                            try {
+                              await onRetryRelease(record);
+                            } finally {
+                              setLoadingRetryId(null);
+                            }
+                          }}
+                        >
+                          Повторити Dilovod
                         </Button>
                       </div>
                     )}
@@ -297,6 +357,11 @@ export const HistoryAccordionItem = ({
                     )}
                   </div>
                   {record.comment && <p className="text-[13px] text-gray-500 mt-1">Коментар: <b>{record.comment}</b></p>}
+                  {sendFailed && sendError && (
+                    <p className="text-[13px] text-red-700 mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                      Помилка відправки в Dilovod: <b>{sendError}</b>
+                    </p>
+                  )}
                 </div>
 
                 <div className="mb-2">
@@ -306,6 +371,15 @@ export const HistoryAccordionItem = ({
                     <HistoryItemsTable mode="normal" items={record.itemsNormalized ?? items} />
                   )}
                 </div>
+
+                {recordType === 'releaseSet' && isExpanded ? (
+                  <WarehouseReleaseAuditAccordion
+                    releaseId={Number(record.id)}
+                    refreshKey={auditRefreshKey}
+                    className="mt-4"
+                    onLayoutChange={() => setLayoutTick((value) => value + 1)}
+                  />
+                ) : null}
               </div>
             </div>
           </div>

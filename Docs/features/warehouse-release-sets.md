@@ -51,6 +51,25 @@ Switch у шапці сторінки. Двокроковий wizard:
 - `POST /releases/check-dilovod-batch` — перевірка наявності kit-партії в Dilovod.
 - `GET /releases/last-kit-batches?setSku=` — партії з останнього комплектування для автопідбору при unkit.
 
+### FIFO та заміна партій (2026-10-08)
+
+- **FIFO:** кнопка в `ReleaseComponentBatchesPanel` → bulk `GET /api/warehouse/batch-numbers?skus=…` + `shared/utils/fifoBatchAllocation.ts` (`sortBatchesFifo`, `allocateBatchesFifo`). Старіші партії (за датою в номері / expiration) споживаються першими; при нестачі залишку — warning toast.
+- **Prefetch:** при відкритті панелі компонентів (не correction) той самий bulk завантажує доступні партії для перевірки «чи є альтернатива на складі».
+- **Заміна:** якщо позиція повністю укомплектована, але на складі є інші `batchId` — кнопка «Замінити партію» (одна лінія) або edit у рядку (кілька ліній) → `openDrawer` у режимі редагування індексу.
+- **Dilovod:** bulk для FIFO/prefetch передає **`skipExpiration=true`** (див. також `Docs/features/warehouse-movement-mob.md`) — без десятків `getObject` по `header.expiration`. Сортування FIFO покладається на номер партії; drawer по одному SKU без `skipExpiration` лишає повний enrichment.
+- **Кеш сервера:** ключ партій містить суфікс `exp` / `noexp`, щоб відповіді з/без термінів не змішувались.
+
+### Історія, редагування, аудит (2026-10-08)
+
+- **Редагування** запису в історії: лише **в день створення** (Europe/Kyiv) або роль **admin** — `shared/utils/releaseHistoryAccess.ts`.
+- **Повтор send** для статусу `send_failed` — `retryFailedRelease` у `useReleaseSets.ts` (ті самі `componentBatches` з БД, якщо не передані з UI).
+- **Аудит:** `WarehouseReleaseAuditService` → `hr_audit_log` (`entityType: warehouse_release_set`), `GET /api/warehouse/releases/:id/audit`, акордеон у `WarehouseReleaseAuditAccordion.tsx`.
+- **Примітка Dilovod** при зміні полів історії — `warehouseReleaseRemark.ts` (`appendWarehouseReleaseDilovodRemark`).
+
+### Kit-партія: колізії серійного номера
+
+- `refineKitOutputBatchPlanForOccupiedCodes` у `kitBatchName.ts` — якщо запланований `K{YMMDD}` уже існує в Dilovod для іншого запису, план зсувається (suffix `-2`, `-3`, …) перед `ensureKitOutputBatch`.
+
 ## Ключові файли
 
 | Шар | Файли |
@@ -58,6 +77,8 @@ Switch у шапці сторінки. Двокроковий wizard:
 | UI | `client/pages/Warehouse/WarehouseReleaseSets/` |
 | Hook | `useReleaseSets.ts` |
 | Партії UI | `ReleaseComponentBatchesPanel.tsx`, `BatchNumbersAutocomplete.tsx` |
+| FIFO | `shared/utils/fifoBatchAllocation.ts` |
+| Історія / аудит | `ReleaseHistoryTab.tsx`, `HistoryAccordionItem.tsx`, `WarehouseReleaseAuditService.ts`, `releaseHistoryAccess.ts` |
 | Backend | `SetReleaseController.ts`, `WarehouseBatchesService.ts` |
 | Dilovod | `DilovodGoodPartsService.ts`, `DilovodApiClient.findGoodPartsByOwnerIds` |
 | Типи | `shared/types/warehouseRelease.ts` |
@@ -74,6 +95,8 @@ Switch у шапці сторінки. Двокроковий wizard:
 | POST | `/api/warehouse/releases/batch-correction/ensure-set` | Інвентаризаційний `_rebatch`-набір |
 | POST | `/api/warehouse/releases/batch-correction/fill-batches` | Автозаповнення партій |
 | POST | `/api/warehouse/batches/create` | Створення партії (surplus / correction) |
+| GET | `/api/warehouse/releases/:id/audit` | Журнал змін запису випуску |
+| GET | `/api/warehouse/batch-numbers?skus=` | Bulk-партії (FIFO, prefetch); `skipExpiration`, `storageId`, `asOfDate` |
 
 ## Dilovod: обмеження `catalogs.goodParts`
 

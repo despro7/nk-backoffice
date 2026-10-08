@@ -5,6 +5,46 @@
 
 ---
 
+## 2026-10-08 — Склад: випуск наборів — FIFO, історія, аудит, оптимізація Dilovod
+
+**Files:** `client/pages/Warehouse/WarehouseReleaseSets/`, `ReleaseComponentBatchesPanel.tsx`, `WarehouseReleaseAuditAccordion.tsx`, `shared/utils/fifoBatchAllocation.ts`, `releaseHistoryAccess.ts`, `warehouseReleaseRemark.ts`, `warehouseReleaseAuditFormat.ts`, `shared/utils/kitBatchName.ts`, `server/modules/Warehouse/SetReleaseController.ts`, `WarehouseReleaseAuditService.ts`, `WarehouseController.ts`, `WarehouseBatchesService.ts`, `client/pages/Warehouse/shared/HistoryAccordionItem.tsx`, `HistoryItemsTable.tsx`, `historyNormalize.ts`, `server/services/dilovod/DilovodApiClient.ts`, `client/global.css`
+
+### Автовибір партій (FIFO)
+
+- Кнопка **«Обрати партії автоматично за FIFO»** у `ReleaseComponentBatchesPanel`: bulk `GET /api/warehouse/batch-numbers?skus=…`, розподіл залишків через `allocateBatchesFifo` (`shared/utils/fifoBatchAllocation.ts`).
+- Сортування: дата в номері партії (`DD.MM.YYYY`, `YYYY-MM-DD`, серійний `YMMDD` / `K-…`), fallback — `expiration`.
+- Toast при нестачі залишку або відсутності партій; unit-тести `fifoBatchAllocation.spec.ts`.
+
+### Заміна партії після повного підбору
+
+- Prefetch доступних партій по всіх компонентах набору (той самий bulk API).
+- Кнопка **«Замінити партію»** (одна обрана лінія + є інші партії на складі) або іконка редагування в рядку (кілька ліній).
+- Bulk для FIFO/prefetch: **`skipExpiration=true`** — без масового `getObject` по термінах придатності (як у mob); drawer по одному SKU лишається з повним enrichment.
+
+### Кеш партій на сервері
+
+- Ключ in-memory кешу `/batch-numbers` враховує **`exp` / `noexp`** (`skipExpiration`), щоб «легкий» bulk не підміняв відповідь для drawer.
+
+### Історія випусків
+
+- Редагування запису **в день створення** (київський календар) або **admin** (`releaseHistoryAccess.ts`).
+- Повторна відправка при `send_failed` (`retryFailedRelease`), відображення `internalDocNumber`, статусу, помилки Dilovod.
+- Аудит змін у `hr_audit_log` (`WarehouseReleaseAuditService`, `GET /api/warehouse/releases/:id/audit`), UI — `WarehouseReleaseAuditAccordion`.
+- Примітки Dilovod при редагуванні: `warehouseReleaseRemark.ts` (допис до `remark` документа).
+
+### Kit-партія на виході
+
+- `refineKitOutputBatchPlanForOccupiedCodes` — уникнення колізії серійного `code`, якщо номер уже зайнятий глобально в Dilovod (`kitBatchName.spec.ts`).
+
+### UI / інше
+
+- `ActionsBar`: `sendLoading` під час відправки.
+- Токен `--color-warning` у `global.css` (контрастніший жовтий).
+
+**Документація:** [`Docs/features/warehouse-release-sets.md`](features/warehouse-release-sets.md).
+
+---
+
 ## 2026-10-07 — HR: фіз. особи — дерево, статуси, merge, групи Dilovod
 
 **Files:** `client/pages/Hr/Persons/`, `PersonMergeModal.tsx`, `PersonCardPanel.tsx`, `PersonEmploymentStatusChip.tsx`, `PersonDismissedStatusConflictIndicator.tsx`, `server/modules/Hr/HrPersonService.ts`, `HrPersonSyncService.ts`, `shared/utils/hrPersonEmploymentStatus.ts`, `dilovodPersonGroups.ts`, `personMergeFields.ts`, `shared/constants/dilovod.ts`, `prisma/migrations/20261007160000_hr_legal_entity_person_group/`

@@ -555,6 +555,46 @@ export class DilovodApiClient {
     return result;
   }
 
+  /** Партії за серійним № (`code`) — унікальність code глобальна в Dilovod. */
+  async findGoodPartsByCodes(codes: string[]): Promise<Array<{ id: string; code: string; owner: string }>> {
+    await this.ensureReady();
+
+    const uniqueCodes = [...new Set(codes.map((code) => String(code ?? '').trim()).filter(Boolean))];
+    if (uniqueCodes.length === 0) return [];
+
+    const result: Array<{ id: string; code: string; owner: string }> = [];
+
+    for (const codeChunk of this.chunkArray(uniqueCodes, 20)) {
+      const resp = await this.makeRequest<unknown>({
+        version: '0.25',
+        key: this.apiKey,
+        action: 'request',
+        params: {
+          from: 'catalogs.goodParts',
+          fields: {
+            id: 'id',
+            code: 'code',
+            owner: 'owner',
+            delMark: 'delMark',
+          },
+          filters: [{ alias: 'code', operator: 'IN', value: codeChunk }],
+        },
+      });
+
+      const rows = this.normalizeToArray<Record<string, unknown>>(resp);
+      for (const row of rows) {
+        if (isDilovodDeletionMark(row.delMark)) continue;
+        const id = unwrapDilovodId(row.id);
+        const owner = unwrapDilovodId(row.owner);
+        const code = String(row.code ?? '').trim();
+        if (!isUsableDilovodBatchId(id) || !owner || !code) continue;
+        result.push({ id, code, owner });
+      }
+    }
+
+    return result;
+  }
+
   async findGoodsBySkuList(skuList: string[]): Promise<Array<{ id: string; productNum: string }>> {
     await this.ensureReady();
     

@@ -25,10 +25,14 @@ import {
 } from '../../../shared/utils/dilovodBatchId.js';
 import {
   formatKitBatchBaseName,
+  formatGoodPartCodeForDilovod,
   type KitBatchCandidate,
+  kitBatchSerialLookupVariants,
   normalizeBatchExpiration,
+  normalizeKitBatchCore,
   pickMinExpiration,
   planKitOutputBatch,
+  refineKitOutputBatchPlanForOccupiedCodes,
 } from '../../../shared/utils/kitBatchName.js';
 import { productsDilovodGateway } from '../Products/ProductsDilovodGateway.js';
 import {
@@ -506,6 +510,83 @@ export class WarehouseBatchesService {
     return pickMinExpiration(enriched.map((batch) => batch.expiration));
   }
 
+  private async resolveKitOutputBatchPlan(
+    kitGoodId: string,
+    baseName: string,
+    existingParts: KitBatchCandidate[],
+    minExpiration: string | null,
+  ) {
+    const ownerId = String(kitGoodId ?? '').trim();
+
+    const batchKey = (code: string): string => normalizeKitBatchCore(code);
+    const hasBatchCode = (list: KitBatchCandidate[], code: string): boolean => (
+      list.some((batch) => batchKey(batch.code) === batchKey(code))
+    );
+    let plan = planKitOutputBatch(baseName, existingParts, minExpiration);
+    if (!plan.createNew) return plan;
+
+    const lookupCodes = kitBatchSerialLookupVariants(plan.batchName);
+    const dilovodCode = formatGoodPartCodeForDilovod(plan.batchName);
+    if (dilovodCode && !lookupCodes.includes(dilovodCode)) {
+      lookupCodes.push(dilovodCode);
+    }
+
+    const globalHits = await this.api.findGoodPartsByCodes(lookupCodes);
+    if (globalHits.length === 0) return plan;
+
+    const occupiedCodes = globalHits.map((row) => row.code);
+    const augmented = [...existingParts];
+    for (const hit of globalHits) {
+      if (hasBatchCode(augmented, hit.code) || augmented.some((batch) => batch.id === hit.id)) {
+        continue;
+      }
+      augmented.push({
+        id: hit.id,
+        code: hit.code,
+        expiration: null,
+        allowReuse: ownerId && String(hit.owner) === ownerId,
+      });
+    }
+
+    plan = refineKitOutputBatchPlanForOccupiedCodes(
+      baseName,
+      augmented,
+      minExpiration,
+      occupiedCodes,
+    );
+
+    if (plan.reuseExisting && plan.batchId && !String(plan.batchId).startsWith('virtual:')) {
+      return plan;
+    }
+
+    if (plan.createNew) {
+      const retryLookup = kitBatchSerialLookupVariants(plan.batchName);
+      const retryHits = await this.api.findGoodPartsByCodes(retryLookup);
+      if (retryHits.length > 0) {
+        const retryAugmented = [...augmented];
+        for (const hit of retryHits) {
+          if (retryAugmented.some((batch) => batch.id === hit.id) || hasBatchCode(retryAugmented, hit.code)) {
+            continue;
+          }
+          retryAugmented.push({
+            id: hit.id,
+            code: hit.code,
+            expiration: null,
+            allowReuse: ownerId && String(hit.owner) === ownerId,
+          });
+        }
+        plan = refineKitOutputBatchPlanForOccupiedCodes(
+          baseName,
+          retryAugmented,
+          minExpiration,
+          retryHits.map((row) => row.code),
+        );
+      }
+    }
+
+    return plan;
+  }
+
   private async fetchGoodPartsForOwner(ownerId: string): Promise<KitBatchCandidate[]> {
     const owner = String(ownerId ?? '').trim();
     if (!owner) return [];
@@ -546,9 +627,9 @@ export class WarehouseBatchesService {
       this.fetchGoodPartsForOwner(kitGoodId),
     ]);
 
-    const plan = planKitOutputBatch(baseName, existingParts, minExpiration);
+    const plan = await this.resolveKitOutputBatchPlan(kitGoodId, baseName, existingParts, minExpiration);
 
-    if (plan.reuseExisting && plan.batchId) {
+    if (plan.reuseExisting && plan.batchId && !String(plan.batchId).startsWith('virtual:')) {
       const barcodes = await this.loadBarcodesByPart([plan.batchId]);
       return {
         batchId: plan.batchId,

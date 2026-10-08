@@ -79,16 +79,18 @@ function buildBatchCacheKey(
   storageMode: BatchStorageMode,
   storageId?: string,
   includeNonPositiveQty?: boolean,
+  skipExpiration?: boolean,
 ): string {
   const firmPart = firmId ?? 'default';
   const storagePart = storageId ?? 'any';
   const qtyPart = includeNonPositiveQty ? 'nonpos' : 'pos';
+  const expirationPart = skipExpiration ? 'noexp' : 'exp';
   if (!asOfDate) {
-    return `${sku}:${firmPart}:${storageMode}:${storagePart}:${qtyPart}:now`;
+    return `${sku}:${firmPart}:${storageMode}:${storagePart}:${qtyPart}:${expirationPart}:now`;
   }
   const pad = (n: number) => n.toString().padStart(2, '0');
   const datePart = `${asOfDate.getFullYear()}-${pad(asOfDate.getMonth() + 1)}-${pad(asOfDate.getDate())}_${pad(asOfDate.getHours())}:${pad(asOfDate.getMinutes())}`;
-  return `${sku}:${firmPart}:${storageMode}:${storagePart}:${qtyPart}:${datePart}`;
+  return `${sku}:${firmPart}:${storageMode}:${storagePart}:${qtyPart}:${expirationPart}:${datePart}`;
 }
 
 /**
@@ -560,6 +562,7 @@ router.get('/batch-numbers', authenticateToken, async (req, res) => {
         storageMode,
         targetStorageId,
         shouldIncludeNonPositiveQty,
+        shouldSkipExpiration,
       );
 
       if (!forceRefresh) {
@@ -617,6 +620,7 @@ router.get('/batch-numbers', authenticateToken, async (req, res) => {
             storageMode,
             targetStorageId,
             shouldIncludeNonPositiveQty,
+            shouldSkipExpiration,
           );
           batchCache.set(cacheKey, { data: filteredBatches, timestamp: Date.now(), ttl });
         }

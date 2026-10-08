@@ -46,6 +46,7 @@ export default function ReleaseSetsPage() {
   const [showClearConfirm, setShowClearConfirm] = React.useState(false);
   const [pendingSimpleConfirm, setPendingSimpleConfirm] = React.useState<PendingSimpleConfirm | null>(null);
   const [isSimpleConfirmBusy, setIsSimpleConfirmBusy] = React.useState(false);
+  const [isSavingEdit, setIsSavingEdit] = React.useState(false);
   const [searchResetSignal, setSearchResetSignal] = React.useState(0);
   const [kitOutputBatchPreview, setKitOutputBatchPreview] = React.useState<KitOutputBatchInfo | null>(null);
   const [isKitBatchPreviewLoading, setIsKitBatchPreviewLoading] = React.useState(false);
@@ -209,6 +210,25 @@ export default function ReleaseSetsPage() {
     void rs.addSet(product);
   };
 
+  const handleSaveEdit = async () => {
+    setIsSavingEdit(true);
+    try {
+      const result = await rs.saveEditedRelease();
+      ToastService.show({
+        title: result?.unchanged ? 'Без змін' : 'Комплектування оновлено',
+        description: result?.unchanged ? undefined : 'Зміни збережено в історії та в Dilovod, якщо документ уже відправлений.',
+        color: 'success',
+      });
+      setOperDate(null);
+      setPageTab('history');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Невідома помилка';
+      ToastService.show({ title: 'Не вдалося зберегти', description: message, color: 'danger' });
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
   const handleOpenSendConfirm = () => {
     if (rs.items.length === 0) return;
     setSendSnapshot(rs.items[0]);
@@ -229,10 +249,14 @@ export default function ReleaseSetsPage() {
     setIsSendingRelease(true);
     try {
       const createSurplus = sendMode === 'correctionUnkit' && rs.correctionUnkitDiff.surplus > 0;
+      const retryReleaseId = sendResult?.canRetry === true && sendResult?.releaseId
+        ? Number(sendResult.releaseId)
+        : undefined;
       const result = await rs.requestSend({
         createSurplusBatch: createSurplus,
         surplusQuantity: createSurplus ? rs.correctionUnkitDiff.surplus : undefined,
         surplusGoodId: createSurplus ? rs.correctionSourceGoodId : null,
+        ...(Number.isFinite(retryReleaseId) && retryReleaseId! > 0 ? { releaseId: retryReleaseId } : {}),
       });
       setSendResult(result ?? null);
       if (result?.success) {
@@ -428,6 +452,11 @@ export default function ReleaseSetsPage() {
 
       {pageTab === 'main' && (
         <>
+          {rs.editingRelease && (
+            <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+              Редагування {rs.editingRelease.internalDocNumber ? `операції ${rs.editingRelease.internalDocNumber}` : `запису №${rs.editingRelease.id}`}. Зміни застосуються до цього комплектування, включно зі складом, датою, кількістю та партіями.
+            </div>
+          )}
           <div className="text-base font-semibold text-gray-700 mt-1 mb-2">{operationItemsLabel}</div>
           <Card className="p-4 bg-white rounded-xl mb-6">
             <Tabs
@@ -500,10 +529,11 @@ export default function ReleaseSetsPage() {
 
           <ActionsBar
             onPreview={isDebugMode && isAdmin() ? handleShowPayloadPreview : undefined}
-            onSend={handleOpenSendConfirm}
+            onSend={rs.editingRelease ? () => void handleSaveEdit() : handleOpenSendConfirm}
             onCancel={rs.items.length > 0 ? () => setShowClearConfirm(true) : undefined}
-            sendLabel={sendButtonLabel}
-            sendDisabled={rs.items.length === 0 || sendDisabled}
+            sendLabel={rs.editingRelease ? 'Зберегти зміни' : sendButtonLabel}
+            sendLoading={isSavingEdit}
+            sendDisabled={rs.items.length === 0 || isSavingEdit || sendDisabled}
             previewDisabled={rs.items.length === 0}
           />
         </>
@@ -535,6 +565,25 @@ export default function ReleaseSetsPage() {
             } catch (error) {
               const message = error instanceof Error ? error.message : 'Невідома помилка';
               ToastService.show({ title: 'Помилка видалення', description: message, color: 'danger' });
+            }
+          }}
+          onEdit={(record) => {
+            const nextDate = rs.beginEdit(record);
+            if (nextDate) setOperDate(nextDate);
+            setPageTab('main');
+          }}
+          onRetryRelease={async (recordId) => {
+            try {
+              const result = await rs.retryFailedRelease(recordId);
+              if (result?.success) {
+                ToastService.show({ title: 'Відправлено в Dilovod', color: 'success' });
+                await rs.loadHistory(rs.historyPagination.page, rs.historyPagination.limit);
+                return;
+              }
+              throw new Error(String(result?.error || 'Помилка повторної відправки'));
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Невідома помилка';
+              ToastService.show({ title: 'Помилка Dilovod', description: message, color: 'danger' });
             }
           }}
         />

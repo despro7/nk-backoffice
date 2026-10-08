@@ -124,6 +124,83 @@ export interface ReleaseSetItem {
   isCorrectionSet?: boolean;
 }
 
+export interface EditingWarehouseRelease {
+  id: number;
+  internalDocNumber: string | null;
+  status: string;
+}
+
+function mapReleaseBatch(batch: any): ReleaseComponentBatch | null {
+  const batchId = String(batch?.batchId ?? '').trim();
+  const quantity = Number(batch?.quantity ?? 0);
+  if (!batchId || !Number.isFinite(quantity) || quantity <= 0) return null;
+  const batchNumber = String(batch?.batchNumber ?? batch?.batchName ?? '').trim();
+  return {
+    batchId,
+    batchNumber: batchNumber || batchId,
+    quantity,
+    ...(batch?.barcode ? { barcode: String(batch.barcode) } : {}),
+    ...(typeof batch?.batchStock === 'number' ? { batchStock: batch.batchStock } : {}),
+  };
+}
+
+function allocationsFromReleaseItem(item: any): ReleaseComponentAllocation[] {
+  if (!item || typeof item !== 'object') return [];
+  const direct = Array.isArray(item.component_batches)
+    ? item.component_batches
+    : (Array.isArray(item.componentBatches) ? item.componentBatches : []);
+  const fromDirect = direct
+    .map((allocation: any) => {
+      const sku = String(allocation?.sku ?? '').trim();
+      const batches = (Array.isArray(allocation?.batches) ? allocation.batches : [])
+        .map(mapReleaseBatch)
+        .filter((batch: ReleaseComponentBatch | null): batch is ReleaseComponentBatch => batch !== null);
+      if (!sku || batches.length === 0) return null;
+      return { sku, batches };
+    })
+    .filter((allocation: ReleaseComponentAllocation | null): allocation is ReleaseComponentAllocation => allocation !== null);
+  if (fromDirect.length > 0) return fromDirect;
+
+  const snapshot = Array.isArray(item.components_snapshot)
+    ? item.components_snapshot
+    : (Array.isArray(item.componentsSnapshot) ? item.componentsSnapshot : []);
+  const fromSnapshot: ReleaseComponentAllocation[] = [];
+  for (const component of snapshot) {
+    const sku = String(component?.id ?? component?.sku ?? component?.code ?? '').trim();
+    const batches = (Array.isArray(component?.batches) ? component.batches : [])
+      .map(mapReleaseBatch)
+      .filter((batch: ReleaseComponentBatch | null): batch is ReleaseComponentBatch => batch !== null);
+    if (sku && batches.length > 0) fromSnapshot.push({ sku, batches });
+  }
+  return fromSnapshot;
+}
+
+function formSnapshotFromStored(snapshot: unknown, setQty: number, quantityMode: string): any[] {
+  if (!Array.isArray(snapshot)) return [];
+  return snapshot.map((component) => {
+    const perSetRaw = Number(component?.quantity_per_set ?? component?.quantityPerSet);
+    const storedQty = Number(component?.quantity ?? component?.qty ?? 0);
+    const perSet = Number.isFinite(perSetRaw) && perSetRaw > 0
+      ? perSetRaw
+      : (quantityMode === 'total' && setQty > 0 ? storedQty / setQty : storedQty);
+    const { batches: _batches, ...rest } = component ?? {};
+    return {
+      ...rest,
+      quantity: Number.isFinite(perSet) && perSet > 0 ? perSet : storedQty,
+    };
+  });
+}
+
+function splitStoredReleaseComment(stored: unknown, autoRemark: string | null): string {
+  const text = String(stored ?? '').trim();
+  const remark = String(autoRemark ?? '').trim();
+  if (!text) return '';
+  if (remark && text === remark) return '';
+  const prefix = remark ? `${remark} | ` : '';
+  if (prefix && text.startsWith(prefix)) return text.slice(prefix.length).trim();
+  return text;
+}
+
 export interface ReleaseHistoryPagination {
   page: number;
   limit: number;
@@ -362,6 +439,7 @@ export default function useReleaseSets() {
   const [archiveSessions, setArchiveSessions] = useState<any[]>([]);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [archivePagination, setArchivePagination] = useState<ReleaseHistoryPagination>(DEFAULT_PAGINATION);
+  const [editingRelease, setEditingRelease] = useState<EditingWarehouseRelease | null>(null);
   const syncedSetQuantityRef = useRef<number | null>(null);
 
   const formatLocalDate = (date: Date): string => {
@@ -616,6 +694,60 @@ export default function useReleaseSets() {
     setLastKitPrefillInfo(null);
     setSuggestedOperDate(null);
     lastPrefilledSetSkuRef.current = null;
+    setEditingRelease(null);
+  };
+
+  const beginEdit = (record: any): string | null => {
+    const rawItems = Array.isArray(record?.items) ? record.items : [];
+    const first = rawItems[0] && typeof rawItems[0] === 'object' ? rawItems[0] : null;
+    const setSku = String(record?.setSku || first?.set_sku || first?.setSku || first?.sku || '').trim();
+    const setName = String(first?.name || first?.title || setSku).trim() || setSku;
+    const quantity = Number(record?.quantity ?? first?.quantity ?? 1);
+    const safeQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+    const quantityMode = String(first?.components_quantity_mode ?? '').toLowerCase() === 'total' ? 'total' : 'per_set';
+    const storedSnapshot = Array.isArray(first?.components_snapshot)
+      ? first.components_snapshot
+      : (Array.isArray(first?.componentsSnapshot) ? first.componentsSnapshot : []);
+    const operationType = String(record?.operationType || record?.operation_type || 'kit').toLowerCase();
+    const correctionSession = String(first?.correction_session_id ?? '').trim();
+    const parsedDate = parseLocalDate(record?.operDate || record?.oper_date || null);
+    const formattedDate = parsedDate ? formatLocalDate(parsedDate) : null;
+    const autoRemark = `${safeQuantity} х ${setName}`;
+    const userComment = splitStoredReleaseComment(record?.comment, autoRemark);
+
+    syncedSetQuantityRef.current = safeQuantity;
+    lastPrefilledSetSkuRef.current = setSku || null;
+    setOperationKey(operationType === 'unkit' ? 'goodUnKit' : 'goodKit');
+    setCorrectionMode(Boolean(correctionSession));
+    setCorrectionSessionId(correctionSession || null);
+    setCorrectionSourceSku(first?.source_sku ? String(first.source_sku) : null);
+    setItems(setSku ? [{
+      id: `edit-${record?.id ?? Date.now()}`,
+      setSku,
+      name: setName,
+      quantity: safeQuantity,
+      componentsSnapshot: formSnapshotFromStored(storedSnapshot, safeQuantity, quantityMode),
+      availableQuantity: null,
+      isCorrectionSet: Boolean(correctionSession),
+    }] : []);
+    setComponentBatches(allocationsFromReleaseItem(first));
+    setEditingRelease({
+      id: Number(record?.id),
+      internalDocNumber: record?.internalDocNumber || record?.internal_doc_number || null,
+      status: String(record?.status ?? ''),
+    });
+    if (formattedDate) {
+      returns.setReturnDate?.(formattedDate);
+      setSuggestedOperDate(formattedDate);
+    }
+    if (record?.storageId || record?.storage_id) {
+      setSelectedStorage(String(record.storageId || record.storage_id));
+    }
+    if (record?.firmId || record?.firm_id) {
+      returns.setReceiveFirmId?.(String(record.firmId || record.firm_id));
+    }
+    returns.setComment?.(userComment);
+    return formattedDate;
   };
 
   const resetCorrectionState = () => {
@@ -915,6 +1047,7 @@ export default function useReleaseSets() {
     createSurplusBatch?: boolean;
     surplusQuantity?: number;
     surplusGoodId?: string | null;
+    releaseId?: number;
   }) => {
     const currentItems = items.map((item) => ({
       set_sku: item.setSku,
@@ -929,6 +1062,7 @@ export default function useReleaseSets() {
       createSurplusBatch: options?.createSurplusBatch === true,
       surplusQuantity: options?.surplusQuantity,
       surplusGoodId: options?.surplusGoodId ?? undefined,
+      ...(options?.releaseId ? { releaseId: options.releaseId } : {}),
     };
 
     const resp = await fetch('/api/warehouse/releases/send', {
@@ -989,7 +1123,19 @@ export default function useReleaseSets() {
       };
     }
 
-    return json;
+    if (json.historySaved === true) {
+      await loadHistory(historyPagination.page, historyPagination.limit);
+    }
+
+    return {
+      ...json,
+      success: false,
+      canRetry: json.canRetry === true || json.historySaved === true,
+    };
+  };
+
+  const retryFailedRelease = async (releaseId: number) => {
+    return requestSend({ releaseId });
   };
 
   const fetchReleases = async (status: 'active' | 'deleted', page: number, limit: number) => {
@@ -1041,6 +1187,43 @@ export default function useReleaseSets() {
     const resp = await fetch(url, { method: 'DELETE', credentials: 'include' });
     const json = await resp.json().catch(() => ({}));
     return { ok: resp.ok, status: resp.status, json };
+  };
+
+  const updateRecord = async (
+    id: number,
+    payload: { operDate: string; comment: string; quantity: number; setSku: string },
+  ) => {
+    const resp = await fetch(`/api/warehouse/releases/${encodeURIComponent(String(id))}`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const json = await resp.json().catch(() => ({}));
+    return { ok: resp.ok, status: resp.status, json };
+  };
+
+  const saveEditedRelease = async () => {
+    if (!editingRelease) {
+      throw new Error('Немає запису для редагування');
+    }
+    const body = {
+      ...buildSendBody(false),
+      operDate: getPayloadDate(),
+    };
+    const resp = await fetch(`/api/warehouse/releases/${encodeURIComponent(String(editingRelease.id))}`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json?.success) {
+      throw new Error(json?.error || 'Не вдалося зберегти комплектування');
+    }
+    clearAll();
+    await loadHistory(historyPagination.page, historyPagination.limit);
+    return json;
   };
 
   const correctionStep = useMemo(() => {
@@ -1209,6 +1392,9 @@ export default function useReleaseSets() {
     lastKitPrefillInfo,
     suggestedOperDate,
     addSet,
+    beginEdit,
+    editingRelease,
+    saveEditedRelease,
     buildSetRemark,
     updateItem,
     removeItem,
@@ -1238,6 +1424,8 @@ export default function useReleaseSets() {
     loadHistory,
     loadArchive,
     deleteRecord,
+    updateRecord,
+    retryFailedRelease,
     getPayloadDate,
     parseLocalDate,
   };

@@ -29,7 +29,7 @@ export default function WarehouseDetails({ returns, storages, selectedStorage, s
     <h2 className="font-medium mb-2 mt-2">Параметри списання</h2>
     <Card className="rounded-xl bg-white mb-6 p-4">
 
-      <div className="flex gap-4 items-end">
+      <div className="flex flex-wrap md:flex-nowrap gap-4 items-end">
         <Select
           label="Склад для списання"
           labelPlacement="outside"

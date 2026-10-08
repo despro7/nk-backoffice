@@ -3,6 +3,8 @@ import HistoryAccordionItem from '../../shared/HistoryAccordionItem';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useDebug } from '@/contexts/debug-context';
 import { useState } from 'react';
+import { canEditWarehouseReleaseHistory } from '@shared/utils/releaseHistoryAccess';
+import { useRoleAccess } from '@/hooks/useRoleAccess';
 import type { ReleaseHistoryPagination } from '../useReleaseSets';
 
 function DebugDilovodCheck({ mapped, onRefresh }: { mapped: any[]; onRefresh?: () => void }) {
@@ -93,6 +95,8 @@ interface Props {
   onLimitChange?: (limit: number) => void;
   onRefresh?: () => void;
   onDelete?: (id: number) => void;
+  onEdit?: (record: any) => void;
+  onRetryRelease?: (id: number) => Promise<void>;
   title?: string;
   emptyMessage?: string;
 }
@@ -107,10 +111,14 @@ export default function ReleaseHistoryTab({
   onLimitChange,
   onRefresh,
   onDelete,
+  onEdit,
+  onRetryRelease,
   title = 'Минулі операції',
   emptyMessage = 'Немає записів',
 }: Props) {
   const { isDebugMode } = useDebug();
+  const { isAdmin } = useRoleAccess();
+  const [auditRefreshKey] = useState(0);
 
   const mapped = records.map((record: any) => {
     const items = Array.isArray(record.items) && record.items.length > 0
@@ -127,6 +135,14 @@ export default function ReleaseHistoryTab({
       comment: record.comment,
       dilovodDocId: record.dilovodDocId || record.dilovod_doc_id || null,
       operationType: record.operationType || record.operation_type || null,
+      internalDocNumber: record.internalDocNumber || record.internal_doc_number || null,
+      status: record.status || null,
+      sendError: Array.isArray(record.items) && record.items[0] && typeof record.items[0] === 'object'
+        ? String((record.items[0] as { dilovod_send_error?: unknown }).dilovod_send_error ?? '').trim() || null
+        : null,
+      quantity: Number(record.quantity ?? 0),
+      setSku: record.setSku || record.set_sku || null,
+      setsNormalized: record.setsNormalized,
       items,
     };
   });
@@ -173,7 +189,21 @@ export default function ReleaseHistoryTab({
         <HistoryAccordionItem
           records={mapped}
           recordType="releaseSet"
+          showEdit={Boolean(onEdit)}
+          auditRefreshKey={auditRefreshKey}
+          canEditRecord={(record) => canEditWarehouseReleaseHistory({
+            isAdmin: isAdmin(),
+            createdAt: record.createdAt || record.created_at,
+          })}
+          onEditRecord={onEdit ? async (record) => {
+            onEdit(record);
+          } : undefined}
           onDeleteRecord={handleDeleteRecord}
+          onRetryRelease={onRetryRelease ? async (record) => {
+            const numeric = Number(record.id);
+            if (!Number.isFinite(numeric) || numeric <= 0) return;
+            await onRetryRelease(numeric);
+          } : undefined}
         />
       )}
 

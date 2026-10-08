@@ -8,6 +8,7 @@ interface Props {
   sendDisabled?: boolean;
   previewDisabled?: boolean;
   sendLabel?: string;
+  sendLoading?: boolean;
 }
 
 export default function ActionsBar({
@@ -17,6 +18,7 @@ export default function ActionsBar({
   sendDisabled = false,
   previewDisabled = false,
   sendLabel = 'Створити випуск',
+  sendLoading = false,
 }: Props) {
   return (
     <div className="flex justify-end gap-3">
@@ -41,7 +43,8 @@ export default function ActionsBar({
         color="primary"
         size="lg"
         onPress={onSend}
-        startContent={<DynamicIcon name="package-plus" className="w-5 h-5" />}
+        isLoading={sendLoading}
+        startContent={sendLoading ? undefined : <DynamicIcon name="package-plus" className="w-5 h-5" />}
         isDisabled={sendDisabled}
         className="data-[disabled=true]:opacity-50"
       >

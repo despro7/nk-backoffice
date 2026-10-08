@@ -166,7 +166,10 @@ export default function ReleaseSendConfirmModal({
               </div>
               <div className="space-y-1">
                 <div className="opacity-80">Оновлення залишків: {result.stockSyncTriggered ? 'запущено' : 'не запущено'}</div>
-                {result.error && <div>Помилка: {String(result.error)}</div>}
+                {result.historySaved === true && !success && (
+                  <div>Набір збережено в історії — можна повторити відправку в Dilovod.</div>
+                )}
+                {result.error && <div>Помилка Dilovod: {String(result.error)}</div>}
                 {result.errorFallback && <div>Деталі: {String(result.errorFallback)}</div>}
               </div>
             </div>
@@ -178,8 +181,8 @@ export default function ReleaseSendConfirmModal({
             {success ? 'Закрити' : 'Скасувати'}
           </Button>
           {!success && (
-            <Button color="primary" onPress={onConfirm} isLoading={isSubmitting} isDisabled={isSubmitting || sendDisabled || !summary}>
-              {sendLabel}
+            <Button color="primary" onPress={onConfirm} isLoading={isSubmitting} isDisabled={isSubmitting || sendDisabled || (!summary && result?.canRetry !== true)}>
+              {result?.canRetry === true && result?.historySaved === true ? 'Повторити відправку' : sendLabel}
             </Button>
           )}
         </ModalFooter>

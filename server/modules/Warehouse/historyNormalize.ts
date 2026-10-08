@@ -4,6 +4,7 @@ export interface HistoryItemNormalized {
   name: string | null;
   qty: number;
   batch?: string | null;
+  batches?: string[];
   batchId?: string | null;
   price?: number | null;
   productId?: number | null;
@@ -36,13 +37,43 @@ export function safeParseItems(raw: any): any[] {
   return [];
 }
 
+function formatHistoryBatchLabel(batch: any): string {
+  if (typeof batch === 'string') return batch.trim();
+  const name = String(batch?.batchNumber ?? batch?.batchName ?? batch?.batchId ?? '').trim();
+  if (!name) return '';
+  const qty = Number(batch?.quantity ?? 0);
+  return Number.isFinite(qty) && qty > 0 ? `${name} (${qty})` : name;
+}
+
+function readHistoryBatch(it: any): { batch: string | null; batches: string[]; batchId: string | null } {
+  const nested = Array.isArray(it?.batches) ? it.batches : [];
+  const labels = nested.map(formatHistoryBatchLabel).filter(Boolean);
+  if (labels.length > 0) {
+    const firstId = nested[0]?.batchId != null ? String(nested[0].batchId).trim() : '';
+    return { batch: labels.join('\n'), batches: labels, batchId: firstId || null };
+  }
+  const batch = it?.batchNumber ?? it?.batchName ?? null;
+  const batchId = it?.batchId != null ? String(it.batchId).trim() : '';
+  const label = batch ? String(batch) : '';
+  return { batch: label || null, batches: label ? [label] : [], batchId: batchId || null };
+}
+
+function withAllocationBatches(component: any, allocations: any[]): any {
+  if (!component || typeof component !== 'object') return component;
+  if (Array.isArray(component.batches) && component.batches.length > 0) return component;
+  const sku = String(component?.id ?? component?.sku ?? component?.code ?? '').trim();
+  const match = allocations.find((allocation) => String(allocation?.sku ?? '').trim() === sku);
+  const batches = Array.isArray(match?.batches) ? match.batches : [];
+  if (batches.length === 0) return component;
+  return { ...component, batches };
+}
+
 // Normalize a single item to canonical shape
 export function normalizeItem(it: any): HistoryItemNormalized {
   const sku = String(it?.sku ?? it?.id ?? it?.set_sku ?? '') || '';
   const name = it?.name ?? it?.productName ?? it?.title ?? null;
   const qty = Number(it?.quantity ?? it?.qty ?? it?.portionQuantity ?? it?.totalPortions ?? 0) || 0;
-  const batch = it?.batchNumber ?? it?.batchName ?? null;
-  const batchId = it?.batchId ?? null;
+  const { batch, batches, batchId } = readHistoryBatch(it);
   const price = (it?.price !== undefined && it?.price !== null) ? Number(it.price) : null;
   const productId = it?.productId ?? null;
   const dilovodId = it?.dilovodId ?? null;
@@ -51,6 +82,7 @@ export function normalizeItem(it: any): HistoryItemNormalized {
     name,
     qty,
     batch,
+    batches,
     batchId,
     price,
     productId,
@@ -68,7 +100,10 @@ export function normalizeSet(setItem: any): HistorySetNormalized {
   const compsRaw = Array.isArray(setItem?.components_snapshot)
     ? setItem.components_snapshot
     : (Array.isArray(setItem?.componentsSnapshot) ? setItem.componentsSnapshot : []);
-  const components = compsRaw.map(normalizeItem);
+  const allocations = Array.isArray(setItem?.component_batches)
+    ? setItem.component_batches
+    : (Array.isArray(setItem?.componentBatches) ? setItem.componentBatches : []);
+  const components = compsRaw.map((component: any) => normalizeItem(withAllocationBatches(component, allocations)));
   const componentsTotal = components.reduce((s, c) => s + (Number(c.qty) || 0), 0);
   return {
     setSku,

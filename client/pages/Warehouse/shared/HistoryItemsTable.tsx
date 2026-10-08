@@ -33,6 +33,28 @@ function compareValues(a: any, b: any, numeric = false) {
   return String(a || '').localeCompare(String(b || ''), 'uk');
 }
 
+function historyBatchLabels(item: HistoryItemNormalized): string[] {
+  if (Array.isArray(item.batches) && item.batches.length > 0) {
+    return item.batches.map((label) => String(label).trim()).filter(Boolean);
+  }
+  const text = String(item.batch ?? '').trim();
+  if (!text) return [];
+  return text.split(/\n|,\s+/).map((label) => label.trim()).filter(Boolean);
+}
+
+function HistoryBatchList({ item }: { item: HistoryItemNormalized }) {
+  const labels = historyBatchLabels(item);
+  if (labels.length === 0) return <>—</>;
+  if (labels.length === 1) return <>{labels[0]}</>;
+  return (
+    <ul className="m-0 list-disc space-y-0.5 pl-4">
+      {labels.map((label, index) => (
+        <li key={`${label}-${index}`}>{label}</li>
+      ))}
+    </ul>
+  );
+}
+
 const defaultColumns: HistoryItemsTableColumn[] = [
   {
     key: 'sku',
@@ -50,7 +72,7 @@ const defaultColumns: HistoryItemsTableColumn[] = [
   {
     key: 'batch',
     label: 'Партія',
-    render: (item) => item.batch || '–',
+    render: (item) => <HistoryBatchList item={item} />,
     sortValue: (item) => item.batch || '',
     sortType: 'text',
   },
@@ -87,9 +109,15 @@ export const HistoryItemsTable: React.FC<Props> = ({
   }, [items]);
 
   const normalizedSets: HistorySetNormalized[] = useMemo(() => {
-    if (!sets) return [];
-    if (sets.length > 0 && sets[0] && 'components' in sets[0]) return sets as HistorySetNormalized[];
-    return clientNormalizeSets(sets);
+    const base = !sets || sets.length === 0
+      ? []
+      : (sets[0] && 'components' in sets[0] ? sets as HistorySetNormalized[] : clientNormalizeSets(sets));
+    return base.map((setItem) => ({
+      ...setItem,
+      components: setItem.components.map((component) => (
+        component.batch ? component : clientNormalizeItems([component.raw ?? component])[0] ?? component
+      )),
+    }));
   }, [sets]);
 
   const tableColumns = columns && columns.length > 0 ? columns : defaultColumns;
@@ -178,7 +206,10 @@ export const HistoryItemsTable: React.FC<Props> = ({
   if (mode === 'sets') {
     return (
       <div className="flex flex-col gap-6">
-        {sortedSets.map((setItem, idx) => (
+        {sortedSets.map((setItem, idx) => {
+          const kitBatch = setItem.raw?.kit_output_batch ?? setItem.raw?.kitOutputBatch;
+          const kitBatchNumber = String(kitBatch?.batchNumber ?? '').trim();
+          return (
           <div key={`set-${idx}`} className={`overflow-x-auto px-1 pb-1 bg-gray-200 rounded-md ${className ?? ''}`}>
             <div className="flex items-center gap-2 px-2 py-2">
               <span className="rounded bg-amber-200/80 px-1 py-0 text-sm ring-1 ring-amber-100">{setItem.setSku}</span>
@@ -187,6 +218,11 @@ export const HistoryItemsTable: React.FC<Props> = ({
                 <span className="mx-2 text-xs">✕</span>
                 <span>{setItem.setQty} шт.</span>
               </h4>
+              {kitBatchNumber ? (
+                <span className="ml-auto text-xs font-medium text-gray-600">
+                  Партія набору: <span className="font-mono text-gray-800">{kitBatchNumber}</span>
+                </span>
+              ) : null}
             </div>
             <table className="w-full border-separate border-spacing-0 overflow-hidden rounded-md bg-white text-sm">
               {!hideHeader && (
@@ -212,7 +248,8 @@ export const HistoryItemsTable: React.FC<Props> = ({
               </tbody>
             </table>
           </div>
-        ))}
+          );
+        })}
       </div>
     );
   }
