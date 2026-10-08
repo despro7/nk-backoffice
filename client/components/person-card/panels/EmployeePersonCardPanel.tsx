@@ -10,6 +10,7 @@ import {
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { HrPersonDto, HrPersonSummaryDto, HrUserOptionDto } from '@shared/types/hr';
+import { getPersonNameTokens } from '@shared/utils/hrPersonDuplicate';
 
 export interface EmployeePersonCardFormState {
   lastName: string;
@@ -48,6 +49,8 @@ interface EmployeePersonCardPanelProps {
   onPersonSearchChange: (value: string) => void;
   onPersonSelect: (person: HrPersonDto | null) => void;
   onUnlinkPerson: () => void;
+  onUnlinkUser: () => void;
+  onEditLinkedPerson?: () => void;
   onCreatePerson: () => void;
   onCreateUser: () => void;
   onCardVisibilityToggle: () => void;
@@ -63,6 +66,16 @@ function formatPersonSubtitle(person: HrPersonSummaryDto | HrPersonDto): string 
 
 function formatCardMaskedDisplay(last4: string): string {
   return `•••• •••• •••• ${last4}`;
+}
+
+function employeePersonSearchSeed(form: EmployeePersonCardFormState): string {
+  const fullName = [form.lastName, form.firstName, form.middleName]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(' ');
+  const tokens = getPersonNameTokens(fullName);
+  if (tokens.length >= 2) return tokens.slice(0, 2).join(' ');
+  return fullName;
 }
 
 export function EmployeePersonCardPanel({
@@ -85,6 +98,8 @@ export function EmployeePersonCardPanel({
   onPersonSearchChange,
   onPersonSelect,
   onUnlinkPerson,
+  onUnlinkUser,
+  onEditLinkedPerson,
   onCreatePerson,
   onCreateUser,
   onCardVisibilityToggle,
@@ -92,15 +107,26 @@ export function EmployeePersonCardPanel({
 }: EmployeePersonCardPanelProps) {
   const selectedPerson = linkedPerson;
 
+  const seedPersonSearchFromEmployee = () => {
+    if (personSearch.trim()) return;
+    const seed = employeePersonSearchSeed(form);
+    if (seed) onPersonSearchChange(seed);
+  };
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 col-span-2">
           {selectedPerson ? (
             <div className="flex items-end gap-2">
-              <div className="flex flex-col items-start flex-1 gap-1 px-3 py-2 bg-default-100 rounded-md">
+              <button
+                type="button"
+                className="flex flex-col items-start flex-1 gap-1 px-3 py-2 bg-default-100 rounded-md text-left hover:bg-default-200 transition-colors"
+                onClick={onEditLinkedPerson}
+                disabled={!onEditLinkedPerson}
+              >
                 <p className="text-xs subpixel-antialiased text-foreground-500">Фізична особа</p>
                 <p className="text-sm font-medium text-default-900">{selectedPerson.displayName}</p>
-              </div>
+              </button>
               {canManage ? (
                 <Tooltip
                   content="Відвʼязати фізичну особу"
@@ -134,10 +160,13 @@ export function EmployeePersonCardPanel({
                 items={personOptions}
                 isLoading={personSearchLoading}
                 allowsCustomValue={false}
-                menuTrigger="input"
+                menuTrigger="focus"
                 className="min-w-0 flex-1"
                 defaultFilter={() => true}
                 isVirtualized={false}
+                onOpenChange={(open) => {
+                  if (open) seedPersonSearchFromEmployee();
+                }}
                 onSelectionChange={(key) => {
                   if (key == null) return;
                   const person = personOptions.find((item) => String(item.id) === String(key));
@@ -221,7 +250,7 @@ export function EmployeePersonCardPanel({
                   isIconOnly
                   className="bg-rose-200 text-rose-600 size-14"
                   aria-label="Відвʼязати обліковий запис"
-                  onPress={() => onFormChange('userId', '')}
+                  onPress={onUnlinkUser}
                 >
                   <DynamicIcon name="link-2-off" size={18} />
                 </Button>

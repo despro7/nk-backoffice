@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { HrPayrollLineDto } from '@shared/types/hr';
 import { DEFAULT_PAYROLL_TABLE_BUILDER_CONFIG } from '@shared/types/tableBuilder';
-import { buildPayrollExtraColumns, shouldShowTaxColumns } from './payrollTableColumns';
+import {
+  buildCustomDisplayWeeks,
+  buildPayrollExtraColumns,
+  customWeekCellRaw,
+  shouldShowTaxColumns,
+} from './payrollTableColumns';
 
 function line(partial: Partial<HrPayrollLineDto>): HrPayrollLineDto {
   return {
@@ -54,5 +59,58 @@ describe('payrollTableColumns taxes', () => {
     expect(shouldShowTaxColumns(line({}), config)).toBe(true);
     const columns = buildPayrollExtraColumns(config, 'production');
     expect(columns.map((column) => column.id)).toEqual(['pdfo-military', 'esv', 'total']);
+  });
+});
+
+const CUSTOM_WEEKS = [
+  { id: 'salary', label: 'ЗП', startDate: '2026-01-01', endDate: '2026-01-15', colSpan: 1 },
+  { id: 'taxes', label: 'Податки', startDate: '2026-01-01', endDate: '2026-01-15', colSpan: 1 },
+  { id: 'bonus', label: 'Премії', startDate: '2026-01-01', endDate: '2026-01-15', colSpan: 1 },
+  { id: 'total', label: 'Разом', startDate: '2026-01-01', endDate: '2026-01-15', colSpan: 1 },
+];
+
+describe('payrollTableColumns custom period', () => {
+  it('без опцій лишає одну колонку податків', () => {
+    const config = {
+      ...DEFAULT_PAYROLL_TABLE_BUILDER_CONFIG,
+      visibleColumns: { ...DEFAULT_PAYROLL_TABLE_BUILDER_CONFIG.visibleColumns, esv: false },
+      merges: [],
+    };
+    const ids = buildCustomDisplayWeeks(CUSTOM_WEEKS, config).map((week) => week.id);
+    expect(ids).toEqual(['salary', 'taxes', 'total']);
+  });
+
+  it('розбиває податки на ЄСВ і ПДФО+ВЗ', () => {
+    const config = { ...DEFAULT_PAYROLL_TABLE_BUILDER_CONFIG, taxesSeparate: false };
+    const ids = buildCustomDisplayWeeks(CUSTOM_WEEKS, config).map((week) => week.id);
+    expect(ids).toEqual(['salary', 'pdfo-military', 'esv', 'total']);
+
+    const row = line({
+      esvAmount: '220.00',
+      weekAmounts: [
+        { weekId: 'salary', hours: '0', accrued: '0', extra: '0', toPay: '1000.00' },
+        { weekId: 'taxes', hours: '0', accrued: '0', extra: '0', toPay: '320.00' },
+        { weekId: 'bonus', hours: '0', accrued: '0', extra: '0', toPay: '0.00' },
+        { weekId: 'total', hours: '0', accrued: '0', extra: '0', toPay: '1320.00' },
+      ],
+      taxBreakdown: [
+        { code: 'esv', label: 'ЄСВ', rate: '0.22', amount: '220.00', payer: 'employer' },
+        { code: 'pdfo', label: 'ПДФО', rate: '0.18', amount: '100.00', payer: 'employee' },
+      ],
+    });
+    expect(customWeekCellRaw(row, 'esv', config)).toBe('220.00');
+    expect(customWeekCellRaw(row, 'pdfo-military', config)).toBe('100.00');
+
+    const combined = line({
+      weekAmounts: [
+        { weekId: 'taxes', hours: '0', accrued: '0', extra: '0', toPay: '320.00' },
+      ],
+    });
+    const combinedConfig = {
+      ...DEFAULT_PAYROLL_TABLE_BUILDER_CONFIG,
+      visibleColumns: { ...DEFAULT_PAYROLL_TABLE_BUILDER_CONFIG.visibleColumns, esv: false },
+      merges: [],
+    };
+    expect(customWeekCellRaw(combined, 'taxes', combinedConfig)).toBe('320.00');
   });
 });

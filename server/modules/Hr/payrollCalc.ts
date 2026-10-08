@@ -65,6 +65,11 @@ function withholdingTaxRules(taxRules: TaxRuleCalc[]): TaxRuleCalc[] {
   return taxRules.filter((rule) => rule.code === 'pdfo' || rule.code === 'military');
 }
 
+/** Офіційні групи: нараховано з табеля — сума «на руки», gross відновлюється перед податками. */
+function payGroupAccruedIsNetToEmployee(payGroup: HrPayGroup): boolean {
+  return payGroup === 'official_salary' || payGroup === 'hourly';
+}
+
 export function hoursStr(value: number): string {
   if (!Number.isFinite(value)) return '0.00';
   return value.toFixed(2);
@@ -286,10 +291,9 @@ export function applyTaxRules(
   }
 
   const employerRules = taxRules.filter((rule) => rule.payer === 'employer');
-  const gross =
-    payGroup === 'official_salary'
-      ? reverseGrossFromAccrued(accrued, withholdingTaxRules(taxRules))
-      : roundMoney(accrued);
+  const gross = payGroupAccruedIsNetToEmployee(payGroup)
+    ? reverseGrossFromAccrued(accrued, withholdingTaxRules(taxRules))
+    : roundMoney(accrued);
 
   const breakdown: HrTaxBreakdownItem[] = [];
   let esvAmount = 0;

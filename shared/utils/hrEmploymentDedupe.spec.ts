@@ -3,6 +3,8 @@ import {
   dedupeEmploymentsByEmployeePayGroup,
   employmentIdsInSameGroup,
   filterSelectableLegalEntities,
+  pickCurrentEmploymentForEmployerContext,
+  pickCurrentSelectableEmployerEmployment,
   resolveCanonicalEmploymentId,
 } from './hrEmploymentDedupe.js';
 
@@ -48,6 +50,84 @@ describe('dedupeEmploymentsByEmployeePayGroup', () => {
     expect(employmentIdsInSameGroup(rows, 2).sort()).toEqual([1, 2]);
     expect(resolveCanonicalEmploymentId(rows, 1)).toBe(2);
     expect(resolveCanonicalEmploymentId(rows, 2)).toBe(2);
+  });
+});
+
+describe('pickCurrentEmploymentForEmployerContext', () => {
+  const day = new Date(Date.UTC(2026, 9, 8));
+
+  it('обирає нештатну зайнятість замість шаблону ФОП', () => {
+    const picked = pickCurrentEmploymentForEmployerContext(
+      [
+        {
+          validFrom: new Date(Date.UTC(2026, 0, 1)),
+          validTo: null,
+          legalEntity: { code: 'fop', name: 'ФОП' },
+        },
+        {
+          validFrom: new Date(Date.UTC(2026, 1, 1)),
+          validTo: null,
+          legalEntity: { code: 'unofficial_cash', name: 'Нештатні' },
+        },
+      ],
+      day,
+    );
+
+    expect(picked?.legalEntity.code).toBe('unofficial_cash');
+  });
+
+  it('ігнорує лише шаблони fop/tov без конкретного роботодавця', () => {
+    const picked = pickCurrentEmploymentForEmployerContext(
+      [
+        {
+          validFrom: new Date(Date.UTC(2026, 0, 1)),
+          validTo: null,
+          legalEntity: { code: 'fop', name: 'ФОП' },
+        },
+      ],
+      day,
+    );
+
+    expect(picked).toBeNull();
+  });
+});
+
+describe('pickCurrentSelectableEmployerEmployment', () => {
+  const day = new Date(Date.UTC(2026, 9, 8));
+
+  it('обирає конкретного роботодавця, ігноруючи seed Нештатні', () => {
+    const picked = pickCurrentSelectableEmployerEmployment(
+      [
+        {
+          validFrom: new Date(Date.UTC(2026, 2, 1)),
+          validTo: null,
+          legalEntity: { code: 'unofficial_cash', name: 'Нештатні' },
+        },
+        {
+          validFrom: new Date(Date.UTC(2026, 1, 1)),
+          validTo: null,
+          legalEntity: { code: 'fop_bubnova', name: 'ФОП Бубнова М.В.' },
+        },
+      ],
+      day,
+    );
+
+    expect(picked?.legalEntity.code).toBe('fop_bubnova');
+  });
+
+  it('повертає null, якщо є лише seed-записи', () => {
+    const picked = pickCurrentSelectableEmployerEmployment(
+      [
+        {
+          validFrom: new Date(Date.UTC(2026, 0, 1)),
+          validTo: null,
+          legalEntity: { code: 'unofficial_cash', name: 'Нештатні' },
+        },
+      ],
+      day,
+    );
+
+    expect(picked).toBeNull();
   });
 });
 

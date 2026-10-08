@@ -6,7 +6,7 @@ import {
   DrawerHeader,
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { HrSpecChip } from '../hrUi';
+import { SpecChip } from '../hrUi';
 import { getSpecColorByHue } from '@shared/utils/specColorPalette';
 
 interface PayrollHelpDrawerProps {
@@ -59,9 +59,9 @@ export function PayrollHelpDrawer({ isOpen, onClose }: PayrollHelpDrawerProps) {
 
           <HelpSection title="Бейджі стану">
             <div className="flex flex-wrap gap-2">
-              <HrSpecChip tokens={getSpecColorByHue('emerald', 'light', 'soft')}>Знімок</HrSpecChip>
-              <HrSpecChip tokens={getSpecColorByHue('slate', 'light', 'soft')}>Попередній перегляд</HrSpecChip>
-              <HrSpecChip tokens={getSpecColorByHue('amber', 'light', 'soft')}>Заблоковано</HrSpecChip>
+              <SpecChip tokens={getSpecColorByHue('emerald', 'light', 'soft')}>Знімок</SpecChip>
+              <SpecChip tokens={getSpecColorByHue('slate', 'light', 'soft')}>Попередній перегляд</SpecChip>
+              <SpecChip tokens={getSpecColorByHue('amber', 'light', 'soft')}>Заблоковано</SpecChip>
             </div>
             <ul className="list-disc space-y-1 pl-5">
               <li>

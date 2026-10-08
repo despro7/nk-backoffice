@@ -1,4 +1,5 @@
 import { Input } from '@heroui/react';
+import { ClearConfirmInput } from './ClearConfirmInput';
 
 export interface SplitNameValues {
   lastName: string;
@@ -66,7 +67,7 @@ export function ContactNameFields({
   }
 
   return (
-    <Input
+    <ClearConfirmInput
       className="md:col-span-2"
       label="ПІБ / Контрагент"
       // labelPlacement="outside"
@@ -78,7 +79,6 @@ export function ContactNameFields({
       isInvalid={showFieldErrors && Boolean(displayNameError)}
       errorMessage={showFieldErrors ? displayNameError : undefined}
       autoComplete="off"
-      isClearable={canManage}
     />
   );
 }

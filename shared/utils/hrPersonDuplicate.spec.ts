@@ -47,6 +47,11 @@ describe('personNamesPartiallyMatch', () => {
   it('does not match when leading surname token is not shared', () => {
     expect(personNamesPartiallyMatch('Іванов Іван', 'Сидоров Іван Іванов')).toBe(false);
   });
+
+  it('does not match when only first name is shared', () => {
+    expect(personNamesPartiallyMatch('Світлана Шлопак', 'Власенко Світлана')).toBe(false);
+    expect(personNamesPartiallyMatch('(Н) Світлана Шлопак', 'Власенко Світлана (н)')).toBe(false);
+  });
 });
 
 describe('personsAreDuplicates', () => {

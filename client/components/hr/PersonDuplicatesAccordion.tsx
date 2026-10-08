@@ -1,8 +1,9 @@
 import { Accordion, AccordionItem, Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { FormattedPhone } from '@/components/FormattedPhone';
-import type { HrPersonDto } from '@shared/types/hr';
 import { hrAccordionClassNames } from './HrAuditAccordion';
+import { pluralize } from '@/lib/formatUtils';
+import type { HrPersonDto } from '@shared/types/hr';
 
 interface PersonDuplicatesAccordionProps {
   duplicates: HrPersonDto[];
@@ -23,12 +24,15 @@ export function PersonDuplicatesAccordion({
   if (duplicates.length === 0) return null;
 
   return (
-    <Accordion variant="bordered" className="border-1 px-0 overflow-hidden">
+    <Accordion variant="bordered" className="border-3 px-0 my-6 overflow-hidden">
       <AccordionItem
         key="duplicates"
-        title="Можливі дублікати"
-        subtitle={`(${duplicates.length} записів)`}
-        classNames={hrAccordionClassNames}
+        title={<span className="text-amber-600"><DynamicIcon name="alert-triangle" size={14} className="inline-block mb-0.5" /> Можливі дублікати</span>}
+        subtitle={`${duplicates.length} ${pluralize(duplicates.length, 'запис', 'записи', 'записів')}`}
+        classNames={{
+          ...hrAccordionClassNames,
+          subtitle: 'text-xs text-orange-700 bg-amber-200/75 rounded px-1.5 py-0.5 min-w-5 text-center',
+        }}
       >
         <ul className="space-y-1.5">
           {duplicates.map((duplicate) => (

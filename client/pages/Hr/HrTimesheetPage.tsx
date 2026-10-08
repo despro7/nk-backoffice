@@ -30,7 +30,7 @@ import { TimesheetKindLegend } from './Timesheet/TimesheetKindLegend';
 import { useHrPayGroupHues } from './useHrPayGroupHues';
 import { useHrTimesheetKindColors } from './useHrTimesheetKindColors';
 import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
-import { HR_BTN_NEUTRAL, HrSpecChip, hrPayGroupTokens } from './hrUi';
+import { HR_BTN_NEUTRAL, SpecChip, hrPayGroupTokens } from './hrUi';
 
 const COLOR_SETTINGS_STORAGE_KEY = 'hr.timesheet.colorSettingsOpen';
 
@@ -292,7 +292,7 @@ export default function HrTimesheetPage() {
         <MonthSwitcher value={monthDate} onChange={setMonthParam} disableFuture={false} size="sm" />
         <div className="flex flex-wrap items-center gap-2 ml-auto">
           {data?.month.status === 'closed' ? (
-            <HrSpecChip tokens={hrPayGroupTokens('unofficial_cash', 'soft', payGroupHueOverrides)}>Закрито</HrSpecChip>
+            <SpecChip tokens={hrPayGroupTokens('unofficial_cash', 'soft', payGroupHueOverrides)}>Закрито</SpecChip>
           ) : null}
           {!canEditPerm ? (
             <span className="text-xs font-medium text-rose-700 bg-rose-100 border border-rose-200 rounded-full px-2 py-0.5">

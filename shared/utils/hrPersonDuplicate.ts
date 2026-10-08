@@ -1,5 +1,9 @@
 const MIN_TOKEN_LENGTH = 2;
 
+function isParentheticalMarkerToken(token: string): boolean {
+  return /^\([^)]*\)$/.test(token);
+}
+
 export function normalizePersonDisplayName(name: string): string {
   return name
     .trim()
@@ -12,7 +16,10 @@ export function normalizePersonDisplayName(name: string): string {
 export function getPersonNameTokens(name: string): string[] {
   const normalized = normalizePersonDisplayName(name);
   if (!normalized) return [];
-  return normalized.split(' ').filter((token) => token.length >= MIN_TOKEN_LENGTH);
+  return normalized
+    .split(' ')
+    .filter((token) => token.length >= MIN_TOKEN_LENGTH)
+    .filter((token) => !isParentheticalMarkerToken(token));
 }
 
 /** Прізвище — перший токен ПІБ (формат «Прізвище Імʼя …»). */
@@ -27,18 +34,43 @@ export function hasPersonNameTokensForDuplicateSearch(name: string): boolean {
   return tokens.length >= 2;
 }
 
+function haveSameNameTokenSet(tokensA: string[], tokensB: string[]): boolean {
+  if (tokensA.length !== tokensB.length || tokensA.length < 2) return false;
+  const sortedA = [...tokensA].sort();
+  const sortedB = [...tokensB].sort();
+  return sortedA.every((token, index) => token === sortedB[index]);
+}
+
+function tokensAreSubset(smaller: string[], larger: string[]): boolean {
+  const largerSet = new Set(larger);
+  return smaller.every((token) => largerSet.has(token));
+}
+
 function personNameTokensMatchForDuplicate(tokensA: string[], tokensB: string[]): boolean {
   if (tokensA.length < 2 || tokensB.length < 2) return false;
+  if (haveSameNameTokenSet(tokensA, tokensB)) return true;
+
+  const [shorter, longer] = tokensA.length <= tokensB.length
+    ? [tokensA, tokensB]
+    : [tokensB, tokensA];
+  const shorterSet = new Set(shorter);
+  if (
+    tokensAreSubset(shorter, longer)
+    && shorter.length >= 2
+    && longer.includes(shorter[0])
+    && shorterSet.has(longer[0])
+  ) {
+    return true;
+  }
+
+  if (tokensA[0] !== tokensB[0]) return false;
 
   const setB = new Set(tokensB);
-  const sharedTokens = new Set<string>();
+  let sharedCount = 0;
   for (const token of tokensA) {
-    if (setB.has(token)) sharedTokens.add(token);
+    if (setB.has(token)) sharedCount += 1;
   }
-  if (sharedTokens.size < 2) return false;
-
-  // Прізвище (перший токен) кожного запису має входити в спільні токени.
-  return sharedTokens.has(tokensA[0]) && sharedTokens.has(tokensB[0]);
+  return sharedCount >= 2;
 }
 
 /**

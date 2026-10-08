@@ -232,7 +232,7 @@ export function TaxRulesTab({ canManage }: TaxRulesTabProps) {
         ) : null}
       </div>
 
-      <Card className="border border-default-200 shadow-sm">
+      <Card className="shadow-none rounded-lg">
         <CardBody>
           <Table aria-label="Податкові правила" removeWrapper classNames={HR_TABLE_CLASS_NAMES}>
             <TableHeader>
@@ -241,7 +241,6 @@ export function TaxRulesTab({ canManage }: TaxRulesTabProps) {
               <TableColumn>Платник</TableColumn>
               <TableColumn>База</TableColumn>
               <TableColumn>Групи</TableColumn>
-              <TableColumn>Діє з</TableColumn>
               <TableColumn>Статус</TableColumn>
               {canManage ? <TableColumn width={96} align="center"> </TableColumn> : null}
             </TableHeader>
@@ -269,7 +268,6 @@ export function TaxRulesTab({ canManage }: TaxRulesTabProps) {
                       ))}
                     </div>
                   </TableCell>
-                  <TableCell className="text-xs text-default-500">{rule.effectiveFrom}</TableCell>
                   <TableCell>
                     <SpecChip
                       tokens={hrStatusTokens(rule.isActive ? 'active' : 'inactive')}

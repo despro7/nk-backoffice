@@ -5,6 +5,8 @@ import {
   Card,
   CardBody,
   Input,
+  Select,
+  SelectItem,
   Table,
   TableBody,
   TableCell,
@@ -18,6 +20,7 @@ import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { useUrlHashSync } from '@/hooks/useUrlHashSync';
 import { PERMISSIONS } from '@shared/constants/permissions';
+import { filterSelectableLegalEntities } from '@shared/utils/hrEmploymentDedupe';
 import {
   HR_PAY_GROUP_LABELS,
   type HrEmployeeListItemDto,
@@ -26,14 +29,14 @@ import {
 import { EmployeeDrawer } from './EmployeeDrawer';
 import { EmployeesArchiveModal } from './EmployeesArchiveModal';
 import { DEFAULT_EMPLOYEE_SORT, sortHrEmployees } from './employeeTableSort';
+import { getEmployerEmployeeCount, type EmployerEmployeeCounts } from './employeeEmployerFilter';
 import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
-import { HR_BTN_NEUTRAL, HR_TABLE_CLASS_NAMES, HrLinkedAccountIndicator, HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
+import { HR_BTN_NEUTRAL, HR_TABLE_CLASS_NAMES, HrLinkedAccountIndicator, SpecChip, hrEmployerTokensFromName, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
 import { useHrPayGroupHues } from '../useHrPayGroupHues';
 
 export default function HrEmployeesPage() {
   const { hasPermission } = useRoleAccess();
   const canManage = hasPermission(PERMISSIONS.ACTION_HR_EMPLOYEES_MANAGE);
-  const canManagePayTerms = hasPermission(PERMISSIONS.ACTION_HR_PAYTERMS_MANAGE);
   const canRevealCard = hasPermission(PERMISSIONS.ACTION_HR_PAYOUTS_VIEW);
 
   const { hueOverrides: payGroupHueOverrides } = useHrPayGroupHues();
@@ -41,12 +44,14 @@ export default function HrEmployeesPage() {
   const [legalEntities, setLegalEntities] = useState<HrLegalEntityDto[]>([]);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [employerFilterId, setEmployerFilterId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [syncingEmployees, setSyncingEmployees] = useState(false);
+  const [employerCounts, setEmployerCounts] = useState<EmployerEmployeeCounts>({});
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>(DEFAULT_EMPLOYEE_SORT);
 
   const sortedEmployees = useMemo(
@@ -54,10 +59,28 @@ export default function HrEmployeesPage() {
     [employees, sortDescriptor],
   );
 
-  const fetchEmployees = useCallback(async (q?: string) => {
+  const employerSelectOptions = useMemo(
+    () =>
+      filterSelectableLegalEntities(legalEntities).sort((a, b) =>
+        a.name.localeCompare(b.name, 'uk'),
+      ),
+    [legalEntities],
+  );
+
+  const fetchEmployerCounts = useCallback(async () => {
+    const response = await fetch('/api/hr/employees/employer-counts', { credentials: 'include' });
+    if (!response.ok) return;
+    const data = await response.json().catch(() => ({}));
+    setEmployerCounts(data.data && typeof data.data === 'object' ? data.data : {});
+  }, []);
+
+  const fetchEmployees = useCallback(async (q?: string, employerId?: number | null) => {
     setLoading(true);
     try {
-      const qs = q?.trim() ? `?search=${encodeURIComponent(q.trim())}` : '';
+      const params = new URLSearchParams();
+      if (q?.trim()) params.set('search', q.trim());
+      if (employerId != null && employerId > 0) params.set('legalEntityId', String(employerId));
+      const qs = params.toString() ? `?${params.toString()}` : '';
       const response = await fetch(`/api/hr/employees${qs}`, { credentials: 'include' });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -83,16 +106,28 @@ export default function HrEmployeesPage() {
   }, [search]);
 
   useEffect(() => {
-    void fetchEmployees(debouncedSearch);
-  }, [fetchEmployees, debouncedSearch]);
+    void fetchEmployees(debouncedSearch, employerFilterId);
+  }, [fetchEmployees, debouncedSearch, employerFilterId]);
 
   useEffect(() => {
     void fetchLegalEntities();
-  }, [fetchLegalEntities]);
+    void fetchEmployerCounts();
+  }, [fetchLegalEntities, fetchEmployerCounts]);
 
   useUrlHashSync(
-    { emp: drawerOpen && editingId != null ? editingId : null },
+    {
+      emp: drawerOpen && editingId != null ? editingId : null,
+      employer: employerFilterId,
+    },
     (params) => {
+      const rawEmployer = params.get('employer');
+      if (rawEmployer) {
+        const employerId = Number(rawEmployer);
+        setEmployerFilterId(Number.isInteger(employerId) && employerId > 0 ? employerId : null);
+      } else {
+        setEmployerFilterId(null);
+      }
+
       const raw = params.get('emp');
       if (!raw) {
         if (drawerOpen && editingId != null) {
@@ -138,7 +173,8 @@ export default function HrEmployeesPage() {
         title: `Синхронізовано: оновлено ${result.updated ?? 0}, створено ${result.created ?? 0}, без пари ${result.unmatched ?? 0}`,
         color: 'success',
       });
-      await fetchEmployees(search);
+      await fetchEmployees(search, employerFilterId);
+      await fetchEmployerCounts();
     } finally {
       setSyncingEmployees(false);
     }
@@ -155,7 +191,8 @@ export default function HrEmployeesPage() {
       return;
     }
     ToastService.show({ title: 'Співробітника видалено', color: 'success', icon: 'user-round-x' });
-    await fetchEmployees(search);
+    await fetchEmployees(search, employerFilterId);
+    await fetchEmployerCounts();
   };
 
   if (!hasPermission(PERMISSIONS.PAGE_HR_EMPLOYEES)) {
@@ -173,8 +210,8 @@ export default function HrEmployeesPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Input
-          classNames={{ 
-            base: 'max-w-xs',
+          classNames={{
+            base: 'max-w-3xs',
             inputWrapper: 'data-[hover=true]:bg-white',
           }}
           autoComplete="off"
@@ -184,6 +221,44 @@ export default function HrEmployeesPage() {
           onValueChange={setSearch}
           startContent={<DynamicIcon name="search" size={16} className="text-default-400" />}
         />
+        <Select
+          aria-label="Роботодавець"
+          placeholder="Роботодавець"
+          className="max-w-46 mr-auto"
+          classNames={{
+            trigger: 'data-[hover=true]:bg-white',
+          }}
+          popoverProps={{
+            classNames: {
+              base: 'w-60',
+              content: 'p-1'
+            },
+          }}
+          selectedKeys={employerFilterId != null ? [String(employerFilterId)] : []}
+          onSelectionChange={(keys) => {
+            const selected = Array.from(keys)[0];
+            if (selected == null || selected === '') {
+              setEmployerFilterId(null);
+              return;
+            }
+            const id = Number(selected);
+            setEmployerFilterId(Number.isInteger(id) && id > 0 ? id : null);
+          }}
+          items={employerSelectOptions}
+          isClearable
+          onClear={() => setEmployerFilterId(null)}
+        >
+          {(item) => {
+            const count = getEmployerEmployeeCount(employerCounts, item.id);
+            const label = `${item.name} (${count})`;
+            return (
+              <SelectItem key={String(item.id)} textValue={label}>
+                <span className="truncate">{item.name}</span>
+                <span className="shrink-0 tabular-nums text-default-400"> ({count})</span>
+              </SelectItem>
+            );
+          }}
+        </Select>
         {canManage ? (
           <div className="flex flex-wrap gap-2">
             <Button
@@ -191,7 +266,7 @@ export default function HrEmployeesPage() {
               startContent={<DynamicIcon name="refresh-cw" size={16} className={`shrink-0 ${syncingEmployees ? 'animate-spin' : ''}`} />}
               onPress={() => void handleSyncEmployees()}
             >
-              Синхронізувати співробітників
+              Синхронізувати
             </Button>
             <Button
               className={`${HR_BTN_NEUTRAL} bg-slate-50!`}
@@ -207,12 +282,16 @@ export default function HrEmployeesPage() {
         ) : null}
       </div>
 
-      <Card className="hover:shadow-md transition-shadow">
+      <Card className="shadow-none rounded-lg">
         <CardBody className="p-3">
           {loading ? (
             <div className="p-8 text-center text-default-500">Завантаження...</div>
-          ) : employees.length === 0 ? (
-            <div className="p-8 text-center text-default-500">Немає співробітників</div>
+          ) : sortedEmployees.length === 0 ? (
+            <div className="p-8 text-center text-default-500">
+              {employerFilterId != null || debouncedSearch.trim()
+                ? 'Нічого не знайдено за обраними фільтрами'
+                : 'Немає співробітників'}
+            </div>
           ) : (
             <Table
               aria-label="Співробітники"
@@ -237,6 +316,7 @@ export default function HrEmployeesPage() {
                     <TableCell>
                       <button type="button" className="text-left max-w-full" onClick={() => openEdit(employee.id)}>
                         <div className="flex items-center gap-1.5 font-medium">
+                          <span>{employee.displayName}</span>
                           {employee.userName ? <HrLinkedAccountIndicator userName={employee.userName} /> : null}
                           {employee.hasPayWarning ? (
                             <DynamicIcon
@@ -246,7 +326,6 @@ export default function HrEmployeesPage() {
                               aria-label="Перевірте ставки"
                             />
                           ) : null}
-                          <span>{employee.displayName}</span>
                         </div>
                         {employee.notes ? (
                           <div className="text-xs truncate max-w-full text-gray-400">{employee.notes}</div>
@@ -255,18 +334,18 @@ export default function HrEmployeesPage() {
                     </TableCell>
                     <TableCell>
                       {employee.currentLegalEntityName ? (
-                        <HrSpecChip tokens={hrEmployerTokensFromName(employee.currentLegalEntityName)} rounded="sm">
+                        <SpecChip tokens={hrEmployerTokensFromName(employee.currentLegalEntityName)} rounded="sm">
                           {employee.currentLegalEntityName}
-                        </HrSpecChip>
+                        </SpecChip>
                       ) : (
                         '—'
                       )}
                     </TableCell>
                     <TableCell>
                       {employee.currentPayGroup ? (
-                        <HrSpecChip tokens={hrPayGroupTokens(employee.currentPayGroup, 'soft', payGroupHueOverrides)} rounded="sm">
+                        <SpecChip tokens={hrPayGroupTokens(employee.currentPayGroup, 'soft', payGroupHueOverrides)} rounded="sm">
                           {HR_PAY_GROUP_LABELS[employee.currentPayGroup]}
-                        </HrSpecChip>
+                        </SpecChip>
                       ) : (
                         <span className="text-sm text-default-500">—</span>
                       )}
@@ -276,9 +355,9 @@ export default function HrEmployeesPage() {
                     </TableCell>
                     <TableCell>
                       {employee.status === 'active' ? (
-                        <HrSpecChip tokens={hrStatusTokens('active')} icon="success">активний</HrSpecChip>
+                        <SpecChip tokens={hrStatusTokens('active')} icon="success">активний</SpecChip>
                       ) : (
-                        <HrSpecChip tokens={hrStatusTokens('inactive')} icon="error">неактивний</HrSpecChip>
+                        <SpecChip tokens={hrStatusTokens('inactive')} icon="error">неактивний</SpecChip>
                       )}
                     </TableCell>
                     <TableCell>
@@ -313,16 +392,21 @@ export default function HrEmployeesPage() {
         employeeId={editingId}
         legalEntities={legalEntities}
         canManage={canManage}
-        canManagePayTerms={canManagePayTerms}
         canRevealCard={canRevealCard}
         onClose={closeDrawer}
-        onSaved={() => void fetchEmployees(search)}
+        onSaved={() => {
+          void fetchEmployees(search, employerFilterId);
+          void fetchEmployerCounts();
+        }}
       />
 
       <EmployeesArchiveModal
         isOpen={archiveOpen}
         onClose={() => setArchiveOpen(false)}
-        onRestored={() => void fetchEmployees(search)}
+        onRestored={() => {
+          void fetchEmployees(search, employerFilterId);
+          void fetchEmployerCounts();
+        }}
       />
 
       <ConfirmModal

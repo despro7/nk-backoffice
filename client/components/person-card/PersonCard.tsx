@@ -10,7 +10,7 @@ import {
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { PersonCardPanel, type PersonCardPanelHandle } from './panels/PersonCardPanel';
-import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
+import { BTN_PRIMARY_BLUE } from '@/lib/buttonStyles';
 import type { PersonCardProps } from './PersonCard.types';
 
 export function PersonCard({
@@ -101,7 +101,7 @@ export function PersonCard({
                   {canManage ? 'Скасувати' : 'Закрити'}
                 </Button>
                 {canManage ? (
-                  <Button className={HR_BTN_PRIMARY} isLoading={isBusy} isDisabled={!isDirty} onPress={handleSave}>
+                  <Button className={BTN_PRIMARY_BLUE} isLoading={isBusy} isDisabled={!isDirty} onPress={handleSave}>
                     {isCreate ? 'Створити' : 'Зберегти'}
                   </Button>
                 ) : null}

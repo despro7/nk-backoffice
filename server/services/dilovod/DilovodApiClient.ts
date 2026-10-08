@@ -14,6 +14,7 @@ import {
   DilovodMetadataReq,
   DilovodBalanceAndTurnoverParams,
 } from './DilovodTypes.js';
+import { DILOVOD_PERSON_TYPE_PHYSICAL } from '../../../shared/constants/dilovod.js';
 import { DEFAULT_DILOVOD_ROLE_ID, DilovodRole, DilovodStorage, DilovodUser } from '../../../shared/types/dilovod.js';
 import {
   handleDilovodApiError,
@@ -165,6 +166,14 @@ async function processGlobalQueue(): Promise<void> {
   isGlobalQueueProcessing = false;
 }
 
+function throwIfDilovodSaveObjectError(resp: unknown, context: string): void {
+  if (!resp || typeof resp !== 'object') return;
+  const error = (resp as { error?: unknown }).error;
+  if (!error) return;
+  const message = typeof error === 'string' ? error : JSON.stringify(error);
+  throw new Error(`Dilovod ${context}: ${message}`);
+}
+
 export class DilovodApiClient {
 
   public getApiKey(): string {
@@ -256,7 +265,13 @@ export class DilovodApiClient {
       await this.ready;
     }
 
-    // Перевіряємо конфігурацію перед запитом
+    // Якщо ключі ще порожні — повторно читаємо з БД (напр. після збереження налаштувань іншим інстансом)
+    if (!this.apiUrl || !this.apiKey) {
+      const { clearConfigCache } = await import('./DilovodUtils.js');
+      clearConfigCache();
+      await this.loadConfig();
+    }
+
     if (!this.apiUrl || !this.apiKey) {
       const errors = validateDilovodConfig(this.config);
       throw new Error(`Dilovod API не налаштовано: ${errors.join(', ')}`);
@@ -742,6 +757,7 @@ export class DilovodApiClient {
       address: 'address',
       parent: 'parent',
       personType: 'personType',
+      isGroup: 'isGroup',
       state: 'state',
       delMark: 'delMark',
       version: 'version',
@@ -787,6 +803,7 @@ export class DilovodApiClient {
           address: 'address',
           parent: 'parent',
           personType: 'personType',
+          isGroup: 'isGroup',
           state: 'state',
           delMark: 'delMark',
           version: 'version',
@@ -799,6 +816,82 @@ export class DilovodApiClient {
     const resp = await this.makeRequest<any>(request);
     if (resp?.error) throw new Error(`Dilovod API error: ${resp.error}`);
     return this.normalizeToArray(resp);
+  }
+
+  async createPersonGroup(payload: {
+    name: string;
+    parent: string;
+  }): Promise<{ id: string; code: string; version?: string }> {
+    await this.ensureReady();
+    const multilangName = { ru: payload.name, uk: payload.name };
+    const header: Record<string, unknown> = {
+      id: 'catalogs.persons',
+      name: multilangName,
+      parent: payload.parent,
+      isGroup: 1,
+      personType: DILOVOD_PERSON_TYPE_PHYSICAL,
+      details: '',
+    };
+
+    const request: DilovodApiRequest = {
+      version: '0.25',
+      key: this.apiKey,
+      action: 'saveObject',
+      params: { header },
+    };
+    const resp = await this.makeRequest<{ id: string; code: string; version?: string; result?: string }>(request);
+    throwIfDilovodSaveObjectError(resp, 'createPersonGroup');
+    if (!resp?.id) {
+      throw new Error('Dilovod createPersonGroup не повернув id');
+    }
+    return resp;
+  }
+
+  async updatePersonGroup(payload: {
+    id: string;
+    name?: string;
+    parent?: string;
+    version?: string | null;
+  }): Promise<{ id: string; code?: string; version?: string }> {
+    await this.ensureReady();
+    const header: Record<string, unknown> = {
+      id: payload.id,
+      isGroup: 1,
+      personType: DILOVOD_PERSON_TYPE_PHYSICAL,
+      details: '',
+    };
+    if (payload.name?.trim()) {
+      const multilangName = { ru: payload.name.trim(), uk: payload.name.trim() };
+      header.name = multilangName;
+    }
+    if (payload.parent !== undefined) header.parent = payload.parent;
+
+    const request: DilovodApiRequest = {
+      version: '0.25',
+      key: this.apiKey,
+      action: 'saveObject',
+      params: { header },
+    };
+    const resp = await this.makeRequest<{ id: string; code?: string; version?: string }>(request);
+    throwIfDilovodSaveObjectError(resp, 'updatePersonGroup');
+    return { id: payload.id, ...resp };
+  }
+
+  async deletePersonCatalogEntry(id: string): Promise<void> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: '0.25',
+      key: this.apiKey,
+      action: 'saveObject',
+      params: {
+        header: {
+          id,
+          delMark: 1,
+        },
+      },
+    };
+    const resp = await this.makeRequest<unknown>(request);
+    throwIfDilovodSaveObjectError(resp, 'deletePersonCatalogEntry');
   }
 
   async createPersonExtended(payload: {
@@ -817,6 +910,7 @@ export class DilovodApiClient {
       id: 'catalogs.persons',
       name: multilangName,
       details: this.buildPersonDetails(payload),
+      isGroup: 0,
     };
     if (payload.taxCode) header.taxCode = payload.taxCode;
     if (payload.parent) header.parent = payload.parent;
@@ -830,6 +924,10 @@ export class DilovodApiClient {
       params: { header },
     };
     const resp = await this.makeRequest<{ id: string; code: string; version?: string }>(request);
+    throwIfDilovodSaveObjectError(resp, 'createPersonExtended');
+    if (!resp?.id) {
+      throw new Error('Dilovod createPersonExtended не повернув id');
+    }
     return resp;
   }
 
@@ -843,6 +941,8 @@ export class DilovodApiClient {
     parent?: string | null;
     state?: string | null;
     personnelNumber?: string | null;
+    version?: string | null;
+    isGroup?: number | boolean;
   }): Promise<{ id: string; code?: string; version?: string }> {
     await this.ensureReady();
     const header: Record<string, unknown> = { id: payload.id };
@@ -851,6 +951,9 @@ export class DilovodApiClient {
     if (payload.parent !== undefined) header.parent = payload.parent;
     if (payload.state !== undefined) header.state = payload.state;
     if (payload.personnelNumber !== undefined) header.code = payload.personnelNumber;
+    if (payload.isGroup !== undefined) {
+      header.isGroup = payload.isGroup === true || payload.isGroup === 1 ? 1 : 0;
+    }
     if (payload.name || payload.phone || payload.email || payload.address) {
       header.details = this.buildPersonDetails({
         name: payload.name ?? '',
@@ -867,6 +970,7 @@ export class DilovodApiClient {
       params: { header },
     };
     const resp = await this.makeRequest<{ id: string; code?: string; version?: string }>(request);
+    throwIfDilovodSaveObjectError(resp, 'updatePerson');
     return { id: payload.id, ...resp };
   }
 

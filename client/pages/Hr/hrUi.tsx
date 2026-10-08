@@ -1,5 +1,5 @@
 import { Tooltip } from '@heroui/react';
-import { EditableSpecChip, HrSpecChip, SpecChip } from '@/components/SpecChip';
+import { EditableSpecChip, SpecChip } from '@/components/SpecChip';
 import {
   HR_PAY_GROUPS,
   HR_TIMESHEET_KIND_CODES,
@@ -17,7 +17,7 @@ import {
 } from '@shared/utils/specColorPalette';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
-export { EditableSpecChip, HrSpecChip, SpecChip };
+export { EditableSpecChip, SpecChip };
 
 /** Закріплені hue як у довіднику «Облік (тип номенклатури)». */
 export const HR_PAY_GROUP_HUES: Record<HrPayGroup, string> = {

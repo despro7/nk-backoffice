@@ -22,11 +22,20 @@ import {
   type HrUserOptionDto,
 } from '../../../shared/types/hr.js';
 import { buildEmploymentAuditLabel } from '../../../shared/utils/hrAuditFormat.js';
-import { HR_SEED_LEGAL_ENTITY_CODES } from '../../../shared/utils/hrEmploymentDedupe.js';
+import {
+  HR_SEED_LEGAL_ENTITY_CODES,
+  pickCurrentSelectableEmployerEmployment,
+} from '../../../shared/utils/hrEmploymentDedupe.js';
+import { hrPersonGroupSyncService } from './HrPersonGroupSyncService.js';
+import { hrPersonSyncService } from './HrPersonSyncService.js';
 import { collectHrPayWarnings } from '../../../shared/utils/hrPayHealth.js';
 import { hrAuditService } from './HrAuditService.js';
 import { mergeEmploymentRecords } from './HrEmploymentMerge.js';
 import { hrPayGroupService } from './HrPayGroupService.js';
+import {
+  buildEmployeeDisplayName,
+  parseUaDisplayName,
+} from '../../../shared/utils/hrEmployeePersonName.js';
 import {
   cardLast4FromDigits,
   decryptCardNumber,
@@ -99,29 +108,49 @@ function todayUtcDate(): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
-function buildDisplayName(lastName: string, firstName: string, middleName?: string | null): string {
-  return [lastName, firstName, middleName].map((p) => p?.trim()).filter(Boolean).join(' ');
-}
-
-function parseUaDisplayName(displayName: string): {
+function resolveEmployeePublicName(row: EmployeeRecord): {
   lastName: string;
   firstName: string;
   middleName: string | null;
+  displayName: string;
 } {
-  const parts = displayName.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) {
-    return { lastName: '', firstName: '', middleName: null };
-  }
-  if (parts.length === 1) {
-    return { lastName: parts[0], firstName: '', middleName: null };
-  }
-  if (parts.length === 2) {
-    return { lastName: parts[0], firstName: parts[1], middleName: null };
+  if (row.personId != null && row.person?.displayName) {
+    const parsed = parseUaDisplayName(row.person.displayName);
+    return {
+      ...parsed,
+      displayName: buildEmployeeDisplayName(parsed.lastName, parsed.firstName, parsed.middleName),
+    };
   }
   return {
-    lastName: parts[0],
-    firstName: parts[1],
-    middleName: parts.slice(2).join(' ') || null,
+    lastName: row.lastName,
+    firstName: row.firstName,
+    middleName: row.middleName,
+    displayName: row.displayName,
+  };
+}
+
+async function resolveEmployeeWriteNameFields(
+  nextPersonId: number | null,
+  payload: HrEmployeeWritePayload,
+  existing: Pick<EmployeeRecord, 'lastName' | 'firstName' | 'middleName'>,
+): Promise<{ lastName: string; firstName: string; middleName: string | null }> {
+  if (nextPersonId != null) {
+    const person = await prisma.hrPerson.findUnique({
+      where: { id: nextPersonId },
+      select: { displayName: true },
+    });
+    if (!person) throw new HrError('Фізичну особу не знайдено');
+    const parsed = parseUaDisplayName(person.displayName);
+    if (!parsed.lastName || !parsed.firstName) {
+      throw new HrError('Не вдалося визначити ПІБ з обраної фізичної особи');
+    }
+    return parsed;
+  }
+  return {
+    lastName: payload.lastName?.trim() ?? existing.lastName,
+    firstName: payload.firstName?.trim() ?? existing.firstName,
+    middleName:
+      payload.middleName === undefined ? existing.middleName : payload.middleName?.trim() || null,
   };
 }
 
@@ -135,6 +164,7 @@ function toLegalEntityDto(row: {
   name: string;
   kind: string;
   dilovodFirmId?: string | null;
+  dilovodPersonGroupId?: string | null;
   isActive: boolean;
 }): HrLegalEntityDto {
   return {
@@ -143,6 +173,7 @@ function toLegalEntityDto(row: {
     name: row.name,
     kind: isLegalEntityKind(row.kind) ? row.kind : 'fop',
     dilovodFirmId: row.dilovodFirmId ?? null,
+    dilovodPersonGroupId: row.dilovodPersonGroupId ?? null,
     isActive: row.isActive,
   };
 }
@@ -206,12 +237,6 @@ function toPayTermsDto(row: {
   };
 }
 
-function pickCurrentEmployment(employments: EmployeeRecord['employments']) {
-  const today = todayUtcDate();
-  const open = employments.filter((item) => !item.validTo || item.validTo >= today);
-  return (open[0] ?? employments[0] ?? null);
-}
-
 function toEmploymentDto(
   row: Prisma.HrEmploymentGetPayload<{ include: typeof employmentInclude }>,
 ): HrEmploymentDto {
@@ -238,7 +263,7 @@ function toEmploymentDto(
 }
 
 function toListItem(row: EmployeeRecord): HrEmployeeListItemDto {
-  const current = pickCurrentEmployment(row.employments);
+  const current = pickCurrentSelectableEmployerEmployment(row.employments);
   const payWarnings = collectHrPayWarnings(
     row.employments.map((item) => ({
       payGroup: payGroupSlugFromRow(item),
@@ -253,18 +278,20 @@ function toListItem(row: EmployeeRecord): HrEmployeeListItemDto {
     undefined,
     isStatus(row.status) ? row.status : 'inactive',
   );
+  const publicName = resolveEmployeePublicName(row);
   return {
     id: row.id,
-    lastName: row.lastName,
-    firstName: row.firstName,
-    middleName: row.middleName,
-    displayName: row.displayName,
+    lastName: publicName.lastName,
+    firstName: publicName.firstName,
+    middleName: publicName.middleName,
+    displayName: publicName.displayName,
     status: isStatus(row.status) ? row.status : 'inactive',
     personId: row.personId,
     userId: row.userId,
     userName: row.user?.name || row.user?.email || null,
     notes: row.notes,
     cardMasked: maskCardLast4(row.cardLast4),
+    currentLegalEntityId: current?.legalEntityId ?? null,
     currentLegalEntityName: current?.legalEntity.name ?? null,
     currentPayGroup: current ? payGroupSlugFromRow(current) : null,
     hasPayWarning: payWarnings.length > 0,
@@ -357,7 +384,16 @@ export class HrService {
       payload: { code: created.code, name: created.name },
     });
     logServer('[hr] created legal entity', { id: created.id, code: created.code });
-    return toLegalEntityDto(created);
+    try {
+      await hrPersonGroupSyncService.ensureEmployerPersonGroup(created.id, userId);
+    } catch (error) {
+      logServer('[hr] employer person group creation failed', {
+        legalEntityId: created.id,
+        error: error instanceof Error ? error.message : error,
+      });
+    }
+    const refreshed = await prisma.hrLegalEntity.findUnique({ where: { id: created.id } });
+    return toLegalEntityDto(refreshed ?? created);
   }
 
   async updateLegalEntity(id: number, payload: HrLegalEntityWritePayload, userId?: number): Promise<HrLegalEntityDto> {
@@ -514,6 +550,7 @@ export class HrService {
       { lastName: { contains: trimmed } },
       { firstName: { contains: trimmed } },
       { notes: { contains: trimmed } },
+      { person: { displayName: { contains: trimmed } } },
     ];
 
     if (tokens.length > 1) {
@@ -523,6 +560,7 @@ export class HrService {
             { displayName: { contains: token } },
             { lastName: { contains: token } },
             { firstName: { contains: token } },
+            { person: { displayName: { contains: token } } },
           ],
         })),
       });
@@ -531,11 +569,66 @@ export class HrService {
     return { ...base, OR: orConditions };
   }
 
-  async listEmployees(search?: string, includeInactive = true): Promise<HrEmployeeListItemDto[]> {
+  private utcTodayDate(): Date {
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  }
+
+  private openEmploymentWhere(today: Date): Prisma.HrEmploymentWhereInput {
+    return {
+      OR: [{ validTo: null }, { validTo: { gte: today } }],
+    };
+  }
+
+  /** Кількість активних (не в архіві) співробітників з відкритою зайнятістю у конкретного роботодавця. */
+  async getEmployerEmployeeCounts(): Promise<Record<number, number>> {
+    const today = this.utcTodayDate();
+    const rows = await prisma.hrEmployment.findMany({
+      where: {
+        employee: { deletedAt: null },
+        legalEntity: { code: { notIn: [...HR_SEED_LEGAL_ENTITY_CODES] } },
+        ...this.openEmploymentWhere(today),
+      },
+      select: { legalEntityId: true, employeeId: true },
+    });
+
+    const byLegalEntity = new Map<number, Set<number>>();
+    for (const row of rows) {
+      const bucket = byLegalEntity.get(row.legalEntityId) ?? new Set<number>();
+      bucket.add(row.employeeId);
+      byLegalEntity.set(row.legalEntityId, bucket);
+    }
+
+    const result: Record<number, number> = {};
+    for (const [legalEntityId, employeeIds] of byLegalEntity) {
+      result[legalEntityId] = employeeIds.size;
+    }
+    return result;
+  }
+
+  async listEmployees(
+    search?: string,
+    includeInactive = true,
+    legalEntityId?: number,
+  ): Promise<HrEmployeeListItemDto[]> {
+    const today = this.utcTodayDate();
+    const employerId =
+      legalEntityId != null && Number.isInteger(legalEntityId) && legalEntityId > 0 ? legalEntityId : undefined;
+
     const rows = await prisma.hrEmployee.findMany({
       where: {
         ...this.buildEmployeeSearchWhere(search, false),
         ...(includeInactive ? {} : { status: 'active' }),
+        ...(employerId != null
+          ? {
+              employments: {
+                some: {
+                  legalEntityId: employerId,
+                  ...this.openEmploymentWhere(today),
+                },
+              },
+            }
+          : {}),
       },
       include: employeeInclude,
       orderBy: [{ status: 'asc' }, { displayName: 'asc' }],
@@ -595,7 +688,7 @@ export class HrService {
         lastName,
         firstName,
         middleName,
-        displayName: buildDisplayName(lastName, firstName, middleName),
+        displayName: buildEmployeeDisplayName(lastName, firstName, middleName),
         status,
         personId: payload.personId ?? null,
         userId: payload.userId ?? null,
@@ -612,7 +705,21 @@ export class HrService {
       payload: { displayName: created.displayName },
     });
     logServer('[hr] created employee', { id: created.id });
-    return toDetail(created, revealCard);
+    if (created.personId) {
+      try {
+        await hrPersonSyncService.ensurePersonInEmployerFolder(created.id, userId);
+      } catch (error) {
+        logServer('[hr] auto-move person to employer folder failed', {
+          employeeId: created.id,
+          error: error instanceof Error ? error.message : error,
+        });
+      }
+    }
+    const refreshed = await prisma.hrEmployee.findUnique({
+      where: { id: created.id },
+      include: employeeInclude,
+    });
+    return toDetail(refreshed ?? created, revealCard);
   }
 
   async updateEmployee(
@@ -624,10 +731,13 @@ export class HrService {
     const existing = await prisma.hrEmployee.findFirst({ where: { id, deletedAt: null } });
     if (!existing) throw new HrError('Співробітника не знайдено', 404);
 
-    const lastName = payload.lastName?.trim() ?? existing.lastName;
-    const firstName = payload.firstName?.trim() ?? existing.firstName;
-    const middleName =
-      payload.middleName === undefined ? existing.middleName : payload.middleName?.trim() || null;
+    const nextPersonId =
+      payload.personId === undefined ? existing.personId : payload.personId;
+    const { lastName, firstName, middleName } = await resolveEmployeeWriteNameFields(
+      nextPersonId,
+      payload,
+      existing,
+    );
     const status =
       payload.status && isStatus(payload.status) ? payload.status : (existing.status as HrEmployeeStatus);
     const card = applyCardUpdate(payload);
@@ -644,7 +754,7 @@ export class HrService {
         lastName,
         firstName,
         middleName,
-        displayName: buildDisplayName(lastName, firstName, middleName),
+        displayName: buildEmployeeDisplayName(lastName, firstName, middleName),
         status,
         personId: payload.personId === undefined ? existing.personId : payload.personId,
         userId: payload.userId === undefined ? existing.userId : payload.userId,
@@ -659,6 +769,21 @@ export class HrService {
       action: 'updated',
       userId,
     });
+    if (updated.personId && (payload.personId !== undefined || payload.status !== undefined)) {
+      try {
+        await hrPersonSyncService.ensurePersonInEmployerFolder(id, userId);
+      } catch (error) {
+        logServer('[hr] auto-move person to employer folder failed', {
+          employeeId: id,
+          error: error instanceof Error ? error.message : error,
+        });
+      }
+      const refreshed = await prisma.hrEmployee.findUnique({
+        where: { id },
+        include: employeeInclude,
+      });
+      return toDetail(refreshed ?? updated, revealCard);
+    }
     return toDetail(updated, revealCard);
   }
 
@@ -800,6 +925,14 @@ export class HrService {
         userId,
         payload: { employeeId, payGroupId: created.payGroupId },
       });
+      try {
+        await hrPersonSyncService.ensurePersonInEmployerFolder(employeeId, userId);
+      } catch (error) {
+        logServer('[hr] auto-move person to employer folder failed', {
+          employeeId,
+          error: error instanceof Error ? error.message : error,
+        });
+      }
       return toEmploymentDto(created);
     } catch (error) {
       this.rethrowUniqueEmployment(error);
@@ -930,6 +1063,14 @@ export class HrService {
       userId,
       payload: { legalEntityId },
     });
+    try {
+      await hrPersonSyncService.ensurePersonInEmployerFolder(existing.employeeId, userId);
+    } catch (error) {
+      logServer('[hr] auto-move person to employer folder failed', {
+        employeeId: existing.employeeId,
+        error: error instanceof Error ? error.message : error,
+      });
+    }
     return toEmploymentDto(updated);
   }
 

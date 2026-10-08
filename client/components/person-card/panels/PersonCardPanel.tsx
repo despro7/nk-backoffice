@@ -1,5 +1,8 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { Button } from '@heroui/react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Button, DatePicker, Divider } from '@heroui/react';
+import { CalendarDate, parseDate, type DateValue } from '@internationalized/date';
+import { I18nProvider } from '@react-aria/i18n';
+import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { ToastService } from '@/services/ToastService';
 import { formatDateTime } from '@/lib/formatUtils';
 import { ContactAddressNotes } from '../fields/ContactAddressNotes';
@@ -9,13 +12,48 @@ import { ContactPhoneField, normalizePhoneForSave, validatePhoneField } from '..
 import { ContactTaxCodeField } from '../fields/ContactTaxCodeField';
 import { HrAuditAccordion } from '@/components/hr/HrAuditAccordion';
 import { PersonDuplicatesAccordion } from '@/components/hr/PersonDuplicatesAccordion';
-import { PersonMergedAccordion } from '@/components/hr/PersonMergedAccordion';
+import { PersonEmploymentStatusChip } from '@/components/hr/PersonEmploymentStatusChip';
 import { PersonStatusChip } from '@/components/hr/PersonStatusChip';
+import { resolvePersonEmploymentDisplayStatus } from '@shared/utils/hrPersonEmploymentStatus';
+import { PersonMergedAccordion } from '@/components/hr/PersonMergedAccordion';
 import { PersonMergeModal } from '@/pages/Hr/components/PersonMergeModal';
+import { SpecChip, hrEmployerTokensFromName } from '@/pages/Hr/hrUi';
+import { useDebug } from '@/contexts/debug-context';
+import { getSpecColorByHue } from '@shared/utils/specColorPalette';
 import { hasPersonNameTokensForDuplicateSearch, personsAreDuplicates } from '@shared/utils/hrPersonDuplicate';
-import type { HrPersonDto, HrPersonWritePayload } from '@shared/types/hr';
-import type { PersonCardInitialValues } from '../PersonCard.types';
 import { EMPTY_PERSON_FORM, initialValuesToForm, personToForm, snapshotPersonForm } from './personCardForm';
+import { createDefaultMergeFieldSelections } from '@shared/utils/personMergeFields';
+import { mergeHrPersonsBatch } from '@/services/hrPersonMerge';
+import { personGroupAlignedWithEmployerFromDto } from '@shared/utils/personEmployerGroupAlign';
+import { IconActionButton } from '@/components/table/IconActionButton';
+import { DynamicIcon } from 'lucide-react/dynamic';
+import type { HrPersonDto, HrPersonMergeFieldSelections, HrPersonWritePayload } from '@shared/types/hr';
+import type { PersonCardInitialValues } from '../PersonCard.types';
+
+const personGroupTokens = getSpecColorByHue('slate', 'light', 'soft');
+
+function ymdToDateValue(value: string): CalendarDate | null {
+  if (!value) return null;
+  try {
+    return parseDate(value);
+  } catch {
+    return null;
+  }
+}
+
+function dateValueToYmd(value: DateValue | null): string {
+  if (!value) return '';
+  return `${value.year}-${String(value.month).padStart(2, '0')}-${String(value.day).padStart(2, '0')}`;
+}
+
+function PersonMetaField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <span className="text-xs font-medium text-default-500">{label}</span>
+      <div className="min-h-7 flex items-center">{children}</div>
+    </div>
+  );
+}
 
 function formAsDuplicateProbe(
   form: HrPersonWritePayload,
@@ -59,6 +97,7 @@ export const PersonCardPanel = forwardRef<PersonCardPanelHandle, PersonCardPanel
   onBusyChange,
   onDirtyChange,
 }, ref) {
+  const { isDebugMode } = useDebug();
   const isCreate = person == null;
   const [form, setForm] = useState<HrPersonWritePayload>(EMPTY_PERSON_FORM);
   const baselineRef = useRef('');
@@ -68,12 +107,30 @@ export const PersonCardPanel = forwardRef<PersonCardPanelHandle, PersonCardPanel
   const [duplicatesLoading, setDuplicatesLoading] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeMainId, setMergeMainId] = useState<number | null>(null);
+  const [mergeFieldSelections, setMergeFieldSelections] = useState<HrPersonMergeFieldSelections | null>(null);
   const [merging, setMerging] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [auditRefreshKey, setAuditRefreshKey] = useState(0);
   const [savedPerson, setSavedPerson] = useState<HrPersonDto | null>(person);
+  const [dismissOpen, setDismissOpen] = useState(false);
+  const [dismissDate, setDismissDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [dismissing, setDismissing] = useState(false);
+  const [aligningGroup, setAligningGroup] = useState(false);
 
   const displayPerson = savedPerson ?? person;
+
+  const employerDisplayName =
+    displayPerson?.employerName?.trim()
+    || displayPerson?.linkedEmployee?.currentLegalEntityName?.trim()
+    || null;
+
+  const personGroupIsAligned = useMemo(() => {
+    if (!displayPerson) return true;
+    if (displayPerson.personGroupAlignedWithEmployer !== undefined) {
+      return displayPerson.personGroupAlignedWithEmployer;
+    }
+    return personGroupAlignedWithEmployerFromDto(displayPerson);
+  }, [displayPerson]);
 
   const loadDuplicates = useCallback(async () => {
     if (!isOpen) return;
@@ -135,6 +192,7 @@ export const PersonCardPanel = forwardRef<PersonCardPanelHandle, PersonCardPanel
     setDuplicates([]);
     setMergeOpen(false);
     setMergeMainId(null);
+    setMergeFieldSelections(null);
   }, [isOpen, person, initialValues, commitBaseline]);
 
   const isDirty = useMemo(() => {
@@ -244,7 +302,59 @@ export const PersonCardPanel = forwardRef<PersonCardPanelHandle, PersonCardPanel
     }
   }, [canManage, form, isCreate, onClose, onSaved, person, phoneFieldError, syncOnSave, taxCodeFieldError]);
 
-  const isBusy = isSaving || merging;
+  const handleAlignGroupWithEmployer = useCallback(async () => {
+    if (!displayPerson || aligningGroup || !canManage) return;
+
+    setAligningGroup(true);
+    try {
+      let personForAlign = displayPerson;
+
+      if (!personForAlign.dilovodPersonId) {
+        const pushResponse = await fetch(`/api/hr/persons/${displayPerson.id}/sync/push`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+        const pushData = await pushResponse.json().catch(() => ({}));
+        if (!pushResponse.ok) {
+          ToastService.show({
+            title: pushData.message || 'Не вдалося створити контакт у Dilovod',
+            color: 'danger',
+          });
+          return;
+        }
+        personForAlign = pushData.data as HrPersonDto;
+        setSavedPerson(personForAlign);
+        setAuditRefreshKey((prev) => prev + 1);
+      }
+
+      const response = await fetch(`/api/hr/persons/${personForAlign.id}/align-group-with-employer`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        ToastService.show({
+          title: data.message || 'Не вдалося перемістити в групу',
+          color: 'danger',
+        });
+        return;
+      }
+      const updated = data.data as HrPersonDto;
+      setSavedPerson(updated);
+      setAuditRefreshKey((prev) => prev + 1);
+      onSaved(updated);
+      ToastService.show({
+        title: employerDisplayName
+          ? `Переміщено в папку «${employerDisplayName}»`
+          : 'Переміщено в корінь «Працівники»',
+        color: 'success',
+      });
+    } finally {
+      setAligningGroup(false);
+    }
+  }, [aligningGroup, canManage, displayPerson, employerDisplayName, onSaved]);
+
+  const isBusy = isSaving || merging || aligningGroup;
 
   useEffect(() => {
     onBusyChange?.(isBusy);
@@ -256,40 +366,35 @@ export const PersonCardPanel = forwardRef<PersonCardPanelHandle, PersonCardPanel
   }), [handleSave, isBusy]);
 
   const handleMerge = async () => {
-    if (!displayPerson || !mergeMainId || mergeCandidates.length < 2) return;
-    const sources = mergeCandidates.filter((item) => item.id !== mergeMainId);
+    if (!displayPerson || !mergeMainId || mergeCandidates.length < 2 || !mergeFieldSelections) return;
+    const sourcePersonIds = mergeCandidates
+      .filter((item) => item.id !== mergeMainId)
+      .map((item) => item.id);
     setMerging(true);
     try {
-      let latestTarget: HrPersonDto | null = null;
-      for (const source of sources) {
-        const response = await fetch(`/api/hr/persons/${source.id}/merge`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ targetPersonId: mergeMainId }),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          ToastService.show({ title: data.message || 'Не вдалося обʼєднати', color: 'danger' });
-          return;
-        }
-        latestTarget = data.data as HrPersonDto;
-      }
+      const latestTarget = await mergeHrPersonsBatch(mergeMainId, sourcePersonIds, mergeFieldSelections);
       ToastService.show({ title: 'Особи обʼєднано', color: 'success' });
       setMergeOpen(false);
       setAuditRefreshKey((prev) => prev + 1);
-      if (latestTarget) {
-        setSavedPerson(latestTarget);
-        onSaved(latestTarget);
-      }
+      setSavedPerson(latestTarget);
+      onSaved(latestTarget);
       onClose();
+    } catch (error) {
+      ToastService.show({
+        title: error instanceof Error ? error.message : 'Не вдалося обʼєднати',
+        color: 'danger',
+      });
     } finally {
       setMerging(false);
     }
   };
 
   const openMergeModal = () => {
-    setMergeMainId(displayPerson?.id ?? mergeCandidates[0]?.id ?? null);
+    const defaultMainId = displayPerson?.id ?? mergeCandidates[0]?.id ?? null;
+    setMergeMainId(defaultMainId);
+    if (defaultMainId != null) {
+      setMergeFieldSelections(createDefaultMergeFieldSelections(defaultMainId));
+    }
     setMergeOpen(true);
   };
 
@@ -342,14 +447,80 @@ export const PersonCardPanel = forwardRef<PersonCardPanelHandle, PersonCardPanel
 
       {!isCreate && displayPerson ? (
         <div className="space-y-3 pt-4 border-t border-default-200">
-          <div className="flex flex-wrap items-center gap-2">
-            <PersonStatusChip person={displayPerson} />
-            {displayPerson.dilovodCode ? (
-              <span className="text-xs font-mono text-default-500" title="Код контрагента в Dilovod">
-                #{displayPerson.dilovodCode} (dilovod_id: {displayPerson.dilovodPersonTypeId})
-              </span>
-            ) : null}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <PersonMetaField label="Роботодавець">
+              {displayPerson.employerName || displayPerson.linkedEmployee?.currentLegalEntityName ? (
+                <SpecChip
+                  tokens={hrEmployerTokensFromName(
+                    displayPerson.employerName || displayPerson.linkedEmployee?.currentLegalEntityName,
+                  )}
+                  rounded="sm"
+                >
+                  {displayPerson.employerName || displayPerson.linkedEmployee?.currentLegalEntityName}
+                </SpecChip>
+              ) : (
+                <span className="text-sm text-default-400">Не обрано</span>
+              )}
+            </PersonMetaField>
+            <PersonMetaField label="Група">
+              {displayPerson.personGroupLabel ? (
+                <SpecChip tokens={personGroupTokens} rounded="sm">
+                  {displayPerson.personGroupLabel}
+                </SpecChip>
+              ) : (
+                <span className="text-sm text-default-400">—</span>
+              )}
+              {canManage && !personGroupIsAligned ? (
+                <IconActionButton
+                  icon="folder-sync"
+                  isLoading={aligningGroup}
+                  label={
+                    !displayPerson.dilovodPersonId
+                      ? 'Створити в Dilovod і перемістити в потрібну папку'
+                      : employerDisplayName
+                        ? `Перемістити в папку роботодавця «${employerDisplayName}»`
+                        : 'Перемістити в корінь «Працівники»'
+                  }
+                  onPress={() => void handleAlignGroupWithEmployer()}
+                />
+              ) : null}
+            </PersonMetaField>
+            <PersonMetaField label="Статус працівника">
+              {displayPerson.linkedEmployee ? (
+                <PersonEmploymentStatusChip person={displayPerson} emptyClassName="text-sm text-default-400" rounded="sm" />
+              ) : (
+                <span className="text-sm text-default-400">Не привʼязано</span>
+              )}
+            </PersonMetaField>
           </div>
+
+          {displayPerson.dilovodCode ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <PersonMetaField
+                label="Код в Dilovod"
+                children={<span className="inline-flex items-center gap-1 text-sm">{displayPerson.dilovodCode}</span>}
+              />
+              {isDebugMode && displayPerson.dilovodPersonTypeId ? (
+                <PersonMetaField
+                  label="ID в Dilovod"
+                  children={<span className="inline-flex items-center gap-1 text-sm">{displayPerson.dilovodPersonTypeId}</span>}
+                />
+              ) : null}
+            </div>
+          ) : null}
+
+          {canManage && resolvePersonEmploymentDisplayStatus(displayPerson) === 'active' ? (
+            <div className="flex flex-wrap items-center gap-3 mt-6">
+              <Button
+                color="danger"
+                variant="flat"
+                onPress={() => setDismissOpen(true)}
+                startContent={<DynamicIcon name="user-round-minus" size={16} />}
+              >
+                Звільнити співробітника
+              </Button>
+            </div>
+          ) : null}
 
           {showUnresolvedDuplicate ? (
             <PersonDuplicatesAccordion
@@ -365,44 +536,43 @@ export const PersonCardPanel = forwardRef<PersonCardPanelHandle, PersonCardPanel
             mergedCount={displayPerson.mergedCount}
             refreshKey={auditRefreshKey}
           />
-
-          <HrAuditAccordion
-            className="mt-auto pt-6"
-            entityType="person"
-            entityId={displayPerson.id}
-            refreshKey={auditRefreshKey}
-          />
+          
+          <Divider className="bg-default-200"/>
 
           {displayPerson.lastSyncedAt ? (
-            <p className="text-xs text-default-500">
+            <p className="text-xs text-default-400 my-2">
               Синхронізовано: {formatDateTime(displayPerson.lastSyncedAt)}
             </p>
           ) : null}
         </div>
       ) : showUnresolvedDuplicate ? (
         <div className="space-y-2 pt-4 border-t border-default-200">
-          <PersonStatusChip person={{
-            id: -1,
-            displayName: form.displayName ?? '',
-            dilovodPersonId: null,
-            dilovodCode: null,
-            taxCode: null,
-            phone: null,
-            email: null,
-            address: null,
-            dilovodParentId: null,
-            dilovodPersonTypeId: null,
-            dilovodStateId: null,
-            isDeletedInDilovod: false,
-            localStatus: 'active',
-            canonicalPersonId: null,
-            duplicateOfId: null,
-            notes: null,
-            lastSyncedAt: null,
-            isDuplicateCandidate: true,
-            mergedCount: 0,
-            hasUnresolvedDuplicates: true,
-          }} />
+          <PersonMetaField label="Статус особи">
+            <PersonStatusChip
+              person={{
+                id: -1,
+                displayName: form.displayName ?? '',
+                dilovodPersonId: null,
+                dilovodCode: null,
+                taxCode: null,
+                phone: null,
+                email: null,
+                address: null,
+                dilovodParentId: null,
+                dilovodPersonTypeId: null,
+                dilovodStateId: null,
+                isDeletedInDilovod: false,
+                localStatus: 'active',
+                canonicalPersonId: null,
+                duplicateOfId: null,
+                notes: null,
+                lastSyncedAt: null,
+                mergedCount: 0,
+                hasUnresolvedDuplicates: true,
+              }}
+              rounded="sm"
+            />
+          </PersonMetaField>
           {duplicates.length > 0 ? (
             <ul className="space-y-1.5">
               {duplicates.map((duplicate) => (
@@ -416,16 +586,88 @@ export const PersonCardPanel = forwardRef<PersonCardPanelHandle, PersonCardPanel
         </div>
       ) : null}
 
+      <HrAuditAccordion
+        className="mt-auto pt-6"
+        entityType="person"
+        entityId={displayPerson.id}
+        refreshKey={auditRefreshKey}
+      />
+
       <PersonMergeModal
         isOpen={mergeOpen}
         isLoading={merging}
-        variant="radio"
         candidates={mergeCandidates}
-        selectedId={mergeMainId}
-        currentPersonId={displayPerson?.id ?? null}
-        onSelectedIdChange={setMergeMainId}
+        mainPersonId={mergeMainId}
+        fieldSelections={mergeFieldSelections ?? createDefaultMergeFieldSelections(mergeMainId ?? 0)}
+        onMainPersonIdChange={setMergeMainId}
+        onFieldSelectionsChange={setMergeFieldSelections}
         onClose={() => setMergeOpen(false)}
         onConfirm={() => void handleMerge()}
+      />
+
+      <ConfirmModal
+        isOpen={dismissOpen}
+        title="Звільнити працівника?"
+        overlayZClassName="z-[2000]"
+        message={
+          displayPerson ? (
+            <div className="space-y-4">
+              <p>
+                Підтвердьте звільнення «{displayPerson.displayName}». Особа буде переміщена в групу
+                «Звільнені працівники», статус співробітника стане неактивним, а зайнятості буде закрито.
+              </p>
+              <I18nProvider locale="uk-UA">
+                <DatePicker
+                  label="Дата звільнення"
+                  value={ymdToDateValue(dismissDate)}
+                  onChange={(date) => setDismissDate(dateValueToYmd(date))}
+                  showMonthAndYearPickers
+                  isRequired={true}
+                  granularity="day"
+                  selectorButtonPlacement="end"
+                  className="max-w-2xs"
+                  classNames={{
+                    segment: 'rounded',
+                    label: 'text-xs font-medium',
+                  }}
+                />
+              </I18nProvider>
+            </div>
+          ) : ''
+        }
+        confirmText="Звільнити"
+        cancelText="Скасувати"
+        confirmColor="danger"
+        confirmLoading={dismissing}
+        onConfirm={async () => {
+          if (!displayPerson || dismissing) return;
+          setDismissing(true);
+          try {
+            const response = await fetch(`/api/hr/persons/${displayPerson.id}/dismiss`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ dismissedAt: dismissDate }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              ToastService.show({ title: data.message || 'Не вдалося звільнити', color: 'danger' });
+              return;
+            }
+            const updated = data.data as HrPersonDto;
+            setSavedPerson(updated);
+            setAuditRefreshKey((prev) => prev + 1);
+            onSaved(updated);
+            ToastService.show({ title: 'Працівника звільнено', color: 'success' });
+            setDismissOpen(false);
+          } finally {
+            setDismissing(false);
+          }
+        }}
+        onCancel={() => {
+          if (dismissing) return;
+          setDismissOpen(false);
+        }}
       />
 
     </div>

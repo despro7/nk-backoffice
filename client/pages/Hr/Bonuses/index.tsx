@@ -28,7 +28,7 @@ import { MonthSwitcher } from '@/components/MonthSwitcher';
 import { BonusDrawer } from './BonusDrawer';
 import { formatMoney } from '@/lib/formatUtils';
 import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
-import { HR_TABLE_CLASS_NAMES, HrSpecChip, hrKindTokens, hrStatusTokens } from '../hrUi';
+import { HR_TABLE_CLASS_NAMES, SpecChip, hrKindTokens, hrStatusTokens } from '../hrUi';
 import { formatYearMonth, parseYearMonth } from '@shared/utils/hrTimesheetCalendar';
 import { useSearchParams } from 'react-router-dom';
 
@@ -213,7 +213,7 @@ export default function HrBonusesPage() {
         ) : null}
       </div>
 
-      <Card shadow="none" className="border border-default-200">
+      <Card shadow="none" className="rounded-lg">
         <CardBody>
           {loading ? (
             <div className="flex justify-center py-8">
@@ -239,7 +239,7 @@ export default function HrBonusesPage() {
                     <TableCell className="tabular-nums">{formatMoney(bonus.amount)}</TableCell>
                     <TableCell>{HR_BONUS_KIND_LABELS[bonus.kind]}</TableCell>
                     <TableCell>
-                      <HrSpecChip
+                      <SpecChip
                         tokens={
                           bonus.status === 'approved'
                             ? hrStatusTokens('active')
@@ -256,7 +256,7 @@ export default function HrBonusesPage() {
                         }
                       >
                         {HR_BONUS_STATUS_LABELS[bonus.status]}
-                      </HrSpecChip>
+                      </SpecChip>
                     </TableCell>
                     {canManage ? (
                       <TableCell>

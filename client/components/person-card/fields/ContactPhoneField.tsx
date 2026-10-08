@@ -1,4 +1,4 @@
-import { Input } from '@heroui/react';
+import { ClearConfirmInput } from './ClearConfirmInput';
 import {
   applyPhoneInputChange,
   formatPhoneInputMask,
@@ -30,7 +30,7 @@ export function ContactPhoneField({
   const display = formatPhoneInputMask(value);
 
   return (
-    <Input
+    <ClearConfirmInput
       label="Телефон"
       // labelPlacement="outside"
       placeholder="+38 (0XX) XXX-XX-XX"
@@ -44,7 +44,6 @@ export function ContactPhoneField({
       errorMessage={showFieldErrors ? error : undefined}
       inputMode="tel"
       autoComplete="off"
-      isClearable={canManage}
       onClear={() => onChange('')}
     />
   );

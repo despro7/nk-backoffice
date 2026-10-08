@@ -18,7 +18,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { ToastService } from '@/services/ToastService';
 import { HR_PAY_GROUP_LABELS, type HrEmployeeListItemDto } from '@shared/types/hr';
-import { HR_BTN_NEUTRAL, HR_TABLE_CLASS_NAMES, HrLinkedAccountIndicator, HrSpecChip, hrEmployerTokensFromName, hrPayGroupTokens } from '../hrUi';
+import { HR_BTN_NEUTRAL, HR_TABLE_CLASS_NAMES, HrLinkedAccountIndicator, SpecChip, hrEmployerTokensFromName, hrPayGroupTokens } from '../hrUi';
 import { useHrPayGroupHues } from '../useHrPayGroupHues';
 
 interface EmployeesArchiveModalProps {
@@ -144,18 +144,18 @@ export function EmployeesArchiveModal({ isOpen, onClose, onRestored }: Employees
                       </TableCell>
                       <TableCell>
                         {employee.currentLegalEntityName ? (
-                          <HrSpecChip tokens={hrEmployerTokensFromName(employee.currentLegalEntityName)}>
+                          <SpecChip tokens={hrEmployerTokensFromName(employee.currentLegalEntityName)}>
                             {employee.currentLegalEntityName}
-                          </HrSpecChip>
+                          </SpecChip>
                         ) : (
                           '—'
                         )}
                       </TableCell>
                       <TableCell>
                         {employee.currentPayGroup ? (
-                          <HrSpecChip tokens={hrPayGroupTokens(employee.currentPayGroup, 'soft', payGroupHueOverrides)}>
+                          <SpecChip tokens={hrPayGroupTokens(employee.currentPayGroup, 'soft', payGroupHueOverrides)}>
                             {HR_PAY_GROUP_LABELS[employee.currentPayGroup]}
-                          </HrSpecChip>
+                          </SpecChip>
                         ) : (
                           <span className="text-sm text-default-500">—</span>
                         )}

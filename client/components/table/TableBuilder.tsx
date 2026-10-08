@@ -34,6 +34,8 @@ function isPdfoMilitaryMerged(config: PayrollTableBuilderConfig): boolean {
 interface TableBuilderProps {
   config: PayrollTableBuilderConfig;
   onChange: (config: PayrollTableBuilderConfig) => void;
+  /** Довільний період: лише розбиття податків і видимість премій. */
+  customPeriod?: boolean;
   canSaveGlobal?: boolean;
   onSaveGlobal?: () => void;
   savingGlobal?: boolean;
@@ -42,6 +44,7 @@ interface TableBuilderProps {
 export function TableBuilder({
   config,
   onChange,
+  customPeriod = false,
   canSaveGlobal = false,
   onSaveGlobal,
   savingGlobal = false,
@@ -62,18 +65,20 @@ export function TableBuilder({
     if (config.visibleColumns.esv) keys.add('esv');
     if (config.visibleColumns.bonus) keys.add('bonus');
     if (config.visibleColumns.total) keys.add('total');
-    if (config.taxesSeparate) keys.add('taxes-separate');
+    if (!customPeriod && config.taxesSeparate) keys.add('taxes-separate');
     if (pdfoMerged) keys.add('merge-pdfo-vz');
+    if (customPeriod && config.visibleColumns.esv) keys.add('esv-separate');
 
     return keys;
-  }, [config, pdfoMerged]);
+  }, [config, customPeriod, pdfoMerged]);
 
   const handleSelectionChange = (keys: Selection) => {
     if (keys === 'all') return;
 
     const selected = new Set(Array.from(keys as Iterable<string>, String));
     const mergePdfoVz = selected.has('merge-pdfo-vz');
-    const taxesSeparate = selected.has('taxes-separate');
+    const taxesSeparate = customPeriod ? config.taxesSeparate : selected.has('taxes-separate');
+    const esvSeparate = customPeriod ? selected.has('esv-separate') : config.visibleColumns.esv;
     const hadMerge = pdfoMerged;
 
     let merges = config.merges;
@@ -91,19 +96,31 @@ export function TableBuilder({
     const mergedNow = mergePdfoVz;
     const visibleColumns = { ...config.visibleColumns };
 
-    if (mergedNow) {
+    if (customPeriod) {
+      if (mergedNow) {
+        const pdfoMilitaryVisible = selected.has('pdfo-military') || mergePdfoVz;
+        visibleColumns.pdfo = pdfoMilitaryVisible;
+        visibleColumns.military = pdfoMilitaryVisible;
+      } else {
+        visibleColumns.pdfo = selected.has('pdfo');
+        visibleColumns.military = selected.has('military');
+      }
+      visibleColumns.esv = esvSeparate;
+      visibleColumns.bonus = selected.has('bonus');
+    } else if (mergedNow) {
       const pdfoMilitaryVisible = selected.has('pdfo-military');
       visibleColumns.pdfo = pdfoMilitaryVisible;
       visibleColumns.military = pdfoMilitaryVisible;
       visibleColumns.esv = selected.has('esv');
+      visibleColumns.bonus = selected.has('bonus');
+      visibleColumns.total = selected.has('total');
     } else {
       visibleColumns.pdfo = selected.has('pdfo');
       visibleColumns.military = selected.has('military');
       visibleColumns.esv = selected.has('esv');
+      visibleColumns.bonus = selected.has('bonus');
+      visibleColumns.total = selected.has('total');
     }
-
-    visibleColumns.bonus = selected.has('bonus');
-    visibleColumns.total = selected.has('total');
 
     onChange({
       ...config,
@@ -114,12 +131,12 @@ export function TableBuilder({
   };
 
   return (
-    <Dropdown placement="bottom-end">
+    <Dropdown placement="bottom-end" offset={4}>
       <DropdownTrigger>
         <Button
           size="sm"
           variant="flat"
-          className={HR_BTN_NEUTRAL}
+          className="bg-slate-700 text-slate-50 font-medium"
           startContent={<DynamicIcon name="columns-3" size={14} />}
           endContent={<DynamicIcon name="chevron-down" size={14} className="text-default-400" />}
         >
@@ -137,23 +154,38 @@ export function TableBuilder({
         itemClasses={{ base: 'gap-2' }}
       >
         <DropdownSection title="Відображення" showDivider dividerProps={SECTION_DIVIDER}>
-          <DropdownItem key="taxes-separate">Податки/премії окремо</DropdownItem>
-          <DropdownItem key="merge-pdfo-vz">Обʼєднати ПДФО+ВЗ</DropdownItem>
+          {customPeriod ? (
+            <>
+              <DropdownItem key="merge-pdfo-vz">Обʼєднати ПДФО+ВЗ</DropdownItem>
+              <DropdownItem key="esv-separate">ЄСВ окремо</DropdownItem>
+            </>
+          ) : (
+            <>
+              <DropdownItem key="taxes-separate">Податки/премії окремо</DropdownItem>
+              <DropdownItem key="merge-pdfo-vz">Обʼєднати ПДФО+ВЗ</DropdownItem>
+            </>
+          )}
         </DropdownSection>
 
         <DropdownSection title="Видимість колонок" showDivider dividerProps={SECTION_DIVIDER}>
-          <DropdownItem key="pdfo-military" className={pdfoMerged ? '' : 'hidden'}>
-            ПДФО+ВЗ
-          </DropdownItem>
-          <DropdownItem key="pdfo" className={!pdfoMerged ? '' : 'hidden'}>
-            {COLUMN_LABELS.pdfo}
-          </DropdownItem>
-          <DropdownItem key="military" className={!pdfoMerged ? '' : 'hidden'}>
-            {COLUMN_LABELS.military}
-          </DropdownItem>
-          <DropdownItem key="esv">{COLUMN_LABELS.esv}</DropdownItem>
-          <DropdownItem key="bonus">{COLUMN_LABELS.bonus}</DropdownItem>
-          <DropdownItem key="total">{COLUMN_LABELS.total}</DropdownItem>
+          {customPeriod ? (
+            <DropdownItem key="bonus">{COLUMN_LABELS.bonus}</DropdownItem>
+          ) : (
+            <>
+              <DropdownItem key="pdfo-military" className={pdfoMerged ? '' : 'hidden'}>
+                ПДФО+ВЗ
+              </DropdownItem>
+              <DropdownItem key="pdfo" className={!pdfoMerged ? '' : 'hidden'}>
+                {COLUMN_LABELS.pdfo}
+              </DropdownItem>
+              <DropdownItem key="military" className={!pdfoMerged ? '' : 'hidden'}>
+                {COLUMN_LABELS.military}
+              </DropdownItem>
+              <DropdownItem key="esv">{COLUMN_LABELS.esv}</DropdownItem>
+              <DropdownItem key="bonus">{COLUMN_LABELS.bonus}</DropdownItem>
+              <DropdownItem key="total">{COLUMN_LABELS.total}</DropdownItem>
+            </>
+          )}
         </DropdownSection>
 
         {canSaveGlobal && onSaveGlobal ? (
@@ -161,7 +193,7 @@ export function TableBuilder({
             <DropdownItem
               key="save-global"
               textValue="Зберегти для всіх"
-              className="h-auto p-0 data-[hover=true]:bg-transparent"
+              className="h-auto p-0 data-[hover=true]:bg-transparent [&_span]:aria-[hidden=true]:hidden"
               closeOnSelect={false}
               isReadOnly
             >

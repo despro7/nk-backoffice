@@ -189,8 +189,8 @@ export const ProductionCalendarTab = forwardRef<ProductionCalendarTabHandle, Pro
           Опційний виробничий календар для агрегації ФОП. Табель лишається на календарних тижнях (пн–нд).
         </p>
 
-        <Card className="border border-default-200 shadow-sm">
-          <CardBody className="flex flex-col gap-4">
+        <Card className="shadow-none">
+          <CardBody className="flex flex-col gap-4 p-4">
             <Switch
               size="sm"
               isSelected={config.isEnabled}
@@ -244,8 +244,9 @@ export const ProductionCalendarTab = forwardRef<ProductionCalendarTabHandle, Pro
               </Select>
 
               <CheckboxGroup
-                label="Дні для розрахунку ФОП"
+                label="Дні для розрахунку Фонду оплати праці"
                 isDisabled={!canManage || !config.isEnabled}
+                classNames={{ label: 'text-sm text-default-700', wrapper: 'py-2.5' }}
                 value={config.fopWeekdays.map(String)}
                 onValueChange={(values) => {
                   setConfig((prev) =>
@@ -261,7 +262,7 @@ export const ProductionCalendarTab = forwardRef<ProductionCalendarTabHandle, Pro
               >
                 <div className="flex flex-wrap gap-3">
                   {WEEKDAY_OPTIONS.map((item) => (
-                    <Checkbox key={item.value} value={item.value}>
+                    <Checkbox size="sm" classNames={{ wrapper: 'mr-1' }} key={item.value} value={item.value}>
                       {item.label}
                     </Checkbox>
                   ))}
@@ -284,7 +285,7 @@ export const ProductionCalendarTab = forwardRef<ProductionCalendarTabHandle, Pro
         </Card>
 
         {config.isEnabled && preview.length > 0 ? (
-          <Card className="border border-default-200 shadow-sm">
+          <Card className="shadow-none">
             <CardBody className="space-y-2">
               <div className="text-sm font-semibold text-default-900">Превʼю найближчих періодів</div>
               <ul className="space-y-1 text-sm text-default-500">

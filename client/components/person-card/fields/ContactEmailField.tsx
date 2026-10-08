@@ -1,4 +1,4 @@
-import { Input } from '@heroui/react';
+import { ClearConfirmInput } from './ClearConfirmInput';
 
 interface ContactEmailFieldProps {
   value: string;
@@ -12,7 +12,7 @@ export function ContactEmailField({
   onChange,
 }: ContactEmailFieldProps) {
   return (
-    <Input
+    <ClearConfirmInput
       label="Email"
       // labelPlacement="outside"
       placeholder="email@example.com"
@@ -20,7 +20,6 @@ export function ContactEmailField({
       onValueChange={onChange}
       isReadOnly={!canManage}
       autoComplete="off"
-      isClearable={canManage}
     />
   );
 }

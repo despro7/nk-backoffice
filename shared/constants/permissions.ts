@@ -244,6 +244,7 @@ export const PERMISSION_SEEDS: Array<{ key: PermissionKey; seed: SeedGrant }> = 
   { key: actionKey('hr', 'employment.transfer'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
   { key: actionKey('hr', 'employment.change-group'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
   { key: actionKey('hr', 'employment.change-employer'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
+  { key: actionKey('hr', 'employment.change-pay-rate'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
 
   { key: pageKey('settings', 'orderAssembly'), seed: min(ROLES.STOREKEEPER) },
   { key: pageKey('settings', 'equipment'), seed: only(ROLES.ADMIN, ROLES.BOSS, ROLES.STOREKEEPER) },
@@ -337,6 +338,7 @@ export const PERMISSIONS = {
   ACTION_HR_EMPLOYMENT_TRANSFER: actionKey('hr', 'employment.transfer'),
   ACTION_HR_EMPLOYMENT_CHANGE_GROUP: actionKey('hr', 'employment.change-group'),
   ACTION_HR_EMPLOYMENT_CHANGE_EMPLOYER: actionKey('hr', 'employment.change-employer'),
+  ACTION_HR_EMPLOYMENT_CHANGE_PAY_RATE: actionKey('hr', 'employment.change-pay-rate'),
   PAGE_SETTINGS_ORDER_ASSEMBLY: pageKey('settings', 'orderAssembly'),
   PAGE_SETTINGS_EQUIPMENT: pageKey('settings', 'equipment'),
   PAGE_SETTINGS_ORDERS: pageKey('settings', 'orders'),

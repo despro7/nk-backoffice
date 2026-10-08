@@ -22,10 +22,9 @@ import { ToastService } from '@/services/ToastService';
 import { SpecHueSelect } from '@/components/SpecHueSelect';
 import { SpecChip } from '@/components/SpecChip';
 import type { HrPayGroup, HrPayGroupDto, HrPayGroupWritePayload } from '@shared/types/hr';
-import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
+import { BTN_PRIMARY_BLUE } from '@/lib/buttonStyles';
 import {
   HR_PAY_GROUP_HUES,
-  HrSpecChip,
   hrPayGroupTokens,
   hrStatusTokens,
 } from '../hrUi';
@@ -186,7 +185,7 @@ export function PayGroupsTab({ canManage }: PayGroupsTabProps) {
         редагується лише назва для відображення. Порядок змінюється перетягуванням рядків.
       </p>
 
-      <Card className="border border-default-200 shadow-sm">
+      <Card className="shadow-none rounded-lg">
         <CardBody className="p-3">
           {loading && groups.length === 0 ? (
             <div className="flex justify-center py-16">
@@ -249,12 +248,12 @@ export function PayGroupsTab({ canManage }: PayGroupsTabProps) {
                                 <span className="font-mono text-xs text-default-500">{group.slug}</span>
                               </div>
                               <div>
-                                <HrSpecChip
+                                <SpecChip
                                   tokens={hrStatusTokens(group.isActive ? 'active' : 'inactive')}
                                   icon={group.isActive ? 'success' : 'error'}
                                 >
                                   {group.isActive ? 'активна' : 'неактивна'}
-                                </HrSpecChip>
+                                </SpecChip>
                               </div>
                               <div>
                                 {canManage ? (
@@ -375,7 +374,7 @@ export function PayGroupsTab({ canManage }: PayGroupsTabProps) {
               </DrawerBody>
               <DrawerFooter className="border-t border-default-200 shrink-0">
                 <Button variant="light" onPress={requestCloseDrawer}>Скасувати</Button>
-                <Button className={HR_BTN_PRIMARY} onPress={() => void save()} isDisabled={!isDirty}>
+                <Button className={BTN_PRIMARY_BLUE} onPress={() => void save()} isDisabled={!isDirty}>
                   Зберегти
                 </Button>
               </DrawerFooter>

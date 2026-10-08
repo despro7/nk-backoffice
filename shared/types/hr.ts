@@ -1,4 +1,4 @@
-export const HR_PAY_GROUPS = ['official_salary', 'hourly', 'hourly_unofficial', 'unofficial_cash'] as const;
+export const HR_PAY_GROUPS = ['official_salary', 'hourly', 'unofficial_cash', 'hourly_unofficial'] as const;
 export type HrPayGroup = (typeof HR_PAY_GROUPS)[number];
 
 export const HR_PAY_GROUP_LABELS: Record<HrPayGroup, string> = {
@@ -61,6 +61,14 @@ export interface HrPersonSummaryDto {
   mergedAt?: string | null;
 }
 
+export interface HrPersonLinkedEmployeeDto {
+  employeeId: number;
+  status: HrEmployeeStatus;
+  currentLegalEntityId: number | null;
+  currentLegalEntityName: string | null;
+  currentLegalEntityDilovodPersonGroupId: string | null;
+}
+
 export interface HrPersonDto {
   id: number;
   dilovodPersonId: string | null;
@@ -79,10 +87,52 @@ export interface HrPersonDto {
   duplicateOfId: number | null;
   notes: string | null;
   lastSyncedAt: string | null;
-  /** @deprecated Use hasUnresolvedDuplicates */
-  isDuplicateCandidate: boolean;
   mergedCount: number;
   hasUnresolvedDuplicates: boolean;
+  linkedEmployee?: HrPersonLinkedEmployeeDto | null;
+  personGroupLabel?: string | null;
+  employerName?: string | null;
+  personGroupAlignedWithEmployer?: boolean;
+}
+
+export interface HrPersonTreeNode {
+  id: string;
+  kind: 'group' | 'person';
+  parentId: string | null;
+  label: string;
+  depth: number;
+  groupId?: string;
+  legalEntityId?: number;
+  isSystem?: boolean;
+  childCount?: number;
+  person?: HrPersonDto;
+}
+
+export interface HrPersonDismissPayload {
+  dismissedAt: string;
+}
+
+export interface HrPersonMoveToGroupPayload {
+  targetGroupId: string;
+}
+
+export const HR_PERSON_MERGE_PICKABLE_FIELDS = [
+  'phone',
+  'email',
+  'address',
+  'notes',
+  'personGroup',
+  'employer',
+  'employeeStatus',
+] as const;
+export type HrPersonMergePickableField = (typeof HR_PERSON_MERGE_PICKABLE_FIELDS)[number];
+
+export type HrPersonMergeFieldSelections = Record<HrPersonMergePickableField, number>;
+
+export interface HrPersonMergeBatchPayload {
+  targetPersonId: number;
+  sourcePersonIds: number[];
+  fieldSelections: HrPersonMergeFieldSelections;
 }
 
 export interface HrPersonWritePayload {
@@ -122,6 +172,7 @@ export interface HrLegalEntityDto {
   name: string;
   kind: HrLegalEntityKind;
   dilovodFirmId: string | null;
+  dilovodPersonGroupId: string | null;
   isActive: boolean;
 }
 
@@ -197,6 +248,7 @@ export interface HrEmployeeListItemDto {
   userName: string | null;
   notes: string | null;
   cardMasked: string | null;
+  currentLegalEntityId: number | null;
   currentLegalEntityName: string | null;
   currentPayGroup: HrPayGroup | null;
   /** Неконсистентні ставки / зайнятості (не блокує дії) */
@@ -266,7 +318,7 @@ export const HR_TIMESHEET_KIND_LABELS: Record<HrTimesheetKind, string> = {
   Св: 'Свято',
 };
 
-export const HR_TIMESHEET_GROUP_FILTERS = ['official', 'hourly', 'hourly_unofficial', 'cash'] as const;
+export const HR_TIMESHEET_GROUP_FILTERS = ['official', 'hourly', 'cash', 'hourly_unofficial'] as const;
 export type HrTimesheetGroupFilter = (typeof HR_TIMESHEET_GROUP_FILTERS)[number];
 
 export const HR_TIMESHEET_GROUP_TO_PAY: Record<HrTimesheetGroupFilter, HrPayGroup> = {
@@ -554,6 +606,8 @@ export interface HrFopSummaryDto {
     payGroup: HrPayGroup;
     employerTotalCost: string;
     bonusAmount: string;
+    /** ПДФО + військовий збір за місяць (як у розрахунку зарплати). */
+    pdfoVzAmount: string;
     esvAmount: string;
     includedDays: number;
   }>;

@@ -35,6 +35,7 @@ import { HrAuditAccordion } from '@/components/hr/HrAuditAccordion';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { PERMISSIONS } from '@shared/constants/permissions';
+import { parseUaDisplayName } from '@shared/utils/hrEmployeePersonName';
 import {
   HR_PAY_GROUP_LABELS,
   HR_PAY_GROUPS,
@@ -68,7 +69,6 @@ interface EmployeeDrawerProps {
   employeeId: number | null;
   legalEntities: HrLegalEntityDto[];
   canManage: boolean;
-  canManagePayTerms: boolean;
   canRevealCard: boolean;
   onClose: () => void;
   onSaved: () => void;
@@ -116,8 +116,15 @@ function snapshotEmployeeForm(form: FormState): string {
   });
 }
 
-function normalizePersonName(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+function formNameFieldsFromPersonDisplayName(
+  displayName: string,
+): Pick<FormState, 'lastName' | 'firstName' | 'middleName'> {
+  const parsed = parseUaDisplayName(displayName);
+  return {
+    lastName: parsed.lastName,
+    firstName: parsed.firstName,
+    middleName: parsed.middleName ?? '',
+  };
 }
 
 const PAY_KIND_OPTIONS = HR_PAY_TERMS_KINDS.map((kind) => ({
@@ -205,8 +212,41 @@ function formatAmountMask(value: string): string {
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 }
 
+/** Погодинна ставка: до 6 цифр у цілій частині та до 2 знаків після коми. */
+function formatHourlyAmountInput(value: string): string {
+  const compact = value.replace(/\s/g, '');
+  const endsWithSep = compact.endsWith(',') || compact.endsWith('.');
+  const normalized = compact.replace(',', '.');
+  const [rawInt = '', rawFrac = ''] = normalized.split('.');
+  const intPart = rawInt.replace(/\D/g, '').slice(0, 6);
+  const fracPart = rawFrac.replace(/\D/g, '').slice(0, 2);
+  if (!normalized.includes('.') && !endsWithSep) return intPart;
+  if (fracPart.length > 0) return `${intPart},${fracPart}`;
+  if (endsWithSep && intPart.length > 0) return `${intPart},`;
+  return intPart;
+}
+
+function formatPayAmountInput(value: string, kind: HrPayTermsKind): string {
+  return kind === 'hourly' ? formatHourlyAmountInput(value) : formatAmountMask(value);
+}
+
+/** API повертає Decimal як "30000.00" — беремо лише цілу частину, без склеювання копійок. */
+function formatSalaryAmountFromApi(amount: string): string {
+  const normalized = amount.trim().replace(',', '.');
+  const [intPart = ''] = normalized.split('.');
+  return formatAmountMask(intPart.replace(/\D/g, ''));
+}
+
 function amountToApi(value: string): string {
-  return value.replace(/\s/g, '');
+  return value.replace(/\s/g, '').replace(',', '.');
+}
+
+function isValidPayAmount(value: string, kind: HrPayTermsKind): boolean {
+  const api = amountToApi(value);
+  if (kind === 'hourly') {
+    return /^\d+(\.\d{1,2})?$/.test(api);
+  }
+  return /^\d+$/.test(api);
 }
 
 function emptyPayForm(): PayFormState {
@@ -215,6 +255,19 @@ function emptyPayForm(): PayFormState {
     amount: '',
     effectiveFrom: todayYmd(),
     effectiveTo: '',
+  };
+}
+
+function payFormFromTerm(term: HrPayTermsDto): PayFormState {
+  const amount =
+    term.kind === 'hourly'
+      ? formatHourlyAmountInput(term.amount.replace('.', ','))
+      : formatSalaryAmountFromApi(term.amount);
+  return {
+    kind: term.kind,
+    amount,
+    effectiveFrom: term.effectiveFrom,
+    effectiveTo: term.effectiveTo ?? '',
   };
 }
 
@@ -255,9 +308,15 @@ function describeEmploymentForMerge(employment: HrEmploymentDto): string {
   return parts.join(' · ');
 }
 
-function formatMoney(value: string | number): string {
+function formatMoney(value: string | number, kind?: HrPayTermsKind): string {
   const n = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(n)) return String(value);
+  if (kind === 'hourly') {
+    const fixed = n.toFixed(2).replace(/\.?0+$/, '');
+    const [intPart, fracPart] = fixed.split('.');
+    const grouped = formatAmountMask(intPart);
+    return fracPart ? `${grouped},${fracPart}` : grouped;
+  }
   return formatAmountMask(String(Math.round(n)));
 }
 
@@ -265,7 +324,8 @@ function payAmountFieldMeta(kind: HrPayTermsKind): { label: string; placeholder:
   if (kind === 'hourly') {
     return {
       label: 'Ставка за годину',
-      placeholder: 'Введіть суму',
+      placeholder: 'Наприклад, 85,50',
+      description: 'Допускаються копійки (кома або крапка)',
     };
   }
   return {
@@ -325,7 +385,6 @@ export function EmployeeDrawer({
   employeeId,
   legalEntities,
   canManage,
-  canManagePayTerms,
   canRevealCard,
   onClose,
   onSaved,
@@ -337,6 +396,8 @@ export function EmployeeDrawer({
   const canTransferEmployment = hasPermission(PERMISSIONS.ACTION_HR_EMPLOYMENT_TRANSFER);
   const canChangeEmploymentGroup = hasPermission(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_GROUP);
   const canChangeEmploymentEmployer = hasPermission(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_EMPLOYER);
+  const canChangePayRate = hasPermission(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_PAY_RATE);
+  const canManagePayTerms = hasPermission(PERMISSIONS.ACTION_HR_PAYTERMS_MANAGE);
   const isCreate = employeeId == null;
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [detail, setDetail] = useState<HrEmployeeDetailDto | null>(null);
@@ -369,6 +430,10 @@ export function EmployeeDrawer({
   const [personOptions, setPersonOptions] = useState<HrPersonDto[]>([]);
   const [personSearchLoading, setPersonSearchLoading] = useState(false);
   const [linkedPerson, setLinkedPerson] = useState<HrPersonSummaryDto | null>(null);
+  const [unlinkPersonConfirmOpen, setUnlinkPersonConfirmOpen] = useState(false);
+  const [unlinkUserConfirmOpen, setUnlinkUserConfirmOpen] = useState(false);
+  const [editPersonOpen, setEditPersonOpen] = useState(false);
+  const [editingLinkedPerson, setEditingLinkedPerson] = useState<HrPersonDto | null>(null);
 
   const patchForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -424,6 +489,10 @@ export function EmployeeDrawer({
       baselineRef.current = '';
       setCreateUserOpen(false);
       setCreatePersonOpen(false);
+      setEditPersonOpen(false);
+      setEditingLinkedPerson(null);
+      setUnlinkPersonConfirmOpen(false);
+      setUnlinkUserConfirmOpen(false);
       setDirtyRateEmploymentIds(new Set());
       return;
     }
@@ -470,7 +539,14 @@ export function EmployeeDrawer({
             credentials: 'include',
           });
           const data = await readJson(response);
-          if (!response.ok) return;
+          if (!response.ok) {
+            ToastService.show({
+              title: errorMessage(data, 'Не вдалося знайти фізичні особи'),
+              color: 'danger',
+            });
+            setPersonOptions([]);
+            return;
+          }
           const rows = Array.isArray(data.data) ? data.data as HrPersonDto[] : [];
           setPersonOptions(rows);
         } finally {
@@ -498,9 +574,9 @@ export function EmployeeDrawer({
     return linkedPerson;
   }, [form.personId, linkedPerson, personOptions]);
 
-  const personNameMismatch = useMemo(() => {
-    if (!selectedPerson || !detail?.displayName) return false;
-    return normalizePersonName(detail.displayName) !== normalizePersonName(selectedPerson.displayName);
+  const drawerDisplayName = useMemo(() => {
+    if (selectedPerson?.displayName) return selectedPerson.displayName;
+    return detail?.displayName ?? null;
   }, [selectedPerson, detail?.displayName]);
 
   const userSelectOptions = useMemo(
@@ -648,9 +724,9 @@ export function EmployeeDrawer({
     const lastName = capitalizeUaName(form.lastName);
     const firstName = capitalizeUaName(form.firstName);
     const middleName = capitalizeUaName(form.middleName);
-    if (!isCreate && (!lastName || !firstName)) {
-      ToastService.show({ title: 'Вкажіть прізвище та імʼя', color: 'danger' });
-      throw new Error('Вкажіть прізвище та імʼя');
+    if (!isCreate && !form.personId && (!lastName || !firstName)) {
+      ToastService.show({ title: 'Вкажіть прізвище та імʼя або привʼяжіть фізичну особу', color: 'danger' });
+      throw new Error('Вкажіть прізвище та імʼя або привʼяжіть фізичну особу');
     }
     if (!isCreate) {
       setForm((prev) => ({ ...prev, lastName, firstName, middleName }));
@@ -747,6 +823,33 @@ export function EmployeeDrawer({
       return false;
     }
     ToastService.show({ title: 'Ставку додано', color: 'success' });
+    if (employeeId != null) await loadDetail(employeeId);
+    onSaved();
+    return true;
+  };
+
+  const handleUpdatePayTerms = async (payTermId: number, payload: PayFormState) => {
+    if (!payload.amount.trim()) {
+      ToastService.show({ title: 'Вкажіть суму ставки', color: 'danger' });
+      return false;
+    }
+    const response = await fetch(`/api/hr/pay-terms/${payTermId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        kind: payload.kind,
+        amount: amountToApi(payload.amount),
+        effectiveFrom: payload.effectiveFrom,
+        effectiveTo: payload.effectiveTo || null,
+      }),
+    });
+    const data = await readJson(response);
+    if (!response.ok) {
+      ToastService.show({ title: errorMessage(data, 'Не вдалося оновити ставку'), color: 'danger' });
+      return false;
+    }
+    ToastService.show({ title: 'Ставку оновлено', color: 'success' });
     if (employeeId != null) await loadDetail(employeeId);
     onSaved();
     return true;
@@ -858,6 +961,7 @@ export function EmployeeDrawer({
       payGroupHueOverrides={payGroupHueOverrides}
       canManage={canManage}
       canManagePayTerms={canManagePayTerms}
+      canChangePayRate={canChangePayRate}
       canChangeGroup={canChangeEmploymentGroup}
       canChangeEmployer={canChangeEmploymentEmployer}
       showMerge={employmentIdsWithMergeOption.has(employment.id)}
@@ -866,6 +970,7 @@ export function EmployeeDrawer({
       onMerge={() => setMergeSourceId(employment.id)}
       onDeletePay={(id) => setDeletePayId(id)}
       onAddPayTerms={handleAddPayTerms}
+      onUpdatePayTerms={handleUpdatePayTerms}
       onChangePayGroup={(payGroup) => handleChangeEmploymentPayGroup(employment.id, payGroup)}
       onChangeEmployer={(legalEntityId) => handleChangeEmploymentEmployer(employment.id, legalEntityId)}
       onUpdateEmployment={async (payload) => {
@@ -916,7 +1021,7 @@ export function EmployeeDrawer({
           {() => (
             <>
               <DrawerHeader className="border-b border-default-200 shrink-0">
-                {isCreate ? 'Новий співробітник' : detail?.displayName || 'Співробітник'}
+                {isCreate ? 'Новий співробітник' : drawerDisplayName || 'Співробітник'}
               </DrawerHeader>
               <DrawerBody className="flex flex-col gap-5 py-5 overflow-y-auto min-h-0">
                 <I18nProvider locale="uk-UA">
@@ -953,12 +1058,31 @@ export function EmployeeDrawer({
                               taxCode: person.taxCode,
                               phone: person.phone,
                             });
+                            setForm((prev) => ({
+                              ...prev,
+                              ...formNameFieldsFromPersonDisplayName(person.displayName),
+                            }));
                           }
                         }}
-                        onUnlinkPerson={() => {
-                          patchForm('personId', '');
-                          setLinkedPerson(null);
-                        }}
+                        onUnlinkPerson={() => setUnlinkPersonConfirmOpen(true)}
+                        onUnlinkUser={() => setUnlinkUserConfirmOpen(true)}
+                        onEditLinkedPerson={canManagePersons && form.personId ? () => {
+                          void (async () => {
+                            const response = await fetch(`/api/hr/persons/${form.personId}`, {
+                              credentials: 'include',
+                            });
+                            const data = await readJson(response);
+                            if (!response.ok) {
+                              ToastService.show({
+                                title: errorMessage(data, 'Не вдалося завантажити фізичну особу'),
+                                color: 'danger',
+                              });
+                              return;
+                            }
+                            setEditingLinkedPerson(data.data as HrPersonDto);
+                            setEditPersonOpen(true);
+                          })();
+                        } : undefined}
                         onCreatePerson={openCreatePerson}
                         onCreateUser={() => {
                           setCreateUserInitial({
@@ -1262,7 +1386,11 @@ export function EmployeeDrawer({
         enableMerge={false}
         onClose={() => setCreatePersonOpen(false)}
         onSaved={(person) => {
-          patchForm('personId', String(person.id));
+          setForm((prev) => ({
+            ...prev,
+            personId: String(person.id),
+            ...formNameFieldsFromPersonDisplayName(person.displayName),
+          }));
           setLinkedPerson({
             id: person.id,
             displayName: person.displayName,
@@ -1273,11 +1401,82 @@ export function EmployeeDrawer({
           setPersonOptions([person]);
         }}
       />
+      <PersonDrawer
+        isOpen={editPersonOpen}
+        person={editingLinkedPerson}
+        canManage={canManagePersons}
+        onClose={() => {
+          setEditPersonOpen(false);
+          setEditingLinkedPerson(null);
+        }}
+        onSaved={(person) => {
+          setLinkedPerson({
+            id: person.id,
+            displayName: person.displayName,
+            taxCode: person.taxCode,
+            phone: person.phone,
+          });
+          setForm((prev) => ({
+            ...prev,
+            ...formNameFieldsFromPersonDisplayName(person.displayName),
+          }));
+          if (detail) {
+            setDetail({
+              ...detail,
+              ...formNameFieldsFromPersonDisplayName(person.displayName),
+              displayName: person.displayName,
+              person: {
+                id: person.id,
+                displayName: person.displayName,
+                taxCode: person.taxCode,
+                phone: person.phone,
+              },
+            });
+          }
+          setEditPersonOpen(false);
+          setEditingLinkedPerson(null);
+        }}
+      />
+      <ConfirmModal
+        isOpen={unlinkPersonConfirmOpen}
+        title="Відвʼязати фізичну особу?"
+        message="Підтвердьте відвʼязку фізичної особи від співробітника. Дані особи в довіднику залишаться."
+        confirmText="Відвʼязати"
+        cancelText="Скасувати"
+        confirmColor="danger"
+        onConfirm={() => {
+          patchForm('personId', '');
+          setLinkedPerson(null);
+          setUnlinkPersonConfirmOpen(false);
+        }}
+        onCancel={() => setUnlinkPersonConfirmOpen(false)}
+      />
+      <ConfirmModal
+        isOpen={unlinkUserConfirmOpen}
+        title="Відвʼязати обліковий запис?"
+        message="Підтвердьте відвʼязку облікового запису від співробітника."
+        confirmText="Відвʼязати"
+        cancelText="Скасувати"
+        confirmColor="danger"
+        onConfirm={() => {
+          patchForm('userId', '');
+          setUnlinkUserConfirmOpen(false);
+        }}
+        onCancel={() => setUnlinkUserConfirmOpen(false)}
+      />
     </>
   );
 }
 
-function isPayFormDirty(form: PayFormState, addingRate: boolean): boolean {
+function isPayFormDirty(
+  form: PayFormState,
+  addingRate: boolean,
+  editingPayTermId: number | null,
+  editBaseline: string | null,
+): boolean {
+  if (editingPayTermId != null) {
+    return editBaseline != null && JSON.stringify(form) !== editBaseline;
+  }
   if (addingRate) return true;
   return form.amount.trim() !== '' || form.effectiveTo.trim() !== '';
 }
@@ -1288,6 +1487,7 @@ function EmploymentBlock({
   payGroupHueOverrides,
   canManage,
   canManagePayTerms,
+  canChangePayRate = false,
   canChangeGroup = false,
   canChangeEmployer = false,
   showMerge = false,
@@ -1296,6 +1496,7 @@ function EmploymentBlock({
   onMerge,
   onDeletePay,
   onAddPayTerms,
+  onUpdatePayTerms,
   onChangePayGroup,
   onChangeEmployer,
   onUpdateEmployment,
@@ -1305,6 +1506,7 @@ function EmploymentBlock({
   payGroupHueOverrides?: Partial<Record<HrPayGroup, string>>;
   canManage: boolean;
   canManagePayTerms: boolean;
+  canChangePayRate?: boolean;
   canChangeGroup?: boolean;
   canChangeEmployer?: boolean;
   showMerge?: boolean;
@@ -1313,6 +1515,7 @@ function EmploymentBlock({
   onMerge: () => void;
   onDeletePay: (id: number) => void;
   onAddPayTerms: (employmentId: number, payload: PayFormState, closePrevious?: boolean) => Promise<boolean>;
+  onUpdatePayTerms: (payTermId: number, payload: PayFormState) => Promise<boolean>;
   onChangePayGroup: (payGroup: HrPayGroup) => Promise<boolean>;
   onChangeEmployer: (legalEntityId: number) => Promise<boolean>;
   onUpdateEmployment: (payload: Partial<HrEmploymentWritePayload>) => Promise<boolean>;
@@ -1320,6 +1523,8 @@ function EmploymentBlock({
   const [payForm, setPayForm] = useState<PayFormState>(emptyPayForm);
   const [savingRate, setSavingRate] = useState(false);
   const [addingRate, setAddingRate] = useState(false);
+  const [editingPayTermId, setEditingPayTermId] = useState<number | null>(null);
+  const [editPayFormBaseline, setEditPayFormBaseline] = useState<string | null>(null);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   const [pushingPersonnel, setPushingPersonnel] = useState(false);
   const [personnelConflict, setPersonnelConflict] = useState<{ local: string; remote: string } | null>(null);
@@ -1334,27 +1539,52 @@ function EmploymentBlock({
     setLocalPersonnelNumber(employment.personnelNumber ?? '');
   }, [employment.id, employment.personnelNumber]);
   useEffect(() => {
-    onRateDirtyChange?.(employment.id, isPayFormDirty(payForm, addingRate));
-  }, [employment.id, payForm, addingRate, onRateDirtyChange]);
+    onRateDirtyChange?.(
+      employment.id,
+      isPayFormDirty(payForm, addingRate, editingPayTermId, editPayFormBaseline),
+    );
+  }, [employment.id, payForm, addingRate, editingPayTermId, editPayFormBaseline, onRateDirtyChange]);
   const active = isEmploymentActive(employment, todayYmd());
   const amountMeta = payAmountFieldMeta(payForm.kind);
   const sortedTerms = sortPayTerms(employment.payTerms);
   const ratesTitle = sortedTerms.length > 1 ? 'Ставки' : 'Ставка';
+  const termsForOverlap =
+    editingPayTermId != null
+      ? employment.payTerms.filter((term) => term.id !== editingPayTermId)
+      : employment.payTerms;
   const overlapping = overlappingPayTerms(
-    employment.payTerms,
+    termsForOverlap,
     payForm.effectiveFrom,
     payForm.effectiveTo || null,
   );
   const closeUntil = hrDayBeforeYmd(payForm.effectiveFrom);
+  const rateFormOpen = addingRate || editingPayTermId != null;
+
+  const resetRateForm = () => {
+    setPayForm((prev) => ({ ...emptyPayForm(), kind: prev.kind }));
+    setAddingRate(false);
+    setEditingPayTermId(null);
+    setEditPayFormBaseline(null);
+    setCloseConfirmOpen(false);
+  };
+
+  const startEditPayTerm = (term: HrPayTermsDto) => {
+    const next = payFormFromTerm(term);
+    setPayForm(next);
+    setEditPayFormBaseline(JSON.stringify(next));
+    setEditingPayTermId(term.id);
+    setAddingRate(false);
+  };
 
   const saveRate = async (closePrevious: boolean) => {
     setSavingRate(true);
     try {
-      const ok = await onAddPayTerms(employment.id, payForm, closePrevious);
+      const ok =
+        editingPayTermId != null
+          ? await onUpdatePayTerms(editingPayTermId, payForm)
+          : await onAddPayTerms(employment.id, payForm, closePrevious);
       if (ok) {
-        setPayForm((prev) => ({ ...emptyPayForm(), kind: prev.kind }));
-        setAddingRate(false);
-        setCloseConfirmOpen(false);
+        resetRateForm();
       }
     } finally {
       setSavingRate(false);
@@ -1364,6 +1594,21 @@ function EmploymentBlock({
   const submitRate = () => {
     if (!payForm.amount.trim()) {
       ToastService.show({ title: 'Вкажіть суму ставки', color: 'danger' });
+      return;
+    }
+    if (!isValidPayAmount(payForm.amount, payForm.kind)) {
+      ToastService.show({
+        title: payForm.kind === 'hourly' ? 'Некоректна погодинна ставка' : 'Некоректна сума ставки',
+        color: 'danger',
+      });
+      return;
+    }
+    if (editingPayTermId != null) {
+      if (overlapping.length > 0) {
+        ToastService.show({ title: 'Період ставки перетинається з іншою', color: 'danger' });
+        return;
+      }
+      void saveRate(false);
       return;
     }
     if (overlapping.length > 0) {
@@ -1547,14 +1792,35 @@ function EmploymentBlock({
                   <li key={term.id} className="flex items-center justify-between gap-2 px-2.5 py-1.5 text-sm">
                     <span className="text-default-900">
                       <span className="text-default-500">
-                        {HR_PAY_TERMS_KIND_LABELS[term.kind]} · {formatMoney(term.amount)} {term.kind === 'hourly' ? 'грн/год' : 'грн/міс'} · з {formatHrDate(term.effectiveFrom)}
+                        {HR_PAY_TERMS_KIND_LABELS[term.kind]} · {formatMoney(term.amount, term.kind)} {term.kind === 'hourly' ? 'грн/год' : 'грн/міс'} · з {formatHrDate(term.effectiveFrom)}
                         {term.effectiveTo ? ` по ${formatHrDate(term.effectiveTo)}` : ''}
                       </span>
                     </span>
-                    {canManagePayTerms ? (
-                      <Button size="sm" variant="light" isIconOnly aria-label="Видалити ставку" onPress={() => onDeletePay(term.id)}>
-                        <DynamicIcon name="x" size={12} />
-                      </Button>
+                    {canChangePayRate || canManagePayTerms ? (
+                      <div className="flex shrink-0 gap-0.5">
+                        {canChangePayRate ? (
+                          <Button
+                            size="sm"
+                            variant="light"
+                            isIconOnly
+                            aria-label="Редагувати ставку"
+                            onPress={() => startEditPayTerm(term)}
+                          >
+                            <DynamicIcon name="pencil" size={12} />
+                          </Button>
+                        ) : null}
+                        {canManagePayTerms ? (
+                          <Button
+                            size="sm"
+                            variant="light"
+                            isIconOnly
+                            aria-label="Видалити ставку"
+                            onPress={() => onDeletePay(term.id)}
+                          >
+                            <DynamicIcon name="x" size={12} />
+                          </Button>
+                        ) : null}
+                      </div>
                     ) : null}
                   </li>
                 ))}
@@ -1565,8 +1831,8 @@ function EmploymentBlock({
               </p>
             )}
 
-            {canManagePayTerms ? (
-              addingRate ? (
+            {canChangePayRate ? (
+              rateFormOpen ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start rounded-[8px] border border-default-200 p-3">
                   <Select
                     label="Тип"
@@ -1576,7 +1842,12 @@ function EmploymentBlock({
                     onSelectionChange={(keys) => {
                       const selected = Array.from(keys)[0];
                       if (typeof selected === 'string' && HR_PAY_TERMS_KINDS.includes(selected as HrPayTermsKind)) {
-                        setPayForm((prev) => ({ ...prev, kind: selected as HrPayTermsKind }));
+                        const nextKind = selected as HrPayTermsKind;
+                        setPayForm((prev) => ({
+                          ...prev,
+                          kind: nextKind,
+                          amount: formatPayAmountInput(prev.amount, nextKind),
+                        }));
                       }
                     }}
                     classNames={{
@@ -1594,9 +1865,11 @@ function EmploymentBlock({
                     labelPlacement="outside"
                     placeholder={amountMeta.placeholder}
                     description={amountMeta.description}
-                    inputMode="numeric"
+                    inputMode={payForm.kind === 'hourly' ? 'decimal' : 'numeric'}
                     value={payForm.amount}
-                    onValueChange={(value) => setPayForm((prev) => ({ ...prev, amount: formatAmountMask(value) }))}
+                    onValueChange={(value) =>
+                      setPayForm((prev) => ({ ...prev, amount: formatPayAmountInput(value, prev.kind) }))
+                    }
                     endContent={<span className="text-xs text-default-500">грн</span>}
                     classNames={{
                       label: 'text-xs font-medium',
@@ -1617,7 +1890,7 @@ function EmploymentBlock({
                     onChange={(value) => setPayForm((prev) => ({ ...prev, effectiveTo: value }))}
                   />
                   <div className="md:col-span-2 flex flex-wrap gap-2">
-                    <Button size="sm" variant="light" onPress={() => setAddingRate(false)}>
+                    <Button size="sm" variant="light" onPress={resetRateForm}>
                       Скасувати
                     </Button>
                     <Button
@@ -1625,11 +1898,10 @@ function EmploymentBlock({
                       color="primary"
                       variant="solid"
                       className={HR_ADD_BUTTON_CLASS}
-                      startContent={<DynamicIcon name="check" size={14} />}
-                      isLoading={savingRate}
+                      startContent={<DynamicIcon name={savingRate ? 'loader-circle' : 'check'} className={savingRate ? 'animate-spin' : ''} size={14} />}
                       onPress={submitRate}
                     >
-                      Зберегти ставку
+                      {editingPayTermId != null ? 'Зберегти зміни' : 'Зберегти ставку'}
                     </Button>
                   </div>
                 </div>
@@ -1639,7 +1911,10 @@ function EmploymentBlock({
                   variant="flat"
                   className={HR_ADD_BUTTON_CLASS}
                   startContent={<DynamicIcon name="wallet" size={14} />}
-                  onPress={() => setAddingRate(true)}
+                  onPress={() => {
+                    resetRateForm();
+                    setAddingRate(true);
+                  }}
                 >
                   Додати ставку
                 </Button>

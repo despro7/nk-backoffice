@@ -1,6 +1,47 @@
 /** Базові seed-коди юрособ — не конкретні роботодавці з Excel. */
 export const HR_SEED_LEGAL_ENTITY_CODES = new Set(['fop', 'tov', 'unofficial_cash']);
 
+/** Шаблони типів у довіднику — не роботодавець для папки особи / поточної зайнятості. */
+export const HR_LEGAL_ENTITY_TYPE_TEMPLATE_CODES = new Set(['fop', 'tov']);
+
+export function isConcreteEmployerLegalEntityCode(code: string): boolean {
+  return !HR_LEGAL_ENTITY_TYPE_TEMPLATE_CODES.has(code);
+}
+
+export type EmploymentForEmployerPick = {
+  validFrom: Date;
+  validTo: Date | null;
+  legalEntity: { code: string };
+};
+
+/** Поточна зайнятість для роботодавця: «Нештатні» (unofficial_cash) враховуються, шаблони fop/tov — ні. */
+export function pickCurrentEmploymentForEmployerContext<T extends EmploymentForEmployerPick>(
+  employments: T[],
+  todayUtc: Date = utcTodayDate(),
+): T | null {
+  const open = employments.filter((item) => !item.validTo || item.validTo >= todayUtc);
+  const pool = open.length > 0 ? open : employments;
+  const concrete = pool.filter((item) => isConcreteEmployerLegalEntityCode(item.legalEntity.code));
+  return concrete[0] ?? null;
+}
+
+/** Поточна зайнятість у конкретного роботодавця (без seed ФОП / ТОВ / Нештатні) для списку співробітників і фільтрів. */
+export function pickCurrentSelectableEmployerEmployment<T extends EmploymentForEmployerPick>(
+  employments: readonly T[],
+  todayUtc: Date = utcTodayDate(),
+): T | null {
+  const open = employments.filter((item) => !item.validTo || item.validTo >= todayUtc);
+  const pool = open.length > 0 ? open : employments;
+  const selectable = pool.filter((item) => !HR_SEED_LEGAL_ENTITY_CODES.has(item.legalEntity.code));
+  if (selectable.length === 0) return null;
+  return selectable.reduce((latest, item) => (item.validFrom > latest.validFrom ? item : latest));
+}
+
+function utcTodayDate(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
 /** Роботодавці для вибору в UI (без seed-типів ФОП / ТОВ / Нештатні). */
 export function filterSelectableLegalEntities<T extends { code: string }>(entities: readonly T[]): T[] {
   return entities.filter((entity) => !HR_SEED_LEGAL_ENTITY_CODES.has(entity.code));

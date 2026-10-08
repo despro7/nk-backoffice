@@ -457,20 +457,24 @@ export async function getDilovodConfigFromDB(): Promise<DilovodConfig> {
 
 // Завантаження налаштувань Dilovod з settings_base таблиці
 export async function loadDilovodSettingsFromDB() {
-  const { PrismaClient } = await import('@prisma/client');
-  const prisma = new PrismaClient();
-  
-  try {
-    const settings = await prisma.settingsBase.findMany({
-      where: { category: 'dilovod', isActive: true }
-    });
+  const { prisma } = await import('../../lib/utils.js');
 
-    const settingsMap = settings.reduce((acc, setting) => {
-      acc[setting.key] = setting.value;
-      return acc;
-    }, {} as Record<string, string>);
+  const settings = await prisma.settingsBase.findMany({
+    where: {
+      isActive: true,
+      OR: [
+        { category: 'dilovod' },
+        { key: { startsWith: 'dilovod_' } },
+      ],
+    },
+  });
 
-    return {
+  const settingsMap = settings.reduce((acc, setting) => {
+    acc[setting.key] = setting.value;
+    return acc;
+  }, {} as Record<string, string>);
+
+  return {
       apiUrl: settingsMap['dilovod_api_url'] || '',
       apiKey: settingsMap['dilovod_api_key'] || '',
       mainPriceType: settingsMap['dilovod_main_price_type'] || '',
@@ -492,11 +496,8 @@ export async function loadDilovodSettingsFromDB() {
       ordersMinute: settingsMap['dilovod_orders_minute'] !== undefined ? Number(settingsMap['dilovod_orders_minute']) : 5,
       ordersBatchSize: settingsMap['dilovod_orders_batch_size'] !== undefined ? Number(settingsMap['dilovod_orders_batch_size']) : 50,
       ordersRetryAttempts: settingsMap['dilovod_orders_retry_attempts'] !== undefined ? Number(settingsMap['dilovod_orders_retry_attempts']) : 3,
-      defaultFirmId: settingsMap['dilovod_default_firm_id'] || undefined,
-    };
-  } finally {
-    await prisma.$disconnect();
-  }
+    defaultFirmId: settingsMap['dilovod_default_firm_id'] || undefined,
+  };
 }
 
 // Отримання назви типу ціни за ID

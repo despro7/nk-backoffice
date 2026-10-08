@@ -1,4 +1,4 @@
-import { Input } from '@heroui/react';
+import { ClearConfirmInput } from './ClearConfirmInput';
 
 export function formatTaxCodeInput(value: string): string {
   return value.replace(/\D/g, '').slice(0, 10);
@@ -20,7 +20,7 @@ export function ContactTaxCodeField({
   onChange,
 }: ContactTaxCodeFieldProps) {
   return (
-    <Input
+    <ClearConfirmInput
       label="Податковий номер"
       // labelPlacement="outside"
       placeholder="1234567890"
@@ -32,7 +32,6 @@ export function ContactTaxCodeField({
       inputMode="numeric"
       maxLength={10}
       autoComplete="off"
-      isClearable={canManage}
     />
   );
 }

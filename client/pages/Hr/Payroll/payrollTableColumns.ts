@@ -97,6 +97,101 @@ export function lineGrandTotalForDisplay(
   return (periods + employerTaxes + employeeTax + bonus).toFixed(2);
 }
 
+function isPdfoMilitaryMerged(config: PayrollTableBuilderConfig): boolean {
+  return config.merges.some(
+    (merge) => merge.columnIds.includes('pdfo') && merge.columnIds.includes('military'),
+  );
+}
+
+/** Довільний період: винести ЄСВ з колонки «Податки». */
+export function isCustomEsvSeparate(config: PayrollTableBuilderConfig): boolean {
+  return config.visibleColumns.esv;
+}
+
+function customTaxesWeekTotal(line: HrPayrollLineDto): number {
+  const cell = line.weekAmounts.find((item) => item.weekId === 'taxes');
+  return Number(cell?.toPay ?? 0);
+}
+
+function pdfoMilitaryTotal(line: HrPayrollLineDto): number {
+  return Number(line.pdfoAmount ?? 0) + Number(line.militaryTaxAmount ?? 0);
+}
+
+/** Колонки таблиці для periodMode === custom з урахуванням TableBuilder. */
+export function buildCustomDisplayWeeks(
+  weeks: HrTimesheetWeekDto[],
+  config: PayrollTableBuilderConfig,
+): HrTimesheetWeekDto[] {
+  if (!weeks.some((week) => week.id === 'taxes')) {
+    return weeks;
+  }
+
+  const esvSeparate = isCustomEsvSeparate(config);
+  const showBonus = config.visibleColumns.bonus;
+  const mergedLabel =
+    config.merges.find(
+      (merge) => merge.columnIds.includes('pdfo') && merge.columnIds.includes('military'),
+    )?.label ?? 'ПДФО+ВЗ';
+  const pdfoMerged = isPdfoMilitaryMerged(config);
+
+  const result: HrTimesheetWeekDto[] = [];
+  for (const week of weeks) {
+    if (week.id === 'taxes') {
+      if (esvSeparate) {
+        if (pdfoMerged && (config.visibleColumns.pdfo || config.visibleColumns.military)) {
+          result.push({ ...week, id: 'pdfo-military', label: mergedLabel });
+        } else {
+          if (config.visibleColumns.pdfo) {
+            result.push({ ...week, id: 'pdfo', label: 'ПДФО' });
+          }
+          if (config.visibleColumns.military) {
+            result.push({ ...week, id: 'military', label: 'ВЗ' });
+          }
+        }
+        result.push({ ...week, id: 'esv', label: 'ЄСВ' });
+      } else {
+        result.push(week);
+      }
+    } else if (week.id === 'bonus') {
+      if (showBonus) result.push(week);
+    } else {
+      result.push(week);
+    }
+  }
+  return result;
+}
+
+export function customWeekCellRaw(
+  line: HrPayrollLineDto,
+  weekId: string,
+  config: PayrollTableBuilderConfig,
+): string {
+  if (weekId === 'esv') {
+    const esv = esvAmountOnly(line);
+    return esv > 0 ? esv.toFixed(2) : '';
+  }
+  if (weekId === 'pdfo-military') {
+    const sum = pdfoMilitaryTotal(line);
+    return sum > 0 ? sum.toFixed(2) : '';
+  }
+  if (weekId === 'pdfo') {
+    const pdfo = Number(line.pdfoAmount ?? 0);
+    return pdfo > 0 ? line.pdfoAmount : '';
+  }
+  if (weekId === 'military') {
+    const military = Number(line.militaryTaxAmount ?? 0);
+    return military > 0 ? line.militaryTaxAmount : '';
+  }
+  if (weekId === 'taxes') {
+    const taxesTotal = customTaxesWeekTotal(line);
+    if (taxesTotal <= 0) return '';
+    return taxesTotal.toFixed(2);
+  }
+
+  const cell = line.weekAmounts.find((item) => item.weekId === weekId);
+  return cell?.toPay ?? '';
+}
+
 export function buildPayrollExtraColumns(
   config: PayrollTableBuilderConfig,
   periodMode: HrPayrollPeriodMode,

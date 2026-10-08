@@ -5,6 +5,45 @@
 
 ---
 
+## 2026-10-07 — HR: фіз. особи — дерево, статуси, merge, групи Dilovod
+
+**Files:** `client/pages/Hr/Persons/`, `PersonMergeModal.tsx`, `PersonCardPanel.tsx`, `PersonEmploymentStatusChip.tsx`, `PersonDismissedStatusConflictIndicator.tsx`, `server/modules/Hr/HrPersonService.ts`, `HrPersonSyncService.ts`, `shared/utils/hrPersonEmploymentStatus.ts`, `dilovodPersonGroups.ts`, `personMergeFields.ts`, `shared/constants/dilovod.ts`, `prisma/migrations/20261007160000_hr_legal_entity_person_group/`
+
+### Дерево та картка
+
+- **`PersonsTreeTable`** — ієрархія папок Dilovod, drag-and-drop між групами, пошук від 3 символів зі збереженням предків, лічильник `childCount` по всіх нащадках.
+- **Статус у колонці** — `PersonEmploymentStatusChip` (не сирий `HrEmployee.status`): активний / без зайнятості / звільнений / неактивний.
+- Папка **звільнених** → завжди «Звільнений»; якщо лишився `linkedEmployee` — червоний індикатор конфлікту.
+- Drawer: SpecChip для роботодавця/групи/статусу, mini-confirm на очищення полів, звільнення через confirm з датою.
+
+### Обʼєднання дублікатів
+
+- Модалка-матриця вибору полів + `POST /api/hr/persons/merge-batch`.
+- Після merge: джерела в Dilovod → **«Дублікати контактів»** (`DILOVOD_PERSON_GROUP_DUPLICATE_CONTACTS`).
+
+### Синк: папка ≠ фізособа
+
+- **`isGroup: 1`** — основна ознака групи в `isDilovodPersonGroupRow`; папки не імпортуються в `HrPerson`, id груп не показуються як рядки особи; при pull — архівація помилкових записів.
+
+### Папки роботодавців у Dilovod
+
+- **`hr_legal_entities.dilovodPersonGroupId`** — унікальний звʼязок роботодавця з папкою під «Працівники» (`HrPersonGroupSyncService`).
+- **«Синхронізувати папку з Dilovod»** (`POST /api/hr/legal-entities/:id/sync/person-group`) — створення папки за потреби; **`repairEmployerPersonGroupIfNeeded`** виставляє `isGroup: 1`, якщо запис помилково створили як фізособу.
+- **Pull груп** (`POST /api/hr/persons/sync/pull/groups`) — привʼязка існуючих папок Dilovod до роботодавців за назвою.
+- **Видалення порожньої папки** (`DELETE /api/hr/legal-entities/:id/person-group`) — кнопка в колонці «Дії» дерева; якщо в Dilovod запису вже немає — пропозиція **`?localOnly=1`** (скинути лише `dilovodPersonGroupId` у backoffice).
+- **Dilovod `saveObject` для `catalogs.persons`** — не передавати `header.version` у `updatePerson` / `updatePersonGroup` (API відхиляє поле).
+
+### HR (додатково в цьому коміті)
+
+- Право **`action.hr.employment.change-pay-rate`** (seed admin, boss); міграція `20261007180000_hr_employment_change_pay_rate`.
+- Розрахунок: gross-up для **`hourly`** разом із `official_salary` (`payrollCalc.ts`).
+- UI: `HrSpecChip` → **`SpecChip`**; співробітники — фільтр/лічильники по роботодавцю (`employeeEmployerFilter`); ПІБ з `hrEmployeePersonName`.
+- Після sync/move/merge/delete у `/hr/persons` — оновлення повного дерева (`refreshFullTree`).
+
+**Документація:** [`Docs/features/hr-module.md`](features/hr-module.md) — розділ «Фізичні особи».
+
+---
+
 ## 2026-10-07 — Storefront: push на WooCommerce при застарілому wooProductId
 
 **Files:** `server/modules/Storefront/WooCommerceSyncService.ts`, `WooCommerceApiClient.ts`, `WooCommerceStockService.ts`
@@ -639,8 +678,8 @@
 - Заголовок сторінки — лише з `Layout` (без дубля `h1` у контенті).
 - Фільтр періоду — ті самі пресети, що в **Преміях**: робочий тиждень (пн–пт) + діапазон дат через `ReportsFilterBuilder`.
 - Картки без тіні (`shadow="none"`, `border-border-subtle`); внутрішні summary-картки — `bg-surface-page`.
-- Статус джерела: **«Зі знімка розрахунку»** (locked payroll) / **«Попередній перегляд»** (`HrSpecChip` + `hrStatusTokens` / `hrKindTokens`).
-- Колонки таблиці: «Дні періоду», «Сума»; група оплати — `HrSpecChip` + `hrPayGroupTokens` (як у співробітниках і розрахунку).
+- Статус джерела: **«Зі знімка розрахунку»** (locked payroll) / **«Попередній перегляд»** (`SpecChip` + `hrStatusTokens` / `hrKindTokens`).
+- Колонки таблиці: «Дні періоду», «Сума»; група оплати — `SpecChip` + `hrPayGroupTokens` (як у співробітниках і розрахунку).
 
 ### Спільний модуль періоду
 

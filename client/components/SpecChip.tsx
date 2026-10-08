@@ -111,6 +111,3 @@ export function EditableSpecChip({
     </div>
   );
 }
-
-/** @deprecated Використовуйте SpecChip — alias для зворотної сумісності HR-модуля. */
-export const HrSpecChip = SpecChip;

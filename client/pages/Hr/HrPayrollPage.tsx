@@ -31,7 +31,7 @@ import { PayrollTable } from './Payroll/PayrollTable';
 import { PayrollLineDrawer } from './Payroll/PayrollLineDrawer';
 import { PayrollHelpDrawer } from './Payroll/PayrollHelpDrawer';
 import { HR_BTN_PRIMARY, HR_BTN_WARNING } from '@/lib/buttonStyles';
-import { HR_BTN_NEUTRAL, HrSpecChip } from './hrUi';
+import { HR_BTN_NEUTRAL, SpecChip } from './hrUi';
 
 function parseGroupParam(raw: string | null): HrTimesheetGroupFilter | null {
   if (!raw) return null;
@@ -320,11 +320,11 @@ export default function HrPayrollPage() {
         )}
         <div className="flex flex-wrap items-center gap-2 ml-auto">
           {locked ? (
-            <HrSpecChip tokens={getSpecColorByHue('amber', 'light', 'soft')}>Заблоковано</HrSpecChip>
+            <SpecChip tokens={getSpecColorByHue('amber', 'light', 'soft')}>Заблоковано</SpecChip>
           ) : data?.source === 'preview' ? (
-            <HrSpecChip tokens={getSpecColorByHue('slate', 'light', 'soft')}>Попередній перегляд</HrSpecChip>
+            <SpecChip tokens={getSpecColorByHue('slate', 'light', 'soft')}>Попередній перегляд</SpecChip>
           ) : (
-            <HrSpecChip tokens={getSpecColorByHue('emerald', 'light', 'soft')}>Знімок</HrSpecChip>
+            <SpecChip tokens={getSpecColorByHue('emerald', 'light', 'soft')}>Знімок</SpecChip>
           )}
           <Button
             size="sm"
@@ -361,15 +361,15 @@ export default function HrPayrollPage() {
         </p>
         {data ? (
           <div className="flex flex-wrap gap-2">
-            <HrSpecChip tokens={getSpecColorByHue('blue', 'light', 'medium')} className="rounded-sm">
+            <SpecChip tokens={getSpecColorByHue('blue', 'light', 'medium')} className="rounded-sm">
               До виплати: {formatMoney(data.summary.toPay)}
-            </HrSpecChip>
-            <HrSpecChip tokens={getSpecColorByHue('lime', 'light', 'medium')} className="rounded-sm">
+            </SpecChip>
+            <SpecChip tokens={getSpecColorByHue('lime', 'light', 'medium')} className="rounded-sm">
               Виплачено: {formatMoney(data.summary.paid)}
-            </HrSpecChip>
-            <HrSpecChip tokens={getSpecColorByHue('orange', 'light', 'medium')} className="rounded-sm">
+            </SpecChip>
+            <SpecChip tokens={getSpecColorByHue('orange', 'light', 'medium')} className="rounded-sm">
               Готівкою: {formatMoney(data.summary.cash)}
-            </HrSpecChip>
+            </SpecChip>
           </div>
         ) : null}
       </div>
@@ -400,15 +400,14 @@ export default function HrPayrollPage() {
                 <Tab key={key} title={HR_PAY_GROUP_LABELS[HR_TIMESHEET_GROUP_TO_PAY[key]]} />
               ))}
             </PageTabs>
-            {periodMode !== 'custom' ? (
-              <TableBuilder
-                config={effectiveSettings.tableBuilder}
-                onChange={(config) => setLocalOverrides({ tableBuilder: config })}
-                canSaveGlobal={canSaveGlobal}
-                savingGlobal={savingSettings}
-                onSaveGlobal={() => void saveGlobal({ tableBuilder: effectiveSettings.tableBuilder })}
-              />
-            ) : null}
+            <TableBuilder
+              config={effectiveSettings.tableBuilder}
+              customPeriod={periodMode === 'custom'}
+              onChange={(config) => setLocalOverrides({ tableBuilder: config })}
+              canSaveGlobal={canSaveGlobal}
+              savingGlobal={savingSettings}
+              onSaveGlobal={() => void saveGlobal({ tableBuilder: effectiveSettings.tableBuilder })}
+            />
           </div>
           <PayrollTable
             weeks={data.weeks}

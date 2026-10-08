@@ -21,7 +21,7 @@ import { formatMoney } from '@/lib/formatUtils';
 import { ToastService } from '@/services/ToastService';
 import { ReportsFilterBuilder } from '@/pages/Reports/shared/filters';
 import { useHrWorkWeekPeriodFilter } from '../shared/useHrWorkWeekPeriodFilter';
-import { HR_TABLE_CLASS_NAMES, HrSpecChip, hrKindTokens, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
+import { HR_TABLE_CLASS_NAMES, SpecChip, hrKindTokens, hrPayGroupTokens, hrStatusTokens } from '../hrUi';
 import { useHrPayGroupHues } from '../useHrPayGroupHues';
 
 export default function HrFopPage() {
@@ -79,7 +79,7 @@ export default function HrFopPage() {
         <ReportsFilterBuilder filters={filters} className="flex flex-wrap gap-2 items-end" />
       </div>
 
-      <Card shadow="none" className="border border-default-200">
+      <Card shadow="none" className="rounded-lg">
         <CardBody className="flex flex-col gap-4 p-4">
           {loading ? (
             <div className="flex justify-center py-8">
@@ -91,11 +91,11 @@ export default function HrFopPage() {
                 <div className="text-3xl font-semibold tabular-nums text-default-900">
                   {formatMoney(summary.totalEmployerCost)} ₴
                 </div>
-                <HrSpecChip
+                <SpecChip
                   tokens={summary.source === 'snapshot' ? hrStatusTokens('active') : hrKindTokens('amber')}
                 >
                   {summary.source === 'snapshot' ? 'Зі знімка розрахунку' : 'Попередній перегляд'}
-                </HrSpecChip>
+                </SpecChip>
               </div>
 
               {summary.warnings.length > 0 ? (
@@ -106,7 +106,7 @@ export default function HrFopPage() {
                 </ul>
               ) : null}
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {(Object.keys(summary.byPayGroup) as HrPayGroup[]).map((group) => (
                   <Card key={group} shadow="none" className="border border-default-200 bg-default-50">
                     <CardBody className="py-3">
@@ -121,9 +121,10 @@ export default function HrFopPage() {
                 <TableHeader>
                   <TableColumn>Працівник</TableColumn>
                   <TableColumn>Група</TableColumn>
+                  <TableColumn>ПДФО+ВЗ</TableColumn>
                   <TableColumn>ЄСВ</TableColumn>
                   <TableColumn>Премія</TableColumn>
-                  <TableColumn>Дні періоду</TableColumn>
+                  <TableColumn>Дні</TableColumn>
                   <TableColumn>Сума</TableColumn>
                 </TableHeader>
                 <TableBody emptyContent="Немає даних">
@@ -131,10 +132,11 @@ export default function HrFopPage() {
                     <TableRow key={line.employmentId}>
                       <TableCell className="capitalize">{line.displayName}</TableCell>
                       <TableCell>
-                        <HrSpecChip tokens={hrPayGroupTokens(line.payGroup, 'soft', payGroupHueOverrides)} rounded="sm">
+                        <SpecChip tokens={hrPayGroupTokens(line.payGroup, 'soft', payGroupHueOverrides)} rounded="sm">
                           {HR_PAY_GROUP_LABELS[line.payGroup]}
-                        </HrSpecChip>
+                        </SpecChip>
                       </TableCell>
+                      <TableCell className="tabular-nums">{formatMoney(line.pdfoVzAmount)}</TableCell>
                       <TableCell className="tabular-nums">{formatMoney(line.esvAmount)}</TableCell>
                       <TableCell className="tabular-nums">{formatMoney(line.bonusAmount)}</TableCell>
                       <TableCell>{line.includedDays}</TableCell>

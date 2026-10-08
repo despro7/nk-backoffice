@@ -1,6 +1,6 @@
 # HR: табель, розрахунок, співробітники, роботодавці
 
-**Дата:** 2026-09-14 (оновлено: 2026-10-07 — розрахунок, премії, перенесення зайнятості, TableBuilder)  
+**Дата:** 2026-09-14 (оновлено: 2026-10-07 — фіз. особи: дерево, статуси, merge, групи Dilovod)  
 **Маршрути:** `/hr/timesheet`, `/hr/payroll`, `/hr/employees`, `/hr/employers`, `/hr/persons`, `/hr/bonuses`, `/hr/fop`  
 **API:** `/api/hr/*`  
 **Модуль сервера:** `server/modules/Hr/`  
@@ -46,6 +46,7 @@
 | `action.hr.employment.transfer` | admin, boss | Перенесення зайнятості |
 | `action.hr.employment.change-group` | admin, boss | Зміна групи оплати |
 | `action.hr.employment.change-employer` | admin, boss | Зміна роботодавця |
+| `action.hr.employment.change-pay-rate` | admin, boss | Зміна ставки в історії зайнятості |
 
 ---
 
@@ -67,7 +68,7 @@ HrAuditLog — журнал дій користувача (окремо від m
 
 - **`HrPerson`** — фіз. особа (`catalogs.persons`): ПІБ, ІПН, телефон, `dilovodPersonId`, `dilovodParentId` (група в Dilovod), `localStatus`.
 - **`HrEmployee`** — працівник табеля: ПІБ, `personId?`, `userId?`, картка для виплат.
-- **`HrLegalEntity`** — роботодавець: `code`, `name`, `kind`, `dilovodFirmId?`, `isActive`.
+- **`HrLegalEntity`** — роботодавець: `code`, `name`, `kind`, `dilovodFirmId?`, `dilovodPersonGroupId?` (папка в `catalogs.persons` під «Працівники», унікальна), `isActive`.
 - **`HrEmployment`** — зайнятість: працівник × роботодавець × `payGroupId` × період; `personnelNumber`, `dilovodEmployeeId`, посади.
 - **`HrPayGroup`** — довідник груп оплати (`slug`, `label`, `formulaProfile`, `sortOrder`, `chipHue?`); seed: `official_salary`, `hourly`, `hourly_unofficial`, `unofficial_cash`.
 
@@ -108,8 +109,8 @@ Seed-записи (міграція `20260903010000_add_hr_employees`):
 
 ### Податки та ЄСВ
 
-- Довідник `hr_tax_rules`: ЄСВ (22%), ПДФО (18%), військовий (5%) для `official_salary`; поле **`shortLabel`** — короткий заголовок колонки в розрахунку.
-- Розрахунок: `gross = accrued / (1 - pdfo - military)`, `employerTotalCost = gross + ЄСВ + премія (+ ЄСВ на премію)`. **`esvAmount`** — лише правило з `code === 'esv'`, не всі податки роботодавця.
+- Довідник `hr_tax_rules`: ЄСВ (22%), ПДФО (18%), військовий (5%); у seed — лише `official_salary`, у UI можна прив’язати кілька груп (типово **`official_salary`** і **`hourly`**). Поле **`shortLabel`** — короткий заголовок колонки в розрахунку; **`base`**: `gross` («До утримань») або `accrued` («Нараховано») — від чого множиться ставка правила.
+- Розрахунок для офіційних груп **`official_salary`** і **`hourly`**: сума з табеля (`accrued`) трактується як «на руки»; `gross = accrued / (1 − Σ ставок ПДФО та ВЗ з активних правил)`, далі ставки застосовуються до `gross` або `accrued` згідно з полем **`base`** кожного правила. `employerTotalCost = gross + податки роботодавця + премія (+ ЄСВ на премію)`. **`esvAmount`** — лише правило з `code === 'esv'`, не всі податки роботодавця. Неофіційні групи: без gross-up (`gross = accrued`), якщо правила не налаштовані.
 - API: `GET/POST/PATCH/DELETE /api/hr/tax-rules` — право `action.hr.taxrules.manage`.
 - Групи оплати: редагування **`chipHue`** для бейджів (`SpecHueSelect`).
 
@@ -141,8 +142,8 @@ Seed-записи (міграція `20260903010000_add_hr_employees`):
 - У UI **не** використовується абревіатура «ФОП», щоб не плутати з типом роботодавця (`kind: fop`). Заголовок сторінки — з `Layout` / `routes.config.tsx` («Фонд оплати праці»), без дубля `h1` у контенті.
 - Фільтр періоду — той самий, що в Преміях (`useHrWorkWeekPeriodFilter` + `ReportsFilterBuilder`).
 - Картки: `shadow="none"`, `border-border-subtle`; summary по групах — `bg-surface-page`.
-- Бейдж джерела: **«Зі знімка розрахунку»** (`source: snapshot`) / **«Попередній перегляд»** (`preview`) — `HrSpecChip`.
-- Таблиця: колонка «Група» — `HrSpecChip` + `hrPayGroupTokens` (як у `/hr/employees` і `/hr/payroll`).
+- Бейдж джерела: **«Зі знімка розрахунку»** (`source: snapshot`) / **«Попередній перегляд»** (`preview`) — `SpecChip`.
+- Таблиця: колонка «Група» — `SpecChip` + `hrPayGroupTokens` (як у `/hr/employees` і `/hr/payroll`).
 - Попередження (`summary.warnings`) — жовтий блок над таблицею (draft-премії, незаблокований payroll, відсутність годин у табелі).
 - Помилка API (`GET /api/hr/fop`) — toast з текстом від сервера.
 
@@ -184,21 +185,81 @@ Seed-записи (міграція `20260903010000_add_hr_employees`):
 
 ## Фізичні особи (`/hr/persons`)
 
-**UI:** `client/pages/Hr/Persons/index.tsx`, картка — `PersonCard` / `PersonDrawer`.
+**UI:** `client/pages/Hr/Persons/index.tsx`, дерево — `PersonsTreeTable.tsx`, картка — `PersonCard` / `PersonCardPanel`.
 
 - Незбережені зміни в картці захищені `useUnsavedGuard` (snapshot полів контакту).
-- **Merge особей:** спільний `PersonMergeModal` — у списку (select: джерело → ціль) і в картці при дублікатах (radio: головний запис).
+- **Дерево папок Dilovod** під root «Працівники»: вкладені групи роботодавців (з `HrPersonGroupSyncService`), системні «Звільнені працівники», окремий root **«Поза групою»** для контактів без відомої папки. Пошук (від 3 символів) зберігає ієрархію предків; chevron і «Згорнути всі» для розкритих гілок.
+- **Merge особей:** `PersonMergeModal` — матриця полів (телефон, email, адреса, примітки, роботодавець, група, статус) + radio головного запису в заголовках колонок. Кандидати з `GET /api/hr/persons/:id/duplicates` (як у картці). API: `POST /api/hr/persons/merge-batch` (`targetPersonId`, `sourcePersonIds`, `fieldSelections`).
+- Після merge джерела в Dilovod переміщуються в папку **«Дублікати контактів»** (`DILOVOD_PERSON_GROUP_DUPLICATE_CONTACTS`), цільовий контакт — push оновлених даних (`HrPersonSyncService.finalizeMergedPersonSources`).
 
-Окремий довідник від співробітників. У Dilovod у `catalogs.persons` — усі контрагенти; у backoffice за замовчуванням показуємо групу **«Працівники»** (`DILOVOD_PERSON_GROUP_EMPLOYEES` у `shared/constants/dilovod.ts`).
+Окремий довідник від співробітників. У Dilovod у `catalogs.persons` — контрагенти **і папки**; у backoffice дерево будується з локальних `HrPerson` + метаданих груп з Dilovod.
 
-| Фільтр | Що показує |
+| Константа (`shared/constants/dilovod.ts`) | Призначення |
 | --- | --- |
-| Працівники | `dilovodParentId` = група «Працівники» |
-| Поза групою | Особи, привʼязані до HR (`HrEmployee`), але в іншій групі Dilovod |
-| Дублікати | `localStatus = duplicate_candidate` (за ІПН / телефоном) |
+| `DILOVOD_PERSON_GROUP_EMPLOYEES` | Root «Працівники» |
+| `DILOVOD_PERSON_GROUP_DISMISSED` | «Звільнені працівники» |
+| `DILOVOD_PERSON_GROUP_DUPLICATE_CONTACTS` | Архів обʼєднаних дублікатів |
 
-**Sync:** вибірковий pull — не весь `catalogs.persons`, а лише вже привʼязані + група «Працівники» (`HrPersonSyncService.pullSelective`).  
-**API:** `POST /api/hr/persons/sync/pull`, push — `POST /api/hr/persons/:id/sync/push`, переміщення в групу — `POST /api/hr/persons/:id/move-to-employees-group`.
+### Група vs фізособа в Dilovod
+
+Розрізнення в `shared/utils/dilovodPersonGroups.ts` → **`isDilovodPersonGroupRow`**:
+
+1. Системні id папок (див. таблицю вище).
+2. **`isGroup: 1`** (або `true` / `'1'`) — головна ознака папки, навіть якщо `personType` = фізособа.
+3. **`isGroup: 0`** — завжди контакт, не папка.
+4. Якщо `isGroup` у відповіді API немає — застарілі евристики (`personType`, відсутність ІПН/телефону).
+
+**Синк і дерево не показують папку як особу:**
+
+- `pullSelective` / `upsertFromDilovod` пропускають рядки з `isDilovodPersonGroupRow`.
+- `getPersonsByIds` (привʼязані співробітники, `catalogs.employees`) — те саме.
+- `getTree` не додає `HrPerson`, якщо `dilovodPersonId` збігається з відомим id групи.
+- При pull помилкові `HrPerson` з id папки архівуються (`localStatus: archived`).
+
+### Статус працівника в UI (не `HrEmployee.status`)
+
+Відображення: `PersonEmploymentStatusChip` + `shared/utils/hrPersonEmploymentStatus.ts` → **`resolvePersonEmploymentDisplayStatus`**.
+
+| Статус UI | Умова |
+| --- | --- |
+| **Звільнений** | Контакт у папці звільнених (`dilovodParentId` або назва групи) — **пріоритет над усім іншим** |
+| **Активний** | Є `linkedEmployee`, `status === active`, відкрита зайнятість / роботодавець |
+| **Без зайнятості** | `linkedEmployee.status === active`, але немає поточного роботодавця |
+| **Неактивний** | `linkedEmployee.status === inactive`, не в папці звільнених |
+| **—** | Немає `linkedEmployee` |
+
+Сирий **`HrEmployee.status`** (`active` / `inactive`) змінюється в `EmployeeDrawer` (switch), при архіві співробітника, при **`POST /api/hr/persons/:id/dismiss`** (звільнення: папка Dilovod + `inactive` + закриття зайнятостей). Окремого UI для inactive фізособи немає.
+
+**Конфлікт:** контакт у папці звільнених, але в HR ще є `linkedEmployee` — червоний індикатор `PersonDismissedStatusConflictIndicator` (дерево, tooltip про конфлікт статусів).
+
+### API (додатково)
+
+| Метод | Шлях | Призначення |
+| --- | --- | --- |
+| GET | `/api/hr/persons/tree` | Дерево для UI (`search`, `duplicatesOnly`) |
+| POST | `/api/hr/persons/merge-batch` | Обʼєднання з вибором полів |
+| POST | `/api/hr/persons/:id/dismiss` | Звільнення (`dismissedAt`) |
+| POST | `/api/hr/persons/sync/pull` | Вибірковий pull (`HrPersonSyncService.pullSelective`) |
+| POST | `/api/hr/persons/:id/sync/push` | Push контакту в Dilovod |
+| POST | `/api/hr/persons/:id/move-to-employees-group` | Переміщення в групу працівників |
+
+**Утиліти merge полів:** `shared/utils/personMergeFields.ts`.  
+**Дублікати:** `shared/utils/hrPersonDuplicate.ts`, бейдж у дереві — `DuplicateIndicator` у `PersonsTreeTable.tsx`.
+
+### Папки роботодавців (`HrPersonGroupSyncService`)
+
+Сервіс: `server/modules/Hr/HrPersonGroupSyncService.ts`. У дереві `/hr/persons` кожен роботодавець з `dilovodPersonGroupId` — вкладена папка під root «Працівники».
+
+| Метод | Шлях | Дія |
+| --- | --- | --- |
+| POST | `/api/hr/legal-entities/:id/sync/person-group` | Створити папку в Dilovod за назвою роботодавця або **виправити** запис без `isGroup` (`person_group_repaired` в audit) |
+| POST | `/api/hr/persons/sync/pull/groups` | Зіставити існуючі папки Dilovod з `HrLegalEntity` за назвою → заповнити `dilovodPersonGroupId` |
+| DELETE | `/api/hr/legal-entities/:id/person-group` | Видалити **порожню** папку в Dilovod (`delMark`) і скинути звʼязок; умови: немає контактів у backoffice з `dilovodParentId`, немає дітей у Dilovod |
+| DELETE | `.../person-group?localOnly=1` | Лише скинути `dilovodPersonGroupId`, якщо папку в Dilovod уже видалили вручну (код `PERSON_GROUP_MISSING_IN_DILOVOD` → confirm у UI) |
+
+**UI:** контекстне меню групи (sync папки), кнопка видалення порожньої папки в `PersonsTreeTable` (`MiniConfirmPopover`). Після будь-якого sync/move/merge — `fetchTree({ refreshFullTree: true })`.
+
+**Dilovod API:** при `saveObject` для контактів і папок `catalogs.persons` не передавати `header.version` (читання `version` у `request` лишається); оновлення груп — `updatePersonGroup` з `isGroup: 1`.
 
 ---
 
@@ -341,8 +402,8 @@ Accordion у картках: `client/components/hr/HrAuditAccordion.tsx`.
 
 ### Формула розрахунку
 
-- Офіційна ставка: `accrued = rate × workHours / normHours`; погодинна: `rate × workHours`.
-- Gross для податків: `accrued / (1 − Σ withholdingRates)` за активними `hr_tax_rules`.
+- Офіційна ставка: `accrued = rate × workHours / normHours`; офіційна погодинна: `rate × workHours`.
+- Gross-up для податків: `accrued / (1 − Σ withholdingRates)` для **`official_salary`** і **`hourly`** за активними `hr_tax_rules` (коди утримань з працівника — зазвичай `pdfo`, `military`). Реалізація: `payGroupAccruedIsNetToEmployee` у `server/modules/Hr/payrollCalc.ts`.
 - Застарілий UI «Формула Tabell 2026» (коефіцієнти 0.23 / 0.77) **видалено**; знімок у БД лишається сумісним (`extraRate: 0`, `grossDivisor: 1`).
 
 ### Фільтри груп
@@ -442,7 +503,7 @@ Accordion у картках: `client/components/hr/HrAuditAccordion.tsx`.
 `client/pages/Hr/hrUi.tsx`:
 
 - Hue для груп оплати, статусів, типів роботодавців, кодів табеля.
-- `HrSpecChip` — бейджі в стилі Products 2.0 / specColorPalette.
+- `SpecChip` — бейджі в стилі Products 2.0 / specColorPalette.
 - Кнопки `HR_BTN_*` (primary / neutral / warning).
 
 **Cross-domain person-card** (`client/components/person-card/`): контактні поля, `PersonCard`, `UserCard`. HR-специфіка в `client/components/hr/` (accordion дублікатів, audit, status chip).

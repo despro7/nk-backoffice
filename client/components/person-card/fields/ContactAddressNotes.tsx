@@ -1,4 +1,5 @@
 import { Textarea } from '@heroui/react';
+import { PERSON_READ_ONLY_INPUT_CLASSNAMES } from './personCardFieldStyles';
 
 interface ContactAddressNotesProps {
   address: string;
@@ -19,20 +20,20 @@ export function ContactAddressNotes({
     <>
       <Textarea
         label="Адреса"
-        labelPlacement="outside"
         placeholder="Місто, вулиця, будинок"
         value={address}
         onValueChange={onAddressChange}
         isReadOnly={!canManage}
+        classNames={!canManage ? PERSON_READ_ONLY_INPUT_CLASSNAMES : undefined}
         minRows={3}
       />
       <Textarea
         label="Примітки"
-        labelPlacement="outside"
         placeholder="Додаткова інформація"
         value={notes}
         onValueChange={onNotesChange}
         isReadOnly={!canManage}
+        classNames={!canManage ? PERSON_READ_ONLY_INPUT_CLASSNAMES : undefined}
         minRows={3}
       />
     </>

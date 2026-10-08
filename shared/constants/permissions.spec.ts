@@ -152,9 +152,15 @@ describe('seedPermissionKeysForRole', () => {
     expect(boss).toContain(PERMISSIONS.ACTION_HR_PAYROLL_VIEW);
     expect(boss).toContain(PERMISSIONS.ACTION_HR_PAYTERMS_MANAGE);
     expect(boss).toContain(PERMISSIONS.ACTION_HR_PAYOUTS_VIEW);
+    expect(boss).toContain(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_GROUP);
+    expect(boss).toContain(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_EMPLOYER);
+    expect(boss).toContain(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_PAY_RATE);
     expect(shop).not.toContain(PERMISSIONS.PAGE_HR_PAYROLL);
     expect(shop).not.toContain(PERMISSIONS.ACTION_HR_PAYTERMS_MANAGE);
     expect(shop).not.toContain(PERMISSIONS.ACTION_HR_PAYOUTS_VIEW);
+    expect(shop).not.toContain(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_GROUP);
+    expect(shop).not.toContain(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_EMPLOYER);
+    expect(shop).not.toContain(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_PAY_RATE);
   });
 });
 

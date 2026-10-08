@@ -41,10 +41,10 @@ export function sortHrEmployees(
   const dir = sortDescriptor?.direction === 'descending' ? -1 : 1;
 
   return [...rows].sort((left, right) => {
-    const leftValue = sortValue(left, key).toLocaleLowerCase('uk');
-    const rightValue = sortValue(right, key).toLocaleLowerCase('uk');
-    if (leftValue < rightValue) return -1 * dir;
-    if (leftValue > rightValue) return 1 * dir;
+    const leftValue = sortValue(left, key);
+    const rightValue = sortValue(right, key);
+    const cmp = leftValue.localeCompare(rightValue, 'uk', { sensitivity: 'base' });
+    if (cmp !== 0) return cmp * dir;
     return left.id - right.id;
   });
 }

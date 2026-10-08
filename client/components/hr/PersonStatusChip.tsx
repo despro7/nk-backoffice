@@ -1,29 +1,30 @@
 import { getSpecColorByHue } from '@shared/utils/specColorPalette';
 import type { HrPersonDto } from '@shared/types/hr';
-import { HrSpecChip, hrStatusTokens } from '@/pages/Hr/hrUi';
+import { SpecChip } from '@/pages/Hr/hrUi';
 
 const duplicateTokens = getSpecColorByHue('amber', 'light', 'soft');
 const mergedTokens = getSpecColorByHue('blue', 'light', 'soft');
 
-export function PersonStatusChip({ person }: { person: HrPersonDto }) {
+interface PersonStatusChipProps {
+  person: HrPersonDto;
+  rounded?: 'full' | 'sm';
+}
+
+export function PersonStatusChip({ person, rounded = 'full' }: PersonStatusChipProps) {
   if (person.mergedCount > 0) {
     return (
-      <HrSpecChip tokens={mergedTokens} icon="merge">
+      <SpecChip tokens={mergedTokens} icon="merge" rounded={rounded}>
         Обʼєднано
         <span className="text-xs opacity-80">({person.mergedCount})</span>
-      </HrSpecChip>
+      </SpecChip>
     );
   }
-  if (person.hasUnresolvedDuplicates || person.isDuplicateCandidate) {
+  if (person.hasUnresolvedDuplicates) {
     return (
-      <HrSpecChip tokens={duplicateTokens} icon="warning">
-        Можливий дублікат
-      </HrSpecChip>
+      <SpecChip tokens={duplicateTokens} icon="warning" rounded={rounded}>
+        Дублікат
+      </SpecChip>
     );
   }
-  return (
-    <HrSpecChip tokens={hrStatusTokens('active')} icon="success">
-      Активна
-    </HrSpecChip>
-  );
+  return null;
 }

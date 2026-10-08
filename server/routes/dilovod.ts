@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { buildDilovodPayload } from '../../shared/utils/dilovodPayloadBuilder.js';
 import { authenticateToken, requirePermission } from '../middleware/auth.js';
-import { DilovodService, dilovodExportFlowService, acquireSaleShipmentLock, completeSaleShipmentLock, releaseSaleShipmentLock, dilovodMetadataService, dilovodGoodPartsSerialService } from '../services/dilovod/index.js';
+import { DilovodService, dilovodService, dilovodExportFlowService, acquireSaleShipmentLock, completeSaleShipmentLock, releaseSaleShipmentLock, dilovodMetadataService, dilovodGoodPartsSerialService } from '../services/dilovod/index.js';
 import { handleDilovodApiError, clearConfigCache, cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull } from '../services/dilovod/DilovodUtils.js';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
@@ -384,7 +384,6 @@ router.post('/settings', authenticateToken, dilovodWriteSettings, async (req, re
 
     // Для зміни лише кольорів типів — без reload API / restart cron
     if (!onlyColorMap) {
-      const dilovodService = new DilovodService();
       await dilovodService.reloadApiConfig();
       void cronService.restartProductsSync();
       void cronService.restartStockSync();

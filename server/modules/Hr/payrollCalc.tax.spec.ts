@@ -38,6 +38,14 @@ describe('payrollCalc taxes', () => {
     expect(tax.taxBreakdown).toHaveLength(1);
   });
 
+  it('для hourly з ПДФО/ВЗ — gross-up як для official_salary', () => {
+    const accrued = 1904;
+    const hourly = applyTaxRules('hourly', accrued, DEFAULT_TAX_RULES, 0);
+    const salary = applyTaxRules('official_salary', accrued, DEFAULT_TAX_RULES, 0);
+    expect(hourly).toEqual(salary);
+    expect(Number(hourly.netToPay)).toBeCloseTo(accrued, 1);
+  });
+
   it('official_salary: ЄСВ не включає ПДФО/ВЗ, навіть якщо вони — платник роботодавець', () => {
     const employerPaidRules = DEFAULT_TAX_RULES.map((rule) => ({ ...rule, payer: 'employer' as const }));
     const result = calculatePayrollLineWithTaxes({

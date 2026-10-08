@@ -1,6 +1,6 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import { authenticateToken } from '../../middleware/auth.js';
-import { requirePermission, requirePermissionKey } from '../../middleware/requirePermission.js';
+import { requirePermission, requirePermissionKey, sendInsufficientRole } from '../../middleware/requirePermission.js';
 import { logServer } from '../../lib/utils.js';
 import { PERMISSIONS } from '../../../shared/constants/permissions.js';
 import { hrService, HrError } from './HrService.js';
@@ -10,33 +10,70 @@ import { hrAuditService } from './HrAuditService.js';
 import { hrPayGroupService } from './HrPayGroupService.js';
 import { hrPersonService } from './HrPersonService.js';
 import { hrPersonSyncService } from './HrPersonSyncService.js';
+import { hrPersonGroupSyncService } from './HrPersonGroupSyncService.js';
 import { hrDilovodSyncService } from './HrDilovodSyncService.js';
 import { hrTaxRuleService } from './HrTaxRuleService.js';
 import { hrProductionCalendarService } from './HrProductionCalendarService.js';
 import { hrBonusService } from './HrBonusService.js';
 import { hrFopService } from './HrFopService.js';
-import type {
-  HrAuditEntityType,
-  HrBonusWritePayload,
-  HrEmployeeWritePayload,
-  HrEmploymentWritePayload,
-  HrLegalEntityWritePayload,
-  HrLegalEntityDeletePayload,
-  HrPayGroupWritePayload,
-  HrPayrollFormulaUpdatePayload,
-  HrPayrollPeriodOptions,
-  HrPayTermsWritePayload,
-  HrPayoutWritePayload,
-  HrPersonWritePayload,
-  HrProductionCalendarWritePayload,
-  HrTaxRuleWritePayload,
-  HrTimesheetSavePayload,
+import {
+  HR_PERSON_MERGE_PICKABLE_FIELDS,
+  type HrAuditEntityType,
+  type HrBonusWritePayload,
+  type HrEmployeeWritePayload,
+  type HrEmploymentWritePayload,
+  type HrLegalEntityWritePayload,
+  type HrLegalEntityDeletePayload,
+  type HrPayGroupWritePayload,
+  type HrPayrollFormulaUpdatePayload,
+  type HrPayrollPeriodOptions,
+  type HrPayTermsWritePayload,
+  type HrPayoutWritePayload,
+  type HrPersonMergeFieldSelections,
+  type HrPersonWritePayload,
+  type HrProductionCalendarWritePayload,
+  type HrTaxRuleWritePayload,
+  type HrTimesheetSavePayload,
 } from '../../../shared/types/hr.js';
 
 const router = Router();
 
 const pageEmployees = requirePermissionKey(PERMISSIONS.PAGE_HR_EMPLOYEES);
 const pagePersons = requirePermissionKey(PERMISSIONS.PAGE_HR_PERSONS);
+
+/** Пошук фіз. осіб для привʼязки до співробітника — без окремого доступу до сторінки «Фіз. особи». */
+async function allowPersonListOrEmployeePersonSearch(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+  if (!search) {
+    pagePersons(req, res, next);
+    return;
+  }
+  if (!req.user) {
+    res.status(401).json({
+      message: 'Authentication required',
+      code: 'NO_AUTH',
+      details: 'You need to be authenticated to access this resource',
+    });
+    return;
+  }
+  if (req.user.userId === 0) {
+    next();
+    return;
+  }
+  const { roleService } = await import('../../services/RoleService.js');
+  const allowed =
+    await roleService.hasPermission(req.user.role, PERMISSIONS.PAGE_HR_PERSONS)
+    || await roleService.hasPermission(req.user.role, PERMISSIONS.PAGE_HR_EMPLOYEES);
+  if (!allowed) {
+    sendInsufficientRole(res, 'Потрібен доступ до сторінки «Співробітники» або «Фіз. особи»');
+    return;
+  }
+  next();
+}
 const pageTimesheet = requirePermissionKey(PERMISSIONS.PAGE_HR_TIMESHEET);
 const manageEmployees = requirePermission('hr', 'employees.manage', 'Керувати співробітниками');
 const managePersons = requirePermission('hr', 'persons.manage', 'Керувати фізичними особами');
@@ -58,6 +95,18 @@ function parseId(raw: string | string[] | undefined): number {
 function userId(req: Request): number | undefined {
   const id = req.user?.userId;
   return id && id > 0 ? id : undefined;
+}
+
+function parsePersonMergeFieldSelections(raw: unknown): HrPersonMergeFieldSelections | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const source = raw as Record<string, unknown>;
+  const selections = {} as HrPersonMergeFieldSelections;
+  for (const field of HR_PERSON_MERGE_PICKABLE_FIELDS) {
+    const value = Number(source[field]);
+    if (!Number.isInteger(value) || value <= 0) return undefined;
+    selections[field] = value;
+  }
+  return selections;
 }
 
 function parsePayrollPeriodOptions(source: {
@@ -154,19 +203,31 @@ router.delete('/pay-groups/:id', authenticateToken, manageEmployees, async (req:
   }
 });
 
-router.get('/persons', authenticateToken, pagePersons, async (req: Request, res: Response) => {
-  try {
-    const data = await hrPersonService.list({
-      search: typeof req.query.search === 'string' ? req.query.search : undefined,
-      employeesGroupOnly: req.query.group === 'employees',
-      outOfGroup: req.query.group === 'out',
-      duplicatesOnly: req.query.duplicates === 'true',
-    });
-    res.json({ success: true, data });
-  } catch (error) {
-    sendHrError(res, error, 'list persons');
-  }
-});
+	router.get('/persons/tree', authenticateToken, pagePersons, async (req: Request, res: Response) => {
+	  try {
+	    const data = await hrPersonService.getTree({
+	      search: typeof req.query.search === 'string' ? req.query.search : undefined,
+	      duplicatesOnly: req.query.duplicates === 'true',
+	    });
+	    res.json({ success: true, data });
+	  } catch (error) {
+	    sendHrError(res, error, 'persons tree');
+	  }
+	});
+
+	router.get('/persons', authenticateToken, allowPersonListOrEmployeePersonSearch, async (req: Request, res: Response) => {
+	  try {
+	    const data = await hrPersonService.list({
+	      search: typeof req.query.search === 'string' ? req.query.search : undefined,
+	      employeesGroupOnly: req.query.group === 'employees',
+	      outOfGroup: req.query.group === 'out',
+	      duplicatesOnly: req.query.duplicates === 'true',
+	    });
+	    res.json({ success: true, data });
+	  } catch (error) {
+	    sendHrError(res, error, 'list persons');
+	  }
+	});
 
 router.get('/persons/:id', authenticateToken, pagePersons, async (req: Request, res: Response) => {
   try {
@@ -219,10 +280,39 @@ router.post('/persons/:id/merge', authenticateToken, managePersons, async (req: 
     if (!Number.isInteger(targetPersonId) || targetPersonId <= 0) {
       throw new HrError('Вкажіть targetPersonId');
     }
-    const data = await hrPersonService.merge(parseId(req.params.id), targetPersonId, userId(req));
-    res.json({ success: true, data });
+    const sourceId = parseId(req.params.id);
+    const fieldSelections = parsePersonMergeFieldSelections(req.body?.fieldSelections);
+    const data = await hrPersonService.mergePersonsBatch(
+      targetPersonId,
+      [sourceId],
+      fieldSelections,
+      userId(req),
+    );
+    const synced = await hrPersonSyncService.finalizeMergedPersonSources([sourceId], targetPersonId, userId(req));
+    res.json({ success: true, data: synced });
   } catch (error) {
     sendHrError(res, error, 'merge person');
+  }
+});
+
+router.post('/persons/merge-batch', authenticateToken, managePersons, async (req: Request, res: Response) => {
+  try {
+    const targetPersonId = Number(req.body?.targetPersonId);
+    if (!Number.isInteger(targetPersonId) || targetPersonId <= 0) {
+      throw new HrError('Вкажіть targetPersonId');
+    }
+    const sourcePersonIds = Array.isArray(req.body?.sourcePersonIds)
+      ? req.body.sourcePersonIds.map((value: unknown) => Number(value)).filter((id: number) => Number.isInteger(id) && id > 0)
+      : [];
+    const fieldSelections = parsePersonMergeFieldSelections(req.body?.fieldSelections);
+    if (!fieldSelections) {
+      throw new HrError('Вкажіть fieldSelections');
+    }
+    await hrPersonService.mergePersonsBatch(targetPersonId, sourcePersonIds, fieldSelections, userId(req));
+    const synced = await hrPersonSyncService.finalizeMergedPersonSources(sourcePersonIds, targetPersonId, userId(req));
+    res.json({ success: true, data: synced });
+  } catch (error) {
+    sendHrError(res, error, 'merge persons batch');
   }
 });
 
@@ -235,6 +325,24 @@ router.post('/persons/sync/pull', authenticateToken, managePersons, async (req: 
   }
 });
 
+router.post('/persons/sync/pull/contacts', authenticateToken, managePersons, async (req: Request, res: Response) => {
+  try {
+    const data = await hrPersonSyncService.pullContactsFromDilovod();
+    res.json({ success: true, data });
+  } catch (error) {
+    sendHrError(res, error, 'persons sync pull contacts');
+  }
+});
+
+router.post('/persons/sync/pull/groups', authenticateToken, managePersons, async (req: Request, res: Response) => {
+  try {
+    const data = await hrPersonSyncService.pullGroupsFromDilovod();
+    res.json({ success: true, data });
+  } catch (error) {
+    sendHrError(res, error, 'persons sync pull groups');
+  }
+});
+
 router.post('/persons/:id/sync/push', authenticateToken, managePersons, async (req: Request, res: Response) => {
   try {
     const data = await hrPersonSyncService.pushPerson(parseId(req.params.id), userId(req));
@@ -244,14 +352,63 @@ router.post('/persons/:id/sync/push', authenticateToken, managePersons, async (r
   }
 });
 
-router.post('/persons/:id/move-to-employees', authenticateToken, managePersons, async (req: Request, res: Response) => {
+router.post('/persons/:id/sync/pull', authenticateToken, managePersons, async (req: Request, res: Response) => {
   try {
-    const data = await hrPersonSyncService.moveToEmployeesGroup(parseId(req.params.id), userId(req));
+    const data = await hrPersonSyncService.pullPerson(parseId(req.params.id), userId(req));
     res.json({ success: true, data });
   } catch (error) {
-    sendHrError(res, error, 'move person to employees group');
+    sendHrError(res, error, 'person sync pull');
   }
 });
+
+router.post('/persons/:id/sync/record', authenticateToken, managePersons, async (req: Request, res: Response) => {
+  try {
+    const data = await hrPersonSyncService.syncPersonRecord(parseId(req.params.id), userId(req));
+    res.json({ success: true, data });
+  } catch (error) {
+    sendHrError(res, error, 'person sync record');
+  }
+});
+
+	router.post('/persons/:id/move-to-employees', authenticateToken, managePersons, async (req: Request, res: Response) => {
+	  try {
+	    const data = await hrPersonSyncService.moveToEmployeesGroup(parseId(req.params.id), userId(req));
+	    res.json({ success: true, data });
+	  } catch (error) {
+	    sendHrError(res, error, 'move person to employees group');
+	  }
+	});
+
+	router.post('/persons/:id/move-to-group', authenticateToken, managePersons, async (req: Request, res: Response) => {
+	  try {
+	    const targetGroupId = typeof req.body?.targetGroupId === 'string' ? req.body.targetGroupId.trim() : '';
+	    if (!targetGroupId) throw new HrError('Вкажіть targetGroupId');
+	    const data = await hrPersonSyncService.moveToGroup(parseId(req.params.id), targetGroupId, userId(req));
+	    res.json({ success: true, data });
+	  } catch (error) {
+	    sendHrError(res, error, 'move person to group');
+	  }
+	});
+
+	router.post('/persons/:id/align-group-with-employer', authenticateToken, managePersons, async (req: Request, res: Response) => {
+	  try {
+	    const data = await hrPersonSyncService.alignPersonGroupWithEmployer(parseId(req.params.id), userId(req));
+	    res.json({ success: true, data });
+	  } catch (error) {
+	    sendHrError(res, error, 'align person group with employer');
+	  }
+	});
+
+	router.post('/persons/:id/dismiss', authenticateToken, managePersons, async (req: Request, res: Response) => {
+	  try {
+	    const dismissedAt = typeof req.body?.dismissedAt === 'string' ? req.body.dismissedAt : '';
+	    if (!dismissedAt) throw new HrError('Вкажіть дату звільнення');
+	    const data = await hrPersonSyncService.dismissPerson(parseId(req.params.id), dismissedAt, userId(req));
+	    res.json({ success: true, data });
+	  } catch (error) {
+	    sendHrError(res, error, 'dismiss person');
+	  }
+	});
 
 router.post('/sync/firms', authenticateToken, manageEmployees, async (req: Request, res: Response) => {
   try {
@@ -299,6 +456,25 @@ router.post('/legal-entities', authenticateToken, manageEmployees, async (req: R
   }
 });
 
+router.post('/legal-entities/:id/sync/person-group', authenticateToken, managePersons, async (req: Request, res: Response) => {
+  try {
+    const data = await hrPersonGroupSyncService.syncEmployerPersonGroup(parseId(req.params.id), userId(req));
+    res.json({ success: true, data });
+  } catch (error) {
+    sendHrError(res, error, 'sync employer person group');
+  }
+});
+
+router.delete('/legal-entities/:id/person-group', authenticateToken, managePersons, async (req: Request, res: Response) => {
+  try {
+    const localOnly = req.query.localOnly === '1' || req.query.localOnly === 'true';
+    await hrPersonGroupSyncService.deleteEmptyEmployerPersonGroup(parseId(req.params.id), userId(req), { localOnly });
+    res.json({ success: true });
+  } catch (error) {
+    sendHrError(res, error, 'delete employer person group');
+  }
+});
+
 router.put('/legal-entities/:id', authenticateToken, manageEmployees, async (req: Request, res: Response) => {
   try {
     const data = await hrService.updateLegalEntity(parseId(req.params.id), req.body as HrLegalEntityWritePayload, userId(req));
@@ -331,13 +507,27 @@ router.get('/users-options', authenticateToken, pageEmployees, async (req: Reque
   }
 });
 
+router.get('/employees/employer-counts', authenticateToken, pageEmployees, async (_req: Request, res: Response) => {
+  try {
+    const data = await hrService.getEmployerEmployeeCounts();
+    res.json({ success: true, data });
+  } catch (error) {
+    sendHrError(res, error, 'employer employee counts');
+  }
+});
+
 router.get('/employees', authenticateToken, pageEmployees, async (req: Request, res: Response) => {
   try {
     const search = typeof req.query.search === 'string' ? req.query.search : undefined;
     const archived = req.query.archived === 'true';
+    const legalEntityIdRaw = req.query.legalEntityId;
+    const legalEntityId =
+      typeof legalEntityIdRaw === 'string' && legalEntityIdRaw.trim()
+        ? parseId(legalEntityIdRaw)
+        : undefined;
     const data = archived
       ? await hrService.listArchivedEmployees(search)
-      : await hrService.listEmployees(search, req.query.includeInactive !== 'false');
+      : await hrService.listEmployees(search, req.query.includeInactive !== 'false', legalEntityId);
     res.json({ success: true, data });
   } catch (error) {
     sendHrError(res, error, 'list employees');
@@ -420,8 +610,21 @@ router.delete('/employments/:id', authenticateToken, manageEmployees, async (req
 });
 
 const transferEmployment = requirePermissionKey(PERMISSIONS.ACTION_HR_EMPLOYMENT_TRANSFER);
-const changeEmploymentGroup = requirePermissionKey(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_GROUP);
-const changeEmploymentEmployer = requirePermissionKey(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_EMPLOYER);
+const changeEmploymentGroup = requirePermission(
+  'hr',
+  'employment.change-group',
+  'Змінювати групу оплати зайнятості',
+);
+const changeEmploymentEmployer = requirePermission(
+  'hr',
+  'employment.change-employer',
+  'Змінювати роботодавця зайнятості',
+);
+const changeEmploymentPayRate = requirePermission(
+  'hr',
+  'employment.change-pay-rate',
+  'Змінювати ставку',
+);
 
 router.post('/employments/:id/transfer-and-delete', authenticateToken, transferEmployment, async (req: Request, res: Response) => {
   try {
@@ -490,7 +693,7 @@ router.post('/employments/:id/sync/push-personnel-number', authenticateToken, ma
   }
 });
 
-router.post('/employments/:id/pay-terms', authenticateToken, managePayTerms, async (req: Request, res: Response) => {
+router.post('/employments/:id/pay-terms', authenticateToken, changeEmploymentPayRate, async (req: Request, res: Response) => {
   try {
     const data = await hrService.createPayTerms(parseId(req.params.id), req.body as HrPayTermsWritePayload, userId(req));
     res.status(201).json({ success: true, data });
@@ -499,7 +702,7 @@ router.post('/employments/:id/pay-terms', authenticateToken, managePayTerms, asy
   }
 });
 
-router.put('/pay-terms/:id', authenticateToken, managePayTerms, async (req: Request, res: Response) => {
+router.put('/pay-terms/:id', authenticateToken, changeEmploymentPayRate, async (req: Request, res: Response) => {
   try {
     const data = await hrService.updatePayTerms(parseId(req.params.id), req.body as HrPayTermsWritePayload, userId(req));
     res.json({ success: true, data });

@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { Accordion, AccordionItem, Spinner } from '@heroui/react';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PERMISSIONS } from '@shared/constants/permissions';
-import type { HrAuditEntityType, HrAuditLogDto } from '@shared/types/hr';
 import { HrAuditLogList } from '@/pages/Hr/components/HrAuditLogEntry';
+import { pluralize } from '@/lib/formatUtils';
+import type { HrAuditEntityType, HrAuditLogDto } from '@shared/types/hr';
 
 const ACCORDION_CLASS_NAMES = {
   base: 'px-1',
@@ -71,7 +72,7 @@ export function HrAuditAccordion({
         <AccordionItem
           key="audit"
           title={title}
-          subtitle={`(${logs.length} записів)`}
+          subtitle={`${logs.length} ${pluralize(logs.length, 'запис', 'записи', 'записів')}`}
           classNames={ACCORDION_CLASS_NAMES}
         >
           {loading ? (

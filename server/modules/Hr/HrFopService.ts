@@ -297,6 +297,7 @@ export class HrFopService {
       }
     }
     const employerTotalCost = Number(line.employerTotalCost);
+    const pdfoVzAmount = Number(line.pdfoAmount ?? 0) + Number(line.militaryTaxAmount ?? 0);
     const esvAmount = Number(line.esvAmount ?? 0);
 
     const entries = entriesByEmployment.get(line.employmentId) ?? [];
@@ -343,6 +344,7 @@ export class HrFopService {
       payGroup,
       employerTotalCost: money(agg.employerCost),
       bonusAmount: money(displayBonusAmount),
+      pdfoVzAmount: money(pdfoVzAmount),
       esvAmount: money(esvAmount),
       includedDays: agg.includedDays,
     });

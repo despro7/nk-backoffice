@@ -735,8 +735,9 @@ model HrLegalEntity {
   code          String         @unique @db.VarChar(32)
   name          String         @db.VarChar(255)
   kind          String         @db.VarChar(32)
-  dilovodFirmId String?        @unique @db.VarChar(32)
-  isActive      Boolean        @default(true)
+  dilovodFirmId        String?        @unique @db.VarChar(32)
+  dilovodPersonGroupId String?        @unique @db.VarChar(32)
+  isActive             Boolean        @default(true)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   employments   HrEmployment[]

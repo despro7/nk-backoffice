@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Button,
   Card,
@@ -35,13 +36,14 @@ import {
   type HrLegalEntityKind,
   type HrLegalEntityWritePayload,
 } from '@shared/types/hr';
+import { getEmployerEmployeeCount, type EmployerEmployeeCounts } from '../Employees/employeeEmployerFilter';
 import { PayGroupsTab } from './PayGroupsTab';
 import { TaxRulesTab } from './TaxRulesTab';
 import { ProductionCalendarTab, type ProductionCalendarTabHandle } from './ProductionCalendarTab';
 import { HR_BTN_PRIMARY } from '@/lib/buttonStyles';
 import {
   HR_TABLE_CLASS_NAMES,
-  HrSpecChip,
+  SpecChip,
   hrLegalEntityKindTokens,
   hrStatusTokens,
 } from '../hrUi';
@@ -84,12 +86,14 @@ function kindLabel(kind: HrLegalEntityKind, employers: HrLegalEntityDto[]): stri
 }
 
 export default function HrEmployersPage() {
+  const navigate = useNavigate();
   const { hasPermission } = useRoleAccess();
   const canView = hasPermission(PERMISSIONS.PAGE_HR_EMPLOYEES);
   const canManage = hasPermission(PERMISSIONS.ACTION_HR_EMPLOYEES_MANAGE);
   const canManageTaxRules = hasPermission(PERMISSIONS.ACTION_HR_TAXRULES_MANAGE);
 
   const [employers, setEmployers] = useState<HrLegalEntityDto[]>([]);
+  const [employerCounts, setEmployerCounts] = useState<EmployerEmployeeCounts>({});
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -173,6 +177,13 @@ export default function HrEmployersPage() {
     [employers],
   );
 
+  const fetchEmployerCounts = useCallback(async () => {
+    const response = await fetch('/api/hr/employees/employer-counts', { credentials: 'include' });
+    if (!response.ok) return;
+    const data = await response.json().catch(() => ({}));
+    setEmployerCounts(data.data && typeof data.data === 'object' ? data.data : {});
+  }, []);
+
   const fetchEmployers = useCallback(async () => {
     setLoading(true);
     try {
@@ -191,7 +202,8 @@ export default function HrEmployersPage() {
   useEffect(() => {
     if (!canView) return;
     void fetchEmployers();
-  }, [canView, fetchEmployers]);
+    void fetchEmployerCounts();
+  }, [canView, fetchEmployers, fetchEmployerCounts]);
 
   const visibleEmployers = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -401,7 +413,7 @@ export default function HrEmployersPage() {
             Назви типів (ФОП, ТОВ, Нештатні) використовуються при створенні роботодавця. Технічний код типу не
             змінюється. Ці записи не показуються у списку роботодавців.
           </p>
-          <Card className="border border-default-200 shadow-sm">
+          <Card className="shadow-none rounded-lg">
             <CardBody>
               <Table aria-label="Типи роботодавців" removeWrapper classNames={HR_TABLE_CLASS_NAMES}>
                 <TableHeader>
@@ -413,9 +425,9 @@ export default function HrEmployersPage() {
                   {seedEmployers.map((item) => (
                     <TableRow key={item.code}>
                       <TableCell>
-                        <HrSpecChip tokens={hrLegalEntityKindTokens(item.kind)} rounded="sm">
+                        <SpecChip tokens={hrLegalEntityKindTokens(item.kind)} rounded="sm">
                           {item.name}
-                        </HrSpecChip>
+                        </SpecChip>
                       </TableCell>
                       <TableCell>
                         <span className="font-mono text-xs text-default-500">{item.kind}</span>
@@ -484,7 +496,7 @@ export default function HrEmployersPage() {
         Конкретизуйте роботодавців для табеля та розрахунку — наприклад «ФОП Бубнова М.В.» або «ТОВ Нова Кухня».
       </p>
 
-      <Card className="border border-default-200 shadow-sm">
+      <Card className="shadow-none rounded-lg">
         <CardBody>
           {loading && regularEmployers.length === 0 ? (
             <div className="flex justify-center py-16">
@@ -505,8 +517,9 @@ export default function HrEmployersPage() {
             >
               <TableHeader>
                 <TableColumn>Назва</TableColumn>
-                <TableColumn width={160}>Тип</TableColumn>
-                <TableColumn width={140}>Статус</TableColumn>
+                <TableColumn align="center">Співробітники</TableColumn>
+                <TableColumn>Тип</TableColumn>
+                <TableColumn>Статус</TableColumn>
                 {canManage ? <TableColumn width={96} align="center"> </TableColumn> : <TableColumn> </TableColumn>}
               </TableHeader>
               <TableBody>
@@ -524,18 +537,27 @@ export default function HrEmployersPage() {
                         ) : null}
                       </button>
                     </TableCell>
-                    <TableCell>
-                      <HrSpecChip tokens={hrLegalEntityKindTokens(item.kind)} rounded="sm">
-                        {kindLabel(item.kind, employers)}
-                      </HrSpecChip>
+                    <TableCell className="text-center">
+                      <button
+                        type="button"
+                        className="text-sm tabular-nums font-medium text-default-700 hover:text-default-900 hover:underline"
+                        onClick={() => navigate(`/hr/employees#employer=${item.id}`)}
+                      >
+                        {getEmployerEmployeeCount(employerCounts, item.id)}
+                      </button>
                     </TableCell>
                     <TableCell>
-                      <HrSpecChip
+                      <SpecChip tokens={hrLegalEntityKindTokens(item.kind)} rounded="sm">
+                        {kindLabel(item.kind, employers)}
+                      </SpecChip>
+                    </TableCell>
+                    <TableCell>
+                      <SpecChip
                         tokens={hrStatusTokens(item.isActive ? 'active' : 'inactive')}
                         icon={item.isActive ? 'success' : 'error'}
                       >
                         {item.isActive ? 'активний' : 'неактивний'}
-                      </HrSpecChip>
+                      </SpecChip>
                     </TableCell>
                     <TableCell>
                       {canManage ? (
@@ -610,9 +632,9 @@ export default function HrEmployersPage() {
                   classNames={SELECT_CLASS_NAMES}
                   renderValue={(items) =>
                     items.map((item) => (
-                      <HrSpecChip key={item.key} tokens={hrLegalEntityKindTokens(String(item.key))} rounded="sm">
+                      <SpecChip key={item.key} tokens={hrLegalEntityKindTokens(String(item.key))} rounded="sm">
                         {item.textValue}
-                      </HrSpecChip>
+                      </SpecChip>
                     ))
                   }
                 >
