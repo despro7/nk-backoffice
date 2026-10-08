@@ -586,12 +586,14 @@ export const PersonCardPanel = forwardRef<PersonCardPanelHandle, PersonCardPanel
         </div>
       ) : null}
 
-      <HrAuditAccordion
-        className="mt-auto pt-6"
-        entityType="person"
-        entityId={displayPerson.id}
-        refreshKey={auditRefreshKey}
-      />
+      {displayPerson ? (
+        <HrAuditAccordion
+          className="mt-auto pt-6"
+          entityType="person"
+          entityId={displayPerson.id}
+          refreshKey={auditRefreshKey}
+        />
+      ) : null}
 
       <PersonMergeModal
         isOpen={mergeOpen}
