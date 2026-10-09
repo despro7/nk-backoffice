@@ -5,7 +5,11 @@ import { useAuth } from './auth-context';
 import { RolePreviewContext, useRolePreview } from './role-preview-context';
 import { ROLES } from '@shared/constants/roles';
 import { canAccessRoute } from '@shared/constants/permissions';
-import { installRolePreviewFetch, setRolePreviewFetchRole } from '@/lib/rolePreviewFetch';
+import {
+  installRolePreviewFetch,
+  setRolePreviewFetchRole,
+  setRolePreviewFetchRoleLabelResolver,
+} from '@/lib/rolePreviewFetch';
 import { PERMISSIONS_REVISION_EVENT } from '@/lib/notifyPermissionsChanged';
 import { findAppRouteByPath } from '@/routes.config';
 import { ToastService } from '@/services/ToastService';
@@ -180,6 +184,16 @@ export function RolePreviewProvider({ children }: RolePreviewProviderProps) {
 
   installRolePreviewFetch();
   setRolePreviewFetchRole(activePreview);
+
+  useEffect(() => {
+    setRolePreviewFetchRoleLabelResolver((slug) => {
+      const preview = previewRoles.find((item) => item.slug === slug);
+      if (preview) return preview.name;
+      if (user?.role === slug && user.roleName) return user.roleName;
+      return null;
+    });
+    return () => setRolePreviewFetchRoleLabelResolver(null);
+  }, [previewRoles, user?.role, user?.roleName]);
 
   useEffect(() => {
     if (previousPreviewRef.current === undefined) {

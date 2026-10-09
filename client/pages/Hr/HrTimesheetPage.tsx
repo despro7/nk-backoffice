@@ -6,6 +6,7 @@ import PageTabs from '@/components/PageTabs';
 import { MonthSwitcher } from '@/components/MonthSwitcher';
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
+import { useAuth } from '@/contexts/auth-context';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { ToastService } from '@/services/ToastService';
 import { PERMISSIONS } from '@shared/constants/permissions';
@@ -19,6 +20,10 @@ import {
   type HrTimesheetEntryWrite,
 } from '@shared/types/hr';
 import { formatYearMonth, parseYearMonth } from '@shared/utils/hrTimesheetCalendar';
+import {
+  canEditTimesheetCell,
+  type HrTimesheetEditMode,
+} from '@shared/utils/hrTimesheetEditScope';
 import {
   cellsEqual,
   codeCell,
@@ -55,9 +60,12 @@ function parseGroupParam(raw: string | null): HrTimesheetGroupFilter | null {
 }
 
 export default function HrTimesheetPage() {
+  const { user } = useAuth();
   const { hasPermission } = useRoleAccess();
   const canView = hasPermission(PERMISSIONS.PAGE_HR_TIMESHEET);
-  const canEditPerm = hasPermission(PERMISSIONS.ACTION_HR_TIMESHEET_EDIT);
+  const canEditFull = hasPermission(PERMISSIONS.ACTION_HR_TIMESHEET_EDIT);
+  const canEditAuthorToday = hasPermission(PERMISSIONS.ACTION_HR_TIMESHEET_EDIT_OWN_TODAY);
+  const canEditPerm = canEditFull || canEditAuthorToday;
   const canViewAudit = hasPermission(PERMISSIONS.ACTION_HR_AUDIT_VIEW);
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -93,7 +101,44 @@ export default function HrTimesheetPage() {
   const monthDate = new Date(year, month - 1, 1);
   const groupFilter = parseGroupParam(params.get('group'));
 
-  const canEdit = Boolean(canEditPerm && data?.month.status === 'draft');
+  const serverEditorMode = data?.editor?.mode;
+  const canEdit = Boolean(
+    data?.month.status === 'draft' && (serverEditorMode || canEditPerm),
+  );
+  const scopedEditMode: HrTimesheetEditMode | null =
+    serverEditorMode === 'author-today' ||
+    (!canEditFull && canEditAuthorToday && serverEditorMode !== 'full')
+      ? 'author-today'
+      : null;
+
+  const entryMetaByKey = useMemo(() => {
+    const map = new Map<
+      string,
+      { createdAt?: string; createdByUserId?: number | null }
+    >();
+    if (!data) return map;
+    for (const row of data.rows) {
+      for (const entry of row.entries) {
+        map.set(`${row.employmentId}:${entry.date}`, {
+          createdAt: entry.createdAt,
+          createdByUserId: entry.createdByUserId ?? null,
+        });
+      }
+    }
+    return map;
+  }, [data]);
+
+  const canEditCell = useCallback(
+    (employmentId: number, date: string) => {
+      if (scopedEditMode !== 'author-today') return true;
+      return canEditTimesheetCell({
+        mode: 'author-today',
+        currentUserId: user?.id,
+        entry: entryMetaByKey.get(`${employmentId}:${date}`) ?? null,
+      });
+    },
+    [entryMetaByKey, scopedEditMode, user?.id],
+  );
   const isDirty = useMemo(() => {
     const keys = new Set([...Object.keys(draft), ...Object.keys(original)]);
     for (const key of keys) {
@@ -148,6 +193,7 @@ export default function HrTimesheetPage() {
       if (cellsEqual(current, base)) continue;
       const [employmentIdRaw, date] = key.split(':');
       const employmentId = Number(employmentIdRaw);
+      if (scopedEditMode === 'author-today' && !canEditCell(employmentId, date)) continue;
       entries.push({
         employmentId,
         date,
@@ -183,7 +229,7 @@ export default function HrTimesheetPage() {
       saveInFlight.current = false;
       setSaving(false);
     }
-  }, [canEdit, data, draft, load, monthKey, original]);
+  }, [canEdit, canEditCell, data, draft, load, monthKey, original, scopedEditMode]);
 
   const guard = useUnsavedGuard({ isDirty, onSaveDraft: save });
 
@@ -230,6 +276,7 @@ export default function HrTimesheetPage() {
     setDraft((current) => {
       const next = { ...current };
       for (const row of visibleRows) {
+        if (!canEditCell(row.employmentId, date)) continue;
         const key = `${row.employmentId}:${date}`;
         const value = next[key] ?? emptyCell();
         if (value.kind == null) next[key] = codeCell('В');
@@ -245,6 +292,7 @@ export default function HrTimesheetPage() {
     setDraft((current) => {
       const next = { ...current };
       for (const row of visibleRows) {
+        if (!canEditCell(row.employmentId, date)) continue;
         const key = `${row.employmentId}:${date}`;
         const value = next[key] ?? emptyCell();
         if (value.kind === 'В') delete next[key];
@@ -294,7 +342,7 @@ export default function HrTimesheetPage() {
           {data?.month.status === 'closed' ? (
             <SpecChip tokens={hrPayGroupTokens('unofficial_cash', 'soft', payGroupHueOverrides)}>Закрито</SpecChip>
           ) : null}
-          {!canEditPerm ? (
+          {!canEditPerm && !serverEditorMode ? (
             <span className="text-xs font-medium text-rose-700 bg-rose-100 border border-rose-200 rounded-full px-2 py-0.5">
               Немає права редагувати табель
             </span>
@@ -363,6 +411,7 @@ export default function HrTimesheetPage() {
           canViewAudit={canViewAudit}
           onFillWeekendForDate={fillWeekendForDate}
           onClearWeekendForDate={clearWeekendForDate}
+          canEditCell={scopedEditMode === 'author-today' ? canEditCell : undefined}
         />
         </div>
       ) : null}

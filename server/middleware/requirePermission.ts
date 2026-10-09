@@ -64,3 +64,34 @@ export const requirePermission = createRequirePermission(hasRolePermission);
 
 /** Перевіряє вже зареєстрований ключ (page.* або action.*) без registerAction. */
 export const requirePermissionKey = createRequirePermissionKey(hasRolePermission);
+
+export function createRequireAnyPermissionKey(
+  hasPermissionFn: (slug: string, key: string) => Promise<boolean>,
+) {
+  return (keys: string[]): RequestHandler => {
+    const mw = async (req: Request, res: Response, next: NextFunction) => {
+      if (!req.user) {
+        return res.status(401).json({
+          message: 'Authentication required',
+          code: 'NO_AUTH',
+          details: 'You need to be authenticated to access this resource',
+        });
+      }
+
+      if (req.user.userId === 0) {
+        return next();
+      }
+
+      for (const key of keys) {
+        if (await hasPermissionFn(req.user.role, key)) {
+          return next();
+        }
+      }
+
+      return sendInsufficientRole(res, `Required permission: ${keys.join(' | ')}`);
+    };
+    return mw;
+  };
+}
+
+export const requireAnyPermissionKey = createRequireAnyPermissionKey(hasRolePermission);

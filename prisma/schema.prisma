@@ -23,11 +23,12 @@ model User {
   lastLoginAt           DateTime?
   dilovodUserId         String?         // ID користувача в Діловоді (для відправки документів від його імені)
   OrdersHistory         OrdersHistory[]
-  hrEmployee            HrEmployee?
-  hrTimesheetLocks      HrTimesheetMonth[]
-  hrPayrollLocks        HrPayrollPeriod[]  @relation("HrPayrollLockedBy")
-  hrAuditLogs           HrAuditLog[]
-  catalogProductLabels  CatalogProductLabel[]
+  hrEmployee                 HrEmployee?
+  hrTimesheetLocks           HrTimesheetMonth[]
+  hrTimesheetEntriesCreated  HrTimesheetEntry[]  @relation("HrTimesheetEntryCreatedBy")
+  hrPayrollLocks             HrPayrollPeriod[]   @relation("HrPayrollLockedBy")
+  hrAuditLogs                HrAuditLog[]
+  catalogProductLabels       CatalogProductLabel[]
 
   @@map("users")
 }
@@ -867,21 +868,25 @@ model HrTimesheetMonth {
 
 /// Клітинка табеля: зайнятість × дата
 model HrTimesheetEntry {
-  id           Int              @id @default(autoincrement())
-  monthId      Int
-  employmentId Int
-  date         DateTime         @db.Date
+  id              Int              @id @default(autoincrement())
+  monthId         Int
+  employmentId    Int
+  date            DateTime         @db.Date
   /// work | В | О | ТН | Н | Пр | Св
-  kind         String           @db.VarChar(8)
-  hours        Decimal?         @db.Decimal(6, 2)
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-  month        HrTimesheetMonth @relation(fields: [monthId], references: [id], onDelete: Cascade)
-  employment   HrEmployment     @relation(fields: [employmentId], references: [id], onDelete: Restrict)
+  kind            String           @db.VarChar(8)
+  hours           Decimal?         @db.Decimal(6, 2)
+  /// Автор першого створення клітинки; null у legacy-записах — у режимі author-today блок
+  createdByUserId Int?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  month           HrTimesheetMonth @relation(fields: [monthId], references: [id], onDelete: Cascade)
+  employment      HrEmployment     @relation(fields: [employmentId], references: [id], onDelete: Restrict)
+  createdByUser   User?            @relation("HrTimesheetEntryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
 
   @@unique([monthId, employmentId, date])
   @@index([employmentId])
   @@index([monthId])
+  @@index([createdByUserId])
   @@map("hr_timesheet_entries")
 }
 

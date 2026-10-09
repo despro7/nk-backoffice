@@ -171,6 +171,8 @@ interface TimesheetGridProps {
   canViewAudit?: boolean;
   onFillWeekendForDate?: (date: string) => void;
   onClearWeekendForDate?: (date: string) => void;
+  /** Обмежене редагування (лише свої клітинки, створені сьогодні). */
+  canEditCell?: (employmentId: number, date: string) => boolean;
 }
 
 function ariaCellLabel(name: string, day: HrTimesheetDayDto, value: HrTimesheetCellValue): string {
@@ -201,6 +203,7 @@ export function TimesheetGrid({
   canViewAudit = false,
   onFillWeekendForDate,
   onClearWeekendForDate,
+  canEditCell,
 }: TimesheetGridProps) {
   const [focus, setFocus] = useState<TimesheetFocus>({ row: 0, col: 0 });
   const [hoursEdit, setHoursEdit] = useState<{ row: number; col: number; text: string } | null>(null);
@@ -308,11 +311,19 @@ export function TimesheetGrid({
     });
   };
 
+  const canEditAt = useCallback(
+    (employmentId: number, date: string) => {
+      if (!canEdit) return false;
+      return canEditCell ? canEditCell(employmentId, date) : true;
+    },
+    [canEdit, canEditCell],
+  );
+
   const commitHours = useCallback(
     (rowIndex: number, colIndex: number, text: string) => {
       const row = flatRows[rowIndex];
       const day = days[colIndex];
-      if (!row || !day || !canEdit) return;
+      if (!row || !day || !canEditAt(row.employmentId, day.date)) return;
       const parsed = parseTimesheetHours(text);
       if (!parsed) {
         onChangeCell(row.employmentId, day.date, emptyCell());
@@ -321,17 +332,17 @@ export function TimesheetGrid({
       }
       setHoursEdit(null);
     },
-    [canEdit, days, flatRows, onChangeCell],
+    [canEditAt, days, flatRows, onChangeCell],
   );
 
   const changeCellAt = useCallback(
     (rowIndex: number, colIndex: number, value: HrTimesheetCellValue) => {
       const row = flatRows[rowIndex];
       const day = days[colIndex];
-      if (!row || !day || !canEdit) return;
+      if (!row || !day || !canEditAt(row.employmentId, day.date)) return;
       onChangeCell(row.employmentId, day.date, value);
     },
-    [canEdit, days, flatRows, onChangeCell],
+    [canEditAt, days, flatRows, onChangeCell],
   );
 
   const moveFocus = useCallback(
@@ -378,7 +389,9 @@ export function TimesheetGrid({
   };
 
   const startHours = (rowIndex: number, colIndex: number, seed: string) => {
-    if (!canEdit) return;
+    const row = flatRows[rowIndex];
+    const day = days[colIndex];
+    if (!row || !day || !canEditAt(row.employmentId, day.date)) return;
     setFocus({ row: rowIndex, col: colIndex });
     setHoursEdit({ row: rowIndex, col: colIndex, text: seed });
     setContextMenu(null);
@@ -386,12 +399,12 @@ export function TimesheetGrid({
 
   const openContextMenu = (event: MouseEvent, rowIndex: number, colIndex: number) => {
     if (!canEdit || readOnly) return;
+    const row = flatRows[rowIndex];
+    const day = days[colIndex];
+    if (!row || !day || !canEditAt(row.employmentId, day.date)) return;
     event.preventDefault();
     if (hoursEdit) commitHours(hoursEdit.row, hoursEdit.col, hoursEdit.text);
     setFocus({ row: rowIndex, col: colIndex });
-    const row = flatRows[rowIndex];
-    const day = days[colIndex];
-    if (!row || !day) return;
     setContextMenu({
       row: rowIndex,
       col: colIndex,
@@ -418,7 +431,7 @@ export function TimesheetGrid({
       event.preventDefault();
       const row = flatRows[focus.row];
       const day = days[focus.col];
-      if (row && day && canEdit) {
+      if (row && day && canEditAt(row.employmentId, day.date)) {
         const value = getValue(row.employmentId, day.date);
         startHours(focus.row, focus.col, value.kind === 'work' ? formatTimesheetHours(value.hours) : '');
       }
@@ -657,6 +670,7 @@ export function TimesheetGrid({
                     isDirtyCell={isDirtyCell}
                     readOnly={readOnly}
                     canEdit={canEdit}
+                    canEditAt={canEditAt}
                     hoursStickyRight={hoursStickyRight}
                     totalsRight={totalsRight}
                     totalsSidebarExpanded={totalsSidebarExpanded}
@@ -669,7 +683,7 @@ export function TimesheetGrid({
                     onStartHours={(row, col) => {
                       const current = flatRows[row];
                       const day = days[col];
-                      if (!canEdit || !current || !day) return;
+                      if (!current || !day || !canEditAt(current.employmentId, day.date)) return;
                       const value = getValue(current.employmentId, day.date);
                       startHours(row, col, value.kind === 'work' ? formatTimesheetHours(value.hours) : '');
                     }}
@@ -737,6 +751,7 @@ function GroupBlock({
   isDirtyCell,
   readOnly,
   canEdit,
+  canEditAt,
   hoursStickyRight,
   totalsRight,
   totalsSidebarExpanded,
@@ -756,6 +771,7 @@ function GroupBlock({
   isDirtyCell: (employmentId: number, date: string) => boolean;
   readOnly: boolean;
   canEdit: boolean;
+  canEditAt: (employmentId: number, date: string) => boolean;
   hoursStickyRight: number;
   totalsRight: (index: number) => number;
   totalsSidebarExpanded: boolean;
@@ -821,22 +837,23 @@ function GroupBlock({
               const editing = hoursEdit?.row === rowIndex && hoursEdit.col === col;
               const cellValue = getValue(row.employmentId, day.date);
               const kind = cellValue.kind ?? (day.isWeekend ? 'prefill' : null);
+              const cellEditable = canEditAt(row.employmentId, day.date);
               return (
                 <td
                   key={day.date}
                   className={`p-[1px] border-b border-r border-slate-200 ${day.isWeekend ? 'bg-slate-100/80 group-hover:bg-slate-200/80' : 'bg-white group-hover:bg-slate-100/50'}`}
                   onMouseDown={() => onFocusCell(rowIndex, col)}
-                  onDoubleClick={() => onStartHours(rowIndex, col)}
-                  onContextMenu={(event) => onContextMenu(event, rowIndex, col)}
+                  onDoubleClick={() => (cellEditable ? onStartHours(rowIndex, col) : undefined)}
+                  onContextMenu={(event) => (cellEditable ? onContextMenu(event, rowIndex, col) : undefined)}
                 >
                   <TimesheetCell
                     value={cellValue}
                     isWeekend={day.isWeekend}
                     isDirty={isDirtyCell(row.employmentId, day.date)}
                     isActive={active}
-                    isHoursEditing={Boolean(editing && canEdit)}
+                    isHoursEditing={Boolean(editing && cellEditable)}
                     hoursDraft={editing ? hoursEdit.text : ''}
-                    readOnly={readOnly || !canEdit}
+                    readOnly={readOnly || !cellEditable}
                     ariaLabel={ariaCellLabel(row.displayName, day, cellValue)}
                     colorClass={timesheetKindCellClass(kind, kindHues)}
                   />

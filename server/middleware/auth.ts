@@ -6,15 +6,17 @@ import { AuthSettingsService } from '../services/authSettingsService.js';
 import { ROLES, ROLE_SETS, hasAccess, ROLE_HIERARCHY, canApplyRolePreview, isRolePreviewExemptPath, ROLE_PREVIEW_HEADER, ROLE_PREVIEW_APPLIED_HEADER } from '../../shared/constants/roles.js';
 import type { RoleValue } from '../../shared/constants/roles.js';
 import { roleService } from '../services/RoleService.js';
-import { requirePermission, requirePermissionKey, sendInsufficientRole } from './requirePermission.js';
+import { requirePermission, requirePermissionKey, requireAnyPermissionKey, sendInsufficientRole } from './requirePermission.js';
+import type { HrTimesheetEditorMode } from '../../shared/types/hr.js';
 
-export { ROLES, ROLE_SETS, requirePermission, requirePermissionKey };
+export { ROLES, ROLE_SETS, requirePermission, requirePermissionKey, requireAnyPermissionKey };
 
 // Розширюємо інтерфейс Request для додавання користувача
 declare global {
   namespace Express {
     interface Request {
       user?: JwtPayload;
+      timesheetEditMode?: HrTimesheetEditorMode;
     }
   }
 }

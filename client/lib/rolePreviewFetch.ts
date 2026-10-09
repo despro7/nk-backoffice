@@ -9,6 +9,7 @@ import {
 import { ToastService } from '@/services/ToastService';
 
 let previewRole: string | null = null;
+let roleLabelResolver: ((slug: string) => string | null) | null = null;
 let fetchPatched = false;
 let originalFetch: typeof window.fetch | null = null;
 let lastInsufficientRoleToastAt = 0;
@@ -20,6 +21,20 @@ const INSUFFICIENT_ROLE_TOAST_COOLDOWN_MS = 2000;
  */
 export function setRolePreviewFetchRole(role: string | null): void {
   previewRole = role;
+}
+
+/** Людська назва ролі за slug (користувацькі ролі role-N тощо). */
+export function setRolePreviewFetchRoleLabelResolver(
+  resolver: ((slug: string) => string | null) | null,
+): void {
+  roleLabelResolver = resolver;
+}
+
+function resolveRoleLabel(slug: string): string {
+  const resolved = roleLabelResolver?.(slug);
+  if (resolved) return resolved;
+  if (isRoleValue(slug)) return ROLE_LABELS[slug];
+  return slug;
 }
 
 /**
@@ -73,9 +88,7 @@ function notifyInsufficientRole(response: Response): void {
 
   const previewApplied = response.headers.get(ROLE_PREVIEW_APPLIED_HEADER);
   const deniedRole = previewApplied || previewRole;
-  const roleLabel = deniedRole
-    ? (isRoleValue(deniedRole) ? ROLE_LABELS[deniedRole] : deniedRole)
-    : null;
+  const roleLabel = deniedRole ? resolveRoleLabel(deniedRole) : null;
 
   ToastService.show({
     title: 'Недостатньо прав',

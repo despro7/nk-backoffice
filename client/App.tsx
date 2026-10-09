@@ -25,6 +25,7 @@ import { ToastService } from "./services/ToastService";
 import { LoggingService } from "./services/LoggingService";
 import { initAudioContext } from "./lib/soundUtils";
 import { useIsMobile } from "./hooks/useTouchUi";
+import { hasPermission, PERMISSIONS } from "@shared/constants/permissions";
 
 const queryClient = new QueryClient();
 
@@ -159,9 +160,14 @@ const AppInitializer: React.FC<{ children: React.ReactNode }> = ({ children }) =
       }
 
       setIsReady(true);
-      // Trigger directories load once (non-blocking)
+      // Довідники Dilovod — лише за наявності action.dilovod.read (інакше 403 + тост)
       try {
-        if (dirsCtx && typeof dirsCtx.loadDirectories === 'function') {
+        if (
+          user &&
+          hasPermission(user.permissions, PERMISSIONS.ACTION_DILOVOD_READ) &&
+          dirsCtx &&
+          typeof dirsCtx.loadDirectories === 'function'
+        ) {
           void dirsCtx.loadDirectories();
         }
       } catch (e) {

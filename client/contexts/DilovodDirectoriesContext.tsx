@@ -53,6 +53,11 @@ export const DilovodDirectoriesProvider: React.FC<{ children: ReactNode }> = ({ 
           console.log('DilovodDirectoriesProvider: fetching directories from API...');
         }
         const res = await fetch('/api/dilovod/directories', { credentials: 'include' });
+        // Немає action.dilovod.read — тихо пропускаємо (без падіння контексту)
+        if (res.status === 403) {
+          resolveFn();
+          return;
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const body = await res.json();
         if (body && body.success) {

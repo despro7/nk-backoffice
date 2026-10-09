@@ -7,10 +7,12 @@ import {
   type HrTimesheetEntryDto,
   type HrTimesheetEntryWrite,
   type HrTimesheetKind,
+  type HrTimesheetEditorMode,
   type HrTimesheetLoadDto,
   type HrTimesheetMonthDto,
   type HrTimesheetSaveDto,
 } from '../../../shared/types/hr.js';
+import { canEditTimesheetCell } from '../../../shared/utils/hrTimesheetEditScope.js';
 import {
   buildTimesheetMonthMeta,
   parseYearMonth,
@@ -74,6 +76,8 @@ function toEntryDto(row: {
   date: Date;
   kind: string;
   hours: Prisma.Decimal | null;
+  createdAt?: Date;
+  createdByUserId?: number | null;
 }): HrTimesheetEntryDto {
   return {
     id: row.id,
@@ -81,6 +85,8 @@ function toEntryDto(row: {
     date: toDateOnlyUtc(row.date),
     kind: (isTimesheetKind(row.kind) ? row.kind : 'work') as HrTimesheetKind,
     hours: formatHours(row.hours),
+    createdAt: row.createdAt?.toISOString(),
+    createdByUserId: row.createdByUserId ?? null,
   };
 }
 
@@ -101,7 +107,11 @@ function parseEntryKind(payload: HrTimesheetEntryWrite): {
 }
 
 export class HrTimesheetService {
-  async loadMonth(monthParam: string | undefined, userId: number | undefined): Promise<HrTimesheetLoadDto> {
+  async loadMonth(
+    monthParam: string | undefined,
+    userId: number | undefined,
+    editMode: HrTimesheetEditorMode | null = null,
+  ): Promise<HrTimesheetLoadDto> {
     const { year, month } = (() => {
       try {
         return parseYearMonth(monthParam);
@@ -252,6 +262,7 @@ export class HrTimesheetService {
       days: meta.days,
       weeks: meta.weeks,
       rows,
+      editor: editMode ? { mode: editMode } : undefined,
     };
   }
 
@@ -259,12 +270,16 @@ export class HrTimesheetService {
     monthId: number,
     payload: { version: number; entries: HrTimesheetEntryWrite[] },
     userId: number | undefined,
+    editMode: HrTimesheetEditorMode = 'full',
   ): Promise<HrTimesheetSaveDto> {
     const version = Number(payload.version);
     if (!Number.isInteger(version) || version < 1) {
       throw new HrError('Некоректна версія табеля');
     }
     const writes = Array.isArray(payload.entries) ? payload.entries : [];
+    if (editMode === 'author-today' && (!userId || userId <= 0)) {
+      throw new HrError('Для обмеженого редагування табеля потрібна авторизація', 403);
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       const current = await tx.hrTimesheetMonth.findUnique({
@@ -347,6 +362,25 @@ export class HrTimesheetService {
             date: dateValue,
           },
         });
+        if (editMode === 'author-today') {
+          const allowed = canEditTimesheetCell({
+            mode: 'author-today',
+            currentUserId: userId,
+            entry: existing
+              ? {
+                  createdAt: existing.createdAt,
+                  createdByUserId: existing.createdByUserId,
+                }
+              : null,
+          });
+          if (!allowed) {
+            throw new HrError(
+              'Можна змінювати лише свої записи табеля, створені сьогодні',
+              403,
+              'TIMESHEET_EDIT_SCOPE',
+            );
+          }
+        }
         const parsed = parseEntryKind(item);
         if (!parsed) {
           if (existing) {
@@ -405,6 +439,7 @@ export class HrTimesheetService {
             date: dateValue,
             kind: parsed.kind,
             hours: parsed.hours,
+            createdByUserId: userId ?? null,
           },
           update: {
             kind: parsed.kind,

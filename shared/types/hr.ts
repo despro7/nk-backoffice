@@ -372,6 +372,17 @@ export interface HrTimesheetEntryDto {
   date: string;
   kind: HrTimesheetKind;
   hours: string | null;
+  /** ISO — для обмеженого редагування «свої записи, створені сьогодні». */
+  createdAt?: string;
+  /** Автор першого створення; null у legacy — у режимі author-today блок. */
+  createdByUserId?: number | null;
+}
+
+/** full — усе; author-today — порожні + свої записи за сьогодні (будь-який співробітник). */
+export type HrTimesheetEditorMode = 'full' | 'author-today';
+
+export interface HrTimesheetEditorDto {
+  mode: HrTimesheetEditorMode;
 }
 
 export interface HrTimesheetRowDto {
@@ -388,6 +399,7 @@ export interface HrTimesheetLoadDto {
   days: HrTimesheetDayDto[];
   weeks: HrTimesheetWeekDto[];
   rows: HrTimesheetRowDto[];
+  editor?: HrTimesheetEditorDto;
 }
 
 export interface HrTimesheetEntryWrite {

@@ -8,6 +8,7 @@ import { formatDuration } from '@/lib/formatUtils';
 import { ToastService } from '@/services/ToastService';
 import { ClientLogBuffer } from '@/services/ClientLogBuffer';
 import { ReportProblemService } from '@/services/ReportProblemService';
+import { hasPermission, PERMISSIONS } from '@shared/constants/permissions';
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -270,9 +271,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         );
         await loadAuthSettings();
 
-              // Підвантажуємо довідники Dilovod після авторизації, якщо є провайдер
+              // Довідники Dilovod — лише за action.dilovod.read
               try {
-                if (dirsCtx?.loadDirectories) {
+                if (
+                  dirsCtx?.loadDirectories &&
+                  hasPermission(userWithExpiry.permissions, PERMISSIONS.ACTION_DILOVOD_READ)
+                ) {
                   dirsCtx.loadDirectories();
                 }
               } catch {
@@ -407,9 +411,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           await equipmentActions.refreshConfig();
         }
 
-        // Підвантажуємо довідники Dilovod після входу, якщо є провайдер
+        // Довідники Dilovod — лише за action.dilovod.read
         try {
-          if (dirsCtx?.loadDirectories) {
+          if (
+            dirsCtx?.loadDirectories &&
+            hasPermission(userWithExpiry.permissions, PERMISSIONS.ACTION_DILOVOD_READ)
+          ) {
             dirsCtx.loadDirectories();
           }
         } catch {

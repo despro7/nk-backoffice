@@ -1,6 +1,11 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { authenticateToken } from '../../middleware/auth.js';
-import { requirePermission, requirePermissionKey, sendInsufficientRole } from '../../middleware/requirePermission.js';
+import {
+  requirePermission,
+  requirePermissionKey,
+  requireAnyPermissionKey,
+  sendInsufficientRole,
+} from '../../middleware/requirePermission.js';
 import { logServer } from '../../lib/utils.js';
 import { PERMISSIONS } from '../../../shared/constants/permissions.js';
 import { hrService, HrError } from './HrService.js';
@@ -34,6 +39,7 @@ import {
   type HrProductionCalendarWritePayload,
   type HrTaxRuleWritePayload,
   type HrTimesheetSavePayload,
+  type HrTimesheetEditorMode,
 } from '../../../shared/types/hr.js';
 
 const router = Router();
@@ -80,7 +86,17 @@ const managePersons = requirePermission('hr', 'persons.manage', 'Керуват�
 const managePayTerms = requirePermission('hr', 'payterms.manage', 'Керувати ставками співробітників');
 const manageTaxRules = requirePermission('hr', 'taxrules.manage', 'Керувати податками та ЄСВ');
 const manageBonuses = requirePermission('hr', 'bonuses.manage', 'Керувати преміями');
-const editTimesheet = requirePermission('hr', 'timesheet.edit', 'Редагувати табель');
+requirePermission('hr', 'timesheet.edit', 'Редагувати табель');
+requirePermission(
+  'hr',
+  'timesheet.edit-own-today',
+  'Редагувати табель (свої записи за сьогодні, усі співробітники)',
+);
+const hrPayGroupsRead = requireAnyPermissionKey([
+  PERMISSIONS.PAGE_HR_EMPLOYEES,
+  PERMISSIONS.PAGE_HR_TIMESHEET,
+  PERMISSIONS.PAGE_HR_PAYROLL,
+]);
 const viewAudit = requirePermissionKey(PERMISSIONS.ACTION_HR_AUDIT_VIEW);
 const pagePayroll = requirePermissionKey(PERMISSIONS.PAGE_HR_PAYROLL);
 const viewPayroll = requirePermission('hr', 'payroll.view', 'Переглядати внутрішній розрахунок виплат');
@@ -127,6 +143,40 @@ async function resolveRevealCard(req: Request): Promise<boolean> {
   return roleService.hasPermission(req.user.role, PERMISSIONS.ACTION_HR_PAYOUTS_VIEW);
 }
 
+async function resolveTimesheetEditMode(req: Request): Promise<HrTimesheetEditorMode | null> {
+  const { roleService } = await import('../../services/RoleService.js');
+  if (!req.user?.role) return null;
+  if (await roleService.hasPermission(req.user.role, PERMISSIONS.ACTION_HR_TIMESHEET_EDIT)) {
+    return 'full';
+  }
+  if (await roleService.hasPermission(req.user.role, PERMISSIONS.ACTION_HR_TIMESHEET_EDIT_OWN_TODAY)) {
+    return 'author-today';
+  }
+  return null;
+}
+
+async function allowTimesheetEdit(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (!req.user) {
+    res.status(401).json({
+      message: 'Authentication required',
+      code: 'NO_AUTH',
+      details: 'You need to be authenticated to access this resource',
+    });
+    return;
+  }
+  if (req.user.userId === 0) {
+    next();
+    return;
+  }
+  const mode = await resolveTimesheetEditMode(req);
+  if (!mode) {
+    sendInsufficientRole(res, 'Потрібне право на редагування табеля');
+    return;
+  }
+  req.timesheetEditMode = mode;
+  next();
+}
+
 function sendHrError(res: Response, error: unknown, context: string) {
   if (error instanceof HrError) {
     return res.status(error.status).json({
@@ -155,7 +205,7 @@ router.get('/audit', authenticateToken, viewAudit, async (req: Request, res: Res
   }
 });
 
-router.get('/pay-groups', authenticateToken, pageEmployees, async (req: Request, res: Response) => {
+router.get('/pay-groups', authenticateToken, hrPayGroupsRead, async (req: Request, res: Response) => {
   try {
     const data = await hrPayGroupService.list(req.query.includeInactive === 'true');
     res.json({ success: true, data });
@@ -723,17 +773,23 @@ router.delete('/pay-terms/:id', authenticateToken, managePayTerms, async (req: R
 router.get('/timesheet', authenticateToken, pageTimesheet, async (req: Request, res: Response) => {
   try {
     const month = typeof req.query.month === 'string' ? req.query.month : undefined;
-    const data = await hrTimesheetService.loadMonth(month, userId(req));
+    const editMode = await resolveTimesheetEditMode(req);
+    const data = await hrTimesheetService.loadMonth(month, userId(req), editMode);
     res.json({ success: true, data });
   } catch (error) {
     sendHrError(res, error, 'load timesheet');
   }
 });
 
-router.put('/timesheet/:id', authenticateToken, editTimesheet, async (req: Request, res: Response) => {
+router.put('/timesheet/:id', authenticateToken, allowTimesheetEdit, async (req: Request, res: Response) => {
   try {
     const body = req.body as HrTimesheetSavePayload;
-    const data = await hrTimesheetService.saveMonth(parseId(req.params.id), body, userId(req));
+    const data = await hrTimesheetService.saveMonth(
+      parseId(req.params.id),
+      body,
+      userId(req),
+      req.timesheetEditMode ?? 'full',
+    );
     res.json({ success: true, data });
   } catch (error) {
     sendHrError(res, error, 'save timesheet');

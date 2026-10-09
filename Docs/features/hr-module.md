@@ -35,7 +35,8 @@
 | `page.hr.payroll` | admin, boss | Розрахунок |
 | `page.hr.employees` | boss+ | Співробітники і роботодавці |
 | `page.hr.persons` | boss+ | Фізичні особи |
-| `action.hr.timesheet.edit` | boss+ | Редагування табеля |
+| `action.hr.timesheet.edit` | boss+ | Повне редагування табеля |
+| `action.hr.timesheet.edit-own-today` | — (лише кастомні ролі) | Обмежене редагування: усі співробітники; порожні клітинки; існуючі — лише **свої** (`createdByUserId`) і лише якщо `createdAt` сьогодні (Europe/Kyiv). Legacy без автора — блок. Повне `timesheet.edit` перекриває. |
 | `action.hr.employees.manage` | boss+ | CRUD співробітників і роботодавців |
 | `action.hr.persons.manage` | boss+ | CRUD фіз. осіб, sync, merge |
 | `action.hr.audit.view` | boss+ | Журнал змін HR (картка, табель) |
@@ -359,11 +360,12 @@ Accordion у картках: `client/components/hr/HrAuditAccordion.tsx`.
 - Легенда кодів дня з налаштуванням hue (`TimesheetKindLegend`, `useHrTimesheetKindColors`).
 - **Заповнити / очистити вихідні** — контекстне меню на заголовку колонки суботи/неділі (`TimesheetDayHeaderContextMenu`). Напівпрозоре «В» — UI-підказка (prefill), не запис у БД.
 - При **дублях зайнятості** (один співробітник × група оплати, кілька роботодавців) записи табеля зіставляються з канонічним рядком (`dedupeEmploymentsByEmployeePayGroup`). Збереження очищення вихідних застосовується до всіх id групи — інакше «В» на дублікаті повертається після reload.
+- **Обмежене редагування** (`action.hr.timesheet.edit-own-today`, режим `author-today`): сітка блокує клітинки через `canEditTimesheetCell` (`shared/utils/hrTimesheetEditScope.ts`); сервер перевіряє ті самі правила на `PUT`. На створенні клітинки пишеться `hr_timesheet_entries.createdByUserId`; при оновленні автор не змінюється. Відповідь `GET` містить `editor: { mode }` і в entries — `createdAt` / `createdByUserId`.
 
 ### API
 
-- `GET /api/hr/timesheet?month=YYYY-MM`
-- `PUT /api/hr/timesheet/:id` — optimistic locking через `version`
+- `GET /api/hr/timesheet?month=YYYY-MM` — опційно `editor` (`full` \| `author-today`)
+- `PUT /api/hr/timesheet/:id` — optimistic locking через `version`; у режимі `author-today` — 403 `TIMESHEET_EDIT_SCOPE` поза дозволеним scope
 
 ---
 

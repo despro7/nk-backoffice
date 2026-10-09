@@ -5,6 +5,24 @@
 
 ---
 
+## 2026-10-09 — HR: обмежене редагування табеля + тост прав
+
+**Files:** `shared/utils/hrTimesheetEditScope.ts`, `shared/types/hr.ts`, `shared/constants/permissions.ts`, `server/modules/Hr/HrTimesheetService.ts`, `HrController.ts`, `prisma/schema.prisma`, `prisma/migrations/20261009120000_hr_timesheet_entry_created_by/`, `client/pages/Hr/HrTimesheetPage.tsx`, `TimesheetGrid.tsx`, `client/App.tsx`, `AuthContext.tsx`, `DilovodDirectoriesContext.tsx`, `rolePreviewFetch.ts`, `RolePreviewContext.tsx`, `Docs/features/hr-module.md`
+
+### Обмежене редагування табеля
+
+- Нове право `action.hr.timesheet.edit-own-today` (режим `author-today`): усі співробітники в сітці; порожні клітинки можна заповнювати; існуючі — лише якщо автор = поточний user і `createdAt` сьогодні (Europe/Kyiv); записи без автора — блок.
+- Колонка `hr_timesheet_entries.createdByUserId`; виставляється при створенні клітинки.
+- Повне `action.hr.timesheet.edit` перекриває обмежений режим.
+- UI і `PUT` використовують спільну перевірку `canEditTimesheetCell`.
+
+### Тост «Недостатньо прав»
+
+- Для кастомних ролей (`role-N`) у тості показується **назва** ролі, не slug.
+- Після логіну не тягнемо `/api/dilovod/directories` без `action.dilovod.read` (прибрано хибний 403-тост для ролей на кшталт бухгалтера ЗП).
+
+---
+
 ## 2026-10-08 — Склад: випуск наборів — FIFO, історія, аудит, оптимізація Dilovod
 
 **Files:** `client/pages/Warehouse/WarehouseReleaseSets/`, `ReleaseComponentBatchesPanel.tsx`, `WarehouseReleaseAuditAccordion.tsx`, `shared/utils/fifoBatchAllocation.ts`, `releaseHistoryAccess.ts`, `warehouseReleaseRemark.ts`, `warehouseReleaseAuditFormat.ts`, `shared/utils/kitBatchName.ts`, `server/modules/Warehouse/SetReleaseController.ts`, `WarehouseReleaseAuditService.ts`, `WarehouseController.ts`, `WarehouseBatchesService.ts`, `client/pages/Warehouse/shared/HistoryAccordionItem.tsx`, `HistoryItemsTable.tsx`, `historyNormalize.ts`, `server/services/dilovod/DilovodApiClient.ts`, `client/global.css`

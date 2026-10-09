@@ -89,6 +89,8 @@ CORS: `X-Role-Preview` у `allowedHeaders`, `X-Role-Preview-Applied` і `X-Insuf
 
 `requirePermission` (і застарілі `requireRole` / `requireMinRole`) ставлять `X-Insufficient-Role: 1` і `code: INSUFFICIENT_ROLE`.
 
+Toast резолвить назву ролі через `setRolePreviewFetchRoleLabelResolver` (кастомні `role-N` → `Role.name` / `user.roleName`, системні — `ROLE_LABELS`).
+
 Патч `fetch` бачить заголовок (body не читає) і показує тост:
 
 - прев’ю: warning «Роль «…» не має доступу до цієї дії»;
