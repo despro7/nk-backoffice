@@ -18,10 +18,10 @@ import type {
 
 const router = Router();
 const authOnly = [authenticateToken] as const;
-const storefrontRead = requirePermission('storefront', 'read', 'Читання шаблонів сайту');
-const storefrontManage = requirePermission('storefront', 'manage', 'Керування налаштуваннями сайту (CRUD)');
-const storefrontPull = requirePermission('storefront', 'pull', 'Pull опису з WooCommerce');
-const storefrontPush = requirePermission('storefront', 'push', 'Push опису на WooCommerce');
+const storefrontRead = requirePermission('storefront', 'read', 'Перегляд пресетів і налаштувань вітрини');
+const storefrontManage = requirePermission('storefront', 'manage', 'Адміністрування вітрини (пресети, Woo)');
+const storefrontPull = requirePermission('storefront', 'pull', 'Імпорт з WooCommerce (pull)');
+const storefrontPush = requirePermission('storefront', 'push', 'Публікація на WooCommerce (push)');
 
 function handleError(res: Response, error: unknown, context: string) {
   const message = error instanceof Error ? error.message : String(error);

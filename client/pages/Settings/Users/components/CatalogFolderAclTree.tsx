@@ -280,7 +280,7 @@ export function CatalogFolderAclTree({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-start gap-4">
+      <div className="flex flex-col md:flex-row items-start gap-4">
         <div className="space-y-1">
           <h3 className="text-sm font-semibold flex items-center gap-1.5 text-default-900">
             <DynamicIcon name="folder-tree" size={14} className="text-default-500 shrink-0" />

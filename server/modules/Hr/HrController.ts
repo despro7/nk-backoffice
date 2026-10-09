@@ -97,10 +97,14 @@ const hrPayGroupsRead = requireAnyPermissionKey([
   PERMISSIONS.PAGE_HR_TIMESHEET,
   PERMISSIONS.PAGE_HR_PAYROLL,
 ]);
-const viewAudit = requirePermissionKey(PERMISSIONS.ACTION_HR_AUDIT_VIEW);
+const viewAudit = requirePermission(
+  'hr',
+  'audit.view',
+  'Переглядати журнал дій користувача',
+);
 const pagePayroll = requirePermissionKey(PERMISSIONS.PAGE_HR_PAYROLL);
-const viewPayroll = requirePermission('hr', 'payroll.view', 'Переглядати внутрішній розрахунок виплат');
-requirePermission('hr', 'payouts.view', 'Бачити повний номер картки');
+const viewPayroll = requirePermission('hr', 'payroll.view', 'Переглядати розрахунок зарплати');
+requirePermission('hr', 'payouts.view', 'Переглядати номер банківської картки');
 
 function parseId(raw: string | string[] | undefined): number {
   const id = Number(Array.isArray(raw) ? raw[0] : raw);
@@ -659,7 +663,7 @@ router.delete('/employments/:id', authenticateToken, manageEmployees, async (req
   }
 });
 
-const transferEmployment = requirePermissionKey(PERMISSIONS.ACTION_HR_EMPLOYMENT_TRANSFER);
+const transferEmployment = requirePermission('hr', 'employment.transfer', 'Переносити зайнятість');
 const changeEmploymentGroup = requirePermission(
   'hr',
   'employment.change-group',

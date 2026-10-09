@@ -8,7 +8,7 @@ import {
 import type { LalExportFormat } from '../../shared/types/lalAudiences.js';
 
 const router = Router();
-const lalManage = requirePermission('lal', 'manage', 'LAL аудиторії (експорт)');
+const lalManage = requirePermission('lal', 'manage', 'Експорт LAL-аудиторій');
 
 router.get('/', authenticateToken, lalManage, async (req: Request, res: Response) => {
   try {

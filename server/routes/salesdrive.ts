@@ -4,7 +4,11 @@ import { salesDriveCacheService } from '../services/salesdrive/SalesDriveCacheSe
 import type { SalesDriveChannel } from '../services/salesdrive/SalesDriveTypes.js';
 
 const router = Router();
-const salesdriveManage = requirePermission('salesdrive', 'manage', 'Керувати кешем SalesDrive');
+const salesdriveManage = requirePermission(
+  'salesdrive',
+  'manage',
+  'Керувати кешем і довідниками SalesDrive',
+);
 
 /**
  * GET /api/salesdrive/cache/status

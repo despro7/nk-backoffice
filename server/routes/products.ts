@@ -16,9 +16,9 @@ const router = express.Router();
 // Наліпки товару (до catch-all /:sku)
 router.use(productLabelsRouter);
 
-const productsEdit = requirePermission('products', 'edit', 'Редагувати товари (вага, штрихкод, порядок)');
-const productsSync = requirePermission('products', 'sync', 'Синхронізувати товари');
-const productsSyncExport = requirePermission('products', 'syncExport', 'Синхронізація + експорт товарів');
+const productsEdit = requirePermission('products', 'edit', 'Редагувати поля товару (вага, ШК, порядок)');
+const productsSync = requirePermission('products', 'sync', 'Синхронізувати товари з Dilovod');
+const productsSyncExport = requirePermission('products', 'syncExport', 'Синхронізація + експорт товарів у Dilovod');
 
 async function resolveCatalogGoodId(id: string): Promise<string | null> {
   const numeric = parseInt(id, 10);

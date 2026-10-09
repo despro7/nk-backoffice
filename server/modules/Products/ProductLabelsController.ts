@@ -12,7 +12,7 @@ import { parseProductLabelPayload } from '../../../shared/utils/productLabel.js'
 
 const router = Router();
 const authOnly = [authenticateToken] as const;
-const catalogManage = requirePermission('catalog', 'manage', 'Каталог Товари 2.0');
+const catalogManage = requirePermission('catalog', 'manage', 'Повний доступ до каталогу товарів');
 
 function handleError(res: Response, error: unknown, context: string) {
   const message = error instanceof Error ? error.message : String(error);

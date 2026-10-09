@@ -46,7 +46,7 @@ const router = Router();
 const RELEASE_STATUS_CREATED = 'created';
 const RELEASE_STATUS_SEND_FAILED = 'send_failed';
 const RELEASE_ACTIVE_STATUSES = [RELEASE_STATUS_CREATED, RELEASE_STATUS_SEND_FAILED];
-const warehouseOperate = requirePermission('warehouse', 'operate', 'Складські операції (відправка, чернетки)');
+const warehouseOperate = requirePermission('warehouse', 'operate', 'Створювати/відправляти складські документи');
 const warehouseHistoryDelete = requirePermission('warehouse', 'history.delete', 'Видаляти історію складських документів');
 
 const SET_RELEASE_DOC_ID = 'documents.goodWriteOff';

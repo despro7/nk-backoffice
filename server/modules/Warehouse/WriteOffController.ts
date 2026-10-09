@@ -39,7 +39,7 @@ const hasOwnStockInWarehouse = (stockBalanceByStock: any): boolean => {
 };
 
 const router = Router();
-const warehouseOperate = requirePermission('warehouse', 'operate', 'Складські операції (відправка, чернетки)');
+const warehouseOperate = requirePermission('warehouse', 'operate', 'Створювати/відправляти складські документи');
 const warehouseHistoryDelete = requirePermission('warehouse', 'history.delete', 'Видаляти історію складських документів');
 
 /**

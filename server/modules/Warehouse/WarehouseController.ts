@@ -30,7 +30,7 @@ import {
 } from '../../../shared/utils/dilovodBatchId.js';
 
 const router = Router();
-const warehouseOperate = requirePermission('warehouse', 'operate', 'Складські операції (відправка, чернетки)');
+const warehouseOperate = requirePermission('warehouse', 'operate', 'Створювати/відправляти складські документи');
 
 requirePermission('warehouse', 'movement.edit', 'Редагувати чужі та відправлені переміщення');
 requirePermission('warehouse', 'movement.delete', 'Видаляти переміщення (у Dilovod — delMark)');

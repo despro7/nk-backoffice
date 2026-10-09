@@ -44,10 +44,11 @@ import {
 } from './CatalogMediaService.js';
 
 const router = Router();
-requirePermission('catalog', 'manage', 'Каталог Товари 2.0');
-requirePermission('products', 'editSpec', 'Редагування специфікації товару (BOM)');
-requirePermission('storefront', 'edit', 'Редагування контенту сайту товару');
-const catalogFullRefresh = requirePermission('catalog', 'fullRefresh', 'Повний refresh каталогу з Dilovod');
+requirePermission('catalog', 'manage', 'Повний доступ до каталогу товарів');
+requirePermission('products', 'editSpec', 'Редагувати специфікацію (BOM)');
+requirePermission('storefront', 'edit', 'Редагувати контент вітрини товару');
+requirePermission('products', 'viewDilovod', 'Переглядати дані Dilovod у картці товару');
+const catalogFullRefresh = requirePermission('catalog', 'fullRefresh', 'Повне оновлення каталогу з Dilovod');
 const authOnly = [authenticateToken] as const;
 
 const uploadTmpDir = path.resolve(process.cwd(), 'uploads', 'catalog', '_tmp');

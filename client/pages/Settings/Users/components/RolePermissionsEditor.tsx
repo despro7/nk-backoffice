@@ -15,10 +15,13 @@ import {
   PERMISSION_DOMAIN_DEFAULT_SUBSECTION,
   PERMISSION_HR_SUBSECTION_LABELS,
   PERMISSION_HR_SUBSECTION_ORDER,
+  PERMISSION_PRODUCTS_SUBSECTION_LABELS,
+  PERMISSION_PRODUCTS_SUBSECTION_ORDER,
   PERMISSION_ROLE_EDITOR_DOMAINS,
   countSelectedInItems,
   groupCatalogByDomain,
   groupHrCatalogBySubsection,
+  groupProductsCatalogBySubsection,
   type PermissionDomainId,
   type RoleEditorCatalogItem,
 } from '@shared/constants/permissionRoleEditor';
@@ -63,7 +66,14 @@ function splitByLayer(items: CatalogItem[]): { pages: CatalogItem[]; actions: Ca
 }
 
 const colorClassMap = (color: string) => {
-  return `after:bg-${color}-500`;
+  switch (color) {
+    case 'sky':
+      return 'after:bg-sky-500';
+    case 'amber':
+      return 'after:bg-amber-500';
+    default:
+      return '';
+  }
 };
 
 function PermissionCheckboxRow({
@@ -152,9 +162,9 @@ function PermissionColumn({
           {checkedCount}/{allItems.length}
         </span>
       </div>
-      <div className="flex-1 flex flex-col px-1.5 py-1.5 space-y-2 min-h-[3rem]">
+      <div className="flex flex-1 flex-col gap-2 px-1.5 py-1.5">
         {visibleItems.length === 0 ? (
-          <p className="text-xs text-default-400 py-2 text-center">Немає прав у цій групі</p>
+          <p className="py-2 text-center text-xs text-default-400">Немає прав у цій групі</p>
         ) : (
           visibleItems.map((item) => (
             <PermissionCheckboxRow
@@ -253,12 +263,33 @@ function renderSubsectionAccordionItem({
       textValue={title}
       title={title}
       subtitle={`${checkedCount}/${items.length}`}
+      // HeroUI default: spring height→auto + overflowY:unset на enter → overshoot ~20px і snap
+      motionProps={{
+        variants: {
+          enter: {
+            opacity: 1,
+            height: 'auto',
+            overflowY: 'hidden',
+            transition: {
+              height: { duration: 0.22, ease: 'easeOut' },
+              opacity: { duration: 0.18 },
+            },
+          },
+          exit: {
+            opacity: 0,
+            height: 0,
+            overflowY: 'hidden',
+            transition: { duration: 0.18, ease: 'easeIn' },
+          },
+        },
+      }}
       classNames={{
         base: 'px-0 last:[&_button]:border-b-0',
-        trigger: 'py-2.5 px-3 bg-default-200/60 border-b border-default-200 [&>div]:flex-row [&>div]:items-center [&>div]:gap-1.5 data-[hover=true]:bg-default-200/50',
+        trigger:
+          'py-2.5 px-3 bg-default-200/60 border-b border-default-200 [&>div]:flex-row [&>div]:items-center [&>div]:gap-1.5 data-[hover=true]:bg-default-200/50',
         title: 'text-sm font-medium text-default-800',
         subtitle: 'text-xs text-default-400 tabular-nums',
-        content: 'pt-0 pb-0 px-0',
+        content: '!p-0 overflow-hidden',
         indicator: 'text-default-400',
       }}
     >
@@ -314,27 +345,40 @@ export function RolePermissionsEditor({
     return counts;
   }, [byDomain, domainsWithItems, selected]);
 
-  const hrSubsections = useMemo(() => {
-    if (resolvedDomain !== 'hr') return null;
-    return groupHrCatalogBySubsection(domainItems);
+  const domainSubsections = useMemo(() => {
+    if (resolvedDomain === 'hr') {
+      return {
+        order: PERMISSION_HR_SUBSECTION_ORDER,
+        labels: PERMISSION_HR_SUBSECTION_LABELS as Record<string, string>,
+        map: groupHrCatalogBySubsection(domainItems) as Map<string, CatalogItem[]>,
+      };
+    }
+    if (resolvedDomain === 'products') {
+      return {
+        order: PERMISSION_PRODUCTS_SUBSECTION_ORDER,
+        labels: PERMISSION_PRODUCTS_SUBSECTION_LABELS as Record<string, string>,
+        map: groupProductsCatalogBySubsection(domainItems) as Map<string, CatalogItem[]>,
+      };
+    }
+    return null;
   }, [resolvedDomain, domainItems]);
 
   const visibleAccordionSections = useMemo(() => {
-    if (resolvedDomain === 'hr' && hrSubsections) {
+    if (domainSubsections) {
       const sections: Array<{
         id: string;
         title: string;
         items: CatalogItem[];
         visible: CatalogItem[];
       }> = [];
-      for (const id of PERMISSION_HR_SUBSECTION_ORDER) {
-        const items = hrSubsections.get(id) ?? [];
+      for (const id of domainSubsections.order) {
+        const items = domainSubsections.map.get(id) ?? [];
         if (items.length === 0) continue;
         const visible = filterItems(items, selected, search, filter);
         if (visible.length === 0) continue;
         sections.push({
           id,
-          title: PERMISSION_HR_SUBSECTION_LABELS[id],
+          title: domainSubsections.labels[id] ?? id,
           items,
           visible,
         });
@@ -351,7 +395,7 @@ export function RolePermissionsEditor({
         visible,
       },
     ];
-  }, [resolvedDomain, hrSubsections, domainItems, selected, search, filter]);
+  }, [domainSubsections, domainItems, selected, search, filter]);
 
   const defaultExpandedKeys = useMemo(
     () =>
@@ -361,7 +405,7 @@ export function RolePermissionsEditor({
     [visibleAccordionSections, selected]
   );
 
-  const isHrAccordion = resolvedDomain === 'hr' && (hrSubsections?.size ?? 0) > 0;
+  const isSubsectionAccordion = domainSubsections != null && visibleAccordionSections.length > 0;
 
   const filterTabs: { id: PermissionSelectionFilter; label: string }[] = [
     { id: 'all', label: 'Усі' },
@@ -369,7 +413,7 @@ export function RolePermissionsEditor({
     { id: 'off', label: 'Вимкнені' },
   ];
 
-  const flatSection = !isHrAccordion ? visibleAccordionSections[0] : null;
+  const flatSection = !isSubsectionAccordion ? visibleAccordionSections[0] : null;
 
   return (
     <section className="space-y-3">
@@ -458,7 +502,7 @@ export function RolePermissionsEditor({
         <p className="text-sm text-default-500 py-8 text-center rounded-lg border border-default-200 bg-default-50/50">
           Нічого не знайдено. Спробуйте інший пошук або фільтр.
         </p>
-      ) : isHrAccordion ? (
+      ) : isSubsectionAccordion ? (
         <div className="rounded-lg border border-default-200 overflow-hidden bg-content1">
           <Accordion
             key={`${resolvedDomain}-${search}-${filter}`}
