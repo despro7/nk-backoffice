@@ -22,9 +22,9 @@ export default function PageTabs({ selectedKey, onSelectionChange, children, cla
         color === 'default' && !classNames
           ? {
               tabList: "gap-2 p-[6px] bg-gray-100 rounded-lg",
-              cursor: `${color === 'primary' ? 'bg-primary' : 'bg-secondary'} text-white shadow-sm rounded-md`,
-              tab: "px-3 py-1.5 text-sm font-normal data-[hover-unselected=true]:opacity-100 text-neutral-500",
-              tabContent: "group-data-[selected=true]:text-white text-neutral-400",
+              cursor: `${color === 'primary' ? 'bg-primary' : 'bg-slate-600'} text-white shadow-sm rounded-md`,
+              tab: "px-3 py-1.5 text-sm font-normal data-[hover-unselected=true]:opacity-100",
+              tabContent: "group-data-[selected=true]:text-white text-neutral-500",
             }
           : classNames ?? undefined
       }

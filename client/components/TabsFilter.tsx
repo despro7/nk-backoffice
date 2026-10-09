@@ -11,6 +11,8 @@ interface TabsFilterProps {
   };
 }
 
+const TAB_CLASS_NAMES = "bg-default/20 px-1 py-[1px] ml-0.5 inline-block min-w-5 text-center font-medium rounded";
+
 export function TabsFilter({ selectedTab, onTabChange, counts }: TabsFilterProps) {
   return (
     <Tabs
@@ -22,17 +24,36 @@ export function TabsFilter({ selectedTab, onTabChange, counts }: TabsFilterProps
       color="default"
       size="lg"
       classNames={{
-        // base: "w-full",
         tabList: "gap-2 p-[6px] bg-gray-100 rounded-lg w-full",
-        cursor: "bg-secondary text-white shadow-sm rounded-md",
-        tab: "px-3 py-1.5 text-sm font-normal flex-1 data-[hover-unselected=true]:opacity-100 text-neutral-500",
-        tabContent: "group-data-[selected=true]:text-white text-neutral-400"
+        cursor: "bg-slate-600 text-white shadow-sm rounded-md",
+        tab: "px-3 py-1.5 text-sm font-normal flex-1 data-[hover-unselected=true]:opacity-100",
+        tabContent: "group-data-[selected=true]:text-white text-neutral-500"
       }}
     >
-      <Tab key="confirmed" title={`Підтверджені ${counts ? `(${counts.confirmed})` : ''}`} />
-      <Tab key="readyToShip" title={`Готові до відправлення ${counts ? `(${counts.readyToShip})` : ''}`} />
-      <Tab key="shipped" title={`Відправлені ${counts ? `(${counts.shipped})` : ''}`} />
-      <Tab key="all_sum" title={`Всі ${counts ? `(${counts.all})` : ''}`} />
+      <Tab
+        key="confirmed"
+        title={
+          <>Підтверджені {counts && <span className={TAB_CLASS_NAMES}>{counts.confirmed}</span>}</>
+        }
+      />
+      <Tab
+        key="readyToShip"
+        title={
+          <>Готові до відправки {counts && <span className={TAB_CLASS_NAMES}>{counts.readyToShip}</span>}</>
+        }
+      />
+      <Tab
+        key="shipped"
+        title={
+          <>Відправлені {counts && <span className={TAB_CLASS_NAMES}>{counts.shipped}</span>}</>
+        }
+      />
+      <Tab
+        key="all_sum"
+        title={
+          <>Всі {counts && <span className={TAB_CLASS_NAMES}>{counts.all}</span>}</>
+        }
+      />
     </Tabs>
   );
 }
