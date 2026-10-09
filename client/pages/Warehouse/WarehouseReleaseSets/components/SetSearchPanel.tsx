@@ -37,6 +37,40 @@ const extractStockForStorage = (rawStock: unknown, storageId?: string | null): n
   return Object.values(stockMap).reduce((sum, value) => sum + value, 0);
 };
 
+/** Папка/група каталогу (Dilovod isGroup=1). `/api/products` зазвичай їх не повертає. */
+const isCatalogGroup = (value: unknown): boolean =>
+  value === true || value === 1 || value === '1';
+
+const parseProductSet = (raw: unknown): unknown[] | null => {
+  if (!raw) return null;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
+
+/**
+ * Крок 1 коригування (комплектування): звичайні товари —
+ * isGroup=0, без комплектів (`set`) і без `_rebatch`.
+ */
+const isRegularCorrectionProduct = (product: {
+  isGroup?: unknown;
+  sku?: unknown;
+  set?: unknown;
+}): boolean => {
+  if (isCatalogGroup(product.isGroup)) return false;
+  if (isRebatchSku(String(product.sku ?? ''))) return false;
+  const set = parseProductSet(product.set);
+  if (set && set.length > 0) return false;
+  return true;
+};
+
 interface Props {
   onSelect: (product: any) => void;
   onItemChange?: (id: string, patch: Partial<ReleaseSetItem>) => void;
@@ -89,6 +123,7 @@ export default function SetSearchPanel({
     abortRef.current = new AbortController();
 
     if (isCorrectionUnkitStep) {
+      // Бекенд уже фільтрує isGroup=0 + isKit + `_rebatch`; клієнт — захисний шар.
       const res = await fetch(
         `/api/warehouse/releases/batch-correction/search-sets?q=${encodeURIComponent(searchQuery)}`,
         {
@@ -98,30 +133,37 @@ export default function SetSearchPanel({
       );
       const json = await res.json();
       const list = Array.isArray(json?.products) ? json.products : [];
-      return list.map((product: any) => withStorageQuantity({
-        ...product,
-        set: Array.isArray(product.set) ? product.set : [],
-      }));
+      return list
+        .filter((product: any) => isRebatchSku(product?.sku))
+        .map((product: any) => withStorageQuantity({
+          ...product,
+          set: Array.isArray(product.set) ? product.set : [],
+        }));
     }
 
-    const res = await fetch(`/api/products?search=${encodeURIComponent(searchQuery)}&limit=20`, {
-      signal: abortRef.current.signal,
-      credentials: 'include',
-    });
+    // Для кроку 1 беремо більший limit: далі відсікаємо комплекти/`_rebatch` на клієнті.
+    const searchLimit = isCorrectionProductStep ? 50 : 20;
+    const res = await fetch(
+      `/api/products?search=${encodeURIComponent(searchQuery)}&limit=${searchLimit}`,
+      {
+        signal: abortRef.current.signal,
+        credentials: 'include',
+      },
+    );
     const json = await res.json();
     const list = json?.products || [];
 
     if (isCorrectionProductStep) {
       return list
-        .filter((product: any) => !product.isGroup)
-        .filter((product: any) => !isRebatchSku(product.sku))
+        .filter((product: any) => isRegularCorrectionProduct(product))
+        .slice(0, 20)
         .map((product: any) => withStorageQuantity(product));
     }
 
     return list
       .map((product: any) => withStorageQuantity({
         ...product,
-        set: product.set ? (typeof product.set === 'string' ? (() => { try { return JSON.parse(product.set); } catch { return null; } })() : product.set) : null,
+        set: parseProductSet(product.set),
       }))
       .filter((product: any) => Array.isArray(product.set) && product.set.length > 0);
   };
@@ -181,7 +223,7 @@ export default function SetSearchPanel({
       : 'Пошук набору за назвою або SKU (від 3 символів)';
 
   const emptyMessage = isCorrectionProductStep
-    ? 'Товари не знайдено. Спробуйте іншу назву, SKU або штрихкод.'
+    ? 'Звичайні товари не знайдено (без комплектів і _rebatch). Спробуйте іншу назву, SKU або штрихкод.'
     : isCorrectionUnkitStep
       ? 'Інвентаризаційні набори не знайдено. Спробуйте іншу назву або SKU (_rebatch).'
       : 'Набори не знайдено. Спробуйте іншу назву або SKU.';

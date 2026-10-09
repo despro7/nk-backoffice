@@ -1,5 +1,10 @@
 import type { ReleaseComponentAllocation, ReleaseComponentBatch } from '../../../shared/types/warehouseRelease.js';
-import { isUsableDilovodBatchId } from '../../../shared/utils/dilovodBatchId.js';
+import {
+  canSetTpGoodsGoodPart,
+  isCatalogGoodPartId,
+  isUsableDilovodBatchId,
+  isVirtualDocumentBatchLabel,
+} from '../../../shared/utils/dilovodBatchId.js';
 
 export type ReleaseBatchValidationResult = {
   valid: boolean;
@@ -73,9 +78,19 @@ export function validateReleaseBatches(
 
     for (const batch of allocation.batches) {
       const batchId = String(batch?.batchId ?? '').trim();
+      const batchNumber = String(batch?.batchNumber ?? '').trim();
+      const label = batchNumber || batchId || '—';
       const qty = Number(batch?.quantity ?? 0);
-      if (!isUsableDilovodBatchId(batchId)) {
-        warnings.push(`SKU ${sku}: партія ${batchId || '—'} виглядає як віртуальна або некоректна`);
+      // Не блокуємо send: передаємо goodPart у Dilovod і зберігаємо його сиру відповідь у raw.
+      if (!canSetTpGoodsGoodPart({ batchId, batchNumber })) {
+        if (isVirtualDocumentBatchLabel(batchNumber) || (isUsableDilovodBatchId(batchId) && !isCatalogGoodPartId(batchId))) {
+          warnings.push(
+            `SKU ${sku}: «${label}» — документ Dilovod (віртуальна партія), не catalogs.goodParts. `
+            + 'Dilovod ймовірно відхилить goodPart; сира відповідь буде в історії.',
+          );
+        } else {
+          warnings.push(`SKU ${sku}: партія ${label} виглядає як віртуальна або некоректна`);
+        }
       }
       if (!Number.isFinite(qty) || qty <= 0) {
         errors.push(`SKU ${sku}: некоректна кількість партії (${batch?.quantity})`);
@@ -148,10 +163,21 @@ export function buildTpGoodsFromBatches(
         accGood,
       };
 
+      const batchNumber = String(batch?.batchNumber ?? '').trim();
+      // Передаємо обраний користувачем batchId як goodPart, щоб Dilovod повернув
+      // авторитетну сиру відповідь (навіть для documents.* / віртуальних партій).
       if (isUsableDilovodBatchId(batchId)) {
         rowPayload.goodPart = Number(batchId);
+        if (!canSetTpGoodsGoodPart({ batchId, batchNumber })) {
+          warnings.push(
+            `SKU ${comp.sku}: «${batchNumber || batchId}» не catalogs.goodParts — `
+            + 'goodPart передано в Dilovod; очікуйте відхилення API',
+          );
+        }
       } else if (batchId) {
-        warnings.push(`Пропущено goodPart для SKU ${comp.sku}: некоректний batchId ${batchId}`);
+        warnings.push(
+          `Пропущено goodPart для SKU ${comp.sku}: «${batchNumber || batchId}» — некоректний Dilovod ID`,
+        );
       }
 
       tpGoods.push(rowPayload);

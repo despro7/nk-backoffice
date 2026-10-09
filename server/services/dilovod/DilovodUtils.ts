@@ -253,6 +253,8 @@ export function getDilovodExportErrorMessage(result: any): string {
  * Ключі — підрядки, що можуть зустрічатися у полі `error` відповіді Dilovod API.
  */
 const DILOVOD_ERROR_TRANSLATIONS: Array<{ pattern: string | RegExp; title: string; message: string }> = [
+  { pattern: 'cant set value of tpgoods.goodpart', title: 'Некоректна партія компонента', message: 'Обрана партія не є реальною партією Dilovod (catalogs.goodParts). Оберіть іншу партію або створіть нову — Dilovod відхиляє такий goodPart.' },
+  { pattern: 'tpgoods.goodpart', title: 'Некоректна партія компонента', message: 'Обрана партія не підходить для поля goodPart у Dilovod. Оберіть реальну партію зі словника або створіть нову.' },
   { pattern: 'object locked',         title: 'Обʼєкт заблоковано в Dilovod',   message: 'Його зараз редагує інший користувач. Закрийте картку або документ у Dilovod і спробуйте ще раз.' },
   { pattern: 'multithreadApiSession', title: 'Паралельний запит заблоковано',  message: 'Зачекайте кілька секунд і спробуйте ще раз.' },
   { pattern: 'applicationLayerError', title: 'Документ не збережено',          message: 'Помилка даних у Діловоді. Перевірте позиції та спробуйте ще раз.' },

@@ -368,7 +368,17 @@ export default function ReleaseSetsPage() {
       case 'correctionOn':
         return {
           title: 'Увімкнути коригування партійного обліку?',
-          message: 'Спочатку буде комплектування: усі партії зберуться в технічний набір `{sku}_rebatch`. Потім крок 2 — розукомплектування з розкладкою по порахованих партіях.',
+          message: (
+            <>
+              <p>
+                <span className="font-semibold">Крок 1: Комплектування</span>: усі партії зберуться в тимчасовий набір{' '}
+                <span className="px-1 py-0.5 rounded bg-gray-100 font-mono text-sm">{'{sku}_rebatch'}</span>.
+              </p>
+              <p>
+                <span className="font-semibold">Крок 2: Розукомплектування</span>: з розкладкою по порахованих партіях.
+              </p>
+            </>
+          ),
           confirmText: 'Увімкнути',
         };
       case 'correctionOff':
@@ -580,10 +590,17 @@ export default function ReleaseSetsPage() {
                 await rs.loadHistory(rs.historyPagination.page, rs.historyPagination.limit);
                 return;
               }
-              throw new Error(String(result?.error || 'Помилка повторної відправки'));
+              const description = String(
+                result?.sendError?.message
+                || result?.error
+                || 'Помилка повторної відправки',
+              );
+              ToastService.show({ title: 'Помилка Dilovod', description, color: 'danger' });
+              await rs.loadHistory(rs.historyPagination.page, rs.historyPagination.limit);
             } catch (error) {
               const message = error instanceof Error ? error.message : 'Невідома помилка';
               ToastService.show({ title: 'Помилка Dilovod', description: message, color: 'danger' });
+              await rs.loadHistory(rs.historyPagination.page, rs.historyPagination.limit);
             }
           }}
         />

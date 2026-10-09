@@ -39,18 +39,16 @@ function DebugDilovodCheck({ mapped, onRefresh }: { mapped: any[]; onRefresh?: (
 
   return (
     <>
-      <div className="mb-2">
-        <Button
-          size="sm"
-          variant="flat"
-          color="warning"
-          className="bg-yellow-200 text-yellow-900 hover:opacity-90"
-          onPress={run}
-          startContent={<DynamicIcon name="refresh-cw" className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />}
-        >
-          Перевірити Dilovod (debug)
-        </Button>
-      </div>
+      <Button
+        size="sm"
+        variant="flat"
+        color="warning"
+        className="bg-yellow-200 text-yellow-900 hover:opacity-90"
+        onPress={run}
+        startContent={<DynamicIcon name="refresh-cw" className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />}
+      >
+        Перевірити Dilovod (debug)
+      </Button>
 
       <Modal isOpen={open} scrollBehavior="inside" onClose={() => setOpen(false)} size="3xl" className="max-h-[60vh]" isDismissable={!busy}>
         <ModalContent>
@@ -125,6 +123,13 @@ export default function ReleaseHistoryTab({
       ? record.items
       : [{ sku: record.setSku || '', quantity: Number(record.quantity ?? record.qty ?? 0) }];
 
+    const firstItem = Array.isArray(record.items) && record.items[0] && typeof record.items[0] === 'object'
+      ? record.items[0] as {
+        dilovod_send_error?: unknown;
+        correction_session_id?: unknown;
+      }
+      : null;
+
     return {
       id: String(record.id),
       createdAt: record.createdAt || record.created_at,
@@ -135,11 +140,12 @@ export default function ReleaseHistoryTab({
       comment: record.comment,
       dilovodDocId: record.dilovodDocId || record.dilovod_doc_id || null,
       operationType: record.operationType || record.operation_type || null,
+      correctionSessionId: firstItem?.correction_session_id
+        ? String(firstItem.correction_session_id).trim() || null
+        : null,
       internalDocNumber: record.internalDocNumber || record.internal_doc_number || null,
       status: record.status || null,
-      sendError: Array.isArray(record.items) && record.items[0] && typeof record.items[0] === 'object'
-        ? String((record.items[0] as { dilovod_send_error?: unknown }).dilovod_send_error ?? '').trim() || null
-        : null,
+      sendError: firstItem?.dilovod_send_error ?? null,
       quantity: Number(record.quantity ?? 0),
       setSku: record.setSku || record.set_sku || null,
       setsNormalized: record.setsNormalized,

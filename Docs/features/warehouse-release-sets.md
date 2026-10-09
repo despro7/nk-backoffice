@@ -28,6 +28,17 @@ Switch у шапці сторінки. Двокроковий wizard:
    - `POST /api/warehouse/releases/batch-correction/fill-batches` — автозаповнення партій з залишків.
 2. **Крок 2 (correctionUnkit):** розкладка з набору по цільових партіях; надлишок → нова партія «Коригування обліку {ДАТА}» через `createGoodPartBatch`.
 
+#### Пошук товарів у correction (2026-10-09)
+
+- **Крок 1 (kit):** `SetSearchPanel` показує лише звичайні товари — без груп (`isGroup`), без комплектів (`set.length > 0`), без SKU `_rebatch`.
+- **Крок 2 (unkit):** `GET /batch-correction/search-sets` → лише інвентаризаційні набори `_rebatch` (+ клієнтський `isRebatchSku`).
+
+#### Детекція correction у історії (2026-10-09)
+
+- `shared/utils/releaseBatchCorrection.ts` — `isReleaseBatchCorrection`: session UUID **або** коментар `Кор[еи]гування парт. обліку…` **або** SKU `_rebatch`.
+- Перед `/send` у correction UI гарантує `correctionSessionId`; бекенд підставляє UUID, якщо в payload лише comment/rebatch.
+- Чіп «Коригування» в `HistoryAccordionItem` більше не залежить лише від `correction_session_id`.
+
 ### Confirm-модалки
 
 `ReleaseSendConfirmModal` + `releaseConfirmCopy.ts` — підтвердження перед:

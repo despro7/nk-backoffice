@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-10-09 — Склад: resilience коригування партій + фільтр пошуку
+
+**Files:** `shared/utils/releaseBatchCorrection.ts`, `SetSearchPanel.tsx`, `HistoryAccordionItem.tsx`, `useReleaseSets.ts`, `SetReleaseController.ts`, `Docs/features/warehouse-release-sets.md`
+
+### Детекція correction
+
+- Badge/чіп у історії: session id **або** коментар `Кор[еи]гування парт. обліку` **або** SKU `_rebatch`.
+- UI + бекенд гарантують `correction_session_id` при send у режимі коригування.
+
+### Пошук у correction wizard
+
+- Крок 1 (комплектування): лише звичайні товари (без `set` / комплектів, без `_rebatch`).
+- Крок 2 (розукомплектування): лише `_rebatch`-набори (API + клієнт).
+
+---
+
 ## 2026-10-09 — HR: обмежене редагування табеля + тост прав
 
 **Files:** `shared/utils/hrTimesheetEditScope.ts`, `shared/types/hr.ts`, `shared/constants/permissions.ts`, `server/modules/Hr/HrTimesheetService.ts`, `HrController.ts`, `prisma/schema.prisma`, `prisma/migrations/20261009120000_hr_timesheet_entry_created_by/`, `client/pages/Hr/HrTimesheetPage.tsx`, `TimesheetGrid.tsx`, `client/App.tsx`, `AuthContext.tsx`, `DilovodDirectoriesContext.tsx`, `rolePreviewFetch.ts`, `RolePreviewContext.tsx`, `Docs/features/hr-module.md`

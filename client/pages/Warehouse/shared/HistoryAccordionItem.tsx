@@ -11,6 +11,11 @@ import { getFirmDisplayName, getStorageDisplayName } from '@shared/utils/directo
 import { useDilovodSettings } from '@/hooks/useDilovodSettings';
 import useUserNames from '@/hooks/useUserNames';
 import { WarehouseReleaseAuditAccordion } from '@/pages/Warehouse/WarehouseReleaseSets/components/WarehouseReleaseAuditAccordion';
+import { normalizeReleaseSendError } from '@shared/utils/releaseSendError';
+import {
+  BATCH_CORRECTION_COMMENT_STRIP_RE,
+  isReleaseBatchCorrection,
+} from '@shared/utils/releaseBatchCorrection';
 
 interface HistoryAccordionItemProps {
   records: any[];
@@ -103,7 +108,7 @@ export const HistoryAccordionItem = ({
     }
   };
 
-  const handleDeleteRecord = async (recordId: string) => {
+  const handleDeleteRecord = (recordId: string) => {
     if (!onDeleteRecord) return;
     setConfirmDeleteId(recordId);
   };
@@ -122,7 +127,10 @@ export const HistoryAccordionItem = ({
     }
   };
 
-  const handleCancelDelete = () => setConfirmDeleteId(null);
+  const handleCancelDelete = () => {
+    if (loadingDeleteId) return;
+    setConfirmDeleteId(null);
+  };
 
   if (!records || records.length === 0) {
     return (
@@ -152,6 +160,9 @@ export const HistoryAccordionItem = ({
   const { directories } = useDilovodSettings();
   const userIds = records.map(r => Number(r.createdBy ?? r.created_by ?? null));
   const namesMap = useUserNames(userIds);
+  const recordPendingDelete = confirmDeleteId
+    ? records.find((r) => String(r.id) === confirmDeleteId)
+    : undefined;
 
   return (
     <div className="space-y-2">
@@ -161,6 +172,12 @@ export const HistoryAccordionItem = ({
         const operationType = String(record.operationType ?? '').toLowerCase();
         const operationCfg = RELEASE_OPERATION_CONFIG[operationType];
         const items = safeParseItems(record.items);
+        const isBatchCorrection = isReleaseBatchCorrection({
+          correctionSessionId: record.correctionSessionId,
+          comment: record.comment,
+          setSku: record.setSku ?? record.set_sku,
+          items,
+        });
         const totalQuantity = items.reduce((sum, item) => sum + Number(item.quantity ?? item.qty ?? 0), 0);
         const isExpanded = expandedRecordId === String(record.id);
 				const reason = record.reason || record.writeOffReason || record.write_off_reason; // TODO: змінити типи після впровадження компоненту
@@ -176,7 +193,7 @@ export const HistoryAccordionItem = ({
         const operationDocNumber = record.internalDocNumber || record.internal_doc_number || null;
         const releaseStatus = String(record.status ?? '').toLowerCase();
         const sendFailed = releaseStatus === 'send_failed';
-        const sendError = record.sendError || null;
+        const sendError = normalizeReleaseSendError(record.sendError);
         const totalPortions = recordType === 'releaseSet' ? setsForCount.reduce((sum: number, set: any) => {
           const componentsTotal = Number(set.componentsTotal ?? 0);
           const setQty = Number(set.setQty ?? 0);
@@ -188,7 +205,7 @@ export const HistoryAccordionItem = ({
 
           return sum + (componentsTotal * setQty);
         }, 0) : 0;
-
+        
         return (
           <div key={record.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
             <button
@@ -211,16 +228,46 @@ export const HistoryAccordionItem = ({
 										<span className="text-xs text-gray-400">{formatRelativeDate(record[cfg.dateField || 'createdAt'], { maxRelativeDays: 1 })}</span>
 									</div>
 									<div className="flex gap-2">
-										{reason && (
-											<Chip size="sm" color="default" variant="flat" className="bg-gray-200 text-gray-700">{reason}</Chip>
-										)}
-										{sendFailed && (
-											<Chip size="sm" color="danger" variant="flat" className="text-sm text-red-700">
-												Помилка Dilovod
-											</Chip>
-										)}
+                    {reason && (
+                      <Chip size="sm" color="default" variant="flat" className="bg-gray-200 text-gray-700">{reason}</Chip>
+                    )}
+                    {isBatchCorrection && (
+                      <Chip
+                        size="sm"
+                        color="secondary"
+                        variant="flat"
+                        className="text-[13px] text-violet-700 bg-violet-100"
+                        startContent={<DynamicIcon name="refresh-cw" className="w-3 h-3 ml-1 mr-0.5" />}
+                      >
+                        Коригування
+                      </Chip>
+                    )}
 										{record.comment && (
-											<Chip size="sm" color="warning" variant="flat" className="text-sm text-amber-700 ml-0.5 text-[13px]" startContent={<DynamicIcon name="message-circle-more" className="w-3 h-3 ml-1 mr-0.5" />}>{truncateText(record.comment, 25)}</Chip>
+											<Chip
+                        size="sm"
+                        color="warning"
+                        variant="flat"
+                        className="text-sm text-amber-700 ml-0.5 text-[13px]"
+                        startContent={<DynamicIcon name="message-circle-more" className="w-3 h-3 ml-1 mr-0.5" />}
+                      >
+                        {truncateText(
+                          isBatchCorrection && typeof record.comment === 'string'
+                            ? record.comment.replace(BATCH_CORRECTION_COMMENT_STRIP_RE, '')
+                            : record.comment,
+                          25
+                        )}
+                      </Chip>
+										)}
+                    {sendFailed && (
+                      <Chip
+                        size="sm"
+                        color="danger"
+                        variant="flat"
+                        className="text-[13px] text-red-700"
+                        startContent={<DynamicIcon name="alert-circle" className="w-3 h-3 ml-1 mr-0.5" />}
+                      >
+                        Помилка Dilovod
+                      </Chip>
 										)}
 									</div>
 								</div>
@@ -271,75 +318,62 @@ export const HistoryAccordionItem = ({
                         <span className="text-sm font-normal text-default-500">{operationDocNumber}</span>
                       ) : null}
                     </h3>
-										{/* Delete button (only visible to admin) */}
-										{canDeleteHistory && showDelete && onDeleteRecord && (
-											<div className="ml-2" onClick={(e) => e.stopPropagation()}>
-												<Button
-													size="sm"
-													variant="flat"
-													color="danger"
-													className="bg-red-200/80 text-red-700 h-auto px-2.5 py-1.5 gap-1 min-w-0"
-													isLoading={loadingDeleteId === String(record.id)}
-													isDisabled={!!loadingLoadId}
-													startContent={loadingDeleteId !== String(record.id) ? <DynamicIcon name="trash-2" className="w-3 h-3" /> : undefined}
-													onPress={() => handleDeleteRecord(String(record.id))}
-												>
-													Видалити
-												</Button>
-											</div>
-										)}
-										 {/* Confirm modal rendered here so header button can open it */}
-										<ConfirmModal
-											isOpen={confirmDeleteId === String(record.id)}
-											title="Видалити запис?"
-											message={recordType === 'releaseSet'
-                        ? `Запис №${record.id} буде видалений. Документ у Dilovod буде позначено на видалення (delMark).`
-                        : `Запис №${record.id} буде видалений безповоротно.`}
-											confirmText="Видалити"
-											cancelText="Скасувати"
-											confirmColor="danger"
-											onConfirm={handleConfirmDelete}
-											onCancel={handleCancelDelete}
-										/>
-                    {/* Edit button (optional) */}
-                    {recordEditable && (
-                      <div className="ml-2" onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          size="sm"
-                          variant="flat"
-                          color="secondary"
-                          className="bg-blue-200/75 text-blue-800 h-auto px-2.5 py-1.5 gap-1 min-w-0"
-                          isLoading={loadingEditId === String(record.id)}
-                          isDisabled={!!loadingLoadId}
-                          startContent={<DynamicIcon name="edit-3" className="w-3 h-3" />}
-                          onPress={() => handleEditRecord(String(record.id))}
-                        >
-                          Редагувати
-                        </Button>
-                      </div>
-                    )}
-                    {sendFailed && onRetryRelease && (
-                      <div className="ml-2" onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          size="sm"
-                          variant="flat"
-                          color="primary"
-                          className="h-auto px-2.5 py-1.5 gap-1.5"
-                          isLoading={loadingRetryId === String(record.id)}
-                          startContent={<DynamicIcon name="refresh-cw" className="w-3 h-3" />}
-                          onPress={async () => {
-                            setLoadingRetryId(String(record.id));
-                            try {
-                              await onRetryRelease(record);
-                            } finally {
-                              setLoadingRetryId(null);
-                            }
-                          }}
-                        >
-                          Повторити Dilovod
-                        </Button>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-3 ml-auto">
+                      {/* Delete button (only visible to admin) */}
+                      {canDeleteHistory && showDelete && onDeleteRecord && (
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            color="danger"
+                            className="bg-red-200/80 text-red-700 h-auto px-2.5 py-1.5 gap-1 min-w-0"
+                            isDisabled={!!loadingLoadId}
+                            startContent={<DynamicIcon name={loadingDeleteId === String(record.id) ? 'loader-circle' : 'trash-2'} className={loadingDeleteId === String(record.id) ? 'w-3 h-3 animate-spin' : 'w-3 h-3'} />}
+                            onPress={() => handleDeleteRecord(String(record.id))}
+                          >
+                            Видалити
+                          </Button>
+                        </div>
+                      )}
+                      {/* Edit button (optional) */}
+                      {recordEditable && (
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            color="secondary"
+                            className="bg-blue-200/75 text-blue-800 h-auto px-2.5 py-1.5 gap-1 min-w-0"
+                            isLoading={loadingEditId === String(record.id)}
+                            isDisabled={!!loadingLoadId}
+                            startContent={<DynamicIcon name="edit-3" className="w-3 h-3" />}
+                            onPress={() => handleEditRecord(String(record.id))}
+                          >
+                            Редагувати
+                          </Button>
+                        </div>
+                      )}
+                      {sendFailed && onRetryRelease && (
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            color="warning"
+                            className="h-auto px-2.5 py-1.5 gap-1 min-w-0 bg-orange-600/80 text-white"
+                            startContent={<DynamicIcon name={loadingRetryId === String(record.id) ? 'loader-circle' : 'refresh-cw'} className={loadingRetryId === String(record.id) ? 'w-3 h-3 animate-spin' : 'w-3 h-3'} />}
+                            onPress={async () => {
+                              setLoadingRetryId(String(record.id));
+                              try {
+                                await onRetryRelease(record);
+                              } finally {
+                                setLoadingRetryId(null);
+                              }
+                            }}
+                          >
+                            Повторити відправку в Dilovod
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap">
@@ -358,9 +392,27 @@ export const HistoryAccordionItem = ({
                   </div>
                   {record.comment && <p className="text-[13px] text-gray-500 mt-1">Коментар: <b>{record.comment}</b></p>}
                   {sendFailed && sendError && (
-                    <p className="text-[13px] text-red-700 mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
-                      Помилка відправки в Dilovod: <b>{sendError}</b>
-                    </p>
+                    <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800 space-y-2">
+                      <p>
+                        <span className="font-medium">Помилка відправки:</span>{' '}
+                        {sendError.message}
+                      </p>
+                      {sendError.raw ? (
+                        <details
+                          className="group"
+                          onToggle={() => setLayoutTick((value) => value + 1)}
+                        >
+                          <summary className="cursor-pointer select-none text-red-700/80 hover:text-red-900 text-xs font-medium">
+                            {sendError.source === 'internal'
+                              ? 'Технічні деталі'
+                              : 'Технічна відповідь Dilovod'}
+                          </summary>
+                          <pre className="mt-1.5 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-white/70 border border-red-100 px-2 py-1.5 text-[11px] text-red-900/90 font-mono">
+                            {sendError.raw}
+                          </pre>
+                        </details>
+                      ) : null}
+                    </div>
                   )}
                 </div>
 
@@ -385,6 +437,26 @@ export const HistoryAccordionItem = ({
           </div>
         );
       })}
+
+      {canDeleteHistory && showDelete && onDeleteRecord ? (
+        <ConfirmModal
+          isOpen={confirmDeleteId !== null}
+          title="Видалити запис?"
+          message={
+            recordPendingDelete
+              ? recordType === 'releaseSet'
+                ? `Запис №${recordPendingDelete.id} буде видалений. Документ у Dilovod буде позначено на видалення (delMark).`
+                : `Запис №${recordPendingDelete.id} буде видалений безповоротно.`
+              : 'Запис буде видалений безповоротно.'
+          }
+          confirmText="Видалити"
+          cancelText="Скасувати"
+          confirmColor="danger"
+          confirmLoading={loadingDeleteId !== null}
+          onConfirm={() => void handleConfirmDelete()}
+          onCancel={handleCancelDelete}
+        />
+      ) : null}
     </div>
   );
 };
