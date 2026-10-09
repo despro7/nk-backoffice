@@ -5,6 +5,7 @@ import {
   CardBody,
   Checkbox,
   Chip,
+  Divider,
   Drawer,
   DrawerBody,
   DrawerContent,
@@ -21,10 +22,10 @@ import {
   collectPagePermissions,
   isActionPermission,
   isPagePermission,
-  permissionGroupLabel,
+  stripSupersededPermissions,
   type PermissionDef,
-  type PermissionGroup,
 } from '@shared/constants/permissions';
+import { RolePermissionsEditor } from './RolePermissionsEditor';
 import { ROLES } from '@shared/constants/roles';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { useRolePreview } from '@/contexts/role-preview-context';
@@ -310,8 +311,11 @@ function RoleEditorDrawer({
   const isNew = !role;
   const [name, setName] = useState(role?.name ?? '');
   const [description, setDescription] = useState(role?.description ?? '');
-  const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(isAdminLocked ? catalog.map((item) => item.key) : (role?.permissions ?? []))
+  const initialPermissions = isAdminLocked
+    ? catalog.map((item) => item.key)
+    : (role?.permissions ?? []);
+  const [selected, setSelected] = useState<Set<string>>(() =>
+    stripSupersededPermissions(initialPermissions)
   );
   const [saving, setSaving] = useState(false);
   const [cloneFrom, setCloneFrom] = useState('');
@@ -320,12 +324,9 @@ function RoleEditorDrawer({
     roleFormSnapshot(
       role?.name ?? '',
       role?.description ?? '',
-      isAdminLocked ? catalog.map((item) => item.key) : (role?.permissions ?? []),
+      stripSupersededPermissions(initialPermissions),
     ),
   );
-
-  const pageGroups = useMemo(() => groupCatalog(catalog, 'page'), [catalog]);
-  const actionGroups = useMemo(() => groupCatalog(catalog, 'action'), [catalog]);
 
   const isDirty = useMemo(
     () => roleFormSnapshot(name, description, selected) !== baselineRef.current,
@@ -347,7 +348,7 @@ function RoleEditorDrawer({
       const next = new Set(prev);
       if (value) next.add(key);
       else next.delete(key);
-      return next;
+      return stripSupersededPermissions(next);
     });
   };
 
@@ -359,17 +360,18 @@ function RoleEditorDrawer({
         if (value) next.add(item.key);
         else next.delete(item.key);
       }
-      return next;
+      return stripSupersededPermissions(next);
     });
   };
 
   const handleClone = (slugToCopy: string) => {
     setCloneFrom(slugToCopy);
     const source = roles.find((item) => item.slug === slugToCopy);
-    if (source) setSelected(new Set(source.permissions));
+    if (source) setSelected(stripSupersededPermissions(source.permissions));
   };
 
   const handleSave = async () => {
+    const permissionsToSave = [...stripSupersededPermissions(selected)];
     setSaving(true);
     try {
       if (isNew) {
@@ -380,7 +382,7 @@ function RoleEditorDrawer({
           body: JSON.stringify({
             name,
             description: description || null,
-            permissions: [...selected],
+            permissions: permissionsToSave,
           }),
         });
         const data = await created.json().catch(() => ({}));
@@ -412,7 +414,7 @@ function RoleEditorDrawer({
           method: 'PUT',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ permissions: [...selected] }),
+          body: JSON.stringify({ permissions: permissionsToSave }),
         });
         const permData = await perms.json().catch(() => ({}));
         if (!perms.ok) {
@@ -450,8 +452,8 @@ function RoleEditorDrawer({
             </DrawerHeader>
             <DrawerBody className="gap-6 py-5 overflow-y-auto">
               <div>
-                <h3 className="flex items-center gap-2 text-md font-bold text-gray-700 mb-4">
-                  <DynamicIcon name="id-card" size={16} className="text-primary-500" />
+                <h3 className="text-sm font-semibold flex items-center gap-1.5 text-default-900 mb-3">
+                  <DynamicIcon name="id-card" size={14} className="text-default-500 shrink-0" />
                   Метадані ролі
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -484,33 +486,20 @@ function RoleEditorDrawer({
               )}
 
               {isAdminLocked && (
-                <p className="text-sm text-gray-500">Права адміністратора завжди повні і не редагуються.</p>
+                <p className="text-sm text-default-500">Права адміністратора завжди повні і не редагуються.</p>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <PermissionLayerCard
-                  title="Сторінки"
-                  hint="Що видно в меню та які маршрути відкриваються. Сама сторінка не дає права на кнопки."
-                  icon="layout-dashboard"
-                  iconClass="text-primary-500"
-                  groups={pageGroups}
-                  selected={selected}
-                  disabled={isAdminLocked}
-                  onToggle={toggle}
-                  onToggleGroup={toggleGroup}
-                />
-                <PermissionLayerCard
-                  title="Дії"
-                  hint="Кнопки, API та операції. Потрібні окремо від доступу до сторінки."
-                  icon="zap"
-                  iconClass="text-warning-500"
-                  groups={actionGroups}
-                  selected={selected}
-                  disabled={isAdminLocked}
-                  onToggle={toggle}
-                  onToggleGroup={toggleGroup}
-                />
-              </div>
+              <Divider className="bg-default-200/60" />
+
+              <RolePermissionsEditor
+                catalog={catalog}
+                selected={selected}
+                disabled={isAdminLocked}
+                onToggle={toggle}
+                onToggleGroup={toggleGroup}
+              />
+              <Divider className="bg-default-200/60" />
+
               <CatalogFolderAclTree
                 selected={selected}
                 disabled={isAdminLocked}
@@ -548,84 +537,5 @@ function RoleEditorDrawer({
       onCancel={() => setDiscardConfirmOpen(false)}
     />
     </>
-  );
-}
-
-function groupCatalog(catalog: CatalogItem[], layer: 'page' | 'action') {
-  const map = new Map<PermissionGroup, CatalogItem[]>();
-  for (const item of catalog) {
-    const match = layer === 'page' ? isPagePermission(item.key) : isActionPermission(item.key);
-    if (!match) continue;
-    const list = map.get(item.group) ?? [];
-    list.push(item);
-    map.set(item.group, list);
-  }
-  return map;
-}
-
-function PermissionLayerCard({
-  title,
-  hint,
-  icon,
-  iconClass,
-  groups,
-  selected,
-  disabled,
-  onToggle,
-  onToggleGroup,
-}: {
-  title: string;
-  hint: string;
-  icon: 'view' | 'layout-dashboard' | 'zap';
-  iconClass: string;
-  groups: Map<PermissionGroup, CatalogItem[]>;
-  selected: Set<string>;
-  disabled: boolean;
-  onToggle: (key: string, value: boolean) => void;
-  onToggleGroup: (items: CatalogItem[], value: boolean) => void;
-}) {
-  return (
-    <div className="space-y-4 flex-1">
-      <h3 className="flex items-center gap-2 text-md font-bold text-gray-700 mb-2">
-        <DynamicIcon name={icon} size={16} className={iconClass} />
-        {title}
-      </h3>
-      <p className="text-xs text-gray-500">{hint}</p>
-      {[...groups.entries()].map(([group, items]) => {
-        const checkedCount = items.filter((item) => selected.has(item.key)).length;
-        const allChecked = checkedCount === items.length;
-        const someChecked = checkedCount > 0 && !allChecked;
-        return (
-          <div key={group} className="rounded-lg border border-default-200 p-3 space-y-2">
-            <Checkbox
-              isSelected={allChecked}
-              isIndeterminate={someChecked}
-              isDisabled={disabled}
-              onValueChange={(value) => onToggleGroup(items, value)}
-              classNames={{ label: 'font-medium text-sm' }}
-            >
-              {permissionGroupLabel(group)}
-              <span className="ml-2 text-xs text-gray-400 font-normal">
-                {checkedCount}/{items.length}
-              </span>
-            </Checkbox>
-            <div className="grid grid-cols-1 gap-1 mt-2 pl-0.5">
-              {items.map((item) => (
-                <Checkbox
-                  key={item.key}
-                  size="sm"
-                  isSelected={selected.has(item.key)}
-                  isDisabled={disabled}
-                  onValueChange={(value) => onToggle(item.key, value)}
-                  classNames={{ wrapper: 'me-2.5', label: 'text-sm text-gray-700' }}
-                >
-                  {item.label}
-                </Checkbox>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-    </div>
   );
 }

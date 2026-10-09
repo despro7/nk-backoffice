@@ -86,7 +86,7 @@ const managePersons = requirePermission('hr', 'persons.manage', 'Керуват�
 const managePayTerms = requirePermission('hr', 'payterms.manage', 'Керувати ставками співробітників');
 const manageTaxRules = requirePermission('hr', 'taxrules.manage', 'Керувати податками та ЄСВ');
 const manageBonuses = requirePermission('hr', 'bonuses.manage', 'Керувати преміями');
-requirePermission('hr', 'timesheet.edit', 'Редагувати табель');
+requirePermission('hr', 'timesheet.edit', 'Редагувати табель (повний доступ)');
 requirePermission(
   'hr',
   'timesheet.edit-own-today',

@@ -471,6 +471,33 @@ html.catalog-dnd-dragging [data-catalog-folder-id][data-catalog-drop-after] {
   border: 2px solid rgb(228 228 231);
 }
 
+/* Тонкий скролбар без фону доріжки (панелі, drawer) */
+.scrollbar-thin-transparent {
+  scrollbar-width: inherit;
+  scrollbar-color: rgb(161 161 170 / 0.55) transparent;
+  scrollbar-gutter: auto;
+}
+
+.scrollbar-thin-transparent::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+  background: transparent;
+}
+
+.scrollbar-thin-transparent::-webkit-scrollbar-track {
+  background: transparent;
+  margin-block: 4px;
+  margin-inline: 2px;
+}
+
+.scrollbar-thin-transparent::-webkit-scrollbar-thumb {
+  background-color: rgb(161 161 170 / 0.45);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  border-block-width: 4px;
+  background-clip: padding-box;
+}
+
 html.report-capture-ui-hidden [data-report-fab="true"],
 html.report-capture-ui-hidden [data-report-capture-chrome="true"] {
   opacity: 0 !important;

@@ -1,6 +1,6 @@
 # Користувачі та ролі
 
-**Дата:** 2026-08-20  
+**Дата:** 2026-10-10  
 **Маршрут:** `/settings/users` (`page.settings.users`, seed — лише admin)  
 **API:** `/api/auth/users`, `/api/auth/roles`, `/api/roles`
 
@@ -21,10 +21,11 @@
 Куди дивитись:
 
 - Каталог / seed-матриця: `shared/constants/permissions.ts`
+- Домени / HR-підрозділи редактора: `shared/constants/permissionRoleEditor.ts`
 - Сервіс: `server/services/RoleService.ts`
 - API ролей: `server/routes/roles.ts`
 - Middleware: `server/middleware/requirePermission.ts`
-- UI: `client/pages/Settings/Users/` (`index.tsx`, `components/UserRegistrationManager.tsx`, `components/RolesManager.tsx`)
+- UI: `client/pages/Settings/Users/` (`index.tsx`, `UserRegistrationManager.tsx`, `RolesManager.tsx`, `RolePermissionsEditor.tsx`, `CatalogFolderAclTree.tsx`)
 
 ---
 
@@ -41,7 +42,17 @@
 
 **Dilovod user ID:** поле опційне; значення потрапляє в `users.dilovodUserId` і далі в `author` складських документів Dilovod. Зараз — ручний Input. Довідник Dilovod `catalogs.users` (див. `Docs/integrations/dilovod-metadata.md`) дозволяє замінити на Autocomplete з іменем і email.
 
-**Ролі:** таблиця (назва, slug, користувачі, сторінки/дії). Редактор у Drawer: метадані, «скопіювати права з ролі», дві колонки **Сторінки** (`page.*`) і **Дії** (`action.*`). Після зміни матриці інші сесії бачать жовтий банер «оновити сторінку» (як після деплою). Закриття drawer з незбереженими змінами (назва, опис, права) — `isDirty` + `ConfirmModal` («Закрити без збереження» / «Залишитись»); кнопка «Зберегти» активна лише при `isDirty`.
+**Ролі:** таблиця (назва, slug, користувачі, сторінки/дії). Редактор у Drawer:
+
+1. **Метадані** — назва, опис; для нової ролі — «скопіювати права з ролі».
+2. **`RolePermissionsEditor`** — права за доменами меню (`PERMISSION_ROLE_EDITOR_DOMAINS`):
+   - пошук за назвою + фільтр Усі / Увімкнені / Вимкнені;
+   - у домені дві колонки: **перегляд** (`page.*`) і **дії** (`action.*`); заголовок колонки з суфіксом стану (немає доступу / частковий / повний), якщо в групі є права;
+   - HR — accordion за підрозділами (`PERMISSION_HR_SUBSECTION_*`); секції без жодного увімкненого права згорнуті за замовчуванням;
+   - UI overrides: якщо увімкнено пріоритетне право (`PERMISSION_UI_OVERRIDES`), підлеглі чекбокси disabled і не потрапляють у save (`stripSupersededPermissions`). Зараз: повне `action.hr.timesheet.edit` перекриває `action.hr.timesheet.edit-own-today`.
+3. **`CatalogFolderAclTree`** — ACL папок каталогу (перегляд / редагування) у табличному дереві; повний доступ до каталогу окремим switch.
+
+Після зміни матриці інші сесії бачать жовтий банер «оновити сторінку» (як після деплою). Закриття drawer з незбереженими змінами — `isDirty` + `ConfirmModal`; «Зберегти» активна лише при `isDirty`.
 
 Адмінські налаштування (`/settings/admin`) лишаються для логів, JWT, статусу сервера тощо.
 
@@ -128,4 +139,4 @@ npx prisma migrate deploy
 
 **Storefront / spec (Products 2.0):** `action.storefront.read|edit|manage`, `action.products.editSpec` — деталі seed і перевірки на save у [`woocommerce-storefront-phase1.md`](./woocommerce-storefront-phase1.md#права-доступу-rbac).
 
-Тести: `npm test` (vitest). Юніти: `shared/constants/*.spec.ts`, `RoleService.spec.ts`, `requirePermission.spec.ts`.
+Тести: `npm test` (vitest). Юніти: `shared/constants/permissions.spec.ts`, `permissionRoleEditor.spec.ts`, `RoleService.spec.ts`, `requirePermission.spec.ts`.

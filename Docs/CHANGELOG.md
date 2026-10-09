@@ -5,6 +5,29 @@
 
 ---
 
+## 2026-10-10 — Ролі: редактор прав за доменами
+
+**Files:** `RolePermissionsEditor.tsx`, `RolesManager.tsx`, `CatalogFolderAclTree.tsx`, `shared/constants/permissionRoleEditor.ts`, `permissionRoleEditor.spec.ts`, `shared/constants/permissions.ts`, `permissions.spec.ts`, `client/global.css`, `Docs/features/users-and-roles.md`
+
+### Редактор матриці прав
+
+- Замість двох колонок «Сторінки / Дії» — `RolePermissionsEditor`: вкладки доменів (як у меню), пошук, фільтр Усі / Увімкнені / Вимкнені.
+- У доменах — дві колонки: перегляд (`page.*`) і дії (`action.*`) з суфіксом стану (немає доступу / частковий / повний); порожня група без суфікса.
+- HR — accordion за підрозділами (табель, співробітники, ЗП тощо); секції без увімкнених прав згорнуті за замовчуванням.
+- Групування доменів/HR: `shared/constants/permissionRoleEditor.ts`.
+
+### UI overrides
+
+- `PERMISSION_UI_OVERRIDES` / `isPermissionUiSuperseded` / `stripSupersededPermissions`: повне `action.hr.timesheet.edit` перекриває `edit-own-today` у редакторі (disabled + не зберігається).
+
+### ACL каталогу
+
+- `CatalogFolderAclTree` — табличний tree (перегляд / редагування), гайдлайни глибини, тонкий скролбар `.scrollbar-thin-transparent`.
+
+**Документація:** [`Docs/features/users-and-roles.md`](features/users-and-roles.md).
+
+---
+
 ## 2026-10-09 — Склад: resilience коригування партій + фільтр пошуку
 
 **Files:** `shared/utils/releaseBatchCorrection.ts`, `SetSearchPanel.tsx`, `HistoryAccordionItem.tsx`, `useReleaseSets.ts`, `SetReleaseController.ts`, `Docs/features/warehouse-release-sets.md`

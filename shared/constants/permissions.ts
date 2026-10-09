@@ -378,6 +378,43 @@ export const PERMISSIONS = {
   ACTION_LAL_MANAGE: actionKey('lal', 'manage'),
 } as const;
 
+/** key пріоритетного → ключі, які воно перекриває в UI ролей */
+export const PERMISSION_UI_OVERRIDES: Readonly<Record<string, readonly string[]>> = {
+  [PERMISSIONS.ACTION_HR_TIMESHEET_EDIT]: [PERMISSIONS.ACTION_HR_TIMESHEET_EDIT_OWN_TODAY],
+};
+
+const PERMISSION_SUPERSEDED_BY = (() => {
+  const map = new Map<string, string>();
+  for (const [overrideKey, overriddenKeys] of Object.entries(PERMISSION_UI_OVERRIDES)) {
+    for (const key of overriddenKeys) {
+      map.set(key, overrideKey);
+    }
+  }
+  return map;
+})();
+
+/** Чи перекрите право активним пріоритетним у поточному наборі ролі (лише UI редактора). */
+export function isPermissionUiSuperseded(
+  key: string,
+  selected: ReadonlySet<string>
+): boolean {
+  const normalized = normalizePermissionKey(key) ?? key;
+  const overrideKey = PERMISSION_SUPERSEDED_BY.get(normalized);
+  if (!overrideKey) return false;
+  return hasPermission(selected, overrideKey);
+}
+
+/** Прибирає з набору права, перекриті увімкненими пріоритетними. */
+export function stripSupersededPermissions(selected: Iterable<string>): Set<string> {
+  const next = new Set(selected);
+  for (const key of [...next]) {
+    if (isPermissionUiSuperseded(key, next)) {
+      next.delete(key);
+    }
+  }
+  return next;
+}
+
 export const SYSTEM_ROLES_SEED: Array<{
   slug: RoleValue;
   name: string;

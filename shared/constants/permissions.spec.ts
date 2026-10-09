@@ -20,8 +20,39 @@ import {
   routePermissionKey,
   seedPermissionKeysForRole,
   slugifyRoleName,
+  isPermissionUiSuperseded,
+  stripSupersededPermissions,
 } from './permissions';
 import { ROLES } from './roles';
+
+describe('permission UI overrides', () => {
+  it('marks edit-own-today superseded when full timesheet edit is selected', () => {
+    const selected = new Set([
+      PERMISSIONS.ACTION_HR_TIMESHEET_EDIT,
+      PERMISSIONS.ACTION_HR_TIMESHEET_EDIT_OWN_TODAY,
+    ]);
+    expect(isPermissionUiSuperseded(PERMISSIONS.ACTION_HR_TIMESHEET_EDIT_OWN_TODAY, selected)).toBe(
+      true
+    );
+    expect(isPermissionUiSuperseded(PERMISSIONS.ACTION_HR_TIMESHEET_EDIT, selected)).toBe(false);
+  });
+
+  it('stripSupersededPermissions removes overridden keys', () => {
+    const stripped = stripSupersededPermissions([
+      PERMISSIONS.ACTION_HR_TIMESHEET_EDIT,
+      PERMISSIONS.ACTION_HR_TIMESHEET_EDIT_OWN_TODAY,
+      PERMISSIONS.PAGE_HR_TIMESHEET,
+    ]);
+    expect(stripped.has(PERMISSIONS.ACTION_HR_TIMESHEET_EDIT)).toBe(true);
+    expect(stripped.has(PERMISSIONS.ACTION_HR_TIMESHEET_EDIT_OWN_TODAY)).toBe(false);
+    expect(stripped.has(PERMISSIONS.PAGE_HR_TIMESHEET)).toBe(true);
+  });
+
+  it('stripSupersededPermissions keeps edit-own-today without full edit', () => {
+    const stripped = stripSupersededPermissions([PERMISSIONS.ACTION_HR_TIMESHEET_EDIT_OWN_TODAY]);
+    expect(stripped.has(PERMISSIONS.ACTION_HR_TIMESHEET_EDIT_OWN_TODAY)).toBe(true);
+  });
+});
 
 describe('hasPermission', () => {
   it('passes when the key is in the set', () => {

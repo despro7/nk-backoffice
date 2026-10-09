@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Checkbox, Spinner } from '@heroui/react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Checkbox, Spinner, Switch } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { PERMISSIONS } from '@shared/constants/permissions';
+import { HR_TABLE_CLASS_NAMES } from '@/pages/Hr/hrUi';
 import {
   catalogFolderEditKey,
   catalogFolderViewKey,
@@ -56,6 +57,20 @@ function hasExplicitEdit(selected: Set<string>, id: string): boolean {
   return selected.has(catalogFolderEditKey(id));
 }
 
+function CatalogTreeGuides({ depth }: { depth: number }) {
+  if (depth <= 0) return null;
+  return (
+    <span className="flex shrink-0 self-stretch items-stretch" aria-hidden>
+      {Array.from({ length: depth }, (_, index) => (
+        <span key={index} className="box-border w-4 shrink-0 border-r border-default-200 tree-guide" />
+      ))}
+    </span>
+  );
+}
+
+const TH_CLASS = 'px-3 py-2.5 text-left text-xs font-semibold text-default-500 bg-default-200/75 backdrop-blur-sm first:rounded-s-sm last:rounded-e-sm sticky top-0 z-20';
+const TD_CLASS = 'px-0 align-middle first:rounded-s-md last:rounded-e-md';
+
 export function CatalogFolderAclTree({
   selected,
   disabled,
@@ -79,6 +94,7 @@ export function CatalogFolderAclTree({
   }, []);
 
   const forest = useMemo(() => buildForest(folders ?? []), [folders]);
+
   const parentById = useMemo(() => {
     const map: Record<string, string | null> = {};
     for (const folder of folders ?? []) {
@@ -127,164 +143,219 @@ export function CatalogFolderAclTree({
     onChange(next);
   };
 
+  const toggleExpanded = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const renderFolderNode = (node: FolderNode, depth: number): React.ReactNode => {
+    const access = resolveCatalogFolderAccess(selected, node.id, parentById);
+    const parentAccess = resolveCatalogFolderAccess(
+      selected,
+      parentById[node.id] ?? null,
+      parentById
+    );
+    const viewFromAncestor = parentAccess.view;
+    const editFromAncestor = parentAccess.edit;
+    const explicitView = hasExplicitView(selected, node.id);
+    const explicitEdit = hasExplicitEdit(selected, node.id);
+    const descendantHasView = node.children.some((child) => {
+      const nested = resolveCatalogFolderAccess(selected, child.id, parentById);
+      return nested.view;
+    });
+    const descendantHasEdit = node.children.some((child) => {
+      const nested = resolveCatalogFolderAccess(selected, child.id, parentById);
+      return nested.edit;
+    });
+    const viewIndeterminate =
+      !access.view && descendantHasView && !explicitView && !viewFromAncestor;
+    const editIndeterminate =
+      !access.edit && descendantHasEdit && !explicitEdit && !editFromAncestor;
+    const isOpen = expanded.has(node.id);
+    const hasChildren = node.children.length > 0;
+    const isTopLevel = depth === 0;
+
+    return (
+      <Fragment key={node.id}>
+        <tr className={`${HR_TABLE_CLASS_NAMES.tr} last:[&>td_.tree-guide]:[mask-image:linear-gradient(to_bottom,black_calc(100%-30px),transparent)]`}>
+          <td className={TD_CLASS}>
+            <div className="flex w-full min-w-0 items-stretch">
+              <CatalogTreeGuides depth={depth} />
+              <button
+                type="button"
+                className={[
+                  'flex min-w-0 h-10 flex-1 items-center gap-1.5 rounded-sm p-2 text-left transition-colors',
+                  isTopLevel ? 'font-semibold text-default-900' : 'font-medium text-default-900',
+                ].join(' ')}
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (hasChildren) toggleExpanded(node.id);
+                }}
+              >
+                {hasChildren ? (
+                  <span
+                    data-tree-chevron
+                    aria-hidden
+                    className="inline-flex shrink-0 rounded hover:bg-default-200/60"
+                  >
+                    <DynamicIcon
+                      name="chevron-down"
+                      size={16}
+                      className={[
+                        'pointer-events-none text-default-500 transition-transform duration-200',
+                        isOpen ? '' : '-rotate-90',
+                      ].join(' ')}
+                    />
+                  </span>
+                ) : (
+                  <span className="w-4 shrink-0" />
+                )}
+                <DynamicIcon
+                  name={hasChildren ? 'folder-open' : 'folder'}
+                  size={16}
+                  className={isTopLevel ? 'shrink-0 text-primary' : 'shrink-0 text-default-500'}
+                />
+                <span className="truncate select-none">{node.name}</span>
+              </button>
+            </div>
+          </td>
+          <td className={`${TD_CLASS} text-center w-[88px]`}>
+            <div className="flex justify-center">
+              <Checkbox
+                size="sm"
+                isSelected={access.view}
+                isIndeterminate={viewIndeterminate}
+                isDisabled={viewFromAncestor}
+                onValueChange={(value) => setFolderGrant(node, 'view', value)}
+                aria-label={`Перегляд: ${node.name}`}
+              />
+            </div>
+          </td>
+          <td className={`${TD_CLASS} text-center w-[110px]`}>
+            <div className="flex justify-center">
+              <Checkbox
+                size="sm"
+                isSelected={access.edit}
+                isIndeterminate={editIndeterminate}
+                isDisabled={editFromAncestor}
+                onValueChange={(value) => setFolderGrant(node, 'edit', value)}
+                aria-label={`Редагування: ${node.name}`}
+              />
+            </div>
+          </td>
+        </tr>
+        {hasChildren ? (
+          <tr>
+            <td colSpan={3} className="p-0 border-none">
+              <div
+                className={[
+                  'grid transition-[grid-template-rows] duration-200 ease-out',
+                  isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr] pointer-events-none',
+                ].join(' ')}
+                aria-hidden={!isOpen}
+              >
+                <div className="min-h-0 overflow-hidden">
+                  <table className="w-full table-fixed border-separate border-spacing-0 text-sm">
+                    <colgroup>
+                      <col />
+                      <col style={{ width: '88px' }} />
+                      <col style={{ width: '110px' }} />
+                    </colgroup>
+                    <tbody>
+                      {node.children.map((child) => renderFolderNode(child, depth + 1))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </td>
+          </tr>
+        ) : null}
+      </Fragment>
+    );
+  };
+
   return (
     <div className="space-y-3">
-      <h3 className="flex items-center gap-2 text-md font-bold text-gray-700">
-        <DynamicIcon name="folder-tree" size={16} className="text-primary-500" />
-        Розділи каталогу
-      </h3>
-      <p className="text-xs text-gray-500">
-        Перегляд і редагування на папці діють на всю гілку. Повний доступ замінює окремі галочки.
-      </p>
-      <Checkbox
-        isSelected={manageOn}
-        isDisabled={disabled}
-        onValueChange={toggleManage}
-        classNames={{ label: 'font-medium text-sm' }}
-      >
-        Повний доступ до каталогу
-      </Checkbox>
-      {manageOn && (
-        <p className="text-xs text-gray-400">Усі розділи відкриті для перегляду та редагування.</p>
-      )}
+      <div className="flex items-start gap-4">
+        <div className="space-y-1">
+          <h3 className="text-sm font-semibold flex items-center gap-1.5 text-default-900">
+            <DynamicIcon name="folder-tree" size={14} className="text-default-500 shrink-0" />
+            Розділи каталогу
+          </h3>
+          <p className="text-xs text-default-500 leading-relaxed pl-5">
+            Перегляд і редагування на папці діють на всю гілку. Повний доступ замінює окремі галочки.
+          </p>
+        </div>
+        <Switch
+          isSelected={manageOn}
+          onValueChange={toggleManage}
+          aria-label="Повний доступ до каталогу"
+          classNames={{
+            base: [
+              "inline-flex flex-row-reverse w-full max-w-md bg-content1 hover:bg-content2 items-center",
+              "justify-between cursor-pointer rounded-lg gap-1 p-3 border-1",
+              "data-[selected=true]:border-primary",
+            ],
+            wrapper: "p-0 h-4 overflow-visible",
+            thumb: [
+              "w-6 h-6 border-2 shadow-lg",
+              "group-data-[hover=true]:border-primary",
+              "group-data-[selected=true]:border-primary",
+              //selected
+              "group-data-[selected=true]:ms-6",
+              // pressed
+              "group-data-[pressed=true]:w-7",
+              "group-data-pressed:group-data-selected:ms-4",
+            ],
+          }}
+        >
+          <div className="flex flex-col gap-0.5">
+            <p className="font-medium">Повний доступ до каталогу</p>
+            <p className="text-xs text-default-400">
+              Усі розділи відкриті для перегляду та редагування.
+            </p>
+          </div>
+        </Switch>
+      </div>
+      
       {folders == null ? (
         <div className="py-6 text-center">
           <Spinner size="sm" />
         </div>
       ) : (
         <div
-          className={`rounded-lg border border-default-200 p-2 max-h-[420px] overflow-y-auto ${
+          className={`rounded-md border border-default-200 max-h-[420px] overflow-auto p-2 pr-1 scrollbar-thin-transparent ${
             manageOn || disabled ? 'opacity-60 pointer-events-none' : ''
           }`}
         >
-          <div className="grid grid-cols-[1fr_88px_110px] gap-1 px-2 pb-1 text-[11px] uppercase tracking-wide text-gray-400">
-            <span>Папка</span>
-            <span>Перегляд</span>
-            <span>Редагування</span>
+          <div className={HR_TABLE_CLASS_NAMES.wrapper}>
+            <table className="w-full min-w-[480px] table-fixed border-separate border-spacing-0 text-sm">
+              <colgroup>
+                <col />
+                <col style={{ width: '88px' }} />
+                <col style={{ width: '110px' }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th className={`${TH_CLASS}`}>Папка</th>
+                  <th className={`${TH_CLASS} text-center`}>Перегляд</th>
+                  <th className={`${TH_CLASS} text-center`}>Редагування</th>
+                </tr>
+              </thead>
+              <tbody>
+                {forest.map((node) => renderFolderNode(node, 0))}
+              </tbody>
+            </table>
           </div>
-          {forest.map((node) => (
-            <FolderAclRow
-              key={node.id}
-              node={node}
-              depth={0}
-              selected={selected}
-              parentById={parentById}
-              expanded={expanded}
-              onToggleExpand={(id) => {
-                setExpanded((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(id)) next.delete(id);
-                  else next.add(id);
-                  return next;
-                });
-              }}
-              onGrant={setFolderGrant}
-            />
-          ))}
           {forest.length === 0 && (
-            <p className="px-2 py-4 text-sm text-gray-400">Дерево каталогу порожнє.</p>
+            <p className="px-3 py-6 text-sm text-default-400 text-center">Дерево каталогу порожнє.</p>
           )}
         </div>
       )}
     </div>
-  );
-}
-
-function FolderAclRow({
-  node,
-  depth,
-  selected,
-  parentById,
-  expanded,
-  onToggleExpand,
-  onGrant,
-}: {
-  node: FolderNode;
-  depth: number;
-  selected: Set<string>;
-  parentById: Record<string, string | null>;
-  expanded: Set<string>;
-  onToggleExpand: (id: string) => void;
-  onGrant: (node: FolderNode, mode: 'view' | 'edit', value: boolean) => void;
-}) {
-  const access = resolveCatalogFolderAccess(selected, node.id, parentById);
-  const parentAccess = resolveCatalogFolderAccess(
-    selected,
-    parentById[node.id] ?? null,
-    parentById
-  );
-  const viewFromAncestor = parentAccess.view;
-  const editFromAncestor = parentAccess.edit;
-  const explicitView = hasExplicitView(selected, node.id);
-  const explicitEdit = hasExplicitEdit(selected, node.id);
-  const descendantHasView = node.children.some((child) => {
-    const nested = resolveCatalogFolderAccess(selected, child.id, parentById);
-    return nested.view;
-  });
-  const descendantHasEdit = node.children.some((child) => {
-    const nested = resolveCatalogFolderAccess(selected, child.id, parentById);
-    return nested.edit;
-  });
-  const viewIndeterminate =
-    !access.view && descendantHasView && !explicitView && !viewFromAncestor;
-  const editIndeterminate =
-    !access.edit && descendantHasEdit && !explicitEdit && !editFromAncestor;
-  const isOpen = expanded.has(node.id) || depth < 1;
-  const hasChildren = node.children.length > 0;
-
-  return (
-    <>
-      <div
-        className="grid grid-cols-[1fr_88px_110px] items-center gap-1 rounded-sm px-1 py-0.5 hover:bg-default-100/80"
-        style={{ paddingLeft: 4 + depth * 14 }}
-      >
-        <button
-          type="button"
-          className="flex min-w-0 items-center gap-1 text-left text-sm"
-          onClick={() => hasChildren && onToggleExpand(node.id)}
-        >
-          {hasChildren ? (
-            <DynamicIcon
-              name="chevron-down"
-              size={14}
-              className={`shrink-0 text-default-400 transition-transform ${isOpen ? '' : '-rotate-90'}`}
-            />
-          ) : (
-            <span className="inline-block w-3.5" />
-          )}
-          <span className="truncate">{node.name}</span>
-        </button>
-        <Checkbox
-          size="sm"
-          isSelected={access.view}
-          isIndeterminate={viewIndeterminate}
-          isDisabled={viewFromAncestor}
-          onValueChange={(value) => onGrant(node, 'view', value)}
-          aria-label={`Перегляд: ${node.name}`}
-        />
-        <Checkbox
-          size="sm"
-          isSelected={access.edit}
-          isIndeterminate={editIndeterminate}
-          isDisabled={editFromAncestor}
-          onValueChange={(value) => onGrant(node, 'edit', value)}
-          aria-label={`Редагування: ${node.name}`}
-        />
-      </div>
-      {hasChildren && isOpen
-        ? node.children.map((child) => (
-            <FolderAclRow
-              key={child.id}
-              node={child}
-              depth={depth + 1}
-              selected={selected}
-              parentById={parentById}
-              expanded={expanded}
-              onToggleExpand={onToggleExpand}
-              onGrant={onGrant}
-            />
-          ))
-        : null}
-    </>
   );
 }

@@ -69,7 +69,7 @@ export const HR_BTN_NEUTRAL =
 /** HeroUI Table — лише горизонтальні лінії між рядками (header без змін). */
 export const HR_TABLE_CLASS_NAMES = {
   wrapper: 'p-0 shadow-none',
-  th: 'first:rounded-s-md last:rounded-e-md',
+  th: 'first:rounded-s-md last:rounded-e-md bg-default-100',
   tr: 'hover:bg-gray-100/60 transition-colors duration-50',
   td: 'first:rounded-s-md last:rounded-e-md',
 };
