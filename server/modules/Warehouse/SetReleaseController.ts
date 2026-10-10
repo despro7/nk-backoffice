@@ -24,7 +24,10 @@ import {
 import { productsCatalogService } from '../Products/ProductsCatalogService.js';
 import { warehouseBatchesService } from './WarehouseBatchesService.js';
 import { ROLES } from '../../../shared/constants/roles.js';
-import { canEditWarehouseReleaseHistory } from '../../../shared/utils/releaseHistoryAccess.js';
+import {
+  canEditWarehouseReleaseHistory,
+  WAREHOUSE_HISTORY_EDIT_DENIED_MESSAGE,
+} from '../../../shared/utils/releaseHistoryAccess.js';
 import { warehouseReleaseAuditService } from './WarehouseReleaseAuditService.js';
 import {
   appendWarehouseReleaseDilovodRemark,
@@ -729,16 +732,24 @@ function isWarehouseReleaseHistoryAdmin(req: { user?: { role?: string } }): bool
   return req.user?.role === ROLES.ADMIN;
 }
 
+function getReleaseRequestUserId(req: { user?: { userId?: number; id?: number } }): number | null {
+  const raw = req.user?.userId ?? req.user?.id;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function assertCanEditReleaseRecord(
-  req: { user?: { role?: string } },
-  record: { createdAt: Date },
+  req: { user?: { role?: string; userId?: number; id?: number } },
+  record: { createdAt: Date; createdBy: number },
 ): void {
   const allowed = canEditWarehouseReleaseHistory({
     isAdmin: isWarehouseReleaseHistoryAdmin(req),
     createdAt: record.createdAt,
+    createdBy: record.createdBy,
+    currentUserId: getReleaseRequestUserId(req),
   });
   if (!allowed) {
-    throw new Error('Редагування цього запису недоступне (лише сьогоднішні записи або роль адміністратора)');
+    throw new Error(WAREHOUSE_HISTORY_EDIT_DENIED_MESSAGE);
   }
 }
 

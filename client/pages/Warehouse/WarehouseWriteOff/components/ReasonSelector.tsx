@@ -1,5 +1,7 @@
 import { Select, SelectItem, Input } from '@heroui/react';
 
+const DEFAULT_REASONS = ['Брак товару', 'Компенсація', 'Проба', 'Інше'];
+
 interface Props {
   reason: string;
   setReason: (r: string) => void;
@@ -7,12 +9,25 @@ interface Props {
   setCustomReason: (s: string) => void;
   comment: string;
   setComment: (s: string) => void;
+  title?: string;
+  reasons?: string[];
+  commentPlaceholder?: string;
 }
 
-export default function ReasonSelector({ reason, setReason, customReason, setCustomReason, comment, setComment }: Props) {
+export default function ReasonSelector({
+  reason,
+  setReason,
+  customReason,
+  setCustomReason,
+  comment,
+  setComment,
+  title = 'Причина списання',
+  reasons = DEFAULT_REASONS,
+  commentPlaceholder = "Коментар до списання (необов'язково)",
+}: Props) {
   return (
     <div>
-      <h2 className="font-medium mb-2 mt-6">Причина списання</h2>
+      <h2 className="font-medium mb-2 mt-6">{title}</h2>
       <div className="bg-white rounded-xl mb-6 p-4 flex gap-4 flex-row">
         <Select
           aria-label="Причина списання"
@@ -23,10 +38,9 @@ export default function ReasonSelector({ reason, setReason, customReason, setCus
           disallowEmptySelection={true}
           classNames={{ base: "max-w-xs", trigger: 'w-full border border-gray-200 bg-white' }}
         >
-          <SelectItem key="Брак товару" textValue="Брак товару">Брак товару</SelectItem>
-          <SelectItem key="Компенсація" textValue="Компенсація">Компенсація</SelectItem>
-          <SelectItem key="Проба" textValue="Проба">Проба</SelectItem>
-          <SelectItem key="Інше" textValue="Інше">Інше</SelectItem>
+          {reasons.map((item) => (
+            <SelectItem key={item} textValue={item}>{item}</SelectItem>
+          ))}
         </Select>
         {reason === 'Інше' &&
           <Input
@@ -40,7 +54,7 @@ export default function ReasonSelector({ reason, setReason, customReason, setCus
 
         <Input
           aria-label="Коментар"
-          placeholder="Коментар до списання (необов'язково)"
+          placeholder={commentPlaceholder}
           value={comment}
           onChange={(e:any)=>setComment(e.target.value)}
           classNames={{ inputWrapper: 'border border-gray-200 bg-white', input: 'placeholder:opacity-50!' }}

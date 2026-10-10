@@ -231,6 +231,10 @@ API: `GET /api/dilovod/good-parts/missing-serial?folderId=…`, `POST /api/dilov
 
 Утиліти: `shared/utils/dilovodBatchId.ts` (`sanitizeStoredBatchName`, `generateBatchSerialFromDate`, …).
 
+## Складські документи goodWriteOff / goodWriteOn
+
+Перед payload перевіряйте `getObject('documents.goodWriteOff')` vs `getObject('documents.goodWriteOn')`: у **списанні** є обов’язковий `docMode` (`enumerates.docModeGoodWriteOff`); у **оприбуткуванні** — `incomeItem` + `accIncomes`, поля `docMode` немає. Деталі backoffice: [`Docs/features/warehouse-writeoff-surplus.md`](../features/warehouse-writeoff-surplus.md).
+
 ## Правило для агентів
 
 У тасках зі звітами / регістрами Dilovod:

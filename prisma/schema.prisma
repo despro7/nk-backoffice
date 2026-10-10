@@ -306,7 +306,8 @@ model WarehouseReturnHistory {
 
 model WarehouseWriteOffHistory {
   id             Int         @id @default(autoincrement())
-  writeOffNumber String?     @db.VarChar(255)  // ID документа в Dilovod (якщо є)
+  writeOffNumber String?     @unique @db.VarChar(255)  // ID документа в Dilovod (якщо є)
+  docNumber      String?     @db.VarChar(255)
   firmId         String?     @db.VarChar(255)
   storageId      String?     @db.VarChar(255)
   writeOffDate   DateTime?
@@ -314,14 +315,41 @@ model WarehouseWriteOffHistory {
   writeOffReason String
   customReason   String?     @db.Text
   comment        String?     @db.Text
+  remark         String?     @db.Text
+  source         String      @default("local") @db.VarChar(32) // local | dilovod
+  status         String      @default("created") @db.VarChar(32) // created | deleted
   payload        String      @db.LongText        // JSON: повний payload відправки
   createdBy      Int
   createdAt      DateTime    @default(now())
 
-  @@index([writeOffNumber])
   @@index([createdAt])
   @@index([createdBy])
+  @@index([status])
   @@map("warehouse_write_off_history")
+}
+
+model WarehouseSurplusHistory {
+  id            Int       @id @default(autoincrement())
+  surplusNumber String?   @unique @db.VarChar(255)
+  docNumber     String?   @db.VarChar(255)
+  firmId        String?   @db.VarChar(255)
+  storageId     String?   @db.VarChar(255)
+  surplusDate   DateTime?
+  items         String    @db.LongText
+  surplusReason String
+  customReason  String?   @db.Text
+  comment       String?   @db.Text
+  remark        String?   @db.Text
+  source        String    @default("local") @db.VarChar(32)
+  status        String    @default("created") @db.VarChar(32)
+  payload       String    @db.LongText
+  createdBy     Int
+  createdAt     DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([createdBy])
+  @@index([status])
+  @@map("warehouse_surplus_history")
 }
 
 model WarehouseReleaseSet {

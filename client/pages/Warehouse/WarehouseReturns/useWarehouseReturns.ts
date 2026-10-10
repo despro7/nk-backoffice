@@ -6,6 +6,7 @@ import { expandProductSets } from '@/lib/orderAssemblyUtils';
 import { useApi } from '@/hooks/useApi';
 import { ToastService } from '@/services/ToastService';
 import { ReturnsHistoryService } from '@/services/ReturnsHistoryService';
+import { filterWarehouseSelectableBatches } from '../shared/filterWarehouseSelectableBatches';
 import { isMonolithicForReturn, type ReturnItem, type ReturnBatch, type ReturnHistoryRecord } from './WarehouseReturnsTypes';
 
 interface OrderSearchResult {
@@ -223,8 +224,8 @@ export function useWarehouseReturns() {
     const uniqueSkus = Array.from(skuToItems.keys());
     if (uniqueSkus.length === 0) return;
 
-    const mapBatchRows = (sku: string, batches: any[]): ReturnBatch[] =>
-      batches.map((batch, index) => {
+    const mapBatchRows = (sku: string, batches: any[]): ReturnBatch[] => {
+      const mapped = batches.map((batch, index) => {
         const normalizedBatchId = batch.batchId || batch.id || '';
         const normalizedStorage = batch.storage || batch.storageDisplayName || '';
         const uniqueId = normalizedBatchId
@@ -239,6 +240,8 @@ export function useWarehouseReturns() {
           storageDisplayName: batch.storageDisplayName || batch.storage__pr || undefined,
         } as ReturnBatch;
       });
+      return filterWarehouseSelectableBatches(mapped);
+    };
 
     const fetchBatchesForSku = async (sku: string, includeNonPositiveQty: boolean): Promise<ReturnBatch[]> => {
       const url = new URL(`/api/warehouse/batch-numbers/${encodeURIComponent(sku)}`, window.location.origin);
@@ -277,8 +280,10 @@ export function useWarehouseReturns() {
       }
     }
 
+    const needingIds = new Set(itemsNeedingBatches.map((item) => item.id));
     const batchMap = new Map(results.map((r) => [r.sku, r]));
     setItems((current) => current.map((item) => {
+      if (!needingIds.has(item.id)) return item;
       const loaded = batchMap.get(item.sku);
       if (!loaded) return item;
       const { batches, usedNonPositiveBatchFallback } = loaded;
@@ -288,9 +293,6 @@ export function useWarehouseReturns() {
         usedNonPositiveBatchFallback,
         selectedBatchKey: item.selectedBatchKey ?? batches[0]?.id ?? null,
         selectedBatchId: item.selectedBatchId ?? batches[0]?.batchId ?? null,
-        // Preserve original orderedQuantity (it represents what was ordered).
-        // Do not overwrite it with batch quantity; batch quantity is the available max and
-        // will be used by UI components when present.
         orderedQuantity: (item.orderedQuantity ?? item.quantity ?? 1),
       } as ReturnItem;
     }));
@@ -316,18 +318,22 @@ export function useWarehouseReturns() {
       });
   }, [apiCall]);
 
-  // When shipping firm changes, reload batches for current items
+  // Скидання партій при зміні фірми / дати документа (не при додаванні позицій)
   useEffect(() => {
     if (items.length === 0) return;
-
-    // Prepare items with cleared batches so loader will fetch them
-    const itemsToReload = items.map((it) => ({ ...it, availableBatches: null, usedNonPositiveBatchFallback: false }));
-    setItems(itemsToReload);
-
-    const batchDate = dilovodSaleExportDate ? new Date(dilovodSaleExportDate) : returnDate ? new Date(returnDate) : undefined;
-    void loadBatchNumbersForItems(shipFirmId, itemsToReload, batchDate);
+    setItems((current) =>
+      current.map((it) => ({ ...it, availableBatches: null, usedNonPositiveBatchFallback: false })),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shipFirmId, items.length, dilovodSaleExportDate, returnDate, loadBatchNumbersForItems]);
+  }, [shipFirmId, dilovodSaleExportDate, returnDate]);
+
+  // Дозавантаження партій лише для позицій без availableBatches
+  useEffect(() => {
+    if (items.length === 0) return;
+    if (!items.some((it) => it.availableBatches === null)) return;
+    const batchDate = dilovodSaleExportDate ? new Date(dilovodSaleExportDate) : returnDate ? new Date(returnDate) : undefined;
+    void loadBatchNumbersForItems(shipFirmId, items, batchDate);
+  }, [items, shipFirmId, dilovodSaleExportDate, returnDate, loadBatchNumbersForItems]);
 
   const loadOrderForReturn = useCallback(async (orderId: number) => {
     setIsLoading(true);

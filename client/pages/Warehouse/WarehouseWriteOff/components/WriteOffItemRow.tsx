@@ -3,6 +3,8 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import type { ReturnBatch, ReturnItem } from '../../WarehouseReturns/WarehouseReturnsTypes';
 import { StepperInput } from '../../shared/StepperInput';
 
+const SURPLUS_QUANTITY_MAX = 999;
+
 interface WriteOffItemRowProps {
   item: ReturnItem;
   onQuantityChange: (itemId: string, quantity: number) => void;
@@ -10,9 +12,18 @@ interface WriteOffItemRowProps {
   editableQuantity?: boolean;
   onDelete?: (itemId: string) => void;
   inactive?: boolean;
+  variant?: 'writeOff' | 'surplus';
 }
 
-export function WriteOffItemRow({ item, onQuantityChange, onBatchChange, editableQuantity = true, onDelete, inactive = false }: WriteOffItemRowProps) {
+export function WriteOffItemRow({
+  item,
+  onQuantityChange,
+  onBatchChange,
+  editableQuantity = true,
+  onDelete,
+  inactive = false,
+  variant = 'writeOff',
+}: WriteOffItemRowProps) {
   const batchControl = (() => {
     if (item.availableBatches === null) {
       return <div className="text-xs px-3 py-[11px] text-gray-500 border border-gray-200 rounded-md">Завантаження партій...</div>;
@@ -62,15 +73,22 @@ export function WriteOffItemRow({ item, onQuantityChange, onBatchChange, editabl
         const current = Number(item.quantity ?? 0);
         const ordered = item.orderedQuantity == null ? undefined : Number(item.orderedQuantity);
         const selectedBatch = (item.availableBatches ?? []).find((b) => b.id === item.selectedBatchKey) as ReturnBatch | undefined;
-        const maxAllowed = selectedBatch ? selectedBatch.quantity : ordered;
+        const stockCap = selectedBatch ? selectedBatch.quantity : ordered;
+        const maxAllowed = variant === 'surplus'
+          ? SURPLUS_QUANTITY_MAX
+          : stockCap;
+        const clampQty = (value: number) => {
+          const upper = maxAllowed ?? (variant === 'surplus' ? SURPLUS_QUANTITY_MAX : Infinity);
+          return Math.max(0, Math.min(value, upper));
+        };
 
         return (
           <StepperInput
             label="Кількість"
             value={current}
-            onChange={(v: number) => onQuantityChange(item.id, v)}
-            onIncrement={() => onQuantityChange(item.id, Math.min(current + 1, maxAllowed ?? Infinity))}
-            onDecrement={() => onQuantityChange(item.id, Math.max(current - 1, 0))}
+            onChange={(v: number) => onQuantityChange(item.id, clampQty(v))}
+            onIncrement={() => onQuantityChange(item.id, clampQty(current + 1))}
+            onDecrement={() => onQuantityChange(item.id, clampQty(current - 1))}
             disabled={!editableQuantity || inactive}
             max={maxAllowed}
             size="sm"

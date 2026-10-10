@@ -30,7 +30,8 @@ interface HistoryAccordionItemProps {
   onRetryRelease?: (record: any) => Promise<void>;
   canEditRecord?: (record: any) => boolean;
   auditRefreshKey?: number;
-  recordType?: 'return' | 'writeOff' | 'releaseSet';
+  recordType?: 'return' | 'writeOff' | 'surplus' | 'releaseSet';
+  detailsLoading?: Record<string, boolean>;
 }
 
 export const HistoryAccordionItem = ({
@@ -44,6 +45,8 @@ export const HistoryAccordionItem = ({
   canEditRecord,
   auditRefreshKey = 0,
   recordType,
+  onLoadRecord,
+  detailsLoading = {},
 }: HistoryAccordionItemProps) => {
   const { hasPermission } = useRoleAccess();
   const canDeleteHistory = hasPermission(PERMISSIONS.ACTION_WAREHOUSE_HISTORY_DELETE);
@@ -95,6 +98,17 @@ export const HistoryAccordionItem = ({
     };
   }, [expandedRecordId, layoutTick, records]);
 
+  useEffect(() => {
+    if (!expandedRecordId || !onLoadRecord) return;
+    const record = records.find((r) => String(r.id) === expandedRecordId);
+    if (!record) return;
+    const parsed = safeParseItems(record.items);
+    const normalizedCount = Array.isArray(record.itemsNormalized) ? record.itemsNormalized.length : 0;
+    if (parsed.length === 0 && normalizedCount === 0) {
+      void onLoadRecord(record);
+    }
+  }, [expandedRecordId, records, onLoadRecord]);
+
   const handleEditRecord = async (recordId: string) => {
     if (!onEditRecord) return;
     setLoadingEditId(recordId);
@@ -141,6 +155,7 @@ export const HistoryAccordionItem = ({
 	// константа мапи типів
 	const RECORD_TYPE_CONFIG: Record<string, { label: string; genitive?: string; dateField?: string; secondaryDateField?: string; storageOperation?: string }> = {
 		writeOff: 	{ label: 'Списання', dateField: 'writeOffDate' },
+    surplus: { label: 'Оприбуткування', dateField: 'surplusDate' },
     releaseSet: { label: 'Випуск', genitive: 'випуску', dateField: 'operDate', secondaryDateField: 'createdAt' },
 	};
 
@@ -171,7 +186,10 @@ export const HistoryAccordionItem = ({
         const recordName = `${cfg.label} №${record.id}`;
         const operationType = String(record.operationType ?? '').toLowerCase();
         const operationCfg = RELEASE_OPERATION_CONFIG[operationType];
-        const items = safeParseItems(record.items);
+	        const items = (Array.isArray(record.itemsNormalized) && record.itemsNormalized.length > 0)
+	          ? record.itemsNormalized
+	          : safeParseItems(record.items);
+	        const isDetailsLoading = Boolean(detailsLoading[String(record.id)]);
         const isBatchCorrection = isReleaseBatchCorrection({
           correctionSessionId: record.correctionSessionId,
           comment: record.comment,
@@ -180,7 +198,7 @@ export const HistoryAccordionItem = ({
         });
         const totalQuantity = items.reduce((sum, item) => sum + Number(item.quantity ?? item.qty ?? 0), 0);
         const isExpanded = expandedRecordId === String(record.id);
-				const reason = record.reason || record.writeOffReason || record.write_off_reason; // TODO: змінити типи після впровадження компоненту
+				const reason = record.reason || record.writeOffReason || record.surplusReason || record.write_off_reason;
         
         const setsForCount = recordType === 'releaseSet' ? (record.setsNormalized ?? normalizeSetsArray(record.items ?? items)) : [];
         const uniqueSetTypes = recordType === 'releaseSet' ? setsForCount.length : 0;
@@ -293,7 +311,7 @@ export const HistoryAccordionItem = ({
                     </div>
                     <div className="text-right">
                       <span className="text-medium font-semibold leading-none">{totalQuantity}</span>
-                      <p className="leading-none">{pluralize(totalQuantity, 'порція', 'порції', 'порцій')}</p>
+                      <p className="leading-none">{pluralize(totalQuantity, 'одиниця', 'одиниці', 'одиниць')}</p>
                     </div>
                   </>
                 )}
@@ -416,13 +434,18 @@ export const HistoryAccordionItem = ({
                   )}
                 </div>
 
-                <div className="mb-2">
-                  {recordType === 'releaseSet' ? (
-                    <HistoryItemsTable mode="sets" sets={record.setsNormalized ?? items} />
-                  ) : (
-                    <HistoryItemsTable mode="normal" items={record.itemsNormalized ?? items} />
-                  )}
-                </div>
+	                <div className="mb-2">
+	                  {isDetailsLoading ? (
+	                    <div className="flex items-center justify-center gap-2 py-6 text-sm text-gray-500">
+	                      <DynamicIcon name="loader-circle" className="w-4 h-4 animate-spin" />
+	                      Завантаження позицій…
+	                    </div>
+	                  ) : recordType === 'releaseSet' ? (
+	                    <HistoryItemsTable mode="sets" sets={record.setsNormalized ?? items} />
+	                  ) : (
+	                    <HistoryItemsTable mode="normal" items={record.itemsNormalized ?? items} />
+	                  )}
+	                </div>
 
                 {recordType === 'releaseSet' && isExpanded ? (
                   <WarehouseReleaseAuditAccordion

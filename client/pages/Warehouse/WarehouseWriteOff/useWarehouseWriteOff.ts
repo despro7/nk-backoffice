@@ -1,5 +1,29 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
+import { filterWarehouseSelectableBatches } from '@/pages/Warehouse/shared/filterWarehouseSelectableBatches';
+import { lazyEnrichHistoryPage } from '@/pages/Warehouse/shared/lazyEnrichHistoryPage';
+
+export type EditingWarehouseWriteOff = {
+  id: number;
+  writeOffNumber?: string | null;
+  docNumber?: string | null;
+};
+
+export interface WarehouseDocHistoryPagination {
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
+const DEFAULT_PAGINATION: WarehouseDocHistoryPagination = {
+  page: 1,
+  limit: 10,
+  total: 0,
+  pages: 1,
+};
+
+const HISTORY_API = '/api/warehouse/writeoff/history';
 
 interface Opts {
   returns?: any;
@@ -24,7 +48,24 @@ export default function useWarehouseWriteOff(opts: Opts = {}) {
   const [batchesError, setBatchesError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [history, setHistory] = useState<any[]>([]);
+  const [historyPagination, setHistoryPagination] = useState<WarehouseDocHistoryPagination>(DEFAULT_PAGINATION);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [archiveRecords, setArchiveRecords] = useState<any[]>([]);
+  const [archivePagination, setArchivePagination] = useState<WarehouseDocHistoryPagination>(DEFAULT_PAGINATION);
+  const [archiveLoading, setArchiveLoading] = useState(false);
   const [orderDetails, setOrderDetails] = useState<any | null>(null);
+  const [editingRecord, setEditingRecord] = useState<EditingWarehouseWriteOff | null>(null);
+  const [historyDetailsLoading, setHistoryDetailsLoading] = useState<Record<string, boolean>>({});
+
+  const parseHistoryItems = (record: { items?: unknown }) => {
+    if (Array.isArray(record.items)) return record.items;
+    try {
+      const parsed = JSON.parse(String(record.items ?? '[]'));
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
 
   // Ініціює завантаження один раз при монтуванні через централізований провайдер
   useEffect(() => { void dirsCtx.loadDirectories(); }, []);
@@ -95,34 +136,6 @@ export default function useWarehouseWriteOff(opts: Opts = {}) {
     const targetReturns = returnsParam ?? returnsOpt ?? null;
     if (targetReturns && typeof targetReturns.setItems === 'function') {
       targetReturns.setItems([...(targetReturns.items || []), newItem]);
-      try {
-        const firmId = newItem.firmId || undefined;
-        const url = new URL(`/api/warehouse/batch-numbers/${encodeURIComponent(sku)}`, window.location.origin);
-        if (firmId) url.searchParams.set('firmId', String(firmId));
-        url.searchParams.set('onlySmallStorage', 'true');
-        const resp = await fetch(url.toString(), { credentials: 'include' });
-        if (resp.ok) {
-          const data = await resp.json();
-          const batches = Array.isArray(data.batches) ? data.batches : [];
-          const normalized = batches.map((batch:any, index:number) => {
-            const normalizedBatchId = batch.batchId || batch.id || '';
-            const normalizedStorage = batch.storage || batch.storageDisplayName || '';
-            const uniqueId = normalizedBatchId ? `${normalizedBatchId}-${normalizedStorage || index}` : `${sku}-${batch.batchNumber || 'unknown'}-${normalizedStorage || index}`;
-            return {
-              id: uniqueId,
-              batchId: normalizedBatchId,
-              batchNumber: batch.batchNumber || batch.goodPart__pr || batch.name || 'Невідома партія',
-              quantity: Number(batch.quantity ?? batch.qty ?? 0),
-              storage: normalizedStorage || undefined,
-              storageDisplayName: batch.storageDisplayName || batch.storage__pr || undefined,
-            };
-          });
-          // update returns items
-          targetReturns.setItems((prev:any[]) => (prev || []).map(it => it.id === id ? { ...it, availableBatches: normalized, selectedBatchKey: normalized[0]?.id ?? null, selectedBatchId: normalized[0]?.batchId ?? null, orderedQuantity: normalized[0]?.quantity ?? it.orderedQuantity } : it));
-        }
-      } catch (err) {
-        console.error('batch fetch error', err);
-      }
       return;
     }
 
@@ -182,7 +195,24 @@ export default function useWarehouseWriteOff(opts: Opts = {}) {
         throw new Error(`Expected JSON but got: ${txt.slice(0,200)}`);
       }
       const json = await res.json();
-      const list = json?.batches || [];
+      const raw = Array.isArray(json?.batches) ? json.batches : [];
+      const list = filterWarehouseSelectableBatches(
+        raw.map((batch: any, index: number) => {
+          const normalizedBatchId = batch.batchId || batch.id || '';
+          const normalizedStorage = batch.storage || batch.storageDisplayName || '';
+          const uniqueId = normalizedBatchId
+            ? `${normalizedBatchId}-${normalizedStorage || index}`
+            : `${sku}-${batch.batchNumber || 'unknown'}-${normalizedStorage || index}`;
+          return {
+            id: uniqueId,
+            batchId: normalizedBatchId,
+            batchNumber: batch.batchNumber || batch.goodPart__pr || batch.name || 'Невідома партія',
+            quantity: Number(batch.quantity ?? batch.qty ?? 0),
+            storage: normalizedStorage || undefined,
+            storageDisplayName: batch.storageDisplayName || batch.storage__pr || undefined,
+          };
+        }),
+      );
       setBatchesBySku((s) => ({ ...s, [sku]: list }));
       setBatchesError(null);
       return list;
@@ -257,12 +287,188 @@ export default function useWarehouseWriteOff(opts: Opts = {}) {
     return await sendWriteOffWithClientValidation(params);
   };
 
-  const loadHistory = async () => {
+  const fetchHistoryPage = async (
+    status: 'active' | 'deleted',
+    page: number,
+    limit: number,
+    sync = false,
+    forceFullList = false,
+  ) => {
+    const url = new URL(HISTORY_API, window.location.origin);
+    url.searchParams.set('status', status);
+    url.searchParams.set('page', String(page));
+    url.searchParams.set('limit', String(limit));
+    url.searchParams.set('sync', sync ? 'true' : 'false');
+    if (forceFullList) url.searchParams.set('forceFullList', 'true');
+    const res = await fetch(url.toString(), { credentials: 'include' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json?.success) {
+      throw new Error(json?.error || 'Не вдалося завантажити історію');
+    }
+    return {
+      records: Array.isArray(json.data) ? json.data : [],
+      pagination: json.pagination ?? { ...DEFAULT_PAGINATION, page, limit },
+    };
+  };
+
+  const loadArchive = async (page = archivePagination.page, limit = archivePagination.limit) => {
+    setArchiveLoading(true);
     try {
-      const res = await fetch('/api/warehouse/writeoff/history', { credentials: 'include' });
-      const json = await res.json();
-      if (json?.success) setHistory(json.data || []);
-    } catch (e) { console.error('loadHistory', e); }
+      const result = await fetchHistoryPage('deleted', page, limit);
+      setArchiveRecords(result.records);
+      setArchivePagination(result.pagination);
+    } catch (e) {
+      console.error('loadArchive', e);
+    } finally {
+      setArchiveLoading(false);
+    }
+  };
+
+  const loadHistoryRecordDetails = useCallback(async (
+    record: { id: number | string },
+    force = false,
+    silent = false,
+  ) => {
+    const recordId = String(record.id);
+    if (!silent) {
+      setHistoryDetailsLoading((prev) => ({ ...prev, [recordId]: true }));
+    }
+    try {
+      const url = `/api/warehouse/writeoff/history/${encodeURIComponent(recordId)}/details${force ? '?force=true' : ''}`;
+      const res = await fetch(url, { credentials: 'include' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || 'Не вдалося завантажити позиції');
+      }
+      const { items, itemsNormalized } = json.data ?? {};
+      setHistory((prev) => prev.map((row) => (
+        String(row.id) === recordId
+          ? { ...row, items, itemsNormalized }
+          : row
+      )));
+      return { ...record, items, itemsNormalized };
+    } catch (e) {
+      console.error('loadHistoryRecordDetails', e);
+      throw e;
+    } finally {
+      if (!silent) {
+        setHistoryDetailsLoading((prev) => {
+          const next = { ...prev };
+          delete next[recordId];
+          return next;
+        });
+      }
+    }
+  }, []);
+
+  const loadHistory = async (
+    page = historyPagination.page,
+    limit = historyPagination.limit,
+    sync = false,
+    forceFullList = false,
+  ) => {
+    setHistoryLoading(true);
+    try {
+      const result = await fetchHistoryPage('active', page, limit, sync, forceFullList);
+      setHistory(result.records);
+      setHistoryPagination(result.pagination);
+      void lazyEnrichHistoryPage(result.records, loadHistoryRecordDetails);
+    } catch (e) {
+      console.error('loadHistory', e);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const ensureHistoryRecordDetails = useCallback(async (record: any) => {
+    const existing = parseHistoryItems(record);
+    const normalized = Array.isArray(record.itemsNormalized) ? record.itemsNormalized : [];
+    if (existing.length > 0 || normalized.length > 0) return record;
+    const updated = await loadHistoryRecordDetails(record);
+    return updated ?? record;
+  }, [loadHistoryRecordDetails]);
+
+  const cancelEdit = () => {
+    setEditingRecord(null);
+  };
+
+  const beginEdit = (record: any): void => {
+    const items = Array.isArray(record.items)
+      ? record.items
+      : (() => {
+        try { return JSON.parse(record.items || '[]'); } catch { return []; }
+      })();
+
+    const prepared = (items || []).map((it: any) => ({
+      id: crypto.randomUUID?.() ?? `${it.sku}-${Date.now()}-${Math.random()}`,
+      sku: it.sku,
+      name: it.name || it.productName || it.sku,
+      dilovodId: it.dilovodId ?? null,
+      quantity: Number(it.quantity || 0),
+      orderedQuantity: Number(it.quantity || it.orderedQuantity || 0),
+      portionsPerBox: it.portionsPerBox ?? 1,
+      firmId: record.firmId ?? null,
+      availableBatches: null,
+      selectedBatchId: it.batchId ?? null,
+      selectedBatchKey: null,
+      price: it.price ?? 0,
+    }));
+
+    const targetReturns = returnsOpt ?? null;
+    if (targetReturns?.setItems) {
+      targetReturns.setItems(prepared);
+      targetReturns.setReceiveFirmId?.(record.firmId ?? null);
+      if (record.writeOffDate) {
+        targetReturns.setReturnDate?.(String(record.writeOffDate));
+      }
+    } else {
+      setItems(prepared);
+    }
+
+    setEditingRecord({
+      id: Number(record.id),
+      writeOffNumber: record.writeOffNumber ?? null,
+      docNumber: record.docNumber ?? null,
+    });
+  };
+
+  const saveEditedWriteOff = async (params: {
+    items: any[];
+    comment: string;
+    reason: string;
+    customReason?: string;
+    firmId?: string | null;
+    storageId?: string | null;
+    date?: string;
+  }) => {
+    if (!editingRecord) {
+      throw new Error('Немає запису для редагування');
+    }
+    const resp = await fetch(`/api/warehouse/writeoff/history/${encodeURIComponent(String(editingRecord.id))}`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: params.items.map((item) => ({
+          sku: item.sku,
+          batchId: item.selectedBatchId ?? item.batchId ?? null,
+          quantity: item.quantity,
+        })),
+        comment: params.comment,
+        reason: params.reason,
+        customReason: params.customReason,
+        firmId: params.firmId,
+        storageId: params.storageId,
+        date: params.date,
+      }),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json?.success) {
+      throw new Error(json?.error || 'Не вдалося зберегти списання');
+    }
+    setEditingRecord(null);
+    await loadHistory();
+    return json;
   };
 
   return {
@@ -288,6 +494,15 @@ export default function useWarehouseWriteOff(opts: Opts = {}) {
     requestSend,
     history,
     loadHistory,
+    historyPagination,
+    historyLoading,
+    archiveRecords,
+    loadArchive,
+    archivePagination,
+    archiveLoading,
+    loadHistoryRecordDetails,
+    ensureHistoryRecordDetails,
+    historyDetailsLoading,
     // new helpers
     orderDetails,
     setOrderDetails,
@@ -295,5 +510,9 @@ export default function useWarehouseWriteOff(opts: Opts = {}) {
     addOrderLineFromOrder,
     previewWriteOff,
     sendConfirmWriteOff,
+    editingRecord,
+    beginEdit,
+    cancelEdit,
+    saveEditedWriteOff,
   };
 }

@@ -25,8 +25,7 @@ export default function WarehouseWriteOff() {
   const writeoff = useWarehouseWriteOff({ returns });
   const [disabledSkus, setDisabledSkus] = useState<Record<string, boolean>>({});
   const [activeTab, setActiveTab] = useState<'byOrder'|'byProduct'>('byOrder');
-  const [pageTab, setPageTab] = useState<'main'|'history'>('main');
-  const [historyLoading, setHistoryLoading] = useState(false);
+  const [pageTab, setPageTab] = useState<'main' | 'history' | 'archive'>('main');
   const [selectedOrderIdState, setSelectedOrderIdState] = useState<number | null>(null);
   const [selectedOrderExternalId, setSelectedOrderExternalId] = useState<string | null>(null);
   // orderDetails now managed by `writeoff.orderDetails`
@@ -116,19 +115,18 @@ export default function WarehouseWriteOff() {
       </div>
 
       <PageTabs className="mb-4" selectedKey={pageTab} onSelectionChange={(key) => {
-        const tab = key as 'main' | 'history';
+        const tab = key as 'main' | 'history' | 'archive';
         setPageTab(tab);
-        if (tab === 'history') {
-          if (writeoff.history?.length === 0) {
-            void (async () => {
-              setHistoryLoading(true);
-              try { await writeoff.loadHistory?.(); } catch (e) { /* ignore */ } finally { setHistoryLoading(false); }
-            })();
-          }
+        if (tab === 'history' && writeoff.history?.length === 0) {
+          void writeoff.loadHistory?.(1, writeoff.historyPagination?.limit ?? 10, true);
+        }
+        if (tab === 'archive' && isAdmin() && writeoff.archiveRecords?.length === 0) {
+          void writeoff.loadArchive?.();
         }
       }}>
         <Tab key="main" title="Списання" />
         <Tab key="history" title="Історія" />
+        {isAdmin() && <Tab key="archive" title="Архів" />}
       </PageTabs>
 
       {pageTab === 'main' && (
@@ -170,6 +168,15 @@ export default function WarehouseWriteOff() {
           <WarehouseDetails returns={returns} storages={storages && storages.length > 0 ? storages : writeoff.storages} selectedStorage={selectedStorage} setSelectedStorage={setSelectedStorage} />
 
           {/* Товари для списання */}
+          {writeoff.editingRecord && (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Редагування запису історії
+              {writeoff.editingRecord.docNumber ? ` №${writeoff.editingRecord.docNumber}` : ` #${writeoff.editingRecord.id}`}.
+              Зміни застосуються до цього списання в Dilovod.
+              <button type="button" className="ml-3 underline" onClick={() => writeoff.cancelEdit?.()}>Скасувати</button>
+            </div>
+          )}
+
           {returns.items && returns.items.length > 0 && (
             <>
               <WriteOffItemsPanel returns={returns} setDisabledSkus={setDisabledSkus} />
@@ -179,8 +186,38 @@ export default function WarehouseWriteOff() {
 
           {/* Дії */}
           <ActionsBar
-            onPreview={isDebugMode && isAdmin() ? handleSendPreview : undefined}
+            onPreview={isDebugMode && isAdmin() && !writeoff.editingRecord ? handleSendPreview : undefined}
+            sendLabel={writeoff.editingRecord ? 'Зберегти зміни' : undefined}
             onSend={async () => {
+              if (writeoff.editingRecord) {
+                const selectedReason = reason;
+                const selectedCustom = customReason;
+                if (!selectedReason?.trim()) {
+                  ToastService.show({ title: 'Оберіть причину списання', color: 'warning' });
+                  return;
+                }
+                if (selectedReason === 'Інше' && !selectedCustom?.trim()) {
+                  ToastService.show({ title: 'Вкажіть додаткову причину', color: 'warning' });
+                  return;
+                }
+                try {
+                  await writeoff.saveEditedWriteOff?.({
+                    items: activeWriteOffItems,
+                    comment,
+                    reason: selectedReason === 'Інше' ? (selectedCustom || selectedReason) : selectedReason,
+                    customReason: selectedCustom,
+                    firmId: returns.receiveFirmId ?? undefined,
+                    storageId: selectedStorage ?? undefined,
+                    date: (returns.returnDate && String(returns.returnDate).trim()) ? String(returns.returnDate).trim() : formatLocalDate(new Date()),
+                  });
+                  ToastService.show({ title: 'Зміни збережено', color: 'success' });
+                  setPageTab('history');
+                  await writeoff.loadHistory?.();
+                } catch (err: any) {
+                  ToastService.show({ title: 'Помилка збереження', description: err?.message || String(err), color: 'danger' });
+                }
+                return;
+              }
               if (!hasActiveWriteOffItems) {
                 ToastService.show({ title: 'Немає активних товарів для списання', color: 'warning' });
                 return;
@@ -207,39 +244,30 @@ export default function WarehouseWriteOff() {
       {pageTab === 'history' && (
         <WriteOffHistoryTab
           records={writeoff.history || []}
-          loading={historyLoading}
-          onRefresh={async () => {
-            setHistoryLoading(true);
-            try { await writeoff.loadHistory?.(); } catch (e) { /* ignore */ } finally { setHistoryLoading(false); }
+          loading={writeoff.historyLoading}
+          pagination={writeoff.historyPagination}
+          onPageChange={(page) => void writeoff.loadHistory?.(page, writeoff.historyPagination?.limit ?? 10)}
+          onLimitChange={(limit) => void writeoff.loadHistory?.(1, limit)}
+          onRefresh={() => void writeoff.loadHistory?.(
+            writeoff.historyPagination?.page ?? 1,
+            writeoff.historyPagination?.limit ?? 10,
+            true,
+            true,
+          )}
+          onLoadRecord={async (record) => {
+            await writeoff.loadHistoryRecordDetails?.(record, true);
           }}
-          onLoadRecord={async (record: any) => {
+          detailsLoading={writeoff.historyDetailsLoading}
+          onEditRecord={async (record: any) => {
             try {
-              // Populate returns state with selected history record
-              const items = Array.isArray(record.items) ? record.items : JSON.parse(record.items || '[]');
-              const prepared = (items || []).map((it: any) => ({
-                id: crypto.randomUUID?.() ?? `${it.sku}-${Date.now()}-${Math.random()}`,
-                sku: it.sku,
-                name: it.name || it.sku,
-                dilovodId: it.dilovodId ?? null,
-                quantity: Number(it.quantity || 0),
-                orderedQuantity: Number(it.quantity || it.orderedQuantity || it.qty || 0),
-                portionsPerBox: it.portionsPerBox ?? 1,
-                firmId: record.firmId ?? returns.shipFirmId ?? returns.receiveFirmId ?? null,
-                availableBatches: null,
-                selectedBatchId: it.batchId ?? null,
-                selectedBatchKey: null,
-                price: it.price ?? 0,
-              }));
-              returns.setItems(prepared);
-              // set other return details
-              returns.setSelectedOrderId?.(record.orderId ?? null);
-              setSelectedOrderExternalId(record.orderNumber ?? record.orderExternalId ?? null);
-              returns.setReturnDate?.(record.writeOffDate ? String(record.writeOffDate) : null);
-              returns.setShipFirmId?.(record.shipFirmId ?? null);
-              returns.setReceiveFirmId?.(record.firmId ?? null);
-              // switch to main tab so user can edit
+              const full = await writeoff.ensureHistoryRecordDetails?.(record);
+              setReason(full.writeOffReason || '');
+              setCustomReason(full.customReason || '');
+              setComment(full.comment || '');
+              if (full.storageId) setSelectedStorage(String(full.storageId));
+              writeoff.beginEdit?.(full);
               setPageTab('main');
-              setActiveTab(record.orderId ? 'byOrder' : 'byProduct');
+              setActiveTab('byProduct');
             } catch (err) {
               console.error('Error loading history record into form', err);
             }
@@ -250,7 +278,10 @@ export default function WarehouseWriteOff() {
               const json = await resp.json().catch(() => ({}));
               if (resp.ok && json.success) {
                 ToastService.show({ title: 'Запис видалено', color: 'success' });
-                await writeoff.loadHistory?.();
+                await writeoff.loadHistory?.(
+                  writeoff.historyPagination?.page ?? 1,
+                  writeoff.historyPagination?.limit ?? 10,
+                );
                 return;
               }
 
@@ -266,6 +297,26 @@ export default function WarehouseWriteOff() {
               throw e;
             }
           }}
+        />
+      )}
+
+      {pageTab === 'archive' && isAdmin() && (
+        <WriteOffHistoryTab
+          title="Архівні списання"
+          emptyMessage="Архів порожній"
+          records={writeoff.archiveRecords || []}
+          loading={writeoff.archiveLoading}
+          pagination={writeoff.archivePagination}
+          onPageChange={(page) => void writeoff.loadArchive?.(page, writeoff.archivePagination?.limit ?? 10)}
+          onLimitChange={(limit) => void writeoff.loadArchive?.(1, limit)}
+          onRefresh={() => void writeoff.loadArchive?.(
+            writeoff.archivePagination?.page ?? 1,
+            writeoff.archivePagination?.limit ?? 10,
+          )}
+          onLoadRecord={async (record) => {
+            await writeoff.loadHistoryRecordDetails?.(record, true);
+          }}
+          detailsLoading={writeoff.historyDetailsLoading}
         />
       )}
 

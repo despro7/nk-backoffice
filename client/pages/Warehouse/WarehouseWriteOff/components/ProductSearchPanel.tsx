@@ -2,13 +2,40 @@ import { useState, useRef, useEffect } from 'react';
 import { Input, Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
+type ProductSearchVariant = 'writeOff' | 'surplus';
+
+const VARIANT_COPY: Record<
+  ProductSearchVariant,
+  {
+    placeholder: string;
+    notFound: string;
+    addedLabel: string;
+    addButtonColor: 'danger' | 'success';
+  }
+> = {
+  writeOff: {
+    placeholder: 'Пошук товару за назвою, SKU або ШК (від 3 символів)',
+    notFound: 'Товар не знайдено. Спробуйте іншу назву, SKU або ШК.',
+    addedLabel: 'Додано до списання',
+    addButtonColor: 'danger',
+  },
+  surplus: {
+    placeholder: 'Пошук товару за назвою, SKU або ШК (від 3 символів)',
+    notFound: 'Товар не знайдено. Спробуйте іншу назву, SKU або ШК.',
+    addedLabel: 'Додано до оприбуткування',
+    addButtonColor: 'success',
+  },
+};
+
 interface Props {
   writeoff: any;
   returns: any;
   resetSignal?: number;
+  variant?: ProductSearchVariant;
 }
 
-export default function ProductSearchPanel({ writeoff, returns, resetSignal }: Props) {
+export default function ProductSearchPanel({ writeoff, returns, resetSignal, variant = 'writeOff' }: Props) {
+  const copy = VARIANT_COPY[variant];
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -87,7 +114,8 @@ export default function ProductSearchPanel({ writeoff, returns, resetSignal }: P
         <Input
           value={query}
           onValueChange={setQuery}
-          placeholder="Пошук товару за назвою або SKU (від 3 символів)"
+          placeholder={copy.placeholder}
+          aria-label={copy.placeholder}
           size="lg"
           className="w-full"
           isClearable={true}
@@ -104,7 +132,7 @@ export default function ProductSearchPanel({ writeoff, returns, resetSignal }: P
 
       {!loading && results.length === 0 && hasSearched && query.trim() !== '' && (
         <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-900">
-          Товар не знайдено. Спробуйте іншу назву або SKU.
+          {copy.notFound}
         </div>
       )}
 
@@ -120,11 +148,12 @@ export default function ProductSearchPanel({ writeoff, returns, resetSignal }: P
               <div className="flex items-center gap-3">
                 <Button
                   size="md"
-                  color="danger"
+                  color={copy.addButtonColor}
+                  variant={isAdded(p.sku) ? 'flat' : 'solid'}
                   onPress={() => { void onSelect(p); }}
                   isDisabled={isAdded(p.sku)}
-                  >
-                    {isAdded(p.sku) ? 'Додано до списання' : 'Додати'}
+                >
+                  {isAdded(p.sku) ? copy.addedLabel : 'Додати'}
                 </Button>
               </div>
             </div>

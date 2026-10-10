@@ -5,6 +5,30 @@
 
 ---
 
+## 2026-10-10 — Склад: оприбуткування надлишків, дзеркало історії списань, UX
+
+**Files:** `WarehouseSurplus/`, `SurplusController.ts`, `WriteOffController.ts`, `warehouseGoodDocumentUtils.ts`, `WarehouseGoodDocumentHistorySync.ts`, `warehouseGoodDocumentHistoryList.ts`, `shared/types/warehouseGoodDocument.ts`, `filterWarehouseSelectableBatches.ts`, `WarehouseGoodDocumentHistoryTab.tsx`, `useWarehouseReturns.ts`, `releaseHistoryAccess.ts`, `prisma/migrations/20261010120000_warehouse_writeoff_surplus_mirror/`, `routes.config.tsx`, `permissions.ts`
+
+### Оприбуткування (`/warehouse/surplus`)
+
+- Новий розділ і API `documents.goodWriteOn` (без `header.docMode`; `incomeItem` + `accIncomes`).
+- UI на базі списання (`variant="surplus"`), бейдж **NEW** у меню до 20.10.2026.
+- Ліміт кількості в рядку: 999.
+
+### Історія списань / оприбуткувань
+
+- Дзеркало документів з Dilovod у `WarehouseWriteOffHistory` / `WarehouseSurplusHistory`, PATCH у ERP (`saveType: 2`), audit.
+- Сортування: дата документа → `createdAt` → `id` (нові зверху).
+- Фільтр вибору партій (без віртуальних/системних); партії не перезавантажуються для вже доданих рядків.
+
+### Редагування
+
+- `canEditWarehouseReleaseHistory`: не-адмін — лише **свої** записи **сьогодні** (Europe/Kyiv); комплектація використовує ту саму перевірку.
+
+**Документація:** [`Docs/features/warehouse-writeoff-surplus.md`](features/warehouse-writeoff-surplus.md).
+
+---
+
 ## 2026-10-10 — Ролі: редактор прав за доменами
 
 **Files:** `RolePermissionsEditor.tsx`, `RolesManager.tsx`, `CatalogFolderAclTree.tsx`, `shared/constants/permissionRoleEditor.ts`, `permissionRoleEditor.spec.ts`, `shared/constants/permissions.ts`, `permissions.spec.ts`, `client/global.css`, `Docs/features/users-and-roles.md`

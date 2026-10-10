@@ -1,24 +1,40 @@
 import React from 'react';
 import WriteOffItemRow from './WriteOffItemRow';
 
+type ItemsPanelVariant = 'writeOff' | 'surplus';
+
+const PANEL_COPY: Record<ItemsPanelVariant, { title: string; borderClass: string }> = {
+  writeOff: {
+    title: 'Товари для списання',
+    borderClass: 'border-red-400',
+  },
+  surplus: {
+    title: 'Товари для оприбуткування',
+    borderClass: 'border-green-600/65',
+  },
+};
+
 interface Props {
   returns: any;
   setDisabledSkus: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  variant?: ItemsPanelVariant;
 }
 
-export default function WriteOffItemsPanel({ returns, setDisabledSkus }: Props) {
+export default function WriteOffItemsPanel({ returns, setDisabledSkus, variant = 'writeOff' }: Props) {
+  const copy = PANEL_COPY[variant];
   if (!returns.items || returns.items.length === 0) return null;
 
   const isInactiveItem = (item: any): boolean => Array.isArray(item.availableBatches) && item.availableBatches.length === 0;
 
   return (
     <div>
-      <h2 className="font-medium mb-2 mt-6">Товари для списання</h2>
-      <div className="px-4 py-1 mb-4 bg-white rounded-xl border-2 border-red-400">
+      <h2 className="font-medium mb-2 mt-6">{copy.title}</h2>
+      <div className={`px-4 py-1 mb-4 bg-white rounded-xl border-2 ${copy.borderClass}`}>
         {returns.items.map((it: any) => (
           <div key={it.id} className={`flex items-end gap-4 w-full py-4 border-b last:border-b-0`}>
             <WriteOffItemRow
               item={it}
+              variant={variant}
               inactive={isInactiveItem(it)}
               editableQuantity={true}
               onQuantityChange={(itemId: string, qty: number) => {

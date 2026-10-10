@@ -5,6 +5,28 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { useEffect, useState } from 'react';
 import useWarehouseParams from './useWarehouseParams';
 
+type WarehouseDetailsVariant = 'writeOff' | 'surplus';
+
+const VARIANT_LABELS: Record<
+  WarehouseDetailsVariant,
+  { sectionTitle: string; storageLabel: string; firmLabel: string; dateLabel: string; dateTooltip: string }
+> = {
+  writeOff: {
+    sectionTitle: 'Параметри списання',
+    storageLabel: 'Склад для списання',
+    firmLabel: 'Фірма для списання',
+    dateLabel: 'Дата списання',
+    dateTooltip: 'Уважно оберіть дату та час списання, це вплине на облік товарів на складі',
+  },
+  surplus: {
+    sectionTitle: 'Параметри оприбуткування',
+    storageLabel: 'Склад для оприбуткування',
+    firmLabel: 'Фірма для оприбуткування',
+    dateLabel: 'Дата оприбуткування',
+    dateTooltip: 'Уважно оберіть дату та час оприбуткування, це вплине на облік товарів на складі',
+  },
+};
+
 interface Props {
   returns: any;
   storages: any[];
@@ -12,10 +34,20 @@ interface Props {
   setSelectedStorage: (v: string | null) => void;
   dateStateKey?: 'returnDate' | 'operDate';
   dateLabel?: React.ReactNode;
+  variant?: WarehouseDetailsVariant;
 }
 
 
-export default function WarehouseDetails({ returns, storages, selectedStorage, setSelectedStorage, dateStateKey, dateLabel }: Props) {
+export default function WarehouseDetails({
+  returns,
+  storages,
+  selectedStorage,
+  setSelectedStorage,
+  dateStateKey,
+  dateLabel,
+  variant = 'writeOff',
+}: Props) {
+  const labels = VARIANT_LABELS[variant];
   const { isDebugMode } = useDebug();
   // useDilovodDirectories на верхньому рівні компонента (правило хуків)
   const params = useWarehouseParams({ returns, externalStorages: storages, selectedStorageProp: selectedStorage, setSelectedStorageProp: setSelectedStorage, dateStateKey });
@@ -26,12 +58,12 @@ export default function WarehouseDetails({ returns, storages, selectedStorage, s
   const [directoriesError] = useState<string | null>(null);
   return (
     <>
-    <h2 className="font-medium mb-2 mt-2">Параметри списання</h2>
+    <h2 className="font-medium mb-2 mt-2">{labels.sectionTitle}</h2>
     <Card className="rounded-xl bg-white mb-6 p-4">
 
       <div className="flex flex-wrap md:flex-nowrap gap-4 items-end">
         <Select
-          label="Склад для списання"
+          label={labels.storageLabel}
           labelPlacement="outside"
           value={selectedStorage ?? ''}
           isDisabled={!!directoriesError && (!localStorages || localStorages.length === 0)}
@@ -63,7 +95,7 @@ export default function WarehouseDetails({ returns, storages, selectedStorage, s
         </Select>
 
         <Select
-          label="Фірма для списання"
+          label={labels.firmLabel}
           labelPlacement="outside"
           value={returns.receiveFirmId ?? ''}
           isDisabled={!!directoriesError && (!localFirms || localFirms.length === 0)}
@@ -105,7 +137,14 @@ export default function WarehouseDetails({ returns, storages, selectedStorage, s
           value={dateForPicker}
           onChange={onDateChange}
           labelPlacement="outside"
-          label={dateLabel ?? <span className="flex gap-1">Дата списання <Tooltip content="Уважно оберіть дату та час списання, це вплине на облік товарів на складі" color="primary" className="max-w-80"><DynamicIcon name="info" size={14} className="text-red-500" /></Tooltip></span>}
+          label={dateLabel ?? (
+            <span className="flex gap-1">
+              {labels.dateLabel}
+              <Tooltip content={labels.dateTooltip} color="primary" className="max-w-80">
+                <DynamicIcon name="info" size={14} className="text-red-500" />
+              </Tooltip>
+            </span>
+          )}
           size="md"
           labelStyle="text-xs font-medium text-gray-500"
           inputStyle="border border-gray-200 bg-white hover:bg-gray-100 focus-within:bg-gray-100"

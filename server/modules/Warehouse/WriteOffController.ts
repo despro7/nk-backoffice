@@ -1,46 +1,65 @@
+import type { Prisma } from '@prisma/client';
 import { Router } from 'express';
 import { prisma } from '../../lib/utils.js';
-import { safeParseItems, normalizeItemsArray } from './historyNormalize.js';
 import { authenticateToken, requirePermission } from '../../middleware/auth.js';
 import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
-
-const parseLocalDate = (dt: any): Date | null => {
-  if (!dt) return null;
-  if (dt instanceof Date) return dt;
-  if (typeof dt !== 'string') return null;
-
-  const trimmed = dt.trim();
-  const localMatch = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
-  if (localMatch) {
-    const [, year, month, day, hours, minutes, seconds] = localMatch;
-    return new Date(Number(year), Number(month) - 1, Number(day), Number(hours), Number(minutes), Number(seconds ?? '0'));
-  }
-
-  const parsed = new Date(trimmed);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
-
-const parseStockBalanceByStock = (value: any): Record<string, number> => {
-  if (!value) return {};
-  if (typeof value === 'object') return value as Record<string, number>;
-  if (typeof value !== 'string') return {};
-
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-};
-
-const hasOwnStockInWarehouse = (stockBalanceByStock: any): boolean => {
-  const stock = parseStockBalanceByStock(stockBalanceByStock);
-  return Number(stock['2'] ?? 0) > 0;
-};
+import { ROLES } from '../../../shared/constants/roles.js';
+import {
+  canEditWarehouseReleaseHistory,
+  WAREHOUSE_HISTORY_EDIT_DENIED_MESSAGE,
+} from '../../../shared/utils/releaseHistoryAccess.js';
+import {
+  WAREHOUSE_WRITE_OFF_DOC_MODE,
+  WAREHOUSE_WRITE_OFF_DOC_TYPE,
+} from '../../../shared/types/warehouseGoodDocument.js';
+import { writeOffHistorySyncService } from './WarehouseGoodDocumentHistorySync.js';
+import {
+  listGoodDocumentHistory,
+  parseGoodDocHistoryListQuery,
+} from './warehouseGoodDocumentHistoryList.js';
+import { warehouseWriteOffAuditService } from './WarehouseWriteOffAuditService.js';
+import {
+  appendDilovodRemark,
+  buildEditRemarkNote,
+  buildGoodDocumentPayload,
+  buildGoodDocumentUpdateDiff,
+  enrichWriteOffItems,
+  extractDilovodRemarkFromItems,
+  formatLocalDateTime,
+  getEditorLabel,
+  mergeDilovodRemarkIntoItems,
+  parseLocalDate,
+} from './warehouseGoodDocumentUtils.js';
 
 const router = Router();
 const warehouseOperate = requirePermission('warehouse', 'operate', 'Створювати/відправляти складські документи');
 const warehouseHistoryDelete = requirePermission('warehouse', 'history.delete', 'Видаляти історію складських документів');
+
+function isWriteOffHistoryAdmin(req: { user?: { role?: string } }): boolean {
+  return req.user?.role === ROLES.ADMIN;
+}
+
+function getRequestUserId(req: { user?: { userId?: number; id?: number } }): number | null {
+  const raw = req.user?.userId ?? req.user?.id;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function assertCanEditWriteOffRecord(
+  req: { user?: { role?: string; userId?: number; id?: number } },
+  record: { createdAt: Date; createdBy: number },
+): void {
+  const allowed = canEditWarehouseReleaseHistory({
+    isAdmin: isWriteOffHistoryAdmin(req),
+    createdAt: record.createdAt,
+    createdBy: record.createdBy,
+    currentUserId: getRequestUserId(req),
+  });
+  if (!allowed) {
+    throw new Error(WAREHOUSE_HISTORY_EDIT_DENIED_MESSAGE);
+  }
+}
+
 
 /**
  * POST /api/warehouse/writeoff/send
@@ -54,104 +73,36 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
       return res.status(400).json({ success: false, error: 'items are required' });
     }
 
-    // Build payload
-    // Map SKU -> dilovodId
-    const skus = items.map((it: any) => it.sku).filter(Boolean);
-    const found = await catalogOpsLookup.getBySkus(skus);
-    const products = catalogOpsLookup.listUnique(found);
-    const skuToProduct = new Map(products.map((p) => [p.sku, p]));
-
-    const { getDilovodConfigFromDB } = await import('../../services/dilovod/DilovodUtils.js');
-    const { loadDilovodWarehouseDefaults } = await import('../../services/dilovod/DilovodWarehouseDefaults.js');
+    const { getDilovodConfigFromDB, getDilovodUserId } = await import('../../services/dilovod/DilovodUtils.js');
     const dilovodConfig = await getDilovodConfigFromDB();
-    const warehouseDefaults = await loadDilovodWarehouseDefaults();
+    const baseDate = parseLocalDate(date) || new Date();
+    const resolvedStorage = storageId ?? dilovodConfig.smallStorageId ?? dilovodConfig.mainStorageId ?? null;
+    const resolvedFirm = firmId ?? dilovodConfig.defaultFirmId ?? null;
+    const reasonLabel = String(reason || '').replace(/[^\p{L}\p{N}\s\-]/gu, '').trim();
 
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const formatLocal = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-
-    const parseIncomingDate = (dt: any): Date | null => {
-      if (!dt) return null;
-      if (dt instanceof Date) return dt;
-      if (typeof dt !== 'string') return null;
-      try {
-        return parseLocalDate(dt);
-      } catch (e) {
-        return null;
-      }
-    };
-
-    const incomingDate = parseIncomingDate(date);
-    const baseDate = incomingDate || new Date();
-    const formattedDate = formatLocal(baseDate);
-
-    const header: any = {
-      id: 'documents.goodWriteOff',
-      date: formattedDate,
-      docMode: '1004000000000304',
-      storage: storageId ?? dilovodConfig.smallStorageId ?? dilovodConfig.mainStorageId ?? null,
-      firm: firmId ?? dilovodConfig.defaultFirmId ?? null,
-      posted: 1,
-      accCosts: '1119000000001299',
-      // intentionally omitting: person, tradeChanel, paymentForm, cashAccount
-    };
-
-    // Resolve author (dilovodUserId) from local user for header.author
+    let authorDilovodId: string | null = null;
     try {
-      const { getDilovodUserId } = await import('../../services/dilovod/DilovodUtils.js');
       const currentUserId = (req as any).user?.userId || (req as any).user?.id;
-      const authorDilovodId = await getDilovodUserId(currentUserId, { logPrefix: '[WriteOff] ' });
-      header.author = authorDilovodId;
+      authorDilovodId = await getDilovodUserId(currentUserId, { logPrefix: '[WriteOff] ' });
     } catch (e) {
       console.warn('[WriteOff] Failed to resolve author dilovod id:', e);
     }
 
-    // remark: Reason: Name1, Name2 (no emoji)
-    const reasonLabel = String(reason || '').replace(/[^\p{L}\p{N}\s\-]/gu, '').trim();
-    const commentLabel = String(comment || '').trim();
-    const productNames = items.map((it: any) => (skuToProduct.get(it.sku)?.name ?? it.name ?? it.sku));
-      // Format: "Reason: Item1, Item2 | Comment"  (if present)
-      let remark = '';
-      if (reasonLabel && productNames.length) {
-        remark = `${reasonLabel}: ${productNames.join(', ')}`;
-      } else if (reasonLabel) {
-        remark = reasonLabel;
-      } else if (productNames.length) {
-        remark = productNames.join(', ');
-      }
-      if (commentLabel) {
-        remark = remark ? `${remark} | ${commentLabel}` : commentLabel;
-      }
-    if (remark) header.remark = remark;
-
-    const tpGoods: any[] = [];
-    let row = 1;
-    for (const it of items) {
-      const prod = skuToProduct.get(it.sku);
-      if (!prod || !prod.dilovodId) {
-        // skip or push warning
-        continue;
-      }
-      const accGood = prod.set && hasOwnStockInWarehouse(prod.stockBalanceByStock)
-        ? warehouseDefaults.setAccountId
-        : warehouseDefaults.accountId;
-      tpGoods.push({
-        rowNum: row,
-        good: prod.dilovodId,
-        goodPart: it.batchId || null,
-        unit: warehouseDefaults.unitId,
-        qty: Number(it.quantity) || 0,
-        accGood,
-      });
-      row++;
-    }
-
-    const payload: any = {
+    const { payload } = await buildGoodDocumentPayload({
+      docType: WAREHOUSE_WRITE_OFF_DOC_TYPE,
+      docMode: WAREHOUSE_WRITE_OFF_DOC_MODE,
       saveType: 1,
-      header,
-      tableParts: { tpGoods },
-    };
+      items,
+      reason: reasonLabel,
+      comment: String(comment || '').trim(),
+      firmId: resolvedFirm,
+      storageId: resolvedStorage,
+      date: baseDate,
+      includeAccCosts: true,
+      authorDilovodId,
+    });
 
-    const { dilovodExportFlowService, dilovodService } = await import('../../services/dilovod/index.js');
+    const { dilovodExportFlowService } = await import('../../services/dilovod/index.js');
     const exportResult = await dilovodExportFlowService.send({
       payload,
       dryRun,
@@ -173,7 +124,7 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
       try {
         const { prisma } = await import('../../lib/utils.js');
         await prisma.meta_logs.create({ data: {
-          category: 'dilovod', title: 'WriteOff export failed', status: 'error', message: shortMsg, data: { payload, result }, initiatedBy: (req as any).user?.userId ? String((req as any).user.userId) : 'unknown'
+          category: 'dilovod', title: 'WriteOff export failed', status: 'error', message: shortMsg, data: { payload, result } as Prisma.InputJsonValue, initiatedBy: (req as any).user?.userId ? String((req as any).user.userId) : 'unknown'
         } });
       } catch (metaErr) {
         console.warn('[WriteOff] Failed to write meta log:', metaErr);
@@ -190,91 +141,32 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
     const result = exportResult.dilovodResponse;
     const writeOffNumber = result?.id ?? exportResult.dilovodDocId ?? null;
 
-    // Save history record (store firmName if possible)
     try {
       const userId = (req as any).user?.userId || (req as any).user?.id;
-      // Prisma expects a Date object / ISO date for DateTime fields — convert formattedDate
-      const writeOffDateObj = formattedDate ? parseLocalDate(formattedDate) : null;
+      const writeOffDateObj = baseDate;
+      const { DilovodService } = await import('../../services/dilovod/DilovodService.js');
+      const dilovodServiceLocal = new DilovodService();
+      const enrichedItems = await enrichWriteOffItems(items, resolvedFirm, baseDate, dilovodServiceLocal);
+      const header = (payload as any).header ?? {};
+      const remark = header.remark ? String(header.remark) : null;
 
-      // Try to resolve firmName from Dilovod directories if possible
-      let firmNameToSave: string | null = null;
-      let dilovodServiceLocal: any = null;
-      try {
-        const { DilovodService } = await import('../../services/dilovod/DilovodService.js');
-        dilovodServiceLocal = new DilovodService();
-        const firms = await dilovodServiceLocal.getFirms();
-        const headerFirm = header.firm;
-        if (Array.isArray(firms) && headerFirm != null) {
-          const found = firms.find((f: any) => String(f.id) === String(headerFirm) || String(f.good_id) === String(headerFirm) || String(f.name) === String(headerFirm));
-          firmNameToSave = found?.name ?? null;
-        }
-      } catch (e) {
-        console.warn('[WriteOff] Failed to resolve firm name:', e);
-      }
-
-      // Enrich items with productName, batchNumber (name), sku and productId for easier history rendering
-      // If batch name is missing but batchId present, try to resolve via Dilovod API
-      const enrichedItems: any[] = [];
-      try {
-        // collect skus that need batch lookup
-        const skusNeedingLookup = Array.from(new Set((items || []).filter((it: any) => !it.batchNumber && (it.batchId || it.batchName) && it.sku).map((it: any) => it.sku)));
-        const batchMap = new Map<string, any[]>();
-        if (dilovodServiceLocal && skusNeedingLookup.length > 0) {
-          for (const s of skusNeedingLookup) {
-            try {
-              const batches = await dilovodServiceLocal.getBatchNumbersBySku(s, header.firm ?? undefined, baseDate);
-              batchMap.set(s, Array.isArray(batches) ? batches : []);
-            } catch (e) {
-              batchMap.set(s, []);
-            }
-          }
-        }
-
-        for (const it of items) {
-          const prod = skuToProduct.get(it.sku) || null;
-          let resolvedBatchName = it.batchNumber ?? it.batchName ?? null;
-          if (!resolvedBatchName && it.batchId && it.sku && batchMap.has(it.sku)) {
-            const candidates = batchMap.get(it.sku) || [];
-            const found = candidates.find((b: any) => String(b.batchId) === String(it.batchId) || String(b.id) === String(it.batchId));
-            if (found) resolvedBatchName = found.batchNumber ?? found.name ?? null;
-          }
-
-          enrichedItems.push({
-            ...it,
-            productName: prod?.name ?? it.name ?? null,
-            batchNumber: resolvedBatchName ?? it.batchId ?? null,
-            sku: it.sku ?? null,
-            productId: prod?.id ?? it.productId ?? null,
-          });
-        }
-      } catch (e) {
-        // fallback: simple enrichment
-        for (const it of items) {
-          const prod = skuToProduct.get(it.sku) || null;
-          enrichedItems.push({
-            ...it,
-            productName: prod?.name ?? it.name ?? null,
-            batchNumber: it.batchNumber ?? it.batchName ?? it.batchId ?? null,
-            sku: it.sku ?? null,
-            productId: prod?.id ?? it.productId ?? null,
-          });
-        }
-      }
-
-      const record = await prisma.warehouseWriteOffHistory.create({
+      await prisma.warehouseWriteOffHistory.create({
         data: {
-          writeOffNumber: writeOffNumber,
-          firmId: firmId ?? null,
-          storageId: header.storage ?? null,
+          writeOffNumber: writeOffNumber ? String(writeOffNumber) : null,
+          docNumber: result?.number ?? result?.header?.number ?? null,
+          firmId: resolvedFirm,
+          storageId: resolvedStorage,
           writeOffDate: writeOffDateObj,
           items: JSON.stringify(enrichedItems),
-          writeOffReason: reason || '',
+          writeOffReason: reasonLabel || '',
           customReason: customReason || null,
           comment: comment || null,
+          remark,
+          source: 'local',
+          status: 'created',
           payload: JSON.stringify(payload),
           createdBy: userId || 0,
-          
-        }
+        },
       });
     } catch (historyErr) {
       console.warn('[WriteOff] Failed to save history record:', historyErr);
@@ -292,35 +184,218 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
  */
 router.get('/history', authenticateToken, async (req, res) => {
   try {
-    const history = await prisma.warehouseWriteOffHistory.findMany({ orderBy: { createdAt: 'desc' } });
-    // Preload firms once to avoid calling into DilovodService.getFirms for each record
-    let firmsMap: Map<string, string> = new Map();
-    try {
-      const { dilovodService } = await import('../../services/dilovod/DilovodService.js');
-      const firms = await dilovodService.getFirms(false);
-      if (Array.isArray(firms)) {
-        firmsMap = new Map(firms.map((f: any) => [String(f.id), f.name || String(f.id)]));
+    const listQuery = parseGoodDocHistoryListQuery(req);
+    const shouldSync = String(req.query.sync ?? '') === 'true';
+    const forceFullList = String(req.query.forceFullList ?? '') === 'true';
+    if (shouldSync && listQuery.status === 'active') {
+      try {
+        await writeOffHistorySyncService.sync({ listQuery, forceFullList });
+      } catch (syncErr) {
+        console.warn('[WriteOff] Dilovod history sync failed:', syncErr);
       }
-    } catch (e) {
-      console.warn('[WriteOff] Failed to preload firms for display names:', e);
     }
-
-    const enriched = history.map((rec: any) => {
-      const parsed = safeParseItems(rec.items);
-      const itemsNormalized = normalizeItemsArray(parsed);
-      const idStr = rec.firmId != null ? String(rec.firmId) : null;
-      const firmDisplay = idStr ? (firmsMap.get(idStr) ?? idStr) : null;
-      return {
-        ...rec,
-        firmDisplayName: firmDisplay,
-        itemsNormalized,
-      };
-    });
-
-    res.json({ success: true, data: enriched });
+    const result = await listGoodDocumentHistory('writeOff', listQuery);
+    res.json({ success: true, data: result.rows, pagination: result.pagination });
   } catch (error) {
     console.error('[WriteOff] Error fetching history:', error);
     res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /api/warehouse/writeoff/history/:id/details
+ * ?force=true — примусово оновити tpGoods з Dilovod
+ */
+router.get('/history/:id/details', authenticateToken, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid id' });
+    }
+    const force = req.query.force === 'true';
+    const details = await writeOffHistorySyncService.loadDetails(id, { force });
+    res.json({ success: true, data: details });
+  } catch (error) {
+    console.error('[WriteOff] history details error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Internal server error',
+    });
+  }
+});
+
+/**
+ * PATCH /api/warehouse/writeoff/history/:id
+ */
+router.patch('/history/:id', authenticateToken, warehouseOperate, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid id' });
+    }
+
+    const existing = await prisma.warehouseWriteOffHistory.findUnique({ where: { id } });
+    if (!existing || existing.status === 'deleted') {
+      return res.status(404).json({ success: false, error: 'Not found' });
+    }
+
+    assertCanEditWriteOffRecord(req, existing);
+
+    const bodyItems = Array.isArray(req.body?.items) ? req.body.items : null;
+    if (!bodyItems || bodyItems.length === 0) {
+      return res.status(400).json({ success: false, error: 'items are required' });
+    }
+
+    const userId = Number((req as any).user?.userId || (req as any).user?.id) || null;
+    const { getDilovodConfigFromDB, getDilovodUserId, getDilovodExportErrorMessage } = await import('../../services/dilovod/DilovodUtils.js');
+    const dilovodConfig = await getDilovodConfigFromDB();
+
+    const nextDate = parseLocalDate(req.body?.date ?? req.body?.writeOffDate) ?? existing.writeOffDate ?? new Date();
+    const nextStorage = req.body?.storageId != null && String(req.body.storageId).trim() !== ''
+      ? String(req.body.storageId).trim()
+      : existing.storageId;
+    const nextFirm = req.body?.firmId != null && String(req.body.firmId).trim() !== ''
+      ? String(req.body.firmId).trim()
+      : existing.firmId ?? dilovodConfig.defaultFirmId ?? null;
+    const nextReason = req.body?.reason != null
+      ? String(req.body.reason).replace(/[^\p{L}\p{N}\s\-]/gu, '').trim()
+      : existing.writeOffReason;
+    const nextCustomReason = req.body?.customReason !== undefined
+      ? (req.body.customReason == null ? null : String(req.body.customReason))
+      : existing.customReason;
+    const nextComment = req.body?.comment !== undefined
+      ? (req.body.comment == null ? null : String(req.body.comment))
+      : existing.comment;
+
+    const { DilovodService } = await import('../../services/dilovod/DilovodService.js');
+    const dilovodServiceLocal = new DilovodService();
+    const enrichedItems = await enrichWriteOffItems(bodyItems, nextFirm, nextDate, dilovodServiceLocal);
+
+    const before = {
+      writeOffDate: existing.writeOffDate ? formatLocalDateTime(existing.writeOffDate) : '',
+      comment: existing.comment,
+      writeOffReason: existing.writeOffReason,
+      storageId: existing.storageId,
+      firmId: existing.firmId,
+      items: existing.items,
+    };
+    const after = {
+      writeOffDate: formatLocalDateTime(nextDate),
+      comment: nextComment,
+      writeOffReason: nextReason,
+      storageId: nextStorage,
+      firmId: nextFirm,
+      items: JSON.stringify(enrichedItems),
+    };
+    const changes = buildGoodDocumentUpdateDiff(before, after, [
+      'writeOffDate',
+      'comment',
+      'writeOffReason',
+      'storageId',
+      'firmId',
+      'items',
+    ]);
+
+    let nextRemark = existing.remark;
+    let nextItemsJson = JSON.stringify(enrichedItems);
+
+    const dilovodDocId = existing.writeOffNumber ? String(existing.writeOffNumber).trim() : '';
+    if (dilovodDocId && changes.length > 0) {
+      const editorLabel = await getEditorLabel(userId);
+      const remarkNote = buildEditRemarkNote(editorLabel, changes);
+      const previousRemark = extractDilovodRemarkFromItems(existing.items) ?? existing.remark;
+      const mergedRemark = appendDilovodRemark(previousRemark, remarkNote);
+
+      let authorDilovodId: string | null = null;
+      try {
+        authorDilovodId = await getDilovodUserId(userId, { logPrefix: '[WriteOff][patch] ' });
+      } catch {
+        authorDilovodId = null;
+      }
+
+      const { payload } = await buildGoodDocumentPayload({
+        docType: WAREHOUSE_WRITE_OFF_DOC_TYPE,
+        docMode: WAREHOUSE_WRITE_OFF_DOC_MODE,
+        dilovodDocId,
+        saveType: 2,
+        items: bodyItems,
+        reason: nextReason,
+        comment: String(nextComment ?? '').trim(),
+        firmId: nextFirm,
+        storageId: nextStorage,
+        date: nextDate,
+        includeAccCosts: true,
+        authorDilovodId,
+      });
+
+      (payload as any).header.remark = mergedRemark;
+
+      const { dilovodExportFlowService } = await import('../../services/dilovod/index.js');
+      const exportResult = await dilovodExportFlowService.send({
+        payload,
+        dryRun: false,
+        warnings: [],
+        label: '[WriteOff][patch]',
+      });
+
+      if (!exportResult.success) {
+        const message = exportResult.dilovodResponse
+          ? getDilovodExportErrorMessage(exportResult.dilovodResponse)
+          : String(exportResult.error || 'Dilovod error');
+        return res.status(422).json({ success: false, error: message });
+      }
+
+      nextRemark = mergedRemark;
+      nextItemsJson = mergeDilovodRemarkIntoItems(JSON.stringify(enrichedItems), mergedRemark);
+    }
+
+    const updated = await prisma.warehouseWriteOffHistory.update({
+      where: { id },
+      data: {
+        writeOffDate: nextDate,
+        storageId: nextStorage,
+        firmId: nextFirm,
+        writeOffReason: nextReason,
+        customReason: nextCustomReason,
+        comment: nextComment,
+        remark: nextRemark,
+        items: nextItemsJson,
+        payload: dilovodDocId ? JSON.stringify({ patched: true }) : existing.payload,
+      },
+    });
+
+    await warehouseWriteOffAuditService.log({
+      writeOffId: id,
+      action: 'write_off_updated',
+      userId,
+      payload: { changes } as Prisma.InputJsonValue,
+    });
+
+    return res.json({ success: true, data: updated });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Internal server error';
+    const status = message.includes('недоступне') ? 403 : 500;
+    console.error('[WriteOff] patch history error:', error);
+    return res.status(status).json({ success: false, error: message });
+  }
+});
+
+/** GET /api/warehouse/writeoff/history/:id/audit */
+router.get('/history/:id/audit', authenticateToken, warehouseOperate, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid id' });
+    }
+    const existing = await prisma.warehouseWriteOffHistory.findUnique({ where: { id } });
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Not found' });
+    }
+    const logs = await warehouseWriteOffAuditService.list(id);
+    return res.json({ success: true, data: logs });
+  } catch (error) {
+    console.error('[WriteOff] audit list error:', error);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 
@@ -406,9 +481,10 @@ router.post('/history', authenticateToken, async (req, res) => {
           writeOffReason: sanitizedWriteOffReason,
           customReason: customReason || null,
           comment: comment || null,
-          payload: payload ? JSON.stringify(payload) : null,
+          source: 'local',
+          status: 'created',
+          payload: payload ? JSON.stringify(payload) : '{}',
           createdBy: userId || 0,
-          
         } });
       }
 
@@ -432,7 +508,7 @@ router.delete('/history/:id', authenticateToken, warehouseHistoryDelete, async (
     const { dryRun, forceLocal } = req.query;
     // If forceLocal=true provided, skip remote Dilovod deletion and remove local record only
     if (String(forceLocal) === 'true') {
-      await prisma.warehouseWriteOffHistory.delete({ where: { id } });
+      await prisma.warehouseWriteOffHistory.update({ where: { id }, data: { status: 'deleted' } });
       return res.json({ success: true });
     }
 
@@ -457,7 +533,7 @@ router.delete('/history/:id', authenticateToken, warehouseHistoryDelete, async (
       }
     }
 
-    await prisma.warehouseWriteOffHistory.delete({ where: { id } });
+    await prisma.warehouseWriteOffHistory.update({ where: { id }, data: { status: 'deleted' } });
     res.json({ success: true });
   } catch (error) {
     console.error('[WriteOff] Error deleting history record:', error);

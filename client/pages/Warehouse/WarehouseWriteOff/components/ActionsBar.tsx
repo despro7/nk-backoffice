@@ -6,9 +6,10 @@ interface Props {
   onSend: () => void;
   onCancel?: () => void;
   disabled?: boolean;
+  sendLabel?: string;
 }
 
-export default function ActionsBar({ onPreview, onSend, onCancel, disabled }: Props) {
+export default function ActionsBar({ onPreview, onSend, onCancel, disabled, sendLabel = 'Відправити' }: Props) {
   return (
     <div className="flex justify-end gap-3">
       {/** Optional cancel button (clears inputs) */}
@@ -25,7 +26,7 @@ export default function ActionsBar({ onPreview, onSend, onCancel, disabled }: Pr
       )}
       <Button color="primary" size="lg" onPress={onSend} isDisabled={disabled}>
         <DynamicIcon name="send" className="w-4 h-4" />
-        Відправити
+        {sendLabel}
       </Button>
     </div>
   );

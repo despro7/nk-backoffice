@@ -2,6 +2,7 @@ import { Router } from 'express';
 import warehouseRouter from '../modules/Warehouse/WarehouseController.js';
 import returnsHistoryRouter from '../modules/Warehouse/ReturnsHistoryController.js';
 import writeOffRouter from '../modules/Warehouse/WriteOffController.js';
+import surplusRouter from '../modules/Warehouse/SurplusController.js';
 import setReleasesRouter from '../modules/Warehouse/SetReleaseController.js';
 
 const router = Router();
@@ -14,6 +15,9 @@ router.use('/returns', returnsHistoryRouter);
 
 // Маршрути для списань
 router.use('/writeoff', writeOffRouter);
+
+// Оприбуткування надлишків
+router.use('/surplus', surplusRouter);
 
 // Використовуємо роутер з WarehouseController останнім, щоб його `/:id` не перехоплював підмаршрути
 router.use('/', warehouseRouter);

@@ -12,6 +12,7 @@ const MovementMobCreatePage = lazyPage(() => import('./pages/Warehouse/Warehouse
 const WarehouseInventory = lazyPage(() => import('./pages/Warehouse/WarehouseInventory'));
 const WarehouseReturns = lazyPage(() => import('./pages/Warehouse/WarehouseReturns'));
 const WarehouseWriteOff = lazyPage(() => import('./pages/Warehouse/WarehouseWriteOff'));
+const WarehouseSurplus = lazyPage(() => import('./pages/Warehouse/WarehouseSurplus/index'));
 const WarehouseReleaseSets = lazyPage(() => import('./pages/Warehouse/WarehouseReleaseSets'));
 const Reports = lazyPage(() => import('./pages/Reports/ReportsGeneral'));
 const ReportsSales = lazyPage(() => import('./pages/Reports/ReportsSales'));
@@ -277,6 +278,23 @@ export const appRoutes: AppRoute[] = [
     permission: { name: 'writeoff' },
   },
   {
+    path: '/warehouse/surplus',
+    component: WarehouseSurplus,
+    title: 'Оприбуткування надлишків',
+    pageTitle: 'Оприбуткування надлишків | NK Backoffice',
+    navLabel: 'Оприбуткування',
+    icon: <DynamicIcon name="package-plus" size={16} />,
+    inNav: true,
+    order: 5,
+    parent: 'warehouse',
+    permission: { name: 'surplus' },
+    navBadge: {
+      label: 'NEW',
+      color: 'danger',
+      until: '2026-10-20',
+    },
+  },
+  {
     path: '/warehouse/releases',
     component: WarehouseReleaseSets,
     title: 'Комплектація та розукомплектування наборів',
@@ -284,7 +302,7 @@ export const appRoutes: AppRoute[] = [
     navLabel: 'Комплектація + Розкомплектація',
     icon: <DynamicIcon name="package-open" size={16} />,
     inNav: true,
-    order: 5,
+    order: 6,
     parent: 'warehouse',
     permission: { name: 'releases' },
   },

@@ -15,11 +15,27 @@ export function isReleaseHistoryEditableToday(
   return Boolean(createdDay && today && createdDay === today);
 }
 
+export const WAREHOUSE_HISTORY_EDIT_DENIED_MESSAGE =
+  'Редагування цього запису недоступне (лише свої записи за поточний день або роль адміністратора)';
+
+function normalizeUserId(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export function canEditWarehouseReleaseHistory(params: {
   isAdmin: boolean;
   createdAt: Date | string;
+  createdBy?: number | string | null;
+  currentUserId?: number | string | null;
   now?: Date;
 }): boolean {
   if (params.isAdmin) return true;
-  return isReleaseHistoryEditableToday(params.createdAt, params.now);
+  if (!isReleaseHistoryEditableToday(params.createdAt, params.now)) return false;
+
+  const ownerId = normalizeUserId(params.createdBy);
+  const currentUserId = normalizeUserId(params.currentUserId);
+  if (!ownerId || !currentUserId || ownerId !== currentUserId) return false;
+
+  return true;
 }

@@ -115,7 +115,7 @@ export default function ReleaseHistoryTab({
   emptyMessage = 'Немає записів',
 }: Props) {
   const { isDebugMode } = useDebug();
-  const { isAdmin } = useRoleAccess();
+  const { isAdmin, user } = useRoleAccess();
   const [auditRefreshKey] = useState(0);
 
   const mapped = records.map((record: any) => {
@@ -200,6 +200,8 @@ export default function ReleaseHistoryTab({
           canEditRecord={(record) => canEditWarehouseReleaseHistory({
             isAdmin: isAdmin(),
             createdAt: record.createdAt || record.created_at,
+            createdBy: record.createdBy ?? record.created_by,
+            currentUserId: user?.id,
           })}
           onEditRecord={onEdit ? async (record) => {
             onEdit(record);

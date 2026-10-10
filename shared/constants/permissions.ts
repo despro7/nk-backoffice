@@ -211,6 +211,7 @@ export const PERMISSION_SEEDS: Array<{ key: PermissionKey; seed: SeedGrant }> = 
   { key: pageKey('warehouse', 'inventory'), seed: min(ROLES.STOREKEEPER) },
   { key: pageKey('warehouse', 'returns'), seed: min(ROLES.STOREKEEPER) },
   { key: pageKey('warehouse', 'writeoff'), seed: min(ROLES.STOREKEEPER) },
+  { key: pageKey('warehouse', 'surplus'), seed: min(ROLES.STOREKEEPER) },
   { key: pageKey('warehouse', 'releases'), seed: min(ROLES.STOREKEEPER) },
 
   { key: pageKey('reports', 'sales'), seed: min(ROLES.ADS_MANAGER) },
@@ -309,6 +310,7 @@ export const PERMISSIONS = {
   PAGE_WAREHOUSE_INVENTORY: pageKey('warehouse', 'inventory'),
   PAGE_WAREHOUSE_RETURNS: pageKey('warehouse', 'returns'),
   PAGE_WAREHOUSE_WRITEOFF: pageKey('warehouse', 'writeoff'),
+  PAGE_WAREHOUSE_SURPLUS: pageKey('warehouse', 'surplus'),
   PAGE_WAREHOUSE_RELEASES: pageKey('warehouse', 'releases'),
   PAGE_REPORTS_SALES: pageKey('reports', 'sales'),
   PAGE_REPORTS_SHIPMENT: pageKey('reports', 'shipment'),
