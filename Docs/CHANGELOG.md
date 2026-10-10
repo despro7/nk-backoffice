@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-10-10 — Склад: пагінація історії інвентаризації
+
+**Files:** `InventoryHistoryTable.tsx`, `WarehouseController.ts`, `Docs/features/warehouse-inventory.md`
+
+- UI історії: клієнтська пагінація (за замовч. 10 / стор., вибір 5–100), блок «Показано X–Y з Z».
+- `GET /inventory/history`: без `limit` повертає весь список (раніше default 20 обрізав історію).
+
+**Документація:** [`Docs/features/warehouse-inventory.md`](features/warehouse-inventory.md).
+
+---
+
 ## 2026-10-10 — Склад: оприбуткування надлишків, дзеркало історії списань, UX
 
 **Files:** `WarehouseSurplus/`, `SurplusController.ts`, `WriteOffController.ts`, `warehouseGoodDocumentUtils.ts`, `WarehouseGoodDocumentHistorySync.ts`, `warehouseGoodDocumentHistoryList.ts`, `shared/types/warehouseGoodDocument.ts`, `filterWarehouseSelectableBatches.ts`, `WarehouseGoodDocumentHistoryTab.tsx`, `useWarehouseReturns.ts`, `releaseHistoryAccess.ts`, `prisma/migrations/20261010120000_warehouse_writeoff_surplus_mirror/`, `routes.config.tsx`, `permissions.ts`

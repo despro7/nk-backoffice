@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Button, Chip } from '@heroui/react';
+import { Button, Chip, Pagination, Select, SelectItem } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDate } from '@/lib/formatUtils';
 import { useAuth } from '@/contexts/auth-context';
@@ -13,6 +13,8 @@ import { StockBadge } from '@/components/StockBadge';
 import InventoryRefreshReportModal from './InventoryRefreshReportModal';
 import InventoryTableSection from './InventoryTableSection';
 import useUserNames from '@/hooks/useUserNames';
+
+const PAGE_SIZE_OPTIONS = [6, 12, 24];
 
 type SortColumn = 'sku' | 'name' | 'systemBalance' | 'actual' | 'deviation' | 'systemBalanceGp' | 'actualGp' | 'deviationGp';
 type SortDirection = 'ascending' | 'descending';
@@ -44,6 +46,8 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
   const [sortDirectionMat, setSortDirectionMat] = useState<SortDirection>('ascending');
   const [contentHeights, setContentHeights] = useState<Record<string, number>>({});
   const contentRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(6);
 
   const userIds = sessions.map((s) => Number(s.createdBy ?? null));
   const namesMap = useUserNames(userIds);
@@ -57,6 +61,24 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
 
   const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null);
   const { rowHistoryCache, loadingSku, fetchHistory } = useRowHistory();
+
+  const total = sessions.length;
+  const pages = Math.max(1, Math.ceil(total / limit));
+  const safePage = Math.min(page, pages);
+  const rangeStart = total === 0 ? 0 : (safePage - 1) * limit + 1;
+  const rangeEnd = Math.min(safePage * limit, total);
+  const pagedSessions = sessions.slice((safePage - 1) * limit, safePage * limit);
+
+  useEffect(() => {
+    if (page > pages) setPage(pages);
+  }, [page, pages]);
+
+  useEffect(() => {
+    if (expandedSessionId && contentRefs.current[expandedSessionId]) {
+      const h = contentRefs.current[expandedSessionId]?.scrollHeight || 0;
+      setContentHeights((p) => ({ ...p, [expandedSessionId]: h }));
+    }
+  }, [expandedSessionId, sortColumnProd, sortDirectionProd, sortColumnMat, sortDirectionMat, expandedRowKey, rowHistoryCache]);
 
   if (sessions.length === 0) {
     return (
@@ -124,13 +146,6 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
     }
   };
 
-  useEffect(() => {
-    if (expandedSessionId && contentRefs.current[expandedSessionId]) {
-      const h = contentRefs.current[expandedSessionId]?.scrollHeight || 0;
-      setContentHeights((p) => ({ ...p, [expandedSessionId]: h }));
-    }
-  }, [expandedSessionId, sortColumnProd, sortDirectionProd, sortColumnMat, sortDirectionMat, expandedRowKey, rowHistoryCache]);
-
   const handleApplyRefresh = async () => {
     if (!refreshSessionId) return;
     setIsApplying(true);
@@ -176,7 +191,7 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
 
   return (
     <div className="space-y-2">
-      {sessions.map((session) => {
+      {pagedSessions.map((session) => {
         const canAuthorEditThisSession = !isAdmin && currentUserId !== null && String(session.createdBy) === currentUserId && latestOwnSessionId !== null && String(session.id) === String(latestOwnSessionId);
         const items: any[] = session.items as any[];
         const { materials, sets, products } = getSessionItems(items);
@@ -312,19 +327,19 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                     <h3 className="text-lg font-semibold text-gray-700 mb-2">Деталі інвентаризації #{session.id}</h3>
                     <div className="flex items-center gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
                       {onRefreshSessionBalances && (
-                        <Button size="sm" variant="flat" color="primary" className="bg-blue-200 h-auto px-2.5 py-1.5 gap-1.5 opacity-60" isDisabled={!!loadingLoadId || !!loadingDeleteId} startContent={<DynamicIcon name="refresh-cw" className={`w-3 h-3 ${loadingRefreshId !== session.id ? '' : 'animate-spin'}`} />} onPress={async () => { setLoadingRefreshId(session.id); try { const report = await onRefreshSessionBalances!(session.id); setRefreshReportItems(report?.items || []); setRefreshSessionItems(session.items as any[] || []); setRefreshSessionId(session.id); setRefreshInventoryDate(formatDate(session.inventoryDate)); setIsRefreshModalOpen(true); } finally { setLoadingRefreshId(null); } }}>Оновити облікові залишки</Button>
+                        <Button size="sm" variant="flat" color="primary" data-btn-tone="primary-blue-flat" className="h-auto px-3 py-1.5 gap-1 min-w-0" isDisabled={!!loadingLoadId || !!loadingDeleteId} startContent={<DynamicIcon name="refresh-cw" className={`w-3 h-3 ${loadingRefreshId !== session.id ? '' : 'animate-spin'}`} />} onPress={async () => { setLoadingRefreshId(session.id); try { const report = await onRefreshSessionBalances!(session.id); setRefreshReportItems(report?.items || []); setRefreshSessionItems(session.items as any[] || []); setRefreshSessionId(session.id); setRefreshInventoryDate(formatDate(session.inventoryDate)); setIsRefreshModalOpen(true); } finally { setLoadingRefreshId(null); } }}>Оновити облікові залишки</Button>
                       )}
 
                       {session.status !== 'removed' && (isAdmin || canAuthorEditThisSession) && onLoadSession && (
-                        <Button size="sm" variant="flat" color="primary" className="bg-blue-200 h-auto px-2.5 py-1.5 gap-1.5 opacity-60" isDisabled={!!loadingDeleteId} startContent={<DynamicIcon name={loadingLoadId !== session.id ? 'pencil' : 'loader-circle'} className={`w-3 h-3 ${loadingLoadId !== session.id ? '' : 'animate-spin'}`} />} onPress={async () => { setLoadingLoadId(session.id); try { await onLoadSession!(session); } finally { setLoadingLoadId(null); } }}>Редагувати</Button>
+                        <Button size="sm" variant="flat" color="primary" data-btn-tone="primary-blue-flat" className="h-auto px-2.5 py-1.5 gap-1 min-w-0" isDisabled={!!loadingDeleteId} startContent={<DynamicIcon name={loadingLoadId !== session.id ? 'pencil' : 'loader-circle'} className={`w-3 h-3 ${loadingLoadId !== session.id ? '' : 'animate-spin'}`} />} onPress={async () => { setLoadingLoadId(session.id); try { await onLoadSession!(session); } finally { setLoadingLoadId(null); } }}>Редагувати</Button>
                       )}
 
                       {session.status === 'removed' && isAdmin && onRestoreSession && (
-                        <Button size="sm" variant="flat" color="primary" className="bg-emerald-200 text-emerald-800 h-auto px-2.5 py-1.5 gap-1.5 opacity-60" isDisabled={!!loadingDeleteId} startContent={<DynamicIcon name={loadingLoadId !== session.id ? 'corner-up-left' : 'loader-circle'} className={`w-3 h-3 ${loadingLoadId !== session.id ? '' : 'animate-spin'}`} />} onPress={async () => { setLoadingLoadId(session.id); try { await onRestoreSession!(session.id); } finally { setLoadingLoadId(null); } }}>Відновити</Button>
+                        <Button size="sm" variant="flat" color="primary" data-btn-tone="primary-emerald-flat" className="h-auto px-3 py-1.5 gap-1 min-w-0" isDisabled={!!loadingDeleteId} startContent={<DynamicIcon name={loadingLoadId !== session.id ? 'corner-up-left' : 'loader-circle'} className={`w-3 h-3 ${loadingLoadId !== session.id ? '' : 'animate-spin'}`} />} onPress={async () => { setLoadingLoadId(session.id); try { await onRestoreSession!(session.id); } finally { setLoadingLoadId(null); } }}>Відновити</Button>
                       )}
 
                       {isAdmin && onDeleteSession && (
-                        <Button size="sm" variant="flat" color="danger" className="bg-red-200 h-auto px-2.5 py-1.5 gap-1.5 opacity-60" isDisabled={!!loadingLoadId} startContent={<DynamicIcon name={loadingDeleteId !== session.id ? 'trash-2' : 'loader-circle'} className={`w-3 h-3 ${loadingDeleteId !== session.id ? '' : 'animate-spin'}`} />} onPress={async () => { setLoadingDeleteId(session.id); try { await onDeleteSession!(session.id); } finally { setLoadingDeleteId(null); } }}>{session.status === 'removed' ? 'Видалити назавжди' : 'Видалити'}</Button>
+                        <Button size="sm" variant="flat" color="danger" className="h-auto px-3 py-1.5 gap-1 min-w-0" isDisabled={!!loadingLoadId} startContent={<DynamicIcon name={loadingDeleteId !== session.id ? 'trash-2' : 'loader-circle'} className={`w-3 h-3 ${loadingDeleteId !== session.id ? '' : 'animate-spin'}`} />} onPress={async () => { setLoadingDeleteId(session.id); try { await onDeleteSession!(session.id); } finally { setLoadingDeleteId(null); } }}>{session.status === 'removed' ? 'Видалити назавжди' : 'Видалити'}</Button>
                       )}
                     </div>
                   </div>
@@ -402,6 +417,44 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
           </div>
         );
       })}
+
+      {total > 0 && (
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-gray-600">
+            Показано {rangeStart}–{rangeEnd} з {total}
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Select
+              aria-label="Кількість на сторінку"
+              size="sm"
+              className="w-36"
+              selectedKeys={new Set([String(limit)])}
+              onSelectionChange={(keys) => {
+                const value = Number(Array.from(keys)[0]);
+                if (Number.isFinite(value)) {
+                  setLimit(value);
+                  setPage(1);
+                }
+              }}
+            >
+              {PAGE_SIZE_OPTIONS.map((option) => (
+                <SelectItem key={String(option)} textValue={`${option} / стор.`}>
+                  {option} / стор.
+                </SelectItem>
+              ))}
+            </Select>
+            {pages > 1 && (
+              <Pagination
+                total={pages}
+                page={safePage}
+                onChange={setPage}
+                showControls
+                size="sm"
+              />
+            )}
+          </div>
+        </div>
+      )}
 
       <InventoryRefreshReportModal
         isOpen={isRefreshModalOpen}

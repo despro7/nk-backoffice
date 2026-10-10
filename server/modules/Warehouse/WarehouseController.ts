@@ -2384,11 +2384,13 @@ router.post('/inventory/:id/revision', authenticateToken, async (req, res) => {
 });
 
 // GET /api/warehouse/inventory/history
-// Повертає завершені та активні інвентаризації (пагінація: page, limit)
+// Повертає завершені та активні інвентаризації.
+// Пагінація (page, limit) опційна: без limit повертає весь список (клієнтська пагінація).
 router.get('/inventory/history', authenticateToken, async (req, res) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
-    const skip = (Number(page) - 1) * Number(limit);
+    const page = req.query.page !== undefined ? Number(req.query.page) : 1;
+    const hasLimit = req.query.limit !== undefined && String(req.query.limit) !== '';
+    const limit = hasLimit ? Number(req.query.limit) : null;
     // Include 'revising' so admin-edited sessions appear in history; exclude 'removed'
     const historyStatuses = { in: ['completed', 'in_progress', 'revising'] };
 
@@ -2396,21 +2398,23 @@ router.get('/inventory/history', authenticateToken, async (req, res) => {
       prisma.warehouseInventory.findMany({
         where: { status: historyStatuses },
         orderBy: { createdAt: 'desc' },
-        skip,
-        take: Number(limit),
+        ...(limit !== null && Number.isFinite(limit) && limit > 0
+          ? { skip: (Math.max(1, page) - 1) * limit, take: limit }
+          : {}),
       }),
       prisma.warehouseInventory.count({ where: { status: historyStatuses } }),
     ]);
 
     const sessions = await resolveAuthorNames(rawSessions);
+    const effectiveLimit = limit !== null && Number.isFinite(limit) && limit > 0 ? limit : total || 1;
 
     res.json({
       sessions,
       pagination: {
-        page: Number(page),
-        limit: Number(limit),
+        page: limit !== null ? Math.max(1, page) : 1,
+        limit: effectiveLimit,
         total,
-        pages: Math.ceil(total / Number(limit)),
+        pages: Math.ceil(total / effectiveLimit) || 1,
       },
     });
   } catch (error) {

@@ -155,15 +155,15 @@ portionsPerBox  Int  @default(24)
 
 #### `GET /api/warehouse/inventory/history`
 
-Повертає завершені інвентаризації (пагінація).
+Повертає інвентаризації зі статусами `completed` | `in_progress` | `revising` (без `removed`).
 
-**Query params:** `page` (default: 1), `limit` (default: 20)
+**Query params (опційно):** `page`, `limit` — серверна пагінація. Без `limit` повертається **весь** список (клієнтська пагінація в UI).
 
 **Відповідь:**
 ```json
 {
   "sessions": [...],
-  "pagination": { "page": 1, "limit": 20, "total": 5, "pages": 1 }
+  "pagination": { "page": 1, "limit": 42, "total": 42, "pages": 1 }
 }
 ```
 
@@ -221,6 +221,8 @@ draft.inventoryDate ?? draft.createdAt ?? null
 ### Таб "Історія"
 
 Lazy load: завантажується при першому переключенні на таб або по кнопці "Оновити".
+
+`InventoryHistoryTable`: клієнтська пагінація (за замовч. 10 на сторінку, вибір 5 / 10 / 20 / 50 / 100), підпис «Показано X–Y з Z». Список береться повністю з API (без серверного `limit`).
 
 ---
 
