@@ -1,6 +1,9 @@
+const path = require('path');
+
 module.exports = {
   apps: [{
     name: 'nk-backoffice',
+    cwd: path.resolve(__dirname),
     script: 'dist/server/index.js',
     instances: 1,
     autorestart: true,

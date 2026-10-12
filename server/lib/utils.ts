@@ -1,3 +1,4 @@
+import '../env.js';
 import { PrismaClient } from '@prisma/client';
 import { UserType } from '../types/auth.js';
 
@@ -134,11 +135,6 @@ export const prisma =
   globalForPrisma.__novaFieldPrisma ??
   new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-    datasources: {
-      db: {
-        url: process.env.DATABASE_URL,
-      },
-    },
   });
 
 if (!globalForPrisma.__novaFieldPrisma) {
