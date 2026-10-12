@@ -4,7 +4,6 @@ import {
   Card,
   CardBody,
   Chip,
-  Input,
   Table,
   TableBody,
   TableCell,
@@ -115,27 +114,6 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
     }
   };
 
-  const handleInlineDilovodSave = async (user: UserRow, value: string) => {
-    const next = value.trim() || null;
-    if ((user.dilovodUserId ?? null) === next) return;
-    try {
-      const response = await fetch(`/api/auth/users/${user.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ dilovodUserId: next ?? '' }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        ToastService.show({ title: data.message || 'Не вдалося зберегти Dilovod ID', color: 'danger' });
-        return;
-      }
-      setUsers((prev) => prev.map((item) => (item.id === user.id ? { ...item, ...data.user } : item)));
-    } catch {
-      ToastService.show({ title: 'Не вдалося зберегти Dilovod ID', color: 'danger' });
-    }
-  };
-
   const editableUser: EditableUser | null = editingUser
     ? {
       id: editingUser.id,
@@ -161,7 +139,6 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
                 <TableColumn>Користувач</TableColumn>
                 <TableColumn>Роль</TableColumn>
                 <TableColumn>Останній візит</TableColumn>
-                <TableColumn>Dilovod ID</TableColumn>
                 <TableColumn>Дії в системі</TableColumn>
                 <TableColumn className="text-center">Статус</TableColumn>
                 <TableColumn className="text-center">Керування</TableColumn>
@@ -200,12 +177,6 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
                         ) : (
                           <span className="text-sm text-gray-400">Ще не входив</span>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <InlineDilovodId
-                          value={user.dilovodUserId ?? ''}
-                          onSave={(value) => void handleInlineDilovodSave(user, value)}
-                        />
                       </TableCell>
                       <TableCell>
                         {stats && (stats.orders > 0 || stats.warehouse > 0) ? (
@@ -273,52 +244,6 @@ export const UserRegistrationManager = forwardRef<UsersTabActions>(function User
     </div>
   );
 });
-
-function InlineDilovodId({ value, onSave }: { value: string; onSave: (value: string) => void }) {
-  const [draft, setDraft] = useState(value);
-  const [editing, setEditing] = useState(false);
-
-  useEffect(() => {
-    setDraft(value);
-  }, [value]);
-
-  if (!editing) {
-    return (
-      <button
-        type="button"
-        className="text-left text-sm font-mono text-gray-700 hover:text-primary max-w-[160px] truncate"
-        onClick={() => setEditing(true)}
-      >
-        {value || <span className="font-sans text-gray-400">не задано</span>}
-      </button>
-    );
-  }
-
-  return (
-    <Input
-      size="sm"
-      autoFocus
-      variant="bordered"
-      value={draft}
-      onValueChange={setDraft}
-      onBlur={() => {
-        setEditing(false);
-        onSave(draft);
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') {
-          setEditing(false);
-          onSave(draft);
-        }
-        if (event.key === 'Escape') {
-          setDraft(value);
-          setEditing(false);
-        }
-      }}
-      className="min-w-[140px]"
-    />
-  );
-}
 
 function ActivityBreakdown({ stats }: { stats: UserStats }) {
   return (

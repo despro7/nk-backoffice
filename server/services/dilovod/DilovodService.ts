@@ -1352,6 +1352,7 @@ export class DilovodService {
     name?: string;
     email?: string;
     roleId?: string;
+    disabled?: boolean;
   }) {
     await this.apiClient.updateUser(params);
     try {

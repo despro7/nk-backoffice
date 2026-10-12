@@ -42,7 +42,8 @@ interface UserCardPanelProps {
 
 function snapshotUserForm(
   form: UserPersonCardFormState,
-  createNewInDilovod: boolean,
+  backofficeOnly: boolean,
+  activateDilovodUser: boolean,
 ): string {
   return JSON.stringify({
     email: form.email.trim(),
@@ -52,7 +53,8 @@ function snapshotUserForm(
     dilovodRoleId: form.dilovodRoleId,
     isActive: form.isActive,
     password: form.password,
-    createNewInDilovod,
+    backofficeOnly,
+    activateDilovodUser,
   });
 }
 
@@ -68,15 +70,18 @@ export const UserCardPanel = forwardRef<UserCardPanelHandle, UserCardPanelProps>
   const isCreate = user == null;
   const [availableRoles, setAvailableRoles] = useState<RoleOption[]>([]);
   const [form, setForm] = useState<UserPersonCardFormState>(EMPTY_FORM);
-  const [createNewInDilovod, setCreateNewInDilovod] = useState(false);
+  const [backofficeOnly, setBackofficeOnly] = useState(false);
+  const [activateDilovodUser, setActivateDilovodUser] = useState(false);
   const [dilovodStepComplete, setDilovodStepComplete] = useState(false);
   const baselineRef = useRef('');
   const [baselineVersion, setBaselineVersion] = useState(0);
+  /** Поки true — автопідстановка Dilovod-ролі/даних не вважається dirty */
+  const [isHydrating, setIsHydrating] = useState(false);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showFieldErrors, setShowFieldErrors] = useState(false);
   const { roles: dilovodRoles } = useDilovodRoles(isOpen);
-  const { users: dilovodUsers } = useDilovodUsers(isOpen);
+  const { users: dilovodUsers, loading: dilovodUsersLoading } = useDilovodUsers(isOpen);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -93,16 +98,22 @@ export const UserCardPanel = forwardRef<UserCardPanelHandle, UserCardPanelProps>
     void loadRoles();
   }, [isOpen]);
 
-  const commitBaseline = useCallback((nextForm: UserPersonCardFormState, nextCreateNewInDilovod: boolean) => {
-    baselineRef.current = snapshotUserForm(nextForm, nextCreateNewInDilovod);
+  const commitBaseline = useCallback((
+    nextForm: UserPersonCardFormState,
+    nextBackofficeOnly: boolean,
+    nextActivateDilovodUser = false,
+  ) => {
+    baselineRef.current = snapshotUserForm(nextForm, nextBackofficeOnly, nextActivateDilovodUser);
     setBaselineVersion((version) => version + 1);
   }, []);
 
   useEffect(() => {
     if (!isOpen) {
       baselineRef.current = '';
+      setIsHydrating(false);
       return;
     }
+    setIsHydrating(true);
     if (user) {
       const nextForm = {
         email: user.email,
@@ -114,9 +125,10 @@ export const UserCardPanel = forwardRef<UserCardPanelHandle, UserCardPanelProps>
         isActive: user.isActive,
       };
       setForm(nextForm);
-      setCreateNewInDilovod(false);
+      setBackofficeOnly(false);
+      setActivateDilovodUser(false);
       setDilovodStepComplete(true);
-      commitBaseline(nextForm, false);
+      commitBaseline(nextForm, false, false);
     } else {
       const nextForm = {
         email: initialValues?.email ?? '',
@@ -128,20 +140,21 @@ export const UserCardPanel = forwardRef<UserCardPanelHandle, UserCardPanelProps>
         isActive: true,
       };
       setForm(nextForm);
-      setCreateNewInDilovod(false);
+      setBackofficeOnly(false);
+      setActivateDilovodUser(false);
       setDilovodStepComplete(Boolean(initialValues?.dilovodUserId));
-      commitBaseline(nextForm, false);
+      commitBaseline(nextForm, false, false);
     }
     setIsPasswordVisible(false);
     setShowFieldErrors(false);
   }, [isOpen, user, initialValues, commitBaseline]);
 
   const isDirty = useMemo(() => {
-    if (!isOpen) return false;
+    if (!isOpen || isHydrating) return false;
     if (!baselineRef.current) return false;
     void baselineVersion;
-    return snapshotUserForm(form, createNewInDilovod) !== baselineRef.current;
-  }, [isOpen, form, createNewInDilovod, baselineVersion]);
+    return snapshotUserForm(form, backofficeOnly, activateDilovodUser) !== baselineRef.current;
+  }, [isOpen, isHydrating, form, backofficeOnly, activateDilovodUser, baselineVersion]);
 
   useEffect(() => {
     onDirtyChange?.(isDirty);
@@ -152,7 +165,7 @@ export const UserCardPanel = forwardRef<UserCardPanelHandle, UserCardPanelProps>
   };
 
   const showDilovodRole = Boolean(user || dilovodStepComplete)
-    && (createNewInDilovod || Boolean(form.dilovodUserId));
+    && Boolean(form.dilovodUserId);
 
   useEffect(() => {
     if (!showDilovodRole || form.dilovodRoleId) return;
@@ -168,6 +181,27 @@ export const UserCardPanel = forwardRef<UserCardPanelHandle, UserCardPanelProps>
     }
   }, [form.dilovodUserId, form.dilovodRoleId, dilovodUsers]);
 
+  // Після автопідстановки dilovodRoleId фіксуємо baseline, щоб відкриття не було dirty
+  useEffect(() => {
+    if (!isOpen || !isHydrating) return;
+
+    if (form.dilovodUserId) {
+      if (dilovodUsersLoading) return;
+      if (!form.dilovodRoleId) return;
+    }
+
+    commitBaseline(form, backofficeOnly, activateDilovodUser);
+    setIsHydrating(false);
+  }, [
+    isOpen,
+    isHydrating,
+    form,
+    backofficeOnly,
+    activateDilovodUser,
+    dilovodUsersLoading,
+    commitBaseline,
+  ]);
+
   const handleGeneratePassword = async () => {
     const password = generatePassword(10);
     patchForm('password', password);
@@ -181,14 +215,18 @@ export const UserCardPanel = forwardRef<UserCardPanelHandle, UserCardPanelProps>
   };
 
   const validateForm = (): string | null => {
-    if (isCreate && !dilovodStepComplete) return 'Оберіть користувача в Діловоді або увімкніть створення нового';
+    if (isCreate && !dilovodStepComplete) {
+      return 'Оберіть користувача Dilovod або увімкніть «Створити лише в Backoffice»';
+    }
     if (!form.email.trim()) return 'Вкажіть email';
     if (isCreate && !form.password) return 'Вкажіть або згенеруйте пароль';
     if (form.password && form.password.length < 6) return 'Пароль повинен містити мінімум 6 символів';
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'Некоректний email';
     if (!form.role) return 'Оберіть роль';
-    if (isCreate && !createNewInDilovod && !form.dilovodUserId) return 'Оберіть користувача в Діловоді';
-    if (isCreate && createNewInDilovod && !form.name.trim()) return 'Вкажіть імʼя для нового користувача Dilovod';
+    if (isCreate && !backofficeOnly && !form.dilovodUserId) {
+      return 'Оберіть користувача Dilovod або увімкніть «Створити лише в Backoffice»';
+    }
+    if (isCreate && !form.name.trim()) return 'Вкажіть імʼя користувача';
     return null;
   };
 
@@ -211,6 +249,7 @@ export const UserCardPanel = forwardRef<UserCardPanelHandle, UserCardPanelProps>
           isActive: form.isActive,
           dilovodUserId: form.dilovodUserId,
           dilovodRoleId: form.dilovodRoleId || undefined,
+          activateDilovodUser: activateDilovodUser || undefined,
         };
         if (form.password.trim()) updates.password = form.password;
 
@@ -226,7 +265,7 @@ export const UserCardPanel = forwardRef<UserCardPanelHandle, UserCardPanelProps>
           ToastService.show({ title: message, color: 'danger' });
           throw new Error(message);
         }
-        if (form.dilovodUserId) {
+        if (form.dilovodUserId || activateDilovodUser) {
           invalidateDilovodUsersCache();
         }
         const saved = data.user as { id: number; name?: string; email: string };
@@ -250,9 +289,9 @@ export const UserCardPanel = forwardRef<UserCardPanelHandle, UserCardPanelProps>
           password: form.password,
           role: form.role,
           roleName: availableRoles.find((item) => item.value === form.role)?.label || form.role,
-          dilovodUserId: createNewInDilovod ? undefined : (form.dilovodUserId || undefined),
-          dilovodRoleId: form.dilovodRoleId || undefined,
-          createDilovodUser: createNewInDilovod,
+          dilovodUserId: backofficeOnly ? undefined : (form.dilovodUserId || undefined),
+          dilovodRoleId: backofficeOnly ? undefined : (form.dilovodRoleId || undefined),
+          activateDilovodUser: !backofficeOnly && activateDilovodUser ? true : undefined,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -261,7 +300,7 @@ export const UserCardPanel = forwardRef<UserCardPanelHandle, UserCardPanelProps>
         ToastService.show({ title: message, color: 'danger' });
         throw new Error(message);
       }
-      if (createNewInDilovod || form.dilovodUserId) {
+      if (!backofficeOnly && (form.dilovodUserId || activateDilovodUser)) {
         invalidateDilovodUsersCache();
       }
       const saved = data.user as { id: number; name?: string; email: string };
@@ -281,7 +320,7 @@ export const UserCardPanel = forwardRef<UserCardPanelHandle, UserCardPanelProps>
     } finally {
       setIsSaving(false);
     }
-  }, [availableRoles, createNewInDilovod, form, isCreate, onClose, onSaved, user]);
+  }, [activateDilovodUser, availableRoles, backofficeOnly, form, isCreate, onClose, onSaved, user]);
 
   useEffect(() => {
     onBusyChange?.(isSaving);
@@ -302,12 +341,14 @@ export const UserCardPanel = forwardRef<UserCardPanelHandle, UserCardPanelProps>
       editingUserId={user?.id ?? null}
       form={form}
       availableRoles={availableRoles}
-      createNewInDilovod={createNewInDilovod}
+      backofficeOnly={backofficeOnly}
+      activateDilovodUser={activateDilovodUser}
       dilovodStepComplete={dilovodStepComplete}
       showFieldErrors={showFieldErrors}
       isPasswordVisible={isPasswordVisible}
       onFormChange={patchForm}
-      onCreateNewInDilovodChange={setCreateNewInDilovod}
+      onBackofficeOnlyChange={setBackofficeOnly}
+      onActivateDilovodUserChange={setActivateDilovodUser}
       onDilovodStepCompleteChange={setDilovodStepComplete}
       onPasswordVisibilityChange={setIsPasswordVisible}
       onGeneratePassword={() => void handleGeneratePassword()}

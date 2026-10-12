@@ -29,16 +29,23 @@ router.post('/register', authenticateToken, usersManage, async (req: Request<{},
     const { DilovodService } = await import('../services/dilovod/DilovodService.js');
     const dilovodService = new DilovodService();
 
+    // Dilovod API не дозволяє створювати catalogs.users (writeAccessDenied) —
+    // обліковку створюємо лише в Backoffice, або привʼязуємо / активуємо існуючу.
     if (payload.createDilovodUser) {
-      const displayName = payload.name?.trim() || payload.email.trim();
-      const created = await dilovodService.createUser({
-        name: displayName,
+      throw new Error(
+        'Створення користувачів у Dilovod через API недоступне. Оберіть існуючого або створіть лише в Backoffice.',
+      );
+    }
+    if (payload.activateDilovodUser && payload.dilovodUserId?.trim()) {
+      await dilovodService.updateUser({
+        id: payload.dilovodUserId.trim(),
+        name: payload.name?.trim() || undefined,
         email: payload.email.trim(),
         roleId: payload.dilovodRoleId,
+        disabled: false,
       });
-      payload.dilovodUserId = created.id;
     }
-    // Прив'язка існуючого dilovodUserId — лише локально в backoffice, без запису в Dilovod API.
+    // Інакше прив'язка існуючого dilovodUserId — лише локально в backoffice.
 
     const result = await AuthService.register(payload);
     res.status(201).json({
@@ -279,11 +286,13 @@ function formatUser(user: UserListRow, stats: UserActivityStats = EMPTY_STATS) {
   };
 }
 
-router.get('/dilovod-users', authenticateToken, usersManage, async (_req: Request, res: Response) => {
+router.get('/dilovod-users', authenticateToken, usersManage, async (req: Request, res: Response) => {
   try {
     const { DilovodService } = await import('../services/dilovod/DilovodService.js');
     const dilovodService = new DilovodService();
-    const users = await dilovodService.getUsers();
+    const refreshRaw = req.query.refresh;
+    const forceRefresh = refreshRaw === '1' || refreshRaw === 'true' || refreshRaw === 'yes';
+    const users = await dilovodService.getUsers(forceRefresh);
     res.json(users);
   } catch (error) {
     console.error('Error fetching Dilovod users:', error);
@@ -320,7 +329,17 @@ router.get('/users', authenticateToken, usersManage, async (_req: Request, res: 
 router.put('/users/:id', authenticateToken, usersManage, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, email, password, role, roleName, isActive, dilovodUserId } = req.body;
+    const {
+      name,
+      email,
+      password,
+      role,
+      roleName,
+      isActive,
+      dilovodUserId,
+      dilovodRoleId,
+      activateDilovodUser,
+    } = req.body;
     const userId = parseInt(id, 10);
 
     if (email) {
@@ -359,6 +378,22 @@ router.put('/users/:id', authenticateToken, usersManage, async (req: Request, re
       updateData.password = await bcrypt.hash(password, 10);
     }
 
+    const nextDilovodUserId = dilovodUserId !== undefined
+      ? (typeof dilovodUserId === 'string' ? dilovodUserId.trim() || null : dilovodUserId)
+      : undefined;
+
+    if (activateDilovodUser && nextDilovodUserId) {
+      const { DilovodService } = await import('../services/dilovod/DilovodService.js');
+      const dilovodService = new DilovodService();
+      await dilovodService.updateUser({
+        id: String(nextDilovodUserId),
+        name: typeof name === 'string' ? name.trim() || undefined : undefined,
+        email: typeof email === 'string' ? email.trim() || undefined : undefined,
+        roleId: typeof dilovodRoleId === 'string' ? dilovodRoleId.trim() || undefined : undefined,
+        disabled: false,
+      });
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: updateData,
@@ -377,7 +412,7 @@ router.put('/users/:id', authenticateToken, usersManage, async (req: Request, re
       return res.status(error.status).json({ message: error.message });
     }
     console.error('Error updating user:', error);
-    res.status(500).json({ message: 'Failed to update user' });
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to update user' });
   }
 });
 

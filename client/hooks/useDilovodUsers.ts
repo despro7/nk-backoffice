@@ -8,11 +8,19 @@ export function invalidateDilovodUsersCache() {
   cachedUsers = null;
 }
 
-async function fetchDilovodUsers(): Promise<DilovodUser[]> {
-  if (cachedUsers) return cachedUsers;
-  if (inFlight) return inFlight;
+async function fetchDilovodUsers(forceRefresh = false): Promise<DilovodUser[]> {
+  if (!forceRefresh && cachedUsers) return cachedUsers;
+  if (inFlight) {
+    if (!forceRefresh) return inFlight;
+    // Дочекатися поточного запиту, потім форс-refresh з Dilovod
+    await inFlight.catch(() => undefined);
+  }
 
-  inFlight = fetch('/api/auth/dilovod-users', { credentials: 'include' })
+  const url = forceRefresh
+    ? '/api/auth/dilovod-users?refresh=1'
+    : '/api/auth/dilovod-users';
+
+  inFlight = fetch(url, { credentials: 'include' })
     .then(async (response) => {
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -49,7 +57,7 @@ export function useDilovodUsers(enabled = true) {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchDilovodUsers();
+      const result = await fetchDilovodUsers(force);
       if (mountedRef.current) {
         setUsers(result);
       }

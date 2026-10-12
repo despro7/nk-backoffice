@@ -16,8 +16,13 @@ export interface RegisterRequest {
   dilovodUserId?: PrismaUser["dilovodUserId"];
   /** Роль користувача в Dilovod (catalogs.roles) */
   dilovodRoleId?: string;
-  /** Створити користувача в Dilovod перед реєстрацією в backoffice */
+  /**
+   * @deprecated Dilovod API не дозволяє create catalogs.users (writeAccessDenied).
+   * Запит з цим прапорцем відхиляється — створюйте лише в Backoffice або привʼяжіть існуючого.
+   */
   createDilovodUser?: boolean;
+  /** Активувати вимкненого користувача Dilovod (disabled → false) при привʼязці */
+  activateDilovodUser?: boolean;
 }
 
 export interface UpdateProfileRequest {

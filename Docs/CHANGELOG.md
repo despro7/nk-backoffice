@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-10-12 — Користувачі: привʼязка Dilovod без create, Backoffice-only, dirty fix
+
+**Files:** `DilovodUserEmailFields.tsx`, `DilovodDictAutocomplete.tsx`, `UserCardPanel.tsx`, `UserPersonCardPanel.tsx`, `UserRegistrationManager.tsx`, `useDilovodUsers.ts`, `auth.ts` (routes/types), Dilovod services, `directoryUtils.ts`, `Docs/features/users-and-roles.md`
+
+- Autocomplete користувачів Dilovod (фокус відкриває список, вимкнені з лейблом, refresh).
+- Замість «створити в Dilovod» — «Створити лише в Backoffice»; `createDilovodUser` API відхиляє (`writeAccessDenied` у Dilovod).
+- Опція активації вимкненого користувача Dilovod; Dilovod ID у картці, не в таблиці.
+- Fix: відкриття edit-drawer більше не `isDirty` через автопідстановку ролі/email.
+
+**Документація:** [`users-and-roles.md`](features/users-and-roles.md).
+
+---
+
 ## 2026-10-12 — Склад: віртуальні партії в UI + виняток автопідстановки для correction
 
 **Files:** `dilovodBatchId.ts`, `filterWarehouseSelectableBatches.ts`, `WriteOffItemRow.tsx`, `BatchNumbersAutocomplete.tsx`, `ReleaseComponentBatchesPanel.tsx`, `useReleaseSets.ts`, `useWarehouseReturns.ts`, `unkitNegativeBatchPrefill.ts`, specs, `Docs/features/warehouse-release-sets.md`, `Docs/features/warehouse-writeoff-surplus.md`

@@ -1561,8 +1561,9 @@ export class DilovodApiClient {
       delMark?: unknown;
     }>(result);
 
+    // delMark відсікаємо; disabled лишаємо — UI показує мітку і опцію активації
     return rows
-      .filter((row) => !isDilovodDeletionMark(row.delMark) && !isDilovodDisabledFlag(row.disabled))
+      .filter((row) => !isDilovodDeletionMark(row.delMark))
       .map((row) => {
         const id = unwrapDilovodId(row.id)
           || (typeof row.id === 'string' || typeof row.id === 'number' ? String(row.id).trim() : '');
@@ -1683,6 +1684,8 @@ export class DilovodApiClient {
     name?: string;
     email?: string;
     roleId?: string;
+    /** true = увімкнути, false = вимкнути (header.disabled '0'|'1') */
+    disabled?: boolean;
   }): Promise<void> {
     await this.ensureReady();
     const id = params.id.trim();
@@ -1697,6 +1700,9 @@ export class DilovodApiClient {
     }
     if (params.roleId?.trim()) {
       header.role = { id: params.roleId.trim() };
+    }
+    if (params.disabled !== undefined) {
+      header.disabled = params.disabled ? '1' : '0';
     }
 
     if (Object.keys(header).length === 1) {

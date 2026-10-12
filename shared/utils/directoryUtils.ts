@@ -70,6 +70,8 @@ export type DilovodDictItem = {
   id__pr?: string;
   code?: string;
   parent__pr?: string;
+  /** Вимкнений запис довідника (напр. catalogs.users.disabled) */
+  disabled?: boolean;
 };
 
 export function getDilovodItemLabel(item?: DilovodDictItem | null): string {

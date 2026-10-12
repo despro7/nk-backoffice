@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Input, Spinner, Switch } from '@heroui/react';
+import { Button, Input, Switch } from '@heroui/react';
+import { DynamicIcon } from 'lucide-react/dynamic';
 import { DilovodDictAutocomplete } from '@/pages/BankStatementImport/components/DilovodDictAutocomplete';
 import { invalidateDilovodUsersCache, useDilovodUsers } from '@/hooks/useDilovodUsers';
 import { emailsMatch } from '@shared/lib/normalizeEmail';
@@ -18,8 +19,11 @@ export interface DilovodUserEmailFieldsProps {
   onEmailChange: (email: string) => void;
   onNameChange?: (name: string) => void;
   onDilovodRoleIdChange?: (roleId: string) => void;
-  createNewInDilovod: boolean;
-  onCreateNewInDilovodChange: (value: boolean) => void;
+  /** Створити обліковку лише в Backoffice (без привʼязки / створення в Dilovod) */
+  backofficeOnly: boolean;
+  onBackofficeOnlyChange: (value: boolean) => void;
+  activateDilovodUser?: boolean;
+  onActivateDilovodUserChange?: (value: boolean) => void;
   onStepCompleteChange?: (complete: boolean) => void;
   /** У режимі редагування показуємо autocomplete без покрокової логіки */
   variant?: 'create' | 'edit';
@@ -36,8 +40,10 @@ export function DilovodUserEmailFields({
   onEmailChange,
   onNameChange,
   onDilovodRoleIdChange,
-  createNewInDilovod,
-  onCreateNewInDilovodChange,
+  backofficeOnly,
+  onBackofficeOnlyChange,
+  activateDilovodUser = false,
+  onActivateDilovodUserChange,
   onStepCompleteChange,
   variant = 'create',
   emailRequired = true,
@@ -54,6 +60,8 @@ export function DilovodUserEmailFields({
         name: user.name,
         id__pr: user.name,
         parent__pr: user.code || undefined,
+        code: user.code || undefined,
+        disabled: Boolean(user.disabled),
       })),
     [users],
   );
@@ -63,9 +71,12 @@ export function DilovodUserEmailFields({
     [users, dilovodUserId],
   );
 
+  const selectedIsDisabled = Boolean(selectedDilovodUser?.disabled);
+  const showActivateOption = selectedIsDisabled && !backofficeOnly && Boolean(onActivateDilovodUserChange);
+
   const stepComplete = variant === 'edit'
     ? true
-    : Boolean(dilovodUserId) || createNewInDilovod;
+    : Boolean(dilovodUserId) || backofficeOnly;
 
   useEffect(() => {
     onStepCompleteChange?.(stepComplete);
@@ -107,7 +118,7 @@ export function DilovodUserEmailFields({
     }
 
     if (emailsMatch(trimmedEmail, dilovodEmail)) {
-      onEmailChange(dilovodEmail);
+      // Не перезаписуємо email при збігу — інакше регістр/формат робить форму dirty
       setEmailMismatch(null);
       return;
     }
@@ -116,27 +127,57 @@ export function DilovodUserEmailFields({
   }, [onDilovodRoleIdChange, onEmailChange, onNameChange, users]);
 
   useEffect(() => {
-    if (loading || users.length === 0 || !dilovodUserId || createNewInDilovod) return;
+    if (loading || users.length === 0 || !dilovodUserId || backofficeOnly) return;
+
+    // У edit не мутуємо форму з довідника — лише mismatch; роль підставляє UserCardPanel
+    if (variant === 'edit') {
+      const dilovodUser = users.find((item) => item.id === dilovodUserId);
+      const dilovodEmail = dilovodUser?.code?.trim() || '';
+      if (!dilovodEmail || !email.trim()) {
+        setEmailMismatch(null);
+        return;
+      }
+      if (emailsMatch(email, dilovodEmail)) {
+        setEmailMismatch(null);
+        return;
+      }
+      setEmailMismatch({ localEmail: email.trim(), dilovodEmail });
+      return;
+    }
+
     applyExistingUserData(dilovodUserId, email);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- синхронізація після завантаження довідника
-  }, [loading, users.length]);
+  }, [loading, users.length, variant]);
+
+  // Скидаємо activate, якщо обраний не вимкнений / лише Backoffice
+  useEffect(() => {
+    if (!onActivateDilovodUserChange) return;
+    if ((!selectedIsDisabled || backofficeOnly) && activateDilovodUser) {
+      onActivateDilovodUserChange(false);
+    }
+  }, [selectedIsDisabled, backofficeOnly, activateDilovodUser, onActivateDilovodUserChange]);
 
   const handleDilovodUserChange = (nextUserId: string) => {
-    if (createNewInDilovod) return;
+    if (backofficeOnly) return;
     onDilovodUserIdChange(nextUserId);
     if (nextUserId) {
-      onCreateNewInDilovodChange(false);
+      onBackofficeOnlyChange(false);
+      const nextUser = users.find((user) => user.id === nextUserId);
+      // При виборі вимкненого — за замовчуванням пропонуємо активувати
+      onActivateDilovodUserChange?.(Boolean(nextUser?.disabled));
       applyExistingUserData(nextUserId, email, { prefillName: true });
       return;
     }
     setEmailMismatch(null);
+    onActivateDilovodUserChange?.(false);
   };
 
-  const handleCreateNewChange = (next: boolean) => {
-    onCreateNewInDilovodChange(next);
+  const handleBackofficeOnlyChange = (next: boolean) => {
+    onBackofficeOnlyChange(next);
     if (next) {
       onDilovodUserIdChange('');
       setEmailMismatch(null);
+      onActivateDilovodUserChange?.(false);
       return;
     }
     setEmailMismatch(null);
@@ -152,67 +193,107 @@ export function DilovodUserEmailFields({
     setEmailMismatch(null);
   };
 
+  const handleRefresh = () => {
+    invalidateDilovodUsersCache();
+    void reload();
+  };
+
   const showStepControls = variant === 'create';
 
   return (
     <div className="flex flex-col gap-6">
       <section className="space-y-4">
         {showStepControls ? (
-          <p className="text-sm font-semibold text-default-900">1. Оберіть або створіть користувача в Діловоді</p>
+          <p className="text-sm font-semibold text-default-900">1. Привʼязка до Dilovod (необовʼязково)</p>
         ) : null}
 
         <div className="space-y-2">
-          {loading ? (
-            <div className="flex items-center gap-2 text-sm text-default-500 py-2">
-              <Spinner size="sm" />
-              Завантаження користувачів Dilovod…
-            </div>
-          ) : (
+          <div className="flex items-end gap-2">
             <DilovodDictAutocomplete
+              labelPlacement="outside"
               dictItems={dictItems}
               selectedKey={dilovodUserId}
               onChange={handleDilovodUserChange}
-              label={showStepControls ? 'Обрати користувача' : 'Користувач в Діловоді'}
-              description="Оберіть зі списку або почніть вводити імʼя/email користувача"
+              label={showStepControls ? 'Обрати користувача Dilovod' : 'Користувач в Діловоді'}
+              placeholder="Почніть вводити імʼя/email користувача"
               isClearable
               showParent
               size="md"
-              className="w-full"
-              isDisabled={createNewInDilovod}
+              className="w-full min-w-0 flex-1 [&_input::placeholder]:opacity-50"
+              isDisabled={backofficeOnly || loading}
             />
-          )}
+            <Button
+              isIconOnly
+              variant="flat"
+              className="shrink-0"
+              aria-label="Оновити список користувачів Dilovod"
+              title="Примусово оновити список"
+              isDisabled={backofficeOnly}
+              isLoading={loading}
+              onPress={handleRefresh}
+            >
+              <DynamicIcon name="refresh-cw" size={16} />
+            </Button>
+          </div>
+          {dilovodUserId ? (
+            <p className="text-xs text-default-400">
+              Dilovod ID:{' '}
+              <span className="font-mono text-default-600">{dilovodUserId}</span>
+            </p>
+          ) : null}
           {error ? (
             <div className="flex items-center gap-2">
               <p className="text-xs text-danger">Не вдалося завантажити користувачів Dilovod</p>
-              <Button size="sm" variant="light" onPress={() => {
-                invalidateDilovodUsersCache();
-                void reload();
-              }}>
+              <Button size="sm" variant="light" onPress={handleRefresh}>
                 Повторити
               </Button>
             </div>
           ) : null}
         </div>
 
-        {showStepControls  ? (
+        {showActivateOption ? (
           <Switch
             size="sm"
-            isSelected={createNewInDilovod}
-            onValueChange={handleCreateNewChange}
-            aria-label="Створити нового користувача в Діловоді"
+            isSelected={activateDilovodUser}
+            onValueChange={(checked) => onActivateDilovodUserChange?.(checked)}
+            aria-label="Активувати користувача в Діловоді"
             classNames={{
               base: [
-                'inline-flex w-full max-w-md hover:bg-amber-50 items-center',
-                'justify-between cursor-pointer rounded-lg gap-2 px-4 py-3 border-2 border-amber-200',
-                'data-[selected=true]:bg-amber-50 data-[selected=true]:border-amber-200',
+                'inline-flex w-full bg-white hover:bg-blue-50/40 items-center',
+                'justify-between cursor-pointer rounded-lg gap-2 px-4 py-3 border-2 border-primary-300',
+                'data-[selected=true]:bg-blue-50 data-[selected=true]:border-blue-400',
               ],
-              wrapper: 'group-data-[selected=true]:bg-amber-300',
+              wrapper: 'group-data-[selected=true]:bg-blue-500',
             }}
           >
             <div className="flex flex-col gap-1">
-              <p className="text-sm text-default-900">Створити нового користувача в Діловоді</p>
+              <p className="text-sm text-default-900">Активувати користувача в Діловоді?</p>
               <p className="text-tiny text-default-400">
-                Якщо облікового запису ще немає – створимо автоматично під час збереження
+                Обраний обліковий запис у Dilovod зараз вимкнений і при збереженні буде активований
+              </p>
+            </div>
+          </Switch>
+        ) : null}
+
+        {showStepControls && !dilovodUserId ? (
+          <Switch
+            size="sm"
+            isSelected={backofficeOnly}
+            onValueChange={handleBackofficeOnlyChange}
+            aria-label="Створити лише в Backoffice"
+            classNames={{
+              base: [
+                'inline-flex w-full bg-white hover:bg-default-100 items-center',
+                'justify-between cursor-pointer rounded-lg gap-2 px-4 py-3 border-2 border-default-200',
+                'data-[selected=true]:bg-default-50 data-[selected=true]:border-default-300',
+              ],
+              wrapper: 'group-data-[selected=true]:bg-default-500',
+            }}
+          >
+            <div className="flex flex-col gap-1">
+              <p className="text-sm text-default-900">Створити лише в Backoffice</p>
+              <p className="text-tiny text-default-400">
+                Без привʼязки до Dilovod. Обліковий запис Dilovod можна додати пізніше вручну
               </p>
             </div>
           </Switch>
@@ -245,17 +326,16 @@ export function DilovodUserEmailFields({
         <Input
           type="email"
           label={emailLabel}
-          // labelPlacement="outside"
           placeholder="user@example.com"
           value={email}
           onValueChange={onEmailChange}
           isRequired={emailRequired}
           isClearable
           description={
-            createNewInDilovod
-              ? 'Email буде використано для створення облікового запису одночасно в Діловоді та в Backoffice'
+            backofficeOnly
+              ? 'Email для входу в Backoffice'
               : dilovodUserId
-                ? 'Підставлено з Dilovod — можна змінити перед збереженням'
+                ? 'Підставлено з Dilovod, можна змінити перед збереженням'
                 : undefined
           }
           autoComplete="off"

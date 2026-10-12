@@ -30,12 +30,14 @@ interface UserPersonCardPanelProps {
   editingUserId?: number | null;
   form: UserPersonCardFormState;
   availableRoles: RoleOption[];
-  createNewInDilovod: boolean;
+  backofficeOnly: boolean;
+  activateDilovodUser?: boolean;
   dilovodStepComplete: boolean;
   showFieldErrors?: boolean;
   isPasswordVisible: boolean;
   onFormChange: (field: keyof UserPersonCardFormState, value: string | boolean) => void;
-  onCreateNewInDilovodChange: (value: boolean) => void;
+  onBackofficeOnlyChange: (value: boolean) => void;
+  onActivateDilovodUserChange?: (value: boolean) => void;
   onDilovodStepCompleteChange: (value: boolean) => void;
   onPasswordVisibilityChange: (visible: boolean) => void;
   onGeneratePassword: () => void;
@@ -45,19 +47,21 @@ export function UserPersonCardPanel({
   editingUserId = null,
   form,
   availableRoles,
-  createNewInDilovod,
+  backofficeOnly,
+  activateDilovodUser = false,
   dilovodStepComplete,
   showFieldErrors = false,
   isPasswordVisible,
   onFormChange,
-  onCreateNewInDilovodChange,
+  onBackofficeOnlyChange,
+  onActivateDilovodUserChange,
   onDilovodStepCompleteChange,
   onPasswordVisibilityChange,
   onGeneratePassword,
 }: UserPersonCardPanelProps) {
   const isEditing = editingUserId != null;
   const showDilovodRole = Boolean(isEditing || dilovodStepComplete)
-    && (createNewInDilovod || Boolean(form.dilovodUserId));
+    && Boolean(form.dilovodUserId);
 
   const selectedRoleKeys = availableRoles.some((item) => item.value === form.role)
     ? [form.role]
@@ -81,8 +85,10 @@ export function UserPersonCardPanel({
         onEmailChange={(value) => onFormChange('email', value)}
         onNameChange={(value) => onFormChange('name', value)}
         onDilovodRoleIdChange={(value) => onFormChange('dilovodRoleId', value)}
-        createNewInDilovod={createNewInDilovod}
-        onCreateNewInDilovodChange={onCreateNewInDilovodChange}
+        backofficeOnly={backofficeOnly}
+        onBackofficeOnlyChange={onBackofficeOnlyChange}
+        activateDilovodUser={activateDilovodUser}
+        onActivateDilovodUserChange={onActivateDilovodUserChange}
         onStepCompleteChange={onDilovodStepCompleteChange}
         variant={isEditing ? 'edit' : 'create'}
         showEmailField={Boolean(isEditing) || dilovodStepComplete}
@@ -99,7 +105,7 @@ export function UserPersonCardPanel({
             onValueChange={(value) => onFormChange('name', value)}
             isRequired={true}
             description={
-              createNewInDilovod || form.dilovodUserId
+              form.dilovodUserId
                 ? 'Синхронізується з обліковим записом Dilovod при збереженні'
                 : undefined
             }

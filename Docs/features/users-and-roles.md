@@ -36,11 +36,17 @@
 - `/settings/users` — користувачі
 - `/settings/users?tab=roles` — ролі
 
-**Користувачі:** список на всю ширину, створення / редагування в Drawer. Селект ролі з `GET /api/auth/roles`. Генератор пароля (10 символів) + індикатор сили паролю (`PasswordStrengthIndicator`, `shared/lib/passwordStrength.ts`). Роль за замовчуванням **порожня** — треба обрати явно. У таблиці: останній візит (`lastActivityAt` / `lastLoginAt`), `dilovodUserId` (inline), статус (неактивний рядок напівпрозорий), лічильники замовлень і складських документів. `POST /api/auth/register` не змінює сесію адміна. Не можна видалити себе.
+**Користувачі:** список на всю ширину, створення / редагування в Drawer. Селект ролі з `GET /api/auth/roles`. Генератор пароля (10 символів) + індикатор сили паролю (`PasswordStrengthIndicator`, `shared/lib/passwordStrength.ts`). Роль за замовчуванням **порожня** — треба обрати явно. У таблиці: останній візит (`lastActivityAt` / `lastLoginAt`), статус (неактивний рядок напівпрозорий), лічильники замовлень і складських документів. `POST /api/auth/register` не змінює сесію адміна. Не можна видалити себе.
 
 **Спільний Drawer створення:** `client/components/users/CreateUserDrawer.tsx` — використовується в `UserRegistrationManager` (через `openCreate`) і вкладений у `EmployeeDrawer` (HR). Після створення викликає `onCreated` з `{ id, name, email }`.
 
-**Dilovod user ID:** поле опційне; значення потрапляє в `users.dilovodUserId` і далі в `author` складських документів Dilovod. Зараз — ручний Input. Довідник Dilovod `catalogs.users` (див. `Docs/integrations/dilovod-metadata.md`) дозволяє замінити на Autocomplete з іменем і email.
+**Привʼязка Dilovod** (`DilovodUserEmailFields` + `DilovodDictAutocomplete`):
+
+- Autocomplete з довідника `catalogs.users` (у т.ч. вимкнені; `menuTrigger="focus"`).
+- Створення: обрати існуючого в Dilovod **або** «Створити лише в Backoffice» (без `dilovodUserId`). API Dilovod **не** дозволяє `saveObject` у `catalogs.users` — `createDilovodUser` відхиляється.
+- Для вимкненого облікового запису — опція «Активувати користувача?» (`activateDilovodUser`).
+- Dilovod ID показується в картці під autocomplete (не в колонці таблиці).
+- Dirty: після відкриття edit baseline перефіксовується після гідрації `dilovodRoleId`, щоб автопідстановка не вмикала «Зберегти».
 
 **Ролі:** таблиця (назва, slug, користувачі, сторінки/дії). Редактор у Drawer:
 
