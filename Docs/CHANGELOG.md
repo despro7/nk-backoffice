@@ -5,6 +5,24 @@
 
 ---
 
+## 2026-10-12 — Склад: віртуальні партії в UI + виняток автопідстановки для correction
+
+**Files:** `dilovodBatchId.ts`, `filterWarehouseSelectableBatches.ts`, `WriteOffItemRow.tsx`, `BatchNumbersAutocomplete.tsx`, `ReleaseComponentBatchesPanel.tsx`, `useReleaseSets.ts`, `useWarehouseReturns.ts`, `unkitNegativeBatchPrefill.ts`, specs, `Docs/features/warehouse-release-sets.md`, `Docs/features/warehouse-writeoff-surplus.md`
+
+### Ручний вибір
+
+- Списання / оприбуткування / комплектація / drawer партій знову показують віртуальні document-партії з балансу (для зведення).
+- `documents.prodOrder` («замовлення на випуск/виробництво»): бейдж «Без надходження» + `PRODUCTION_ORDER_BATCH_WARNING` — Dilovod не приймає на них надходження.
+
+### Автопідстановка
+
+- Звичайні потоки (FIFO, 1-партія, default рядок): лише реальні `catalogs.goodParts` (`pickDefaultRealWarehouseBatch` / `canSetTpGoodsGoodPart`).
+- **Виняток — коригування парт. обліку:** «Заповнити всі партії» і unkit-мінус prefill додають усі існуючі партії, включно з віртуальними.
+
+**Документація:** [`warehouse-release-sets.md`](features/warehouse-release-sets.md), [`warehouse-writeoff-surplus.md`](features/warehouse-writeoff-surplus.md).
+
+---
+
 ## 2026-10-10 — Склад: пагінація історії інвентаризації
 
 **Files:** `InventoryHistoryTable.tsx`, `WarehouseController.ts`, `Docs/features/warehouse-inventory.md`

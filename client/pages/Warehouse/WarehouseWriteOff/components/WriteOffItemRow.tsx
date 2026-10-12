@@ -1,5 +1,9 @@
 import { Select, SelectItem, Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import {
+  isProductionOrderVirtualBatch,
+  PRODUCTION_ORDER_BATCH_WARNING,
+} from '@shared/utils/dilovodBatchId';
 import type { ReturnBatch, ReturnItem } from '../../WarehouseReturns/WarehouseReturnsTypes';
 import { StepperInput } from '../../shared/StepperInput';
 
@@ -24,6 +28,16 @@ export function WriteOffItemRow({
   inactive = false,
   variant = 'writeOff',
 }: WriteOffItemRowProps) {
+  const selectedBatchForWarn = (item.availableBatches ?? []).find(
+    (batch) => batch.id === item.selectedBatchKey,
+  ) ?? ((item.availableBatches ?? []).length === 1 ? item.availableBatches![0] : undefined);
+  const showProdOrderWarning = selectedBatchForWarn
+    ? isProductionOrderVirtualBatch({
+      batchId: selectedBatchForWarn.batchId,
+      batchNumber: selectedBatchForWarn.batchNumber,
+    })
+    : false;
+
   const batchControl = (() => {
     if (item.availableBatches === null) {
       return <div className="text-xs px-3 py-[11px] text-gray-500 border border-gray-200 rounded-md">Завантаження партій...</div>;
@@ -33,10 +47,24 @@ export function WriteOffItemRow({
     }
     if ((item.availableBatches ?? []).length === 1) {
       const b = item.availableBatches[0];
+      const isProdOrder = isProductionOrderVirtualBatch({
+        batchId: b.batchId,
+        batchNumber: b.batchNumber,
+      });
       return (
-        <div className="flex items-center gap-2 justify-between text-sm px-3 py-2 h-10 border border-gray-200 rounded-md">
+        <div
+          className={`flex items-center gap-2 justify-between text-sm px-3 py-2 min-h-10 border rounded-md ${
+            isProdOrder ? 'border-amber-300 bg-amber-50/70' : 'border-gray-200'
+          }`}
+        >
           <span className="font-medium">{`${b.batchNumber} (${b.quantity} шт.)`}</span>
-          <DynamicIcon name="check-circle" className="w-3 h-3 text-green-500 shrink-0" />
+          {isProdOrder ? (
+            <span className="text-[10px] font-medium uppercase tracking-wide text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded shrink-0">
+              Без надходження
+            </span>
+          ) : (
+            <DynamicIcon name="check-circle" className="w-3 h-3 text-green-500 shrink-0" />
+          )}
         </div>
       );
     }
@@ -52,7 +80,13 @@ export function WriteOffItemRow({
         classNames={{ label: 'text-xs font-medium text-gray-500', trigger: 'border border-gray-200 bg-white', value: 'font-medium' }}
       >
         {(item.availableBatches ?? []).map((batch: ReturnBatch) => {
-          const label = `${batch.batchNumber} (${batch.quantity} шт.)`;
+          const isProdOrder = isProductionOrderVirtualBatch({
+            batchId: batch.batchId,
+            batchNumber: batch.batchNumber,
+          });
+          const label = isProdOrder
+            ? `${batch.batchNumber} (${batch.quantity} шт.) · без надходження`
+            : `${batch.batchNumber} (${batch.quantity} шт.)`;
           return (
             <SelectItem key={batch.id} textValue={label}>{label}</SelectItem>
           );
@@ -99,9 +133,12 @@ export function WriteOffItemRow({
       })()}
 
       <div className="w-100">
-				<div className="text-xs font-medium text-gray-500 mb-2">Партія</div>
-				{batchControl}
-			</div>
+					<div className="text-xs font-medium text-gray-500 mb-2">Партія</div>
+					{batchControl}
+					{showProdOrderWarning && (
+						<p className="mt-1.5 text-xs text-amber-700 leading-snug">{PRODUCTION_ORDER_BATCH_WARNING}</p>
+					)}
+				</div>
 
       <div className="flex-shrink-0">
         <Button

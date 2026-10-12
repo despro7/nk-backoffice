@@ -6,7 +6,10 @@ import { expandProductSets } from '@/lib/orderAssemblyUtils';
 import { useApi } from '@/hooks/useApi';
 import { ToastService } from '@/services/ToastService';
 import { ReturnsHistoryService } from '@/services/ReturnsHistoryService';
-import { filterWarehouseSelectableBatches } from '../shared/filterWarehouseSelectableBatches';
+import {
+  filterWarehouseSelectableBatches,
+  pickDefaultRealWarehouseBatch,
+} from '../shared/filterWarehouseSelectableBatches';
 import { isMonolithicForReturn, type ReturnItem, type ReturnBatch, type ReturnHistoryRecord } from './WarehouseReturnsTypes';
 
 interface OrderSearchResult {
@@ -287,12 +290,13 @@ export function useWarehouseReturns() {
       const loaded = batchMap.get(item.sku);
       if (!loaded) return item;
       const { batches, usedNonPositiveBatchFallback } = loaded;
+      const defaultBatch = pickDefaultRealWarehouseBatch(batches);
       return {
         ...item,
         availableBatches: batches,
         usedNonPositiveBatchFallback,
-        selectedBatchKey: item.selectedBatchKey ?? batches[0]?.id ?? null,
-        selectedBatchId: item.selectedBatchId ?? batches[0]?.batchId ?? null,
+        selectedBatchKey: item.selectedBatchKey ?? defaultBatch?.id ?? null,
+        selectedBatchId: item.selectedBatchId ?? defaultBatch?.batchId ?? null,
         orderedQuantity: (item.orderedQuantity ?? item.quantity ?? 1),
       } as ReturnItem;
     }));

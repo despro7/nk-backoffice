@@ -1,5 +1,3 @@
-import { canSetTpGoodsGoodPart } from './dilovodBatchId.js';
-
 export type UnkitWarehouseBatchStock = {
   batchId: string;
   batchNumber?: string | null;
@@ -68,8 +66,7 @@ export function mergeNegativeBatchesForUnkit(input: {
 
   for (const [batchId, row] of warehouseStockById.entries()) {
     if (row.stock >= 0) continue;
-    if (!canSetTpGoodsGoodPart({ batchId, batchNumber: row.batchNumber })) continue;
-
+    // Коригування парт. обліку: мінусові віртуальні теж підставляємо автоматично.
     negatives.push({
       batchId,
       batchNumber: row.batchNumber,

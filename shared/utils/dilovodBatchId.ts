@@ -17,6 +17,13 @@ export function isUsableDilovodBatchId(value: unknown): boolean {
  */
 export const DILOVOD_GOOD_PARTS_ID_PREFIX = '11122';
 
+/** idPrefix `documents.prodOrder` («Замовлення на виробництво / випуск»). */
+export const DILOVOD_PROD_ORDER_ID_PREFIX = '11133';
+
+/** Коротке попередження в UI для віртуальних партій prodOrder. */
+export const PRODUCTION_ORDER_BATCH_WARNING =
+  'На партію «замовлення на випуск» Dilovod не приймає надходження. Для зведення — списання/комплектація або коригування партійного обліку.';
+
 /**
  * Чи ID належить довіднику `catalogs.goodParts` (за idPrefix).
  * У балансі Dilovod «віртуальні» партії часто мають id документа — їх не можна ставити в goodPart.
@@ -117,11 +124,31 @@ export function isVirtualDocumentBatchLabel(batchNumber: unknown): boolean {
   const label = String(batchNumber ?? '').trim();
   if (!label) return false;
   if (/замовлення на виробництво/i.test(label)) return true;
+  if (/замовлення на випуск/i.test(label)) return true;
   if (/замовлення на продаж/i.test(label)) return true;
   if (/виробничий звіт/i.test(label)) return true;
   if (/накладна/i.test(label)) return true;
   if (/переміщення/i.test(label) && /\d{2}\.\d{2}\.\d{4}/.test(label)) return true;
   return false;
+}
+
+/**
+ * Віртуальна партія documents.prodOrder («замовлення на виробництво/випуск»).
+ * На такі партії Dilovod не приймає надходження; інші віртуальні документи — можна.
+ */
+export function isProductionOrderVirtualBatch(input: {
+  batchId?: unknown;
+  batchNumber?: unknown;
+  prodOrderPrefix?: string;
+}): boolean {
+  const label = String(input.batchNumber ?? '').trim();
+  if (/замовлення на виробництво/i.test(label)) return true;
+  if (/замовлення на випуск/i.test(label)) return true;
+
+  const batchId = String(input.batchId ?? '').trim();
+  const prefix = String(input.prodOrderPrefix ?? DILOVOD_PROD_ORDER_ID_PREFIX).trim();
+  if (!prefix || !isUsableDilovodBatchId(batchId)) return false;
+  return batchId.startsWith(prefix);
 }
 
 /**

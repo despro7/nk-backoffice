@@ -1,6 +1,10 @@
 import { Drawer, DrawerContent, DrawerHeader, DrawerBody, DrawerFooter, Button } from '@heroui/react';
 import { motion } from 'framer-motion';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import {
+  isProductionOrderVirtualBatch,
+  PRODUCTION_ORDER_BATCH_WARNING,
+} from '@shared/utils/dilovodBatchId';
 import { useDebug } from '@/contexts/debug-context';
 import type { BatchNumber } from '../hooks/useBatchNumbers';
 import { resolveStorageIconClass } from '../storageDisplay';
@@ -117,6 +121,10 @@ export const BatchNumbersAutocomplete = ({
                       && selectedStorage === batch.storage
                     );
                     const isAlreadyAdded = addedBatchKeys?.has(`${batch.batchId}:${batch.storage}`) ?? false;
+                    const isProdOrderVirtual = isProductionOrderVirtualBatch({
+                      batchId: batch.batchId,
+                      batchNumber: batch.batchNumber,
+                    });
                     const stockBreakdown = portionsPerBox != null && portionsPerBox > 0
                       ? breakdownStockPortions(batch.quantity, portionsPerBox)
                       : null;
@@ -141,6 +149,8 @@ export const BatchNumbersAutocomplete = ({
                             ? 'border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed'
                             : isSelected
                             ? 'border-blue-500 bg-blue-50'
+                            : isProdOrderVirtual
+                            ? 'border-amber-300 bg-amber-50/60 hover:bg-amber-50'
                             : 'border-gray-200 bg-white hover:bg-gray-50'
                         }`}
                       >
@@ -163,11 +173,22 @@ export const BatchNumbersAutocomplete = ({
                                   Вже додано
                                 </span>
                               )}
+                              {isProdOrderVirtual && (
+                                <span
+                                  className="text-[10px] font-medium uppercase tracking-wide text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded shrink-0"
+                                  title={PRODUCTION_ORDER_BATCH_WARNING}
+                                >
+                                  Без надходження
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-1 text-sm">
                               <DynamicIcon name="warehouse" size={14} className={resolveStorageIconClass(batch.storage)} />
                               <span className="text-gray-600">{batch.storageDisplayName || 'невідомий склад'}</span>
                             </div>
+                            {isProdOrderVirtual && (
+                              <p className="text-xs text-amber-700 leading-snug">{PRODUCTION_ORDER_BATCH_WARNING}</p>
+                            )}
                           </div>
                           <div className="flex flex-col items-end gap-1 w-28">
                             <span className={`font-semibold text-lg ${batch.quantity < 0 ? 'text-red-600' : 'text-blue-600'}`}>

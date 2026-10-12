@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   canSetTpGoodsGoodPart,
   isCatalogGoodPartId,
+  isProductionOrderVirtualBatch,
   isUsableDilovodBatchId,
   isVirtualDocumentBatchLabel,
 } from './dilovodBatchId.js';
@@ -28,9 +29,37 @@ describe('isVirtualDocumentBatchLabel', () => {
     expect(isVirtualDocumentBatchLabel('13.08.2026 Замовлення на виробництво 000211')).toBe(true);
   });
 
+  it('розпізнає замовлення на випуск', () => {
+    expect(isVirtualDocumentBatchLabel('13.08.2026 Замовлення на випуск 000211')).toBe(true);
+  });
+
   it('не чіпає звичайні серійні партії', () => {
     expect(isVirtualDocumentBatchLabel('60917')).toBe(false);
     expect(isVirtualDocumentBatchLabel('K61008')).toBe(false);
+  });
+});
+
+describe('isProductionOrderVirtualBatch', () => {
+  it('розпізнає за підписом і за idPrefix documents.prodOrder', () => {
+    expect(isProductionOrderVirtualBatch({
+      batchId: '1113300000001889',
+      batchNumber: '000211',
+    })).toBe(true);
+    expect(isProductionOrderVirtualBatch({
+      batchId: '1112200000002097',
+      batchNumber: '13.08.2026 Замовлення на випуск 000211',
+    })).toBe(true);
+  });
+
+  it('не чіпає catalogs.goodParts і інші віртуальні документи', () => {
+    expect(isProductionOrderVirtualBatch({
+      batchId: '1112200000002097',
+      batchNumber: '60917',
+    })).toBe(false);
+    expect(isProductionOrderVirtualBatch({
+      batchId: '1114400000000123',
+      batchNumber: '01.01.2026 Накладна 000001',
+    })).toBe(false);
   });
 });
 

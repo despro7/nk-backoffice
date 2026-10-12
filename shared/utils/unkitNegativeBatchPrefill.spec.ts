@@ -27,7 +27,7 @@ describe('mergeNegativeBatchesForUnkit', () => {
     ]);
   });
 
-  it('ігнорує віртуальні document-id партії', () => {
+  it('у коригуванні підставляє і мінусові віртуальні document-партії', () => {
     const result = mergeNegativeBatchesForUnkit({
       requiredQuantity: 10,
       existingBatches: [
@@ -43,7 +43,12 @@ describe('mergeNegativeBatchesForUnkit', () => {
     });
 
     expect(result).toEqual([
-      { batchId: GOOD_PART_A, batchNumber: 'A', quantity: 10 },
+      {
+        batchId: VIRTUAL_DOC,
+        batchNumber: '13.08.2026 Замовлення на виробництво 000211',
+        quantity: 10,
+        batchStock: -50,
+      },
     ]);
   });
 
