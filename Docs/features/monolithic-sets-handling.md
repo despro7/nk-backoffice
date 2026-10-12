@@ -67,9 +67,23 @@ const portions = item.portionsPerItem
 - ✅ У порціях: **4** порції (множиться на `portionsPerItem`)
 - ✅ Прогрес-бар: "37/37" (правильна загальна кількість)
 
+## UI: вага порції в чеклісті
+
+У `OrderChecklistItem` поруч із назвою звичайного товару показується вага однієї порції в грамах:
+
+```text
+Math.round((expectedWeight / quantity) * 1000) // г
+```
+
+Бейдж з іконкою `weight-tilde` **не** показується для:
+
+- коробок (`type === 'box'`);
+- монолітних наборів (`portionsPerItem` задано).
+
 ## Файли
 
 - `client/lib/orderAssemblyUtils.ts` — `expandProductRecursively()`, `combineBoxesWithItems()`
 - `client/types/orderAssembly.ts` — тип `OrderChecklistItem` з `portionsPerItem`
 - `client/pages/OrderView.tsx` — розрахунок `totalPortions`
 - `client/components/OrderChecklist.tsx` — розрахунок `totalPackedPortions`
+- `client/components/OrderChecklistItem.tsx` — бейдж ваги порції (г)

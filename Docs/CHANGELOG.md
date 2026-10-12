@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-10-12 — Збірка: вага порції в чеклісті
+
+**Files:** `OrderChecklistItem.tsx`, `Docs/features/monolithic-sets-handling.md`, `Docs/features/order-assembly/gradations.md`
+
+- Поруч із назвою позиції — бейдж ваги однієї порції в грамах (`expectedWeight / quantity × 1000`) з іконкою `weight-tilde`.
+- Не показується для коробок (`type === 'box'`) і монолітних наборів (`portionsPerItem`).
+
+**Документація:** [`monolithic-sets-handling.md`](features/monolithic-sets-handling.md), [`gradations.md`](features/order-assembly/gradations.md).
+
+---
+
 ## 2026-10-12 — Користувачі: привʼязка Dilovod без create, Backoffice-only, dirty fix
 
 **Files:** `DilovodUserEmailFields.tsx`, `DilovodDictAutocomplete.tsx`, `UserCardPanel.tsx`, `UserPersonCardPanel.tsx`, `UserRegistrationManager.tsx`, `useDilovodUsers.ts`, `auth.ts` (routes/types), Dilovod services, `directoryUtils.ts`, `Docs/features/users-and-roles.md`

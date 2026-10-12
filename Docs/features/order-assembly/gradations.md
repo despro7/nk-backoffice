@@ -28,7 +28,7 @@
 
 - Основна логіка знаходиться в `client/lib/orderAssemblyUtils.ts`.
 - Функції ключі: `deriveUnitRatioFromWeight(weightKgOne, GRADATIONS)` та `computeFlattenedComponent(composition)`.
-- UI-дебаг: `client/components/OrderChecklistItem.tsx` відображає `unitRatio` і `expectedWeight` (округлено до 2 знаків) для перевірки розрахунків.
+- UI: `OrderChecklistItem` показує вагу однієї порції в грамах поруч із назвою (не для коробок і монолітів з `portionsPerItem`). У debug-режимі додатково — `unitRatio` / `displayRatio`.
 
 ## Приклад
 

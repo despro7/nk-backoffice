@@ -510,7 +510,16 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
         <div className="flex flex-col gap-0.5 overflow-hidden min-w-0">
           <div className="flex items-center gap-2 min-w-0">
             <span className="flex items-center gap-1 max-w-fit">
-              <span className="inline-block truncate font-semibold">{name}</span>
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block truncate font-semibold">{name}</span>
+                {/* Вага порції: не показуємо для коробок і монолітних наборів */}
+                {type === 'product' && !item.portionsPerItem && quantity > 0 && expectedWeight > 0 && (
+                  <span className="inline-flex items-center gap-0.5 text-sm font-medium text-gray-500 tabular-nums bg-gray-950/5 px-1.5 py-0.5 rounded">
+                    <DynamicIcon name="weight-tilde" size={14} />
+                    {Math.round((expectedWeight / quantity) * 1000)} г
+                  </span>
+                )}
+              </span>
               {typeof item.monolithicSplitTotal === 'number' &&
                 item.monolithicSplitTotal > 1 &&
                 typeof item.monolithicSplitIndex === 'number' && (
@@ -534,7 +543,7 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
             )}
 
             {/* Кількість одиниць × Вага позиції */}
-            <span className="inline-block text-sm text-gray-400 tabular-nums text-nowrap">{type === 'product' && `× ${quantity}`} ≈ {expectedWeight.toFixed(2)} кг</span>
+            {/* <span className="inline-block text-sm text-gray-400 tabular-nums text-nowrap">{type === 'product' && `× ${quantity}`} ≈ {expectedWeight.toFixed(2)} кг</span> */}
 
             {/* Динамічно-монолітний індикатор: відображається коли є portionsPerItem */}
             {showMonolithicAvailabilityBadge && item.portionsPerItem && (
