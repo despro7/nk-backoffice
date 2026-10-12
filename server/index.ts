@@ -14,6 +14,8 @@ import storefrontRoutes from "./routes/storefront.js";
 import boxesRoutes from "./routes/boxes.js";
 import settingsRoutes from "./routes/settings.js";
 import webhookRoutes from './routes/webhooks.js';
+import chatwootWebhookRoutes from './routes/chatwoot-webhooks.js';
+import chatwootBotRoutes from './routes/chatwoot-bot.js';
 import warehouseRoutes from './routes/warehouse.js';
 import ordersSyncRoutes from './routes/orders-sync.js';
 import { cronService, forceStopAllCronJobs } from './services/cronService.js';
@@ -208,6 +210,10 @@ export function createServer() {
 
   // Webhook routes (должны быть до protected routes)
   app.use('/api/webhooks', webhookRoutes);
+  app.use('/api/webhooks/chatwoot', chatwootWebhookRoutes);
+
+  // Chatwoot Agent Bot admin API
+  app.use('/api/chatwoot-bot', chatwootBotRoutes);
 
   // Добавляем роуты для работы с перевозчиками
   app.use('/api/shipping', shippingRoutes);
@@ -273,6 +279,7 @@ app.listen(port, () => {
   console.log(`   GET   /api/orders (отримати останні 100 замовлень з локальної БД)`);
   console.log(`   GET   /api/orders/test (перевірка API налаштувань SalesDrive)`);
   console.log(`   GET   /api/webhooks/salesdrive/health (перевірка стану вебхуків SalesDrive)`);
+  console.log(`   GET   /api/webhooks/chatwoot/health (перевірка стану вебхуків Chatwoot Bot)`);
   
   // Start cron jobs after ensuring any old ones are stopped.
   console.log('\n🚀 Starting cron tasks...');

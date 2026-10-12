@@ -1,0 +1,28 @@
+{
+  "event": "message_created",
+  "id": 900001,
+  "content": "Привіт! Це тестове повідомлення для echo.",
+  "message_type": "incoming",
+  "content_type": "text",
+  "private": false,
+  "created_at": "2026-10-12T12:00:00.000Z",
+  "conversation": {
+    "id": 1001,
+    "inbox_id": 1,
+    "status": "pending",
+    "meta": {
+      "assignee": null
+    }
+  },
+  "sender": {
+    "id": 501,
+    "type": "contact",
+    "name": "Test Contact"
+  },
+  "account": {
+    "id": 1
+  },
+  "inbox": {
+    "id": 1
+  }
+}

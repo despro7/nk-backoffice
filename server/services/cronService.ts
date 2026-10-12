@@ -111,6 +111,8 @@ export class CronService {
   private warehouseAutoFinalizeJob: cron.ScheduledTask | null = null;
   private catalogMediaCleanupJob: cron.ScheduledTask | null = null;
   private isCatalogMediaCleanupRunning = false;
+  private chatwootBotLogCleanupJob: cron.ScheduledTask | null = null;
+  private isChatwootBotLogCleanupRunning = false;
   private isTaskRunning = false;
   private isProductsSyncRunning = false;
   private isStockSyncRunning = false;
@@ -628,6 +630,7 @@ export class CronService {
       hasStatusCheckJob: this.statusCheckJob !== null,
       isCatalogMediaCleanupRunning: this.isCatalogMediaCleanupRunning,
       hasCatalogMediaCleanupJob: this.catalogMediaCleanupJob !== null,
+      hasChatwootBotLogCleanupJob: this.chatwootBotLogCleanupJob !== null,
     };
   }
 
@@ -643,6 +646,7 @@ export class CronService {
     this.startOrderStatusCheck();
     this.startWarehouseAutoFinalize();
     this.startCatalogMediaCleanup();
+    this.startChatwootBotLogCleanup();
   }
 
   stopAll(): void {
@@ -729,6 +733,38 @@ export class CronService {
     if (this.catalogMediaCleanupJob) {
       this.catalogMediaCleanupJob.stop();
       this.catalogMediaCleanupJob = null;
+    }
+  }
+
+  startChatwootBotLogCleanup(): void {
+    if (this.chatwootBotLogCleanupJob) return;
+
+    // 30 4 * * * — щодня о 04:30 (після catalog media cleanup)
+    this.chatwootBotLogCleanupJob = cron.schedule('30 4 * * *', async () => {
+      if (this.isChatwootBotLogCleanupRunning) return;
+      this.isChatwootBotLogCleanupRunning = true;
+      try {
+        const { chatwootBotEventLogService } = await import(
+          '../modules/ChatwootBot/ChatwootBotEventLogService.js'
+        );
+        await chatwootBotEventLogService.runRetention();
+        console.log('🤖 [CronService] Chatwoot bot webhook log retention completed.');
+      } catch (error) {
+        console.error('🤖 [CronService] Chatwoot bot log cleanup failed:', error);
+      } finally {
+        this.isChatwootBotLogCleanupRunning = false;
+      }
+    });
+
+    this.chatwootBotLogCleanupJob.start();
+    cronJobsRegistry.add(this.chatwootBotLogCleanupJob);
+    console.log('🤖 [CronService] Chatwoot bot log cleanup job запущено (04:30 щодня)');
+  }
+
+  stopChatwootBotLogCleanup(): void {
+    if (this.chatwootBotLogCleanupJob) {
+      this.chatwootBotLogCleanupJob.stop();
+      this.chatwootBotLogCleanupJob = null;
     }
   }
 }

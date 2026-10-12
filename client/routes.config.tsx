@@ -31,6 +31,7 @@ const SettingsOrderAssembly = lazyPage(() => import('./pages/SettingsOrderAssemb
 const SettingsEquipment = lazyPage(() => import('./pages/SettingsEquipment'));
 const SettingsOrders = lazyPage(() => import('./pages/SettingsOrders'));
 const SettingsAdmin = lazyPage(() => import('./pages/SettingsAdmin'));
+const SettingsChatwootBot = lazyPage(() => import('./pages/SettingsChatwootBot'));
 const SettingsStorefront = lazyPage(() => import('./pages/SettingsStorefront'));
 const SettingsUsers = lazyPage(() => import('./pages/Settings/Users'));
 const SettingsDilovod = lazyPage(() => import('./pages/SettingsDilovod'));
@@ -739,6 +740,18 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'settings',
     order: 10,
+    permission: { name: 'admin' },
+  },
+  {
+    path: '/settings/chatwoot-bot',
+    component: SettingsChatwootBot,
+    title: 'Chatwoot Agent Bot',
+    pageTitle: 'Chatwoot Agent Bot | NK Backoffice',
+    navLabel: 'Chatwoot Bot',
+    icon: <DynamicIcon name="bot" size={20} className="max-w-full max-h-full" />,
+    inNav: true,
+    parent: 'settings',
+    order: 11,
     permission: { name: 'admin' },
   },
   {

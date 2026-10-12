@@ -1072,3 +1072,24 @@ model HrPayout {
   @@index([employmentId])
   @@map("hr_payouts")
 }
+
+/// Журнал Chatwoot Agent Bot (webhook + результат обробки). TTL і max N — у сервісі.
+model ChatwootBotWebhookLog {
+  id               String   @id @default(uuid()) @db.VarChar(36)
+  source           String   @db.VarChar(16)
+  action           String   @db.VarChar(16)
+  reason           String   @db.VarChar(128)
+  conversationId   Int?
+  messageId        Int?
+  contentPreview   String?  @db.VarChar(512)
+  replyMode        String   @db.VarChar(16)
+  dryRun           Boolean  @default(false)
+  details          String?  @db.Text
+  webhookEvent     String?  @db.VarChar(64)
+  headersMeta      Json?
+  payloadJson      Json?
+  createdAt        DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("chatwoot_bot_webhook_logs")
+}
