@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { prisma, logServer } from '../../lib/utils.js';
 import {
   CHATWOOT_BOT_FULL_PAYLOAD_MAX_BYTES,
@@ -36,11 +37,11 @@ function clampMaxRecords(max: number): number {
   return Math.max(10, Math.min(5000, Math.floor(max)));
 }
 
-function truncatePayload(payload: unknown): unknown {
+function truncatePayload(payload: unknown): Prisma.InputJsonValue {
   try {
     const json = JSON.stringify(payload);
     if (json.length <= CHATWOOT_BOT_FULL_PAYLOAD_MAX_BYTES) {
-      return JSON.parse(json) as unknown;
+      return JSON.parse(json) as Prisma.InputJsonValue;
     }
     return {
       _truncated: true,

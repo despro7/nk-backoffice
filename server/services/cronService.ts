@@ -618,6 +618,7 @@ export class CronService {
     hasStatusCheckJob: boolean;
     isCatalogMediaCleanupRunning: boolean;
     hasCatalogMediaCleanupJob: boolean;
+    hasChatwootBotLogCleanupJob: boolean;
   } {
     return {
       isRunning: this.isTaskRunning,
