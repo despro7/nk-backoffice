@@ -3,6 +3,9 @@
 /** Маркер реалізації handover у health — перевірка, що webhook б’є в актуальний код. */
 export const CHATWOOT_BOT_HANDOVER_BUILD = 'handover-trace-assign-v7';
 
+/** Імена payload для POST /api/webhooks/chatwoot/simulate (лише dev / адмін). */
+export type ChatwootBotFixtureName = 'echo' | 'handover';
+
 export type ChatwootBotReplyMode = 'live' | 'dry_run';
 
 export type ChatwootHandoverAssignMode = 'specific_agent' | 'auto_inbox';

@@ -5,6 +5,7 @@ import { logServer } from '../lib/utils.js';
 import {
   CHATWOOT_BOT_HANDOVER_BUILD,
   CHATWOOT_WEBHOOK_SECRET_HEADER,
+  type ChatwootBotFixtureName,
   type ChatwootWebhookMessageCreated,
 } from '../../shared/types/chatwootBot.js';
 import { chatwootBotOrchestrator } from '../modules/ChatwootBot/ChatwootBotOrchestrator.js';
@@ -12,7 +13,6 @@ import { chatwootBotEventLogService } from '../modules/ChatwootBot/ChatwootBotEv
 import { chatwootBotSettingsService } from '../modules/ChatwootBot/ChatwootBotSettingsService.js';
 import { getChatwootProcessorStamp } from '../modules/ChatwootBot/chatwootProcessorStamp.js';
 import { extractWebhookHeadersMeta } from '../modules/ChatwootBot/ChatwootBotWebhookUtils.js';
-import type { ChatwootBotFixtureName } from '../modules/ChatwootBot/fixtures/index.js';
 
 const router = Router();
 const chatwootAdmin = requirePermission(

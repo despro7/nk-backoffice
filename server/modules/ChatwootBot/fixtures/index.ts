@@ -1,33 +1,72 @@
-import { readFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
-import type { ChatwootWebhookMessageCreated } from '../../../../shared/types/chatwootBot.js';
+import type {
+  ChatwootBotFixtureName,
+  ChatwootWebhookMessageCreated,
+} from '../../../../shared/types/chatwootBot.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const FIXTURE_ECHO: ChatwootWebhookMessageCreated = {
+  event: 'message_created',
+  id: 900001,
+  content: 'Привіт! Це тестове повідомлення для echo.',
+  message_type: 'incoming',
+  content_type: 'text',
+  private: false,
+  conversation: {
+    id: 1001,
+    inbox_id: 1,
+    status: 'pending',
+    meta: {
+      assignee: null,
+    },
+  },
+  sender: {
+    id: 501,
+    type: 'contact',
+    name: 'Test Contact',
+  },
+  account: {
+    id: 1,
+  },
+  inbox: {
+    id: 1,
+  },
+};
 
-export type ChatwootBotFixtureName = 'echo' | 'handover';
+const FIXTURE_HANDOVER: ChatwootWebhookMessageCreated = {
+  event: 'message_created',
+  id: 900002,
+  content: 'Добрий день, переведіть мене на оператора будь ласка',
+  message_type: 'incoming',
+  content_type: 'text',
+  private: false,
+  conversation: {
+    id: 1002,
+    inbox_id: 1,
+    status: 'pending',
+    meta: {
+      assignee: null,
+    },
+  },
+  sender: {
+    id: 502,
+    type: 'contact',
+    name: 'Handover Contact',
+  },
+  account: {
+    id: 1,
+  },
+  inbox: {
+    id: 1,
+  },
+};
 
-function loadFixture(fileName: string): ChatwootWebhookMessageCreated {
-  const raw = readFileSync(join(__dirname, fileName), 'utf8');
-  return JSON.parse(raw) as ChatwootWebhookMessageCreated;
+const FIXTURES: Record<ChatwootBotFixtureName, ChatwootWebhookMessageCreated> = {
+  echo: FIXTURE_ECHO,
+  handover: FIXTURE_HANDOVER,
+};
+
+/** Лише для simulate / тестів. Без readFile — однаково працює в dev і в dist/. */
+export function getChatwootBotFixture(name: ChatwootBotFixtureName): ChatwootWebhookMessageCreated {
+  return { ...FIXTURES[name] };
 }
 
-let fixturesCache: Record<ChatwootBotFixtureName, ChatwootWebhookMessageCreated> | null =
-  null;
-
-function getFixturesCache(): Record<ChatwootBotFixtureName, ChatwootWebhookMessageCreated> {
-  if (!fixturesCache) {
-    fixturesCache = {
-      echo: loadFixture('messageCreated.echo.json'),
-      handover: loadFixture('messageCreated.handover.json'),
-    };
-  }
-  return fixturesCache;
-}
-
-/** Лише для simulate / тестів — не викликати на старті сервера. */
-export function getChatwootBotFixture(
-  name: ChatwootBotFixtureName,
-): ChatwootWebhookMessageCreated {
-  return { ...getFixturesCache()[name] };
-}
+export type { ChatwootBotFixtureName };
