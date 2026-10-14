@@ -560,9 +560,7 @@ export class ChatwootBotOrchestrator {
           ? verifiedAssignee != null
             ? `auto_inbox:#${verifiedAssignee}`
             : 'auto_inbox:none'
-          : assignVia !== 'none'
-            ? `manual:${assignVia}:#${verifiedAssignee ?? assigneeId ?? '?'}`
-            : assignDetail;
+          : `manual:${assignVia}:#${verifiedAssignee ?? assigneeId ?? '?'}`;
 
       const event = await persistEvent(logCtx, settings, {
         action: 'handover',
