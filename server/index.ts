@@ -3,7 +3,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import rolesRoutes from './routes/roles.js';
 import authRoutes from "./routes/auth.js";
 import authSettingsRoutes from "./routes/auth-settings.js";
@@ -270,14 +270,24 @@ export function createServer() {
   return app;
 }
 
-function isStandaloneServerEntry(): boolean {
+function shouldStartHttpServer(): boolean {
+  // PM2 cluster: argv[1] часто ProcessContainerFork.js — без цього listen() не викликається,
+  // процес лишається online без порту (503 на /api).
+  if (process.env.pm_id != null) {
+    return true;
+  }
+
   const entry = process.argv[1];
   if (!entry) return false;
-  return fileURLToPath(import.meta.url) === path.resolve(entry);
+
+  const resolvedEntry = path.resolve(entry);
+  const modulePath = fileURLToPath(import.meta.url);
+  if (resolvedEntry === modulePath) return true;
+  return import.meta.url === pathToFileURL(resolvedEntry).href;
 }
 
-// Лише `npm run dev:server` / `node dist/server/index.js` — не при імпорті з Vite dev plugin
-if (isStandaloneServerEntry()) {
+// Лише `npm run dev:server` / `node dist/server/index.js` / PM2 — не при імпорті з Vite dev plugin
+if (shouldStartHttpServer()) {
 const app = createServer();
 const port = process.env.PORT || 3001;
 
