@@ -14,6 +14,7 @@
   "scripts": {
     "tunnel": "ssh -N -L 0.0.0.0:3307:127.0.0.1:3306 netcup",
     "dev:app": "vite --config vite.config.dev.ts",
+    "dev:cloudflared": "cloudflared tunnel --config config/cloudflared/chatwoot-dev.yml run nk-chatwoot-dev",
     "dev": "concurrently -k -s first \"npm:tunnel\" \"wait-on tcp:127.0.0.1:3307 && npm run dev:app\"",
     "dev:host": "concurrently -k -s first \"npm:tunnel\" \"wait-on tcp:127.0.0.1:3307 && npm run dev:app -- --host\"",
     "dev:phone": "VITE_DISABLE_HMR=1 npm run dev",

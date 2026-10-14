@@ -1,0 +1,19 @@
+# Named tunnel для локального BO → Chatwoot webhook (стабільний hostname).
+#
+# 1) cloudflared tunnel login
+# 2) cloudflared tunnel create nk-chatwoot-dev
+#    → ~/.cloudflared/<UUID>.json
+# 3) cp config/cloudflared/chatwoot-dev.yml.example config/cloudflared/chatwoot-dev.yml
+#    і вкажи credentials-file нижче
+# 4) DNS (див. коментар у Docs або README в цій папці) — CNAME, не A
+# 5) npm run dev:app  +  npm run dev:cloudflared
+#
+# Hostname: chatwoot-dev.nk-food.shop (не дублюй .nk-food.shop у назві)
+
+tunnel: nk-chatwoot-dev
+credentials-file: /Users/YOUR_USER/.cloudflared/PASTE-TUNNEL-UUID-HERE.json
+
+ingress:
+  - hostname: chatwoot-dev.nk-food.shop
+    service: http://127.0.0.1:8080
+  - service: http_status:404

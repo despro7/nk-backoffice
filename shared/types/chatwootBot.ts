@@ -1,6 +1,11 @@
 /** Chatwoot Agent Bot v0 — settings + webhook event types. */
 
+/** Маркер реалізації handover у health — перевірка, що webhook б’є в актуальний код. */
+export const CHATWOOT_BOT_HANDOVER_BUILD = 'handover-trace-assign-v7';
+
 export type ChatwootBotReplyMode = 'live' | 'dry_run';
+
+export type ChatwootHandoverAssignMode = 'specific_agent' | 'auto_inbox';
 
 /** Повні налаштування бота (зберігаються в settings_base). */
 export type ChatwootBotSettings = {
@@ -24,6 +29,11 @@ export type ChatwootBotSettings = {
   eventLogMaxRecords: number;
   /** Зберігати повний JSON payload у БД (для діагностики). */
   eventLogStoreFullPayload: boolean;
+  /**
+   * specific_agent — PATCH assignee_id з handoverAssigneeId;
+   * auto_inbox — лише відкрити діалог і зняти assignee, далі Chatwoot auto assignment (round robin).
+   */
+  handoverAssignMode: ChatwootHandoverAssignMode;
   /** Chatwoot user id агента для handover (не Agent Bot id). */
   handoverAssigneeId: number | null;
   /** Inbox для симуляції / fallback, якщо в webhook немає inbox_id. */
@@ -71,6 +81,12 @@ export type ChatwootInboxSchedule = {
   workingHoursEnabled: boolean;
   timezone: string;
   workingHours: ChatwootInboxWorkingHourSlot[];
+};
+
+export type ChatwootInboxHoursStatus = {
+  schedule: ChatwootInboxSchedule;
+  inHours: boolean;
+  source: 'chatwoot_inbox' | 'settings_fallback' | 'always_open';
 };
 
 /** PUT body — порожній secret/token не змінює збережене; для очищення — clearWebhookSecret. */
@@ -152,12 +168,15 @@ export type ChatwootWebhookMessageCreated = {
   private?: boolean;
   content_type?: string;
   conversation?: {
+    /** У webhook це display_id (номер у UI), не internal PK. */
     id?: number;
+    display_id?: number | string;
     status?: string;
     inbox_id?: number;
+    assignee_id?: number | null;
     custom_attributes?: Record<string, unknown>;
     meta?: {
-      assignee?: { id?: number; type?: string } | null;
+      assignee?: { id?: number; type?: string; name?: string } | null;
       sender?: { id?: number; name?: string; phone_number?: string | null } | null;
     };
   };
@@ -186,6 +205,7 @@ export const DEFAULT_CHATWOOT_BOT_HANDOVER_KEYWORDS = [
 export const DEFAULT_CHATWOOT_BOT_EMERGENCY_KEYWORDS = ['терміново', 'критично'];
 
 /** Ключ custom attribute на conversation (Chatwoot). */
+export const CHATWOOT_BOT_ATTR_HUMAN_HANDOVER_ACTIVE = 'bot_human_handover_active';
 export const CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING = 'bot_ooh_callback_pending';
 export const CHATWOOT_BOT_ATTR_CALLBACK_REQUESTED = 'callback_requested';
 export const CHATWOOT_BOT_ATTR_CALLBACK_PHONE = 'callback_phone';
@@ -219,6 +239,7 @@ export const DEFAULT_CHATWOOT_BOT_SETTINGS: ChatwootBotSettings = {
   eventLogRetentionDays: DEFAULT_CHATWOOT_BOT_EVENT_LOG_RETENTION_DAYS,
   eventLogMaxRecords: DEFAULT_CHATWOOT_BOT_EVENT_LOG_MAX_RECORDS,
   eventLogStoreFullPayload: false,
+  handoverAssignMode: 'specific_agent',
   handoverAssigneeId: null,
   handoverDefaultInboxId: 1,
   inboxApiAccessToken: '',

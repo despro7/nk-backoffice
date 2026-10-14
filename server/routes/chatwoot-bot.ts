@@ -1,8 +1,17 @@
 import { Router, type Request, type Response } from 'express';
 import { authenticateToken, requirePermission } from '../middleware/auth.js';
 import { logServer } from '../lib/utils.js';
-import type { ChatwootBotSettingsUpdate } from '../../shared/types/chatwootBot.js';
+import {
+  CHATWOOT_BOT_HANDOVER_BUILD,
+  type ChatwootBotSettingsUpdate,
+} from '../../shared/types/chatwootBot.js';
+import { chatwootWebhookHealthUrlFromOutgoingHint } from '../modules/ChatwootBot/chatwootWebhookHealthUrl.js';
 import { createChatwootApiClient } from '../modules/ChatwootBot/ChatwootApiClient.js';
+import {
+  botMessagingCredentials,
+  handoverAssignmentCredentials,
+  hasHandoverUserPat,
+} from '../modules/ChatwootBot/chatwootCredentials.js';
 import { chatwootBotEventLogService } from '../modules/ChatwootBot/ChatwootBotEventLogService.js';
 import { chatwootBotInboxHoursService } from '../modules/ChatwootBot/ChatwootBotInboxHoursService.js';
 import { chatwootBotSettingsService } from '../modules/ChatwootBot/ChatwootBotSettingsService.js';
@@ -57,11 +66,7 @@ router.put('/settings', async (req: Request, res: Response) => {
 router.post('/test-connection', async (_req: Request, res: Response) => {
   try {
     const settings = await chatwootBotSettingsService.getSettings();
-    const client = createChatwootApiClient({
-      baseUrl: settings.baseUrl,
-      accountId: settings.accountId,
-      apiAccessToken: settings.apiAccessToken,
-    });
+    const client = createChatwootApiClient(botMessagingCredentials(settings));
     const result = await client.testConnection();
     res.status(result.ok ? 200 : 400).json({
       success: result.ok,
@@ -79,20 +84,83 @@ router.post('/test-connection', async (_req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/chatwoot-bot/webhook-processor-health
+ * Порівняння build цього сервера з хостом з Outgoing URL hint (куди Chatwoot шле webhook).
+ */
+router.get('/webhook-processor-health', async (_req: Request, res: Response) => {
+  try {
+    const settings = await chatwootBotSettingsService.getSettings();
+    const targetHealthUrl = chatwootWebhookHealthUrlFromOutgoingHint(settings.outgoingUrlHint);
+    const localBuild = CHATWOOT_BOT_HANDOVER_BUILD;
+
+    if (!targetHealthUrl) {
+      res.json({
+        success: true,
+        data: {
+          localBuild,
+          targetHealthUrl: null,
+          targetBuild: null,
+          mismatch: false,
+          message: 'Заповніть Outgoing URL hint — повний webhook URL з Chatwoot.',
+        },
+      });
+      return;
+    }
+
+    let targetBuild: string | null = null;
+    let fetchError: string | null = null;
+    try {
+      const probe = await fetch(targetHealthUrl, {
+        headers: { Accept: 'application/json', 'User-Agent': 'NK-Backoffice-ChatwootBot/1' },
+        signal: AbortSignal.timeout(12_000),
+      });
+      const text = await probe.text();
+      if (probe.ok) {
+        try {
+          const json = JSON.parse(text) as { handoverBuild?: string };
+          targetBuild = json.handoverBuild?.trim() || null;
+        } catch {
+          fetchError = 'Health відповів не JSON';
+        }
+      } else {
+        fetchError = `HTTP ${probe.status}`;
+      }
+    } catch (err) {
+      fetchError = err instanceof Error ? err.message : String(err);
+    }
+
+    const mismatch = targetBuild !== localBuild;
+    res.json({
+      success: true,
+      data: {
+        localBuild,
+        targetHealthUrl,
+        targetBuild,
+        mismatch,
+        fetchError,
+        message: mismatch
+          ? targetBuild
+            ? `Chatwoot б’є в інший build (${targetBuild}), ніж цей сервер (${localBuild}). Handover на цільовому хості — стара логіка → HTML 400.`
+            : 'Цільовий webhook-хост без handoverBuild (застарілий деплой). Echo може працювати, handover — ні. Потрібен деплой backoffice.'
+          : 'Webhook-хост і цей сервер на одному build.',
+      },
+    });
+  } catch (error) {
+    logServer('[ChatwootBot] webhook-processor-health failed', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Health check failed',
+    });
+  }
+});
+
+/**
  * GET /api/chatwoot-bot/agents
  */
-function resolveInboxApiToken(settings: Awaited<ReturnType<typeof chatwootBotSettingsService.getSettings>>): string {
-  return settings.inboxApiAccessToken.trim() || settings.apiAccessToken;
-}
-
 router.get('/agents', async (_req: Request, res: Response) => {
   try {
     const settings = await chatwootBotSettingsService.getSettings();
-    const client = createChatwootApiClient({
-      baseUrl: settings.baseUrl,
-      accountId: settings.accountId,
-      apiAccessToken: resolveInboxApiToken(settings),
-    });
+    const client = createChatwootApiClient(handoverAssignmentCredentials(settings));
     const agents = await client.listAgents();
     res.json({ success: true, data: agents });
   } catch (error) {
@@ -125,8 +193,15 @@ router.get('/inbox-schedule', async (req: Request, res: Response) => {
       });
       return;
     }
-    const inHours = await chatwootBotInboxHoursService.isWithinBusinessHours(settings, inboxId);
-    res.json({ success: true, data: { schedule, inHours } });
+    const hours = await chatwootBotInboxHoursService.isWithinBusinessHours(settings, inboxId);
+    res.json({
+      success: true,
+      data: {
+        schedule,
+        inHours: hours.inHours,
+        source: hours.source,
+      },
+    });
   } catch (error) {
     logServer('[ChatwootBot] inbox-schedule failed', error);
     res.status(500).json({

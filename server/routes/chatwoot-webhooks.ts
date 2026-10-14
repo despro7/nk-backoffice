@@ -3,12 +3,14 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { authenticateToken, requirePermission } from '../middleware/auth.js';
 import { logServer } from '../lib/utils.js';
 import {
+  CHATWOOT_BOT_HANDOVER_BUILD,
   CHATWOOT_WEBHOOK_SECRET_HEADER,
   type ChatwootWebhookMessageCreated,
 } from '../../shared/types/chatwootBot.js';
 import { chatwootBotOrchestrator } from '../modules/ChatwootBot/ChatwootBotOrchestrator.js';
 import { chatwootBotEventLogService } from '../modules/ChatwootBot/ChatwootBotEventLogService.js';
 import { chatwootBotSettingsService } from '../modules/ChatwootBot/ChatwootBotSettingsService.js';
+import { getChatwootProcessorStamp } from '../modules/ChatwootBot/chatwootProcessorStamp.js';
 import { extractWebhookHeadersMeta } from '../modules/ChatwootBot/ChatwootBotWebhookUtils.js';
 import type { ChatwootBotFixtureName } from '../modules/ChatwootBot/fixtures/index.js';
 
@@ -87,6 +89,7 @@ router.get('/health', (_req, res) => {
   res.json({
     success: true,
     message: 'Chatwoot webhook endpoint is healthy',
+    handoverBuild: CHATWOOT_BOT_HANDOVER_BUILD,
     timestamp: new Date().toLocaleString('uk-UA'),
   });
 });
@@ -99,6 +102,12 @@ router.post('/', verifyWebhookSecret, async (req: Request, res: Response) => {
   try {
     const payload = (req.body ?? {}) as ChatwootWebhookMessageCreated;
     const headersMeta = extractWebhookHeadersMeta(req.headers);
+    const processor = getChatwootProcessorStamp();
+    logServer(
+      `[ChatwootBot] webhook in · ${processor} · event=${payload.event ?? 'n/a'} ` +
+        `conv=${payload.conversation?.id ?? 'n/a'} msg=${payload.id ?? 'n/a'} auth=${headersMeta.detectedScheme}`,
+    );
+    res.setHeader('X-Chatwoot-Bot-Processor', processor);
     const result = await chatwootBotOrchestrator.processWebhook(payload, {
       source: 'webhook',
       headersMeta,

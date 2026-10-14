@@ -2,7 +2,9 @@ import { logServer } from '../../lib/utils.js';
 import {
   CHATWOOT_BOT_ATTR_CALLBACK_PHONE,
   CHATWOOT_BOT_ATTR_CALLBACK_REQUESTED,
+  CHATWOOT_BOT_ATTR_HUMAN_HANDOVER_ACTIVE,
   CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING,
+  CHATWOOT_BOT_HANDOVER_BUILD,
   type ChatwootBotEventRecord,
   type ChatwootBotEventSource,
   type ChatwootBotProcessResult,
@@ -10,19 +12,32 @@ import {
   type ChatwootBotWebhookHeadersMeta,
   type ChatwootWebhookMessageCreated,
 } from '../../../shared/types/chatwootBot.js';
+import {
+  botMessagingCredentials,
+  handoverAssignmentCredentials,
+  hasHandoverUserPat,
+} from './chatwootCredentials.js';
 import { createChatwootApiClient } from './ChatwootApiClient.js';
 import {
   extractCallbackPhone,
+  isConversationHandledByHuman,
   isOohCallbackPending,
   isWithinHandoverHours,
   matchesCallbackIntent,
   matchesEmergency,
   matchesHandover,
+  resolveHandoverAssigneeId,
   shouldPersistEvent,
 } from './ChatwootBotHandoverUtils.js';
 import { chatwootBotEventLogService } from './ChatwootBotEventLogService.js';
 import { chatwootBotInboxHoursService } from './ChatwootBotInboxHoursService.js';
 import { chatwootBotSettingsService } from './ChatwootBotSettingsService.js';
+import { resolveConversationApiId } from './chatwootConversationId.js';
+import { assignHumanAgentWithBotFallback } from './chatwootHandoverAssign.js';
+import { ChatwootHandoverTrace } from './chatwootHandoverTrace.js';
+import { getChatwootProcessorStamp } from './chatwootProcessorStamp.js';
+import { runWithConversationLock } from './conversationWebhookQueue.js';
+import { isDuplicateWebhookMessage } from './webhookMessageDedup.js';
 
 type ProcessLogContext = {
   source: ChatwootBotEventSource;
@@ -126,6 +141,22 @@ export class ChatwootBotOrchestrator {
       headersMeta?: ChatwootBotWebhookHeadersMeta | null;
     } = {},
   ): Promise<ChatwootBotProcessResult> {
+    const conversationId = resolveConversationApiId(payload);
+    if (conversationId != null) {
+      return runWithConversationLock(conversationId, () =>
+        this.processWebhookUnlocked(payload, options),
+      );
+    }
+    return this.processWebhookUnlocked(payload, options);
+  }
+
+  private async processWebhookUnlocked(
+    payload: ChatwootWebhookMessageCreated,
+    options: {
+      source?: ChatwootBotEventSource;
+      headersMeta?: ChatwootBotWebhookHeadersMeta | null;
+    } = {},
+  ): Promise<ChatwootBotProcessResult> {
     const settings = await chatwootBotSettingsService.getSettings();
     const dryRun = settings.replyMode === 'dry_run';
     const source = options.source ?? 'webhook';
@@ -135,7 +166,7 @@ export class ChatwootBotOrchestrator {
       payload,
       webhookEvent: payload.event ?? null,
     };
-    const conversationId = payload.conversation?.id ?? null;
+    const conversationId = resolveConversationApiId(payload);
     const messageId = payload.id ?? null;
     const content = typeof payload.content === 'string' ? payload.content : '';
     const contentPreview = previewContent(content);
@@ -202,6 +233,15 @@ export class ChatwootBotOrchestrator {
       return finish({ action: 'ignored', reason: 'not_incoming', persist: false, logLine: false });
     }
 
+    if (source === 'webhook' && isDuplicateWebhookMessage(messageId)) {
+      return finish({
+        action: 'ignored',
+        reason: 'duplicate_message',
+        persist: false,
+        logLine: false,
+      });
+    }
+
     const senderType = String(payload.sender?.type ?? '').toLowerCase();
     if (senderType && senderType !== 'contact') {
       return finish({
@@ -216,6 +256,16 @@ export class ChatwootBotOrchestrator {
       return finish({ action: 'error', reason: 'missing_conversation_id', success: false });
     }
 
+    const customAttrsEarly = getConversationCustomAttributes(payload);
+    if (isConversationHandledByHuman(payload, customAttrsEarly)) {
+      return finish({
+        action: 'ignored',
+        reason: 'human_agent_active',
+        persist: false,
+        logLine: false,
+      });
+    }
+
     const inboxId =
       payload.conversation?.inbox_id ??
       payload.inbox?.id ??
@@ -224,8 +274,11 @@ export class ChatwootBotOrchestrator {
     const hoursResult = await chatwootBotInboxHoursService.isWithinBusinessHours(
       settings,
       inboxId,
+      undefined,
+      { skipCache: true },
     );
     const inHours = hoursResult.inHours;
+    const hoursLog = `hours=${inHours ? 'in' : 'ooh'};source=${hoursResult.source};inbox=${inboxId ?? 'n/a'}`;
     const handoverKw = matchesHandover(content, settings.handoverKeywords);
     const emergency = matchesEmergency(content, settings);
     const customAttrs = getConversationCustomAttributes(payload);
@@ -242,6 +295,7 @@ export class ChatwootBotOrchestrator {
         settings.handoverMessageEmergency,
         'emergency',
         'Handover: екстрений виклик поза робочими годинами.',
+        hoursLog,
       );
     }
 
@@ -256,6 +310,7 @@ export class ChatwootBotOrchestrator {
         settings.handoverMessageInHours,
         'in_hours',
         'Handover: клієнт запросив оператора (робочі години).',
+        hoursLog,
       );
     }
 
@@ -267,6 +322,7 @@ export class ChatwootBotOrchestrator {
         dryRun,
         contentPreview,
         messageId,
+        hoursLog,
       );
     }
 
@@ -326,11 +382,7 @@ export class ChatwootBotOrchestrator {
     }
 
     try {
-      const client = createChatwootApiClient({
-        baseUrl: settings.baseUrl,
-        accountId: settings.accountId,
-        apiAccessToken: settings.apiAccessToken,
-      });
+      const client = createChatwootApiClient(botMessagingCredentials(settings));
       await client.createOutgoingMessage(conversationId, echoText, false);
       const event = await persistEvent(logCtx, settings, {
         action: 'echo',
@@ -383,11 +435,18 @@ export class ChatwootBotOrchestrator {
     publicMessage: string,
     mode: 'in_hours' | 'emergency',
     privateNote: string,
+    hoursLog?: string,
   ): Promise<ChatwootBotProcessResult> {
-    const assigneeId = settings.handoverAssigneeId;
+    const assigneeId = resolveHandoverAssigneeId(settings);
+    const assignDetail =
+      settings.handoverAssignMode === 'auto_inbox'
+        ? 'assign=auto_inbox'
+        : assigneeId
+          ? `assignee=#${assigneeId}`
+          : 'assignee=none';
     const dryReason = 'dry_run_handover';
     const doneReason = 'handover_done';
-    const detailsPrefix = `mode=${mode}`;
+    const detailsPrefix = hoursLog ? `mode=${mode} · ${hoursLog}` : `mode=${mode}`;
 
     if (dryRun) {
       const event = await persistEvent(logCtx, settings, {
@@ -399,7 +458,11 @@ export class ChatwootBotOrchestrator {
         dryRun: true,
         details:
           `${detailsPrefix} · would public msg + open + ` +
-          (assigneeId ? `assign #${assigneeId}` : 'unassign'),
+          (settings.handoverAssignMode === 'auto_inbox'
+            ? 'auto inbox assignment'
+            : assigneeId
+              ? `assign #${assigneeId}`
+              : 'unassign'),
       });
       logServer(`[ChatwootBot] handover dry_run conv=${conversationId} ${detailsPrefix}`);
       return {
@@ -413,26 +476,93 @@ export class ChatwootBotOrchestrator {
     }
 
     try {
-      const client = createChatwootApiClient({
-        baseUrl: settings.baseUrl,
-        accountId: settings.accountId,
-        apiAccessToken: settings.apiAccessToken,
-      });
-      await client.createOutgoingMessage(conversationId, publicMessage, false);
-      await client.toggleStatusOpen(conversationId);
-      if (assigneeId) {
-        await client.assignConversation(conversationId, assigneeId);
-      } else {
-        await client.unassignConversation(conversationId);
-      }
+      const botClient = createChatwootApiClient(botMessagingCredentials(settings));
+      const patClient = hasHandoverUserPat(settings)
+        ? createChatwootApiClient(handoverAssignmentCredentials(settings))
+        : null;
+      const trace = new ChatwootHandoverTrace();
+      trace.plan(`${assignDetail} · build=${CHATWOOT_BOT_HANDOVER_BUILD}`);
+      let step = 'assign';
+      let verifiedAssignee: number | null = null;
+      let assignVia: 'bot' | 'pat' | 'auto' | 'none' = 'none';
       try {
-        await client.createOutgoingMessage(conversationId, privateNote, true);
-      } catch (noteErr) {
-        logServer('[ChatwootBot] handover private note failed (non-fatal)', noteErr);
+        const isAuto = settings.handoverAssignMode === 'auto_inbox' || !assigneeId;
+        if (isAuto) {
+          step = 'bot_handoff';
+          trace.ok('bot_handoff:start');
+          await botClient.botHandoffOpen(conversationId);
+          trace.ok('bot_handoff:ok');
+          step = 'auto_inbox_check';
+          trace.ok('auto_inbox:check_assignee');
+          verifiedAssignee =
+            (await botClient.getConversationAssigneeId(conversationId)) ??
+            (patClient ? await patClient.getConversationAssigneeId(conversationId) : null);
+          assignVia = 'auto';
+          if (verifiedAssignee != null) {
+            trace.ok(`auto_inbox:assignee=#${verifiedAssignee}`);
+          } else {
+            trace.skip('auto_inbox:assignee=none (увімкніть auto assignment у inbox Chatwoot)');
+          }
+        } else {
+          step = 'assign';
+          trace.ok(`assign:start target=#${assigneeId}`);
+          const assignResult = await assignHumanAgentWithBotFallback(
+            conversationId,
+            assigneeId,
+            botClient,
+            patClient,
+          );
+          verifiedAssignee = assignResult.assigneeId;
+          assignVia = assignResult.via;
+          trace.ok(`assign:via_${assignResult.via}`);
+          if (verifiedAssignee != null) {
+            trace.ok(`assign:verified=#${verifiedAssignee}`);
+          } else {
+            trace.skip('assign:verified=none');
+          }
+          if (verifiedAssignee !== assigneeId) {
+            logServer(
+              `[ChatwootBot] assign verify conv=${conversationId} expected=${assigneeId} got=${verifiedAssignee ?? 'null'}`,
+            );
+          }
+        }
+        step = 'public_message';
+        trace.ok('public_message:start');
+        await botClient.createOutgoingMessage(conversationId, publicMessage, false);
+        trace.ok('public_message:ok');
+        step = 'private_note';
+        try {
+          await botClient.createOutgoingMessage(conversationId, privateNote, true);
+          trace.ok('private_note:ok');
+        } catch (noteErr) {
+          trace.skip('private_note:failed');
+          logServer('[ChatwootBot] handover private note failed (non-fatal)', noteErr);
+        }
+      } catch (stepErr) {
+        const base = stepErr instanceof Error ? stepErr.message : String(stepErr);
+        throw new Error(`handover step=${step} · ${trace.toDetailsFragment()} · ${base}`);
       }
-      await client.mergeConversationCustomAttributes(conversationId, {
-        [CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING]: false,
-      });
+
+      step = 'custom_attributes';
+      try {
+        await botClient.mergeConversationCustomAttributesBestEffort(conversationId, {
+          [CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING]: false,
+          [CHATWOOT_BOT_ATTR_HUMAN_HANDOVER_ACTIVE]: true,
+        });
+        trace.ok('custom_attributes:ok');
+      } catch (attrErr) {
+        trace.skip('custom_attributes:failed');
+        logServer('[ChatwootBot] handover custom attributes failed (non-fatal)', attrErr);
+      }
+
+      const assignSummary =
+        assignVia === 'auto'
+          ? verifiedAssignee != null
+            ? `auto_inbox:#${verifiedAssignee}`
+            : 'auto_inbox:none'
+          : assignVia !== 'none'
+            ? `manual:${assignVia}:#${verifiedAssignee ?? assigneeId ?? '?'}`
+            : assignDetail;
 
       const event = await persistEvent(logCtx, settings, {
         action: 'handover',
@@ -441,9 +571,7 @@ export class ChatwootBotOrchestrator {
         messageId,
         contentPreview,
         dryRun: false,
-        details: assigneeId
-          ? `${detailsPrefix} · assignee=#${assigneeId}`
-          : `${detailsPrefix} · assignee=none`,
+        details: `${detailsPrefix} · ${assignSummary} · ${trace.toDetailsFragment()}`,
       });
       logServer(`[ChatwootBot] handover done conv=${conversationId} ${detailsPrefix}`);
       return {
@@ -456,7 +584,8 @@ export class ChatwootBotOrchestrator {
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      logServer('[ChatwootBot] handover failed', err);
+      const processor = getChatwootProcessorStamp();
+      logServer(`[ChatwootBot] handover failed · ${processor}`, err);
       const event = await persistEvent(logCtx, settings, {
         action: 'error',
         reason: 'handover_failed',
@@ -464,7 +593,7 @@ export class ChatwootBotOrchestrator {
         messageId,
         contentPreview,
         dryRun: false,
-        details: message,
+        details: `${processor} · ${message}`,
       });
       return {
         success: false,
@@ -484,6 +613,7 @@ export class ChatwootBotOrchestrator {
     dryRun: boolean,
     contentPreview: string,
     messageId: number | null,
+    hoursLog?: string,
   ): Promise<ChatwootBotProcessResult> {
     const publicMessage = settings.handoverMessageOutOfHours;
     const dryReason = 'dry_run_ooh_offer';
@@ -497,7 +627,9 @@ export class ChatwootBotOrchestrator {
         messageId,
         contentPreview,
         dryRun: true,
-        details: 'Would send OOH offer + set callback pending (bot stays assignee)',
+        details:
+          (hoursLog ? `${hoursLog} · ` : '') +
+          'Would send OOH offer + set callback pending (bot stays assignee)',
       });
       logServer(`[ChatwootBot] ooh_offer dry_run conv=${conversationId}`);
       return {
@@ -511,23 +643,27 @@ export class ChatwootBotOrchestrator {
     }
 
     try {
-      const client = createChatwootApiClient({
-        baseUrl: settings.baseUrl,
-        accountId: settings.accountId,
-        apiAccessToken: settings.apiAccessToken,
-      });
-      await client.createOutgoingMessage(conversationId, publicMessage, false);
-      await client.mergeConversationCustomAttributes(conversationId, {
-        [CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING]: true,
-      });
+      const client = createChatwootApiClient(botMessagingCredentials(settings));
+      let step = 'public_message';
       try {
-        await client.createOutgoingMessage(
-          conversationId,
-          'Handover OOH: клієнт просив оператора поза робочими годинами — очікуємо контакти або допомогу бота.',
-          true,
-        );
-      } catch (noteErr) {
-        logServer('[ChatwootBot] ooh_offer private note failed (non-fatal)', noteErr);
+        await client.createOutgoingMessage(conversationId, publicMessage, false);
+        step = 'custom_attributes';
+        await client.mergeConversationCustomAttributesBestEffort(conversationId, {
+          [CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING]: true,
+        });
+        step = 'private_note';
+        try {
+          await client.createOutgoingMessage(
+            conversationId,
+            'Handover OOH: клієнт просив оператора поза робочими годинами — очікуємо контакти або допомогу бота.',
+            true,
+          );
+        } catch (noteErr) {
+          logServer('[ChatwootBot] ooh_offer private note failed (non-fatal)', noteErr);
+        }
+      } catch (stepErr) {
+        const base = stepErr instanceof Error ? stepErr.message : String(stepErr);
+        throw new Error(`ooh step=${step}: ${base}`);
       }
 
       const event = await persistEvent(logCtx, settings, {
@@ -537,7 +673,7 @@ export class ChatwootBotOrchestrator {
         messageId,
         contentPreview,
         dryRun: false,
-        details: 'bot_stays_assignee',
+        details: hoursLog ? `${hoursLog} · bot_stays_assignee` : 'bot_stays_assignee',
       });
       logServer(`[ChatwootBot] ooh_offer conv=${conversationId}`);
       return {
@@ -609,15 +745,11 @@ export class ChatwootBotOrchestrator {
     }
 
     try {
-      const client = createChatwootApiClient({
-        baseUrl: settings.baseUrl,
-        accountId: settings.accountId,
-        apiAccessToken: settings.apiAccessToken,
-      });
+      const client = createChatwootApiClient(botMessagingCredentials(settings));
       if (contactId && phone) {
         await client.updateContact(contactId, { phone_number: phone });
       }
-      await client.mergeConversationCustomAttributes(conversationId, {
+      await client.mergeConversationCustomAttributesBestEffort(conversationId, {
         [CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING]: false,
         [CHATWOOT_BOT_ATTR_CALLBACK_REQUESTED]: true,
         ...(phone ? { [CHATWOOT_BOT_ATTR_CALLBACK_PHONE]: phone } : {}),

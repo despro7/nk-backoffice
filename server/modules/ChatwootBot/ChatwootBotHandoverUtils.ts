@@ -1,9 +1,11 @@
 import {
+  CHATWOOT_BOT_ATTR_HUMAN_HANDOVER_ACTIVE,
   CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING,
   DEFAULT_CHATWOOT_BOT_EMERGENCY_KEYWORDS,
   DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_DAYS,
   type ChatwootBotProcessAction,
   type ChatwootBotSettings,
+  type ChatwootWebhookMessageCreated,
 } from '../../../shared/types/chatwootBot.js';
 
 export function matchesKeywordList(content: string, keywords: string[]): boolean {
@@ -45,6 +47,43 @@ const CALLBACK_INTENT_PHRASES = ['передзвон', 'зателефон', 'т
 export function matchesCallbackIntent(content: string): boolean {
   const lower = content.toLowerCase();
   return CALLBACK_INTENT_PHRASES.some((p) => lower.includes(p));
+}
+
+function isTruthyAttr(v: unknown): boolean {
+  return v === true || v === 'true' || v === 1 || v === '1';
+}
+
+export function isHumanHandoverActive(attrs: Record<string, unknown> | undefined): boolean {
+  if (!attrs) return false;
+  return isTruthyAttr(attrs[CHATWOOT_BOT_ATTR_HUMAN_HANDOVER_ACTIVE]);
+}
+
+/** Після handover на людину — не echo і не повторний handover. */
+export function isConversationHandledByHuman(
+  payload: ChatwootWebhookMessageCreated,
+  customAttrs: Record<string, unknown>,
+): boolean {
+  if (isHumanHandoverActive(customAttrs)) return true;
+
+  const assignee = payload.conversation?.meta?.assignee;
+  const assigneeId =
+    assignee?.id ??
+    (typeof payload.conversation?.assignee_id === 'number'
+      ? payload.conversation.assignee_id
+      : null);
+  if (assigneeId == null || assigneeId <= 0) return false;
+
+  const type = String(assignee?.type ?? 'user').toLowerCase();
+  if (type === 'agent_bot' || type === 'bot') return false;
+
+  const status = String(payload.conversation?.status ?? '').toLowerCase();
+  if (status === 'resolved') return false;
+  return true;
+}
+
+export function resolveHandoverAssigneeId(settings: ChatwootBotSettings): number | null {
+  if (settings.handoverAssignMode === 'auto_inbox') return null;
+  return settings.handoverAssigneeId;
 }
 
 export function isOohCallbackPending(attrs: Record<string, unknown> | undefined): boolean {
@@ -126,5 +165,6 @@ export function shouldPersistEvent(action: ChatwootBotProcessAction, reason: str
   if (reason === 'private_message') return false;
   if (reason === 'not_incoming') return false;
   if (reason.startsWith('sender_not_contact:')) return false;
+  if (reason === 'human_agent_active') return false;
   return true;
 }

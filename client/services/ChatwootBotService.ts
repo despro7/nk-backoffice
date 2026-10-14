@@ -2,6 +2,7 @@ import type {
   ChatwootBotAgentSummary,
   ChatwootBotConnectionTestResult,
   ChatwootBotEventRecord,
+  ChatwootInboxHoursStatus,
   ChatwootBotProcessResult,
   ChatwootBotSettingsResponse,
   ChatwootBotSettingsUpdate,
@@ -37,6 +38,18 @@ export const chatwootBotApi = {
     return parseJson(res);
   },
 
+  async getWebhookProcessorHealth(): Promise<{
+    localBuild: string;
+    targetHealthUrl: string | null;
+    targetBuild: string | null;
+    mismatch: boolean;
+    fetchError?: string | null;
+    message: string;
+  }> {
+    const res = await fetch('/api/chatwoot-bot/webhook-processor-health', { credentials: 'include' });
+    return parseJson(res);
+  },
+
   async testConnection(): Promise<ChatwootBotConnectionTestResult> {
     const res = await fetch('/api/chatwoot-bot/test-connection', {
       method: 'POST',
@@ -65,6 +78,20 @@ export const chatwootBotApi = {
       throw new Error(data.error || `HTTP ${res.status}`);
     }
     return data.data?.deleted ?? 0;
+  },
+
+  async getInboxSchedule(inboxId: number): Promise<ChatwootInboxHoursStatus | null> {
+    const res = await fetch(`/api/chatwoot-bot/inbox-schedule?inboxId=${inboxId}`, {
+      credentials: 'include',
+    });
+    const json = (await res.json()) as {
+      success?: boolean;
+      data?: ChatwootInboxHoursStatus;
+    };
+    if (!res.ok || json.success === false || !json.data) {
+      return null;
+    }
+    return json.data;
   },
 
   async listAgents(): Promise<ChatwootBotAgentSummary[]> {

@@ -49,6 +49,11 @@ function normalizeMaxRecords(raw: unknown): number {
   return Math.max(10, Math.min(5000, Math.floor(n)));
 }
 
+function normalizeHandoverAssignMode(raw: unknown): ChatwootBotSettings['handoverAssignMode'] {
+  if (raw === 'auto_inbox' || raw === 'specific_agent') return raw;
+  return DEFAULT_CHATWOOT_BOT_SETTINGS.handoverAssignMode;
+}
+
 function normalizeAssigneeId(raw: unknown): number | null {
   if (raw === null || raw === undefined || raw === '') return null;
   const n = Number(raw);
@@ -124,6 +129,7 @@ function mergeWithDefaults(raw: Partial<ChatwootBotSettings>): ChatwootBotSettin
     eventLogStoreFullPayload: Boolean(
       raw.eventLogStoreFullPayload ?? DEFAULT_CHATWOOT_BOT_SETTINGS.eventLogStoreFullPayload,
     ),
+    handoverAssignMode: normalizeHandoverAssignMode(raw.handoverAssignMode),
     handoverAssigneeId: normalizeAssigneeId(raw.handoverAssigneeId),
     handoverDefaultInboxId: normalizeDefaultInboxId(
       raw.handoverDefaultInboxId ?? DEFAULT_CHATWOOT_BOT_SETTINGS.handoverDefaultInboxId,

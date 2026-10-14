@@ -55,7 +55,12 @@ export class ChatwootBotInboxHoursService {
     settings: ChatwootBotSettings,
     inboxId: number | null,
     now = new Date(),
+    options?: { skipCache?: boolean },
   ): Promise<{ inHours: boolean; source: 'chatwoot_inbox' | 'settings_fallback' | 'always_open' }> {
+    if (options?.skipCache && inboxId != null) {
+      this.invalidateCache(inboxId);
+    }
+
     if (!inboxId) {
       return {
         inHours: isWithinHandoverHours(settings, now),

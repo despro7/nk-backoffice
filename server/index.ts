@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import path from "path";
+import { fileURLToPath } from "url";
 import rolesRoutes from './routes/roles.js';
 import authRoutes from "./routes/auth.js";
 import authSettingsRoutes from "./routes/auth-settings.js";
@@ -54,7 +55,8 @@ export function createServer() {
     'http://localhost:8080', // Додатковий dev server
     'https://localhost:3000',
     'https://localhost:5173',
-    'https://localhost:8080'
+    'https://localhost:8080',
+    'https://chatwoot-dev.nk-food.shop',
   ];
 
   /** У dev дозволяємо доступ з телефону/LAN в одній приватній мережі */
@@ -268,7 +270,14 @@ export function createServer() {
   return app;
 }
 
-// Запускаем сервер если файл запущен напрямую
+function isStandaloneServerEntry(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  return fileURLToPath(import.meta.url) === path.resolve(entry);
+}
+
+// Лише `npm run dev:server` / `node dist/server/index.js` — не при імпорті з Vite dev plugin
+if (isStandaloneServerEntry()) {
 const app = createServer();
 const port = process.env.PORT || 3001;
 
@@ -286,6 +295,7 @@ app.listen(port, () => {
   forceStopAllCronJobs(); // Clean up any orphaned jobs from previous runs
   cronService.startAll(); // Start new jobs
 });
+}
 
 // Graceful shutdown
 // Attach shutdown handlers only once per process lifetime to avoid HMR duplication.

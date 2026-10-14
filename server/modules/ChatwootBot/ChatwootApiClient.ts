@@ -6,63 +6,22 @@ import { logServer } from '../../lib/utils.js';
 import type {
   ChatwootBotAgentSummary,
   ChatwootBotConnectionTestResult,
+  ChatwootHandoverAssignMode,
   ChatwootInboxSchedule,
   ChatwootInboxWorkingHourSlot,
 } from '../../../shared/types/chatwootBot.js';
+import {
+  accountApiUrl,
+  fetchChatwootRaw,
+  formatChatwootHttpError,
+  normalizeBaseUrl,
+  sanitizeChatwootApiToken,
+} from './chatwootHttp.js';
 
 export interface ChatwootApiCredentials {
   baseUrl: string;
   accountId: number;
   apiAccessToken: string;
-}
-
-const REQUEST_TIMEOUT_MS = 15_000;
-
-function normalizeBaseUrl(baseUrl: string): string {
-  const trimmed = baseUrl.trim().replace(/\/+$/, '');
-  if (!trimmed) throw new Error('Chatwoot base URL обовʼязковий');
-  return trimmed;
-}
-
-type ChatwootRawResponse = {
-  status: number;
-  bodyText: string;
-};
-
-async function fetchChatwootRaw(
-  creds: ChatwootApiCredentials,
-  url: string,
-  options: { method?: string; body?: unknown } = {},
-): Promise<ChatwootRawResponse> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-  try {
-    const res = await fetch(url, {
-      method: options.method || 'GET',
-      headers: {
-        api_access_token: creds.apiAccessToken,
-        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      },
-      body: options.body ? JSON.stringify(options.body) : undefined,
-      signal: controller.signal,
-    });
-
-    const bodyText = await res.text().catch(() => '');
-    return { status: res.status, bodyText };
-  } catch (err) {
-    if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error('Chatwoot API timeout (15s)');
-    }
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function accountApiUrl(creds: ChatwootApiCredentials, path: string): string {
-  const base = normalizeBaseUrl(creds.baseUrl);
-  return `${base}/api/v1/accounts/${creds.accountId}${path}`;
 }
 
 function isBotTokenRejected(bodyText: string): boolean {
@@ -75,11 +34,12 @@ async function fetchChatwoot<T>(
   path: string,
   options: { method?: string; body?: unknown } = {},
 ): Promise<T> {
+  const method = options.method || 'GET';
   const url = accountApiUrl(creds, path);
   const { status, bodyText } = await fetchChatwootRaw(creds, url, options);
 
   if (!status || status < 200 || status >= 300) {
-    throw new Error(`Chatwoot HTTP ${status}: ${bodyText.slice(0, 300)}`);
+    throw new Error(formatChatwootHttpError(status, path, bodyText, method));
   }
 
   if (status === 204) return undefined as T;
@@ -92,7 +52,7 @@ export class ChatwootApiClient {
 
   async testConnection(): Promise<ChatwootBotConnectionTestResult> {
     try {
-      if (!this.creds.apiAccessToken) {
+      if (!sanitizeChatwootApiToken(this.creds.apiAccessToken)) {
         return { ok: false, message: 'API access token не налаштовано', error: 'missing_token' };
       }
       if (!this.creds.baseUrl) {
@@ -170,7 +130,12 @@ export class ChatwootApiClient {
       }
 
       throw new Error(
-        `Chatwoot HTTP ${inboxesProbe.status}: ${inboxesProbe.bodyText.slice(0, 300)}`,
+        formatChatwootHttpError(
+          inboxesProbe.status,
+          '/inboxes',
+          inboxesProbe.bodyText,
+          'GET',
+        ),
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -186,15 +151,69 @@ export class ChatwootApiClient {
         content,
         message_type: 'outgoing',
         private: isPrivate,
+        content_type: 'text',
       },
     });
   }
 
-  async toggleStatusOpen(conversationId: number): Promise<unknown> {
+  /**
+   * Відкрити діалог (токен Agent Bot) і призначити агента (User PAT на `this`).
+   */
+  async openAndAssignConversation(
+    conversationId: number,
+    assigneeId: number | null,
+    assignMode: ChatwootHandoverAssignMode,
+    statusClient: ChatwootApiClient,
+  ): Promise<{ assigneeId: number | null }> {
+    const isAuto = assignMode === 'auto_inbox';
+
+    await statusClient.toggleStatusOpen(conversationId);
+
+    if (isAuto || !assigneeId) {
+      await this.unassignConversation(conversationId);
+      return { assigneeId: null };
+    }
+
+    await this.assignConversation(conversationId, assigneeId);
+    const verified = await this.getConversationAssigneeId(conversationId);
+    if (verified !== assigneeId) {
+      logServer(
+        `[ChatwootApiClient] assign verify conv=${conversationId} expected=${assigneeId} got=${verified ?? 'null'}`,
+      );
+    }
+    return { assigneeId: verified ?? assigneeId };
+  }
+
+  async getConversationAssigneeId(conversationId: number): Promise<number | null> {
+    try {
+      const raw = await fetchChatwoot<{
+        meta?: { assignee?: { id?: number } };
+        assignee_id?: number;
+      }>(this.creds, `/conversations/${conversationId}`);
+      const fromMeta = raw.meta?.assignee?.id;
+      if (fromMeta != null && Number.isFinite(fromMeta)) return fromMeta;
+      if (raw.assignee_id != null && Number.isFinite(raw.assignee_id)) return raw.assignee_id;
+      return null;
+    } catch (err) {
+      logServer('[ChatwootApiClient] getConversationAssigneeId failed', err);
+      return null;
+    }
+  }
+
+  /**
+   * Agent Bot handoff: pending + status open → `bot_handoff!` у Chatwoot (PR #8639).
+   * Потрібен токен Agent Bot, не User PAT.
+   */
+  async botHandoffOpen(conversationId: number): Promise<unknown> {
     return fetchChatwoot(this.creds, `/conversations/${conversationId}/toggle_status`, {
       method: 'POST',
       body: { status: 'open' },
     });
+  }
+
+  /** @deprecated Використовуйте botHandoffOpen для handover. */
+  async toggleStatusOpen(conversationId: number): Promise<unknown> {
+    return this.botHandoffOpen(conversationId);
   }
 
   async assignConversation(conversationId: number, assigneeId: number): Promise<unknown> {
@@ -226,8 +245,27 @@ export class ChatwootApiClient {
         body: { custom_attributes: customAttributes, merge: true },
       });
     } catch (err) {
-      logServer('[ChatwootApiClient] mergeConversationCustomAttributes failed', err);
-      throw err;
+      logServer('[ChatwootApiClient] mergeConversationCustomAttributes (merge) failed', err);
+      try {
+        await fetchChatwoot(this.creds, `/conversations/${conversationId}`, {
+          method: 'PATCH',
+          body: { custom_attributes: customAttributes },
+        });
+      } catch (patchErr) {
+        logServer('[ChatwootApiClient] mergeConversationCustomAttributes (patch) failed', patchErr);
+        throw patchErr;
+      }
+    }
+  }
+
+  async mergeConversationCustomAttributesBestEffort(
+    conversationId: number,
+    customAttributes: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.mergeConversationCustomAttributes(conversationId, customAttributes);
+    } catch (err) {
+      logServer('[ChatwootApiClient] custom attributes skipped (non-fatal)', err);
     }
   }
 

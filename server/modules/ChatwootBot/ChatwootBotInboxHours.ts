@@ -1,5 +1,12 @@
 import type { ChatwootInboxSchedule, ChatwootInboxWorkingHourSlot } from '../../../shared/types/chatwootBot.js';
 
+/** Chatwoot інколи повертає legacy alias; ICU очікує IANA id. */
+function normalizeInboxTimezone(timeZone: string): string {
+  const tz = timeZone.trim() || 'UTC';
+  if (tz === 'Europe/Kiev') return 'Europe/Kyiv';
+  return tz;
+}
+
 function getZonedParts(date: Date, timeZone: string): { weekdayChatwoot: number; minutes: number } {
   const fmt = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -10,7 +17,8 @@ function getZonedParts(date: Date, timeZone: string): { weekdayChatwoot: number;
   });
   const parts = fmt.formatToParts(date);
   const weekdayStr = parts.find((p) => p.type === 'weekday')?.value ?? 'Sun';
-  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+  let hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+  if (hour === 24) hour = 0;
   const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
   const weekdayMap: Record<string, number> = {
     Sun: 0,
@@ -37,7 +45,7 @@ function slotForDay(
 export function isWithinChatwootInboxSchedule(schedule: ChatwootInboxSchedule, now = new Date()): boolean {
   if (!schedule.workingHoursEnabled) return true;
 
-  const tz = schedule.timezone.trim() || 'UTC';
+  const tz = normalizeInboxTimezone(schedule.timezone);
   let zoned: { weekdayChatwoot: number; minutes: number };
   try {
     zoned = getZonedParts(now, tz);

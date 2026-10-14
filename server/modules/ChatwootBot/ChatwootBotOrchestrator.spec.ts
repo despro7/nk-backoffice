@@ -167,6 +167,21 @@ describe('ChatwootBotOrchestrator dry_run', () => {
     expect(vi.mocked(chatwootBotEventLogService.append)).not.toHaveBeenCalled();
   });
 
+  it('ignores echo when human agent active on conversation', async () => {
+    const payload = {
+      ...getChatwootBotFixture('echo'),
+      conversation: {
+        ...getChatwootBotFixture('echo').conversation,
+        id: 1,
+        status: 'open',
+        meta: { assignee: { id: 2, type: 'user' } },
+      },
+    };
+    const result = await chatwootBotOrchestrator.processWebhook(payload, { source: 'simulate' });
+    expect(result.action).toBe('ignored');
+    expect(result.reason).toBe('human_agent_active');
+  });
+
   it('ignores when bot disabled and persists', async () => {
     vi.spyOn(chatwootBotSettingsService, 'getSettings').mockResolvedValue({
       ...alwaysOpenHoursSettings,

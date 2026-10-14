@@ -43,6 +43,9 @@ public/version.json
 # Локальні завантаження каталогу (зображення товарів)
 uploads/
 
+# Локальний cloudflared (credentials-file з UUID)
+config/cloudflared/chatwoot-dev.yml
+
 # QZ Tray certificates (never commit private keys!)
 certificates/
 *.pem
