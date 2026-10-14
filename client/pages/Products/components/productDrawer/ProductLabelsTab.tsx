@@ -21,6 +21,7 @@ import { useBatchNumbers } from '@/pages/Warehouse/WarehouseMovement/hooks/useBa
 import { ProductLabelService } from '@/services/ProductLabelService';
 import { ToastService } from '@/services/ToastService';
 import PrinterService from '@/services/printerService';
+import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import type {
   ProductLabelKind,
   ProductLabelPayload,
@@ -43,6 +44,7 @@ interface ProductLabelsTabProps {
   detail: CatalogGoodDetailDto;
   readOnly?: boolean;
   isAdmin?: boolean;
+  overlayZClassName?: string;
 }
 
 const EMPTY_PAYLOAD = (kind: ProductLabelKind): ProductLabelPayload => ({
@@ -63,7 +65,12 @@ function labelPayloadKey(payload: ProductLabelPayload): string {
   return JSON.stringify(prepareProductLabelForRender(payload));
 }
 
-export function ProductLabelsTab({ detail, readOnly, isAdmin = false }: ProductLabelsTabProps) {
+export function ProductLabelsTab({
+  detail,
+  readOnly,
+  isAdmin = false,
+  overlayZClassName,
+}: ProductLabelsTabProps) {
   const [labelKind, setLabelKind] = useState<ProductLabelKind>('portion');
   const [payload, setPayload] = useState<ProductLabelPayload>(() => EMPTY_PAYLOAD('portion'));
   const [published, setPublished] = useState<ProductLabelPublishedDto[]>([]);
@@ -72,6 +79,8 @@ export function ProductLabelsTab({ detail, readOnly, isAdmin = false }: ProductL
   const [batchPickerOpen, setBatchPickerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -98,6 +107,20 @@ export function ProductLabelsTab({ detail, readOnly, isAdmin = false }: ProductL
     setViewingVersion(false);
     preferPublishedIdRef.current = undefined;
   }, [labelKind]);
+
+  const applyDraftPayload = useCallback(
+    (draftPayload: ProductLabelPayload, batch: BatchNumber) => {
+      setPayload({
+        ...draftPayload,
+        title: ensureSplitTitle(draftPayload.title, detail.name, detail.printName),
+        nutritionText: ensureNutritionText(draftPayload.nutritionText),
+        storageText: ensureStorageText(draftPayload.storageText),
+        nutritionEnergyManual: Boolean(draftPayload.nutritionEnergyManual),
+        expiresAt: resolveLabelExpiryDate(draftPayload.expiresAt, batch.expiration),
+      });
+    },
+    [detail.name, detail.printName],
+  );
 
   const loadLabelState = useCallback(
     async (
@@ -132,14 +155,7 @@ export function ProductLabelsTab({ detail, readOnly, isAdmin = false }: ProductL
           return;
         }
 
-        setPayload({
-          ...draft.payload,
-          title: ensureSplitTitle(draft.payload.title, detail.name, detail.printName),
-          nutritionText: ensureNutritionText(draft.payload.nutritionText),
-          storageText: ensureStorageText(draft.payload.storageText),
-          nutritionEnergyManual: Boolean(draft.payload.nutritionEnergyManual),
-          expiresAt: resolveLabelExpiryDate(draft.payload.expiresAt, batch.expiration),
-        });
+        applyDraftPayload(draft.payload, batch);
         setSelectedVersionId(versions[0] ? String(versions[0].id) : '');
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Помилка завантаження наліпки';
@@ -148,8 +164,42 @@ export function ProductLabelsTab({ detail, readOnly, isAdmin = false }: ProductL
         setLoading(false);
       }
     },
-    [detail.id, detail.name, detail.printName],
+    [applyDraftPayload, detail.id],
   );
+
+  const handleResetDraft = async () => {
+    if (!selectedBatch || readOnly) return;
+    setResetting(true);
+    try {
+      // Force-refresh кешу партій Dilovod (термін придатності тощо).
+      await fetchBatches(sku, undefined, undefined, true, undefined, {
+        includeSmallStorage: true,
+      });
+
+      const draft = await ProductLabelService.seedDraft(detail.id, {
+        batchId: selectedBatch.batchId,
+        labelKind,
+        batchNumber: selectedBatch.batchNumber,
+        expiration: selectedBatch.expiration,
+      });
+      applyDraftPayload(draft.payload, selectedBatch);
+      setViewingVersion(false);
+      setResetConfirmOpen(false);
+      ToastService.show({
+        title: 'Чернетку скинуто',
+        description: 'Підставлено дані з картки товару (вага, склад, ШК, термін)',
+        color: 'success',
+      });
+    } catch (err) {
+      ToastService.show({
+        title: 'Помилка скидання чернетки',
+        description: err instanceof Error ? err.message : undefined,
+        color: 'danger',
+      });
+    } finally {
+      setResetting(false);
+    }
+  };
 
   useEffect(() => {
     if (!selectedBatch) return;
@@ -559,16 +609,31 @@ export function ProductLabelsTab({ detail, readOnly, isAdmin = false }: ProductL
               className="bg-rose-400 text-white"
               onPress={handleSaveDraft}
               isLoading={saving}
-              isDisabled={!selectedBatch || readOnly || loading || viewingVersion}
+              isDisabled={!selectedBatch || readOnly || loading || viewingVersion || resetting}
             >
               Зберегти чернетку
+            </Button>
+            <Button
+              size="sm"
+              variant="flat"
+              onPress={() => setResetConfirmOpen(true)}
+              isDisabled={!selectedBatch || readOnly || loading || saving || resetting}
+              startContent={
+                <DynamicIcon
+                  name={resetting ? 'loader-2' : 'rotate-ccw'}
+                  size={14}
+                  className={resetting ? 'animate-spin' : undefined}
+                />
+              }
+            >
+              Скинути чернетку
             </Button>
             <Button
               size="sm"
               color="primary"
               onPress={handleGenerate}
               isLoading={generating}
-              isDisabled={!selectedBatch || readOnly || loading || !isDirty}
+              isDisabled={!selectedBatch || readOnly || loading || !isDirty || resetting}
             >
               Згенерувати PDF
             </Button>
@@ -634,6 +699,7 @@ export function ProductLabelsTab({ detail, readOnly, isAdmin = false }: ProductL
 
           <p className="text-xs text-default-500">
             Чернетки спільні для всіх користувачів. Кожна генерація PDF створює нову незмінну версію.
+            «Скинути чернетку» перестворює її з картки товару й оновлює кеш партій.
           </p>
         </div>
 
@@ -686,6 +752,24 @@ export function ProductLabelsTab({ detail, readOnly, isAdmin = false }: ProductL
             includeSmallStorage: true,
           })
         }
+      />
+
+      <ConfirmModal
+        isOpen={resetConfirmOpen}
+        title="Скинути чернетку наліпки?"
+        message={
+          selectedBatch
+            ? `Чернетку для партії «${selectedBatch.batchNumber}» буде перестворено з картки товару (вага, склад, ШК, термін). Опубліковані PDF не зміняться.`
+            : ''
+        }
+        confirmText="Скинути"
+        confirmColor="warning"
+        confirmLoading={resetting}
+        overlayZClassName={overlayZClassName}
+        onConfirm={() => void handleResetDraft()}
+        onCancel={() => {
+          if (!resetting) setResetConfirmOpen(false);
+        }}
       />
     </section>
   );

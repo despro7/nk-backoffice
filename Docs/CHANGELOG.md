@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-10-14 — Наліпки: скидання чернетки
+
+**Files:** `ProductLabelsTab.tsx`, `ProductDrawer.tsx`, `Docs/features/product-labels.md`
+
+- Кнопка «Скинути чернетку»: re-seed з картки товару + force-refresh кешу партій (опубліковані PDF без змін).
+
+**Документація:** [`product-labels.md`](features/product-labels.md).
+
+---
+
 ## 2026-10-12 — Збірка: вага порції в чеклісті
 
 **Files:** `OrderChecklistItem.tsx`, `Docs/features/monolithic-sets-handling.md`, `Docs/features/order-assembly/gradations.md`

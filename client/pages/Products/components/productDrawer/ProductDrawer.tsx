@@ -1472,7 +1472,12 @@ export function ProductDrawer({
                 )}
 
                 {cardTab === 'stickers' && hasObjectKind && !isFolder && detail && (
-                  <ProductLabelsTab detail={detail} readOnly={readOnly} isAdmin={isAdmin} />
+                  <ProductLabelsTab
+                    detail={detail}
+                    readOnly={readOnly}
+                    isAdmin={isAdmin}
+                    overlayZClassName={overlayZ}
+                  />
                 )}
               </>
             )}
