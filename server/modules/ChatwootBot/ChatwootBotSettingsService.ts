@@ -4,6 +4,10 @@ import {
   CHATWOOT_BOT_SETTINGS_KEY,
   DEFAULT_CHATWOOT_BOT_EVENT_LOG_MAX_RECORDS,
   DEFAULT_CHATWOOT_BOT_EVENT_LOG_RETENTION_DAYS,
+  DEFAULT_CHATWOOT_BOT_HANDOVER_TIMEZONE,
+  DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_DAYS,
+  DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_END,
+  DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_START,
   DEFAULT_CHATWOOT_BOT_SETTINGS,
   type ChatwootBotReplyMode,
   type ChatwootBotSettings,
@@ -19,14 +23,14 @@ function maskSecret(value: string): string {
   return `****…${value.slice(-4)}`;
 }
 
-function normalizeKeywords(raw: unknown): string[] {
+function normalizeKeywords(raw: unknown, fallback = DEFAULT_CHATWOOT_BOT_SETTINGS.handoverKeywords): string[] {
   if (!Array.isArray(raw)) {
-    return [...DEFAULT_CHATWOOT_BOT_SETTINGS.handoverKeywords];
+    return [...fallback];
   }
   const cleaned = raw
     .map((item) => String(item ?? '').trim())
     .filter(Boolean);
-  return cleaned.length > 0 ? cleaned : [...DEFAULT_CHATWOOT_BOT_SETTINGS.handoverKeywords];
+  return cleaned.length > 0 ? cleaned : [...fallback];
 }
 
 function normalizeReplyMode(raw: unknown): ChatwootBotReplyMode {
@@ -43,6 +47,40 @@ function normalizeMaxRecords(raw: unknown): number {
   const n = Number(raw);
   if (!Number.isFinite(n)) return DEFAULT_CHATWOOT_BOT_EVENT_LOG_MAX_RECORDS;
   return Math.max(10, Math.min(5000, Math.floor(n)));
+}
+
+function normalizeAssigneeId(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.floor(n);
+}
+
+function normalizeDefaultInboxId(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.floor(n);
+}
+
+function normalizeWorkDays(raw: unknown): number[] {
+  if (!Array.isArray(raw)) return [...DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_DAYS];
+  const days = raw
+    .map((d) => Number(d))
+    .filter((d) => Number.isFinite(d) && d >= 1 && d <= 7);
+  return days.length > 0 ? [...new Set(days)].sort((a, b) => a - b) : [...DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_DAYS];
+}
+
+function normalizeHm(raw: unknown, fallback: string): string {
+  if (typeof raw !== 'string') return fallback;
+  const trimmed = raw.trim();
+  return /^\d{1,2}:\d{2}$/.test(trimmed) ? trimmed : fallback;
+}
+
+function normalizeMessage(raw: unknown, fallback: string): string {
+  if (typeof raw !== 'string') return fallback;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : fallback;
 }
 
 function applyEnvFallback(settings: ChatwootBotSettings): ChatwootBotSettings {
@@ -85,6 +123,45 @@ function mergeWithDefaults(raw: Partial<ChatwootBotSettings>): ChatwootBotSettin
     ),
     eventLogStoreFullPayload: Boolean(
       raw.eventLogStoreFullPayload ?? DEFAULT_CHATWOOT_BOT_SETTINGS.eventLogStoreFullPayload,
+    ),
+    handoverAssigneeId: normalizeAssigneeId(raw.handoverAssigneeId),
+    handoverDefaultInboxId: normalizeDefaultInboxId(
+      raw.handoverDefaultInboxId ?? DEFAULT_CHATWOOT_BOT_SETTINGS.handoverDefaultInboxId,
+    ),
+    inboxApiAccessToken:
+      typeof raw.inboxApiAccessToken === 'string' ? raw.inboxApiAccessToken.trim() : '',
+    handoverTimezone:
+      typeof raw.handoverTimezone === 'string' && raw.handoverTimezone.trim()
+        ? raw.handoverTimezone.trim()
+        : DEFAULT_CHATWOOT_BOT_HANDOVER_TIMEZONE,
+    handoverWorkDays: normalizeWorkDays(raw.handoverWorkDays),
+    handoverWorkStart: normalizeHm(
+      raw.handoverWorkStart,
+      DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_START,
+    ),
+    handoverWorkEnd: normalizeHm(raw.handoverWorkEnd, DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_END),
+    handoverMessageInHours: normalizeMessage(
+      raw.handoverMessageInHours,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.handoverMessageInHours,
+    ),
+    handoverMessageOutOfHours: normalizeMessage(
+      raw.handoverMessageOutOfHours,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.handoverMessageOutOfHours,
+    ),
+    handoverCallbackAckMessage: normalizeMessage(
+      raw.handoverCallbackAckMessage,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.handoverCallbackAckMessage,
+    ),
+    handoverEmergencyEnabled: Boolean(
+      raw.handoverEmergencyEnabled ?? DEFAULT_CHATWOOT_BOT_SETTINGS.handoverEmergencyEnabled,
+    ),
+    handoverEmergencyKeywords: normalizeKeywords(
+      raw.handoverEmergencyKeywords,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.handoverEmergencyKeywords,
+    ),
+    handoverMessageEmergency: normalizeMessage(
+      raw.handoverMessageEmergency,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.handoverMessageEmergency,
     ),
   };
   return applyEnvFallback(merged);
@@ -135,6 +212,9 @@ export class ChatwootBotSettingsService {
       apiAccessToken: revealSecrets ? settings.apiAccessToken : '',
       apiAccessTokenMasked: maskSecret(settings.apiAccessToken),
       hasApiAccessToken: Boolean(settings.apiAccessToken),
+      inboxApiAccessToken: revealSecrets ? settings.inboxApiAccessToken : '',
+      inboxApiAccessTokenMasked: maskSecret(settings.inboxApiAccessToken),
+      hasInboxApiAccessToken: Boolean(settings.inboxApiAccessToken),
       webhookSecret: revealSecrets ? settings.webhookSecret : '',
       webhookSecretMasked: maskSecret(settings.webhookSecret),
       hasWebhookSecret: Boolean(settings.webhookSecret),
@@ -143,7 +223,7 @@ export class ChatwootBotSettingsService {
 
   async saveSettings(incoming: ChatwootBotSettingsUpdate): Promise<ChatwootBotSettings> {
     const current = await this.getSettings();
-    const { clearWebhookSecret, ...rest } = incoming;
+    const { clearWebhookSecret, clearInboxApiAccessToken, ...rest } = incoming;
 
     const next = mergeWithDefaults({
       ...current,
@@ -152,6 +232,11 @@ export class ChatwootBotSettingsService {
         rest.apiAccessToken !== undefined && rest.apiAccessToken !== ''
           ? rest.apiAccessToken
           : current.apiAccessToken,
+      inboxApiAccessToken: clearInboxApiAccessToken
+        ? ''
+        : rest.inboxApiAccessToken !== undefined && rest.inboxApiAccessToken !== ''
+          ? rest.inboxApiAccessToken
+          : current.inboxApiAccessToken,
       webhookSecret: clearWebhookSecret
         ? ''
         : rest.webhookSecret !== undefined && rest.webhookSecret !== ''

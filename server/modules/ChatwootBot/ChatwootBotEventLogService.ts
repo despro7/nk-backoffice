@@ -121,6 +121,11 @@ export class ChatwootBotEventLogService {
     return rowToRecord(created);
   }
 
+  async clearAll(): Promise<number> {
+    const result = await prisma.chatwootBotWebhookLog.deleteMany({});
+    return result.count;
+  }
+
   async recent(limit = 20): Promise<ChatwootBotEventRecord[]> {
     const take = Math.max(1, Math.min(100, Math.floor(limit)));
     const rows = await prisma.chatwootBotWebhookLog.findMany({

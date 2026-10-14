@@ -1,4 +1,5 @@
 import type {
+  ChatwootBotAgentSummary,
   ChatwootBotConnectionTestResult,
   ChatwootBotEventRecord,
   ChatwootBotProcessResult,
@@ -52,6 +53,27 @@ export const chatwootBotApi = {
       );
     }
     return json.data as ChatwootBotConnectionTestResult;
+  },
+
+  async clearRecentEvents(): Promise<number> {
+    const res = await fetch('/api/chatwoot-bot/recent-events', {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+    const data = (await res.json()) as { success?: boolean; data?: { deleted?: number }; error?: string };
+    if (!res.ok || data.success === false) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    return data.data?.deleted ?? 0;
+  },
+
+  async listAgents(): Promise<ChatwootBotAgentSummary[]> {
+    const res = await fetch('/api/chatwoot-bot/agents', { credentials: 'include' });
+    const json = await res.json();
+    if (!res.ok || json.success === false) {
+      return [];
+    }
+    return (json.data ?? []) as ChatwootBotAgentSummary[];
   },
 
   async recentEvents(limit = 20): Promise<ChatwootBotEventRecord[]> {

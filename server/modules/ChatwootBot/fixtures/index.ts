@@ -12,13 +12,22 @@ function loadFixture(fileName: string): ChatwootWebhookMessageCreated {
   return JSON.parse(raw) as ChatwootWebhookMessageCreated;
 }
 
-export const CHATWOOT_BOT_FIXTURES: Record<ChatwootBotFixtureName, ChatwootWebhookMessageCreated> = {
-  echo: loadFixture('messageCreated.echo.json'),
-  handover: loadFixture('messageCreated.handover.json'),
-};
+let fixturesCache: Record<ChatwootBotFixtureName, ChatwootWebhookMessageCreated> | null =
+  null;
 
+function getFixturesCache(): Record<ChatwootBotFixtureName, ChatwootWebhookMessageCreated> {
+  if (!fixturesCache) {
+    fixturesCache = {
+      echo: loadFixture('messageCreated.echo.json'),
+      handover: loadFixture('messageCreated.handover.json'),
+    };
+  }
+  return fixturesCache;
+}
+
+/** Лише для simulate / тестів — не викликати на старті сервера. */
 export function getChatwootBotFixture(
   name: ChatwootBotFixtureName,
 ): ChatwootWebhookMessageCreated {
-  return { ...CHATWOOT_BOT_FIXTURES[name] };
+  return { ...getFixturesCache()[name] };
 }

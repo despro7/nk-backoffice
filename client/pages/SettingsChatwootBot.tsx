@@ -10,6 +10,8 @@ import {
   Divider,
   Input,
   RadioGroup,
+  Select,
+  SelectItem,
   Switch,
   Textarea,
   Tooltip,
@@ -24,6 +26,7 @@ import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PERMISSIONS } from '@shared/constants/permissions';
 import {
   DEFAULT_CHATWOOT_BOT_SETTINGS,
+  type ChatwootBotAgentSummary,
   type ChatwootBotEventRecord,
   type ChatwootBotReplyMode,
   type ChatwootBotSettingsResponse,
@@ -46,6 +49,17 @@ type FormState = {
   eventLogRetentionDays: number;
   eventLogMaxRecords: number;
   eventLogStoreFullPayload: boolean;
+  handoverAssigneeId: number | null;
+  handoverDefaultInboxId: number | null;
+  inboxApiAccessToken: string;
+  inboxApiAccessTokenMasked: string;
+  hasInboxApiAccessToken: boolean;
+  handoverMessageInHours: string;
+  handoverMessageOutOfHours: string;
+  handoverCallbackAckMessage: string;
+  handoverEmergencyEnabled: boolean;
+  handoverEmergencyKeywordsText: string;
+  handoverMessageEmergency: string;
 };
 
 function keywordsToText(keywords: string[]): string {
@@ -77,6 +91,17 @@ function toFormState(data: ChatwootBotSettingsResponse): FormState {
     eventLogRetentionDays: data.eventLogRetentionDays,
     eventLogMaxRecords: data.eventLogMaxRecords,
     eventLogStoreFullPayload: data.eventLogStoreFullPayload,
+    handoverAssigneeId: data.handoverAssigneeId,
+    handoverDefaultInboxId: data.handoverDefaultInboxId,
+    inboxApiAccessToken: '',
+    inboxApiAccessTokenMasked: data.inboxApiAccessTokenMasked,
+    hasInboxApiAccessToken: data.hasInboxApiAccessToken,
+    handoverMessageInHours: data.handoverMessageInHours,
+    handoverMessageOutOfHours: data.handoverMessageOutOfHours,
+    handoverCallbackAckMessage: data.handoverCallbackAckMessage,
+    handoverEmergencyEnabled: data.handoverEmergencyEnabled,
+    handoverEmergencyKeywordsText: keywordsToText(data.handoverEmergencyKeywords),
+    handoverMessageEmergency: data.handoverMessageEmergency,
   };
 }
 
@@ -167,9 +192,22 @@ const SettingsChatwootBot: React.FC = () => {
   const [isTesting, setIsTesting] = useState(false);
   const [isSimulating, setIsSimulating] = useState<'echo' | 'handover' | null>(null);
   const [events, setEvents] = useState<ChatwootBotEventRecord[]>([]);
+  const [agents, setAgents] = useState<ChatwootBotAgentSummary[]>([]);
   const [tokenVisible, setTokenVisible] = useState(false);
   const [secretVisible, setSecretVisible] = useState(false);
   const [isClearingWebhookSecret, setIsClearingWebhookSecret] = useState(false);
+  const [isClearingEvents, setIsClearingEvents] = useState(false);
+  const [inboxTokenVisible, setInboxTokenVisible] = useState(false);
+  const [expandedPayloadIds, setExpandedPayloadIds] = useState<Set<string>>(new Set());
+
+  const togglePayloadExpanded = (eventId: string) => {
+    setExpandedPayloadIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(eventId)) next.delete(eventId);
+      else next.add(eventId);
+      return next;
+    });
+  };
 
   const loadEvents = useCallback(async () => {
     try {
@@ -185,6 +223,7 @@ const SettingsChatwootBot: React.FC = () => {
       setIsLoading(true);
       const data = await chatwootBotApi.getSettings(false);
       setForm(toFormState(data));
+      void chatwootBotApi.listAgents().then(setAgents).catch(() => setAgents([]));
       await loadEvents();
     } catch (error) {
       console.error('SettingsChatwootBot load error:', error);
@@ -234,6 +273,15 @@ const SettingsChatwootBot: React.FC = () => {
         eventLogRetentionDays: Number(form.eventLogRetentionDays),
         eventLogMaxRecords: Number(form.eventLogMaxRecords),
         eventLogStoreFullPayload: form.eventLogStoreFullPayload,
+        handoverAssigneeId: form.handoverAssigneeId,
+        handoverDefaultInboxId: form.handoverDefaultInboxId,
+        inboxApiAccessToken: form.inboxApiAccessToken || undefined,
+        handoverMessageInHours: form.handoverMessageInHours,
+        handoverMessageOutOfHours: form.handoverMessageOutOfHours,
+        handoverCallbackAckMessage: form.handoverCallbackAckMessage,
+        handoverEmergencyEnabled: form.handoverEmergencyEnabled,
+        handoverEmergencyKeywords: textToKeywords(form.handoverEmergencyKeywordsText),
+        handoverMessageEmergency: form.handoverMessageEmergency,
       });
       setForm(toFormState(saved));
       setTokenVisible(false);
@@ -297,6 +345,28 @@ const SettingsChatwootBot: React.FC = () => {
     }
   };
 
+  const handleClearEvents = async () => {
+    if (!window.confirm('Очистити всю історію webhook-подій у БД?')) return;
+    setIsClearingEvents(true);
+    try {
+      const deleted = await chatwootBotApi.clearRecentEvents();
+      setEvents([]);
+      ToastService.show({
+        title: 'Історію очищено',
+        description: `Видалено записів: ${deleted}`,
+        color: 'success',
+      });
+    } catch (error) {
+      ToastService.show({
+        title: 'Помилка',
+        description: error instanceof Error ? error.message : 'Не вдалося очистити',
+        color: 'danger',
+      });
+    } finally {
+      setIsClearingEvents(false);
+    }
+  };
+
   const handleSimulate = async (fixture: 'echo' | 'handover') => {
     setIsSimulating(fixture);
     try {
@@ -331,329 +401,490 @@ const SettingsChatwootBot: React.FC = () => {
   return (
     <div className="space-y-6">
       <p className="text-sm text-default-500">
-        Echo + handover (v0). LLM і tools — поза цим релізом.
+        Echo + handover з робочими годинами, OOH і екстреним викликом. LLM (Jev) — наступна фаза.
       </p>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
-        <div className="space-y-6 min-w-0">
-      <Card>
-        <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
-          <DynamicIcon name="bot" size={20} className="text-default-600" />
-          <h2 className="text-lg font-semibold">Підключення</h2>
-        </CardHeader>
-        <CardBody className="gap-4 p-4">
-          <div className="flex items-center gap-3">
-            <Switch isSelected={form.enabled} onValueChange={(v) => updateField('enabled', v)} />
-            <div>
-              <p className="text-sm font-medium">Бот увімкнено</p>
-              <p className="text-xs text-default-500">Якщо вимкнено — webhook ігнорує повідомлення</p>
-            </div>
-          </div>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div className="flex flex-col gap-6 min-w-0 pr-1">
+          <Card>
+            <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
+              <DynamicIcon name="bot" size={20} className="text-default-600" />
+              <h2 className="text-lg font-semibold">Підключення</h2>
+            </CardHeader>
+            <CardBody className="gap-4 p-4">
+              <div className="flex items-center gap-3">
+                <Switch isSelected={form.enabled} onValueChange={(v) => updateField('enabled', v)} />
+                <div>
+                  <p className="text-sm font-medium">Бот увімкнено</p>
+                  <p className="text-xs text-default-500">Якщо вимкнено — webhook ігнорує повідомлення</p>
+                </div>
+              </div>
 
-          <Input
-            label="Base URL Chatwoot"
-            placeholder="https://chat.example.com"
-            value={form.baseUrl}
-            onValueChange={(v) => updateField('baseUrl', v)}
-          />
-
-          <Input
-            type="number"
-            label="Account ID"
-            value={String(form.accountId)}
-            onValueChange={(v) => updateField('accountId', Number(v) || 1)}
-          />
-
-          <Input
-            label="API Access Token"
-            type={tokenVisible ? 'text' : 'password'}
-            placeholder={
-              form.hasApiAccessToken
-                ? `Збережено: ${form.apiAccessTokenMasked}`
-                : 'Вставте api_access_token'
-            }
-            value={form.apiAccessToken}
-            onValueChange={(v) => updateField('apiAccessToken', v)}
-            description="Access Token з вікна Agent Bot (рекомендовано для live). Або Personal Access Token з профілю користувача Chatwoot."
-            endContent={
-              form.apiAccessToken.trim() ? (
-                <Tooltip content={tokenVisible ? 'Приховати' : 'Показати'} placement="top">
-                  <Button
-                    size="sm"
-                    variant="light"
-                    isIconOnly
-                    aria-label={tokenVisible ? 'Приховати token' : 'Показати token'}
-                    onPress={() => setTokenVisible((v) => !v)}
-                  >
-                    <DynamicIcon name={tokenVisible ? 'eye-off' : 'eye'} size={16} />
-                  </Button>
-                </Tooltip>
-              ) : null
-            }
-          />
-
-          <Input
-            label="Webhook Secret"
-            type={secretVisible ? 'text' : 'password'}
-            placeholder={
-              form.hasWebhookSecret
-                ? `Збережено: ${form.webhookSecretMasked}`
-                : 'Порожньо — без plain header (рекомендовано до HMAC)'
-            }
-            value={form.webhookSecret}
-            onValueChange={(v) => updateField('webhookSecret', v)}
-            description="Новий secret — введіть і «Зберегти». Порожнє поле не змінює збережене; іконка справа очищає його."
-            endContent={
-              form.hasWebhookSecret && !form.webhookSecret.trim() ? (
-                <Tooltip content="Очистити збережений Webhook Secret" placement="top">
-                  <Button
-                    size="sm"
-                    variant="light"
-                    isIconOnly
-                    aria-label="Очистити збережений Webhook Secret"
-                    isLoading={isClearingWebhookSecret}
-                    isDisabled={isClearingWebhookSecret}
-                    onPress={() => void handleClearWebhookSecret()}
-                  >
-                    {!isClearingWebhookSecret ? (
-                      <DynamicIcon name="trash-2" size={16} className="text-danger" />
-                    ) : null}
-                  </Button>
-                </Tooltip>
-              ) : form.webhookSecret.trim() ? (
-                <Tooltip content={secretVisible ? 'Приховати' : 'Показати'} placement="top">
-                  <Button
-                    size="sm"
-                    variant="light"
-                    isIconOnly
-                    aria-label={secretVisible ? 'Приховати secret' : 'Показати secret'}
-                    onPress={() => setSecretVisible((v) => !v)}
-                  >
-                    <DynamicIcon name={secretVisible ? 'eye-off' : 'eye'} size={16} />
-                  </Button>
-                </Tooltip>
-              ) : null
-            }
-          />
-
-          <Input
-            label="Outgoing URL hint"
-            value={form.outgoingUrlHint}
-            onValueChange={(v) => updateField('outgoingUrlHint', v)}
-            description="Підказка для Agent Bot у Chatwoot (не викликається кодом)"
-          />
-
-          <RadioGroup
-            label="Режим відповіді"
-            orientation="horizontal"
-            value={form.replyMode}
-            onValueChange={(v) => updateField('replyMode', v as ChatwootBotReplyMode)}
-            classNames={{
-              wrapper: 'flex flex-row flex-wrap gap-3 w-full data-[orientation=horizontal]:flex-row',
-            }}
-          >
-            <ReplyModeRadio value="dry_run" description="Лише лог, без відправки в Chatwoot">
-              dry_run
-            </ReplyModeRadio>
-            <ReplyModeRadio value="live" description="POST у Chatwoot API">
-              live
-            </ReplyModeRadio>
-          </RadioGroup>
-        </CardBody>
-        <CardFooter className="gap-2 flex-wrap p-4">
-          <Button color="primary" isLoading={isSaving} onPress={() => void handleSave()}>
-            Зберегти
-          </Button>
-          <Button
-            variant="bordered"
-            isDisabled={isTesting}
-            onPress={() => void handleTest()}
-            startContent={
-              <DynamicIcon
-                name={isTesting ? 'loader-2' : 'plug'}
-                className={isTesting ? 'animate-spin' : ''}
-                size={16}
+              <Input
+                label="Base URL Chatwoot"
+                placeholder="https://chat.example.com"
+                value={form.baseUrl}
+                onValueChange={(v) => updateField('baseUrl', v)}
               />
-            }
-          >
-            Перевірити зʼєднання
-          </Button>
-        </CardFooter>
-      </Card>
 
-      <Card>
-        <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
-          <DynamicIcon name="message-square" size={20} className="text-default-600" />
-          <h2 className="text-lg font-semibold">Поведінка v0</h2>
-        </CardHeader>
-        <CardBody className="gap-4 p-4">
-          <Textarea
-            label="Echo-повідомлення"
-            minRows={3}
-            value={form.echoMessage}
-            onValueChange={(v) => updateField('echoMessage', v)}
-          />
-
-          <Input
-            label="Handover keywords"
-            placeholder="оператор, людина, менеджер"
-            value={form.handoverKeywordsText}
-            onValueChange={(v) => updateField('handoverKeywordsText', v)}
-            description="Через кому. Substring match, без урахування регістру"
-          />
-          {keywordChips.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {keywordChips.map((kw) => (
-                <Chip key={kw} size="sm" variant="flat">
-                  {kw}
-                </Chip>
-              ))}
-            </div>
-          )}
-        </CardBody>
-        <CardFooter className="gap-2 flex-wrap items-center p-4">
-          <Button color="primary" isLoading={isSaving} onPress={() => void handleSave()}>
-            Зберегти
-          </Button>
-          <Button
-            variant="flat"
-            color="success"
-            isDisabled={isSimulating !== null}
-            onPress={() => void handleSimulate('echo')}
-            startContent={
-              <DynamicIcon
-                name={isSimulating === 'echo' ? 'loader-2' : 'play'}
-                className={isSimulating === 'echo' ? 'animate-spin' : ''}
-                size={16}
+              <Input
+                type="number"
+                label="Account ID"
+                value={String(form.accountId)}
+                onValueChange={(v) => updateField('accountId', Number(v) || 1)}
               />
-            }
-          >
-            Симулювати echo
-          </Button>
-          <Button
-            variant="flat"
-            color="warning"
-            isDisabled={isSimulating !== null}
-            onPress={() => void handleSimulate('handover')}
-            startContent={
-              <DynamicIcon
-                name={isSimulating === 'handover' ? 'loader-2' : 'user-round'}
-                className={isSimulating === 'handover' ? 'animate-spin' : ''}
-                size={16}
-              />
-            }
-          >
-            Симулювати handover
-          </Button>
-          <p className="text-xs text-default-400 w-full">
-            Для симуляції увімкніть бота й збережіть. Режим dry_run лише логує (без POST у Chatwoot).
-          </p>
-        </CardFooter>
-      </Card>
 
-      <Card>
-        <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
-          <DynamicIcon name="database" size={20} className="text-default-600" />
-          <h2 className="text-lg font-semibold">Журнал webhook</h2>
-        </CardHeader>
-        <CardBody className="gap-4 p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              type="number"
-              label="TTL (днів)"
-              description="Записи старші за цей термін видаляються"
-              value={String(form.eventLogRetentionDays)}
-              onValueChange={(v) => updateField('eventLogRetentionDays', Number(v) || 14)}
-            />
-            <Input
-              type="number"
-              label="Макс. записів"
-              description="Після перевищення видаляються найстаріші"
-              value={String(form.eventLogMaxRecords)}
-              onValueChange={(v) => updateField('eventLogMaxRecords', Number(v) || 300)}
-            />
-          </div>
-          <div className="flex items-center gap-3">
-            <Switch
-              isSelected={form.eventLogStoreFullPayload}
-              onValueChange={(v) => updateField('eventLogStoreFullPayload', v)}
-            />
-            <div>
-              <p className="text-sm font-medium">Повний JSON payload</p>
-              <p className="text-xs text-default-500">
-                Увімкніть на час діагностики; збільшує розмір БД (обрізання ~64 KB).
+              <Input
+                label="API Access Token"
+                type={tokenVisible ? 'text' : 'password'}
+                placeholder={
+                  form.hasApiAccessToken
+                    ? `Збережено: ${form.apiAccessTokenMasked}`
+                    : 'Вставте api_access_token'
+                }
+                value={form.apiAccessToken}
+                onValueChange={(v) => updateField('apiAccessToken', v)}
+                description="Токен Agent Bot — для echo/handover і POST assignments (assign конкретного агента через API, не плутати з UI «політики призначення» Business plan)."
+                endContent={
+                  form.apiAccessToken.trim() ? (
+                    <Tooltip content={tokenVisible ? 'Приховати' : 'Показати'} placement="top">
+                      <Button
+                        size="sm"
+                        variant="light"
+                        isIconOnly
+                        aria-label={tokenVisible ? 'Приховати token' : 'Показати token'}
+                        onPress={() => setTokenVisible((v) => !v)}
+                      >
+                        <DynamicIcon name={tokenVisible ? 'eye-off' : 'eye'} size={16} />
+                      </Button>
+                    </Tooltip>
+                  ) : null
+                }
+              />
+
+              <Input
+                label="Inbox API token (User PAT, опційно)"
+                type={inboxTokenVisible ? 'text' : 'password'}
+                placeholder={
+                  form.hasInboxApiAccessToken
+                    ? `Збережено: ${form.inboxApiAccessTokenMasked}`
+                    : 'Personal Access Token з профілю Chatwoot'
+                }
+                value={form.inboxApiAccessToken}
+                onValueChange={(v) => updateField('inboxApiAccessToken', v)}
+                description="Для списку агентів і робочих годин inbox (GET /agents, GET /inboxes). Agent Bot token сюди не підходить."
+                endContent={
+                  form.inboxApiAccessToken.trim() ? (
+                    <Tooltip content={inboxTokenVisible ? 'Приховати' : 'Показати'} placement="top">
+                      <Button
+                        size="sm"
+                        variant="light"
+                        isIconOnly
+                        aria-label={inboxTokenVisible ? 'Приховати inbox token' : 'Показати inbox token'}
+                        onPress={() => setInboxTokenVisible((v) => !v)}
+                      >
+                        <DynamicIcon name={inboxTokenVisible ? 'eye-off' : 'eye'} size={16} />
+                      </Button>
+                    </Tooltip>
+                  ) : null
+                }
+              />
+
+              <Input
+                label="Webhook Secret"
+                type={secretVisible ? 'text' : 'password'}
+                placeholder={
+                  form.hasWebhookSecret
+                    ? `Збережено: ${form.webhookSecretMasked}`
+                    : 'Порожньо — без plain header (рекомендовано до HMAC)'
+                }
+                value={form.webhookSecret}
+                onValueChange={(v) => updateField('webhookSecret', v)}
+                description="Новий secret — введіть і «Зберегти». Порожнє поле не змінює збережене; іконка справа очищає його."
+                endContent={
+                  form.hasWebhookSecret && !form.webhookSecret.trim() ? (
+                    <Tooltip content="Очистити збережений Webhook Secret" placement="top">
+                      <Button
+                        size="sm"
+                        variant="light"
+                        isIconOnly
+                        aria-label="Очистити збережений Webhook Secret"
+                        isLoading={isClearingWebhookSecret}
+                        isDisabled={isClearingWebhookSecret}
+                        onPress={() => void handleClearWebhookSecret()}
+                      >
+                        {!isClearingWebhookSecret ? (
+                          <DynamicIcon name="trash-2" size={16} className="text-danger" />
+                        ) : null}
+                      </Button>
+                    </Tooltip>
+                  ) : form.webhookSecret.trim() ? (
+                    <Tooltip content={secretVisible ? 'Приховати' : 'Показати'} placement="top">
+                      <Button
+                        size="sm"
+                        variant="light"
+                        isIconOnly
+                        aria-label={secretVisible ? 'Приховати secret' : 'Показати secret'}
+                        onPress={() => setSecretVisible((v) => !v)}
+                      >
+                        <DynamicIcon name={secretVisible ? 'eye-off' : 'eye'} size={16} />
+                      </Button>
+                    </Tooltip>
+                  ) : null
+                }
+              />
+
+              <Input
+                label="Outgoing URL hint"
+                value={form.outgoingUrlHint}
+                onValueChange={(v) => updateField('outgoingUrlHint', v)}
+                description="Підказка для Agent Bot у Chatwoot (не викликається кодом)"
+              />
+
+              <RadioGroup
+                label="Режим відповіді"
+                orientation="horizontal"
+                value={form.replyMode}
+                onValueChange={(v) => updateField('replyMode', v as ChatwootBotReplyMode)}
+                classNames={{
+                  wrapper: 'flex flex-row flex-wrap gap-3 w-full data-[orientation=horizontal]:flex-row',
+                }}
+              >
+                <ReplyModeRadio value="dry_run" description="Лише лог, без відправки в Chatwoot">
+                  dry_run
+                </ReplyModeRadio>
+                <ReplyModeRadio value="live" description="POST у Chatwoot API">
+                  live
+                </ReplyModeRadio>
+              </RadioGroup>
+            </CardBody>
+            <CardFooter className="gap-2 flex-wrap p-4">
+              <Button color="primary" isLoading={isSaving} onPress={() => void handleSave()}>
+                Зберегти
+              </Button>
+              <Button
+                variant="bordered"
+                isDisabled={isTesting}
+                onPress={() => void handleTest()}
+                startContent={
+                  <DynamicIcon
+                    name={isTesting ? 'loader-2' : 'plug'}
+                    className={isTesting ? 'animate-spin' : ''}
+                    size={16}
+                  />
+                }
+              >
+                Перевірити зʼєднання
+              </Button>
+            </CardFooter>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
+              <DynamicIcon name="message-square" size={20} className="text-default-600" />
+              <h2 className="text-lg font-semibold">Поведінка v0</h2>
+            </CardHeader>
+            <CardBody className="gap-4 p-4">
+              <Textarea
+                label="Echo-повідомлення"
+                minRows={3}
+                value={form.echoMessage}
+                onValueChange={(v) => updateField('echoMessage', v)}
+              />
+
+              <Input
+                label="Handover keywords"
+                placeholder="оператор, людина, менеджер"
+                value={form.handoverKeywordsText}
+                onValueChange={(v) => updateField('handoverKeywordsText', v)}
+                description="Через кому. Substring match, без урахування регістру"
+              />
+              {keywordChips.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {keywordChips.map((kw) => (
+                    <Chip key={kw} size="sm" variant="flat">
+                      {kw}
+                    </Chip>
+                  ))}
+                </div>
+              )}
+            </CardBody>
+            <CardFooter className="gap-2 flex-wrap items-center p-4">
+              <Button color="primary" isLoading={isSaving} onPress={() => void handleSave()}>
+                Зберегти
+              </Button>
+              <Button
+                variant="flat"
+                color="success"
+                isDisabled={isSimulating !== null}
+                onPress={() => void handleSimulate('echo')}
+                startContent={
+                  <DynamicIcon
+                    name={isSimulating === 'echo' ? 'loader-2' : 'play'}
+                    className={isSimulating === 'echo' ? 'animate-spin' : ''}
+                    size={16}
+                  />
+                }
+              >
+                Симулювати echo
+              </Button>
+              <Button
+                variant="flat"
+                color="warning"
+                isDisabled={isSimulating !== null}
+                onPress={() => void handleSimulate('handover')}
+                startContent={
+                  <DynamicIcon
+                    name={isSimulating === 'handover' ? 'loader-2' : 'user-round'}
+                    className={isSimulating === 'handover' ? 'animate-spin' : ''}
+                    size={16}
+                  />
+                }
+              >
+                Симулювати handover
+              </Button>
+              <p className="text-xs text-default-400 w-full">
+                Для симуляції увімкніть бота й збережіть. Режим dry_run лише логує (без POST у Chatwoot).
               </p>
-            </div>
-          </div>
-        </CardBody>
-      </Card>
+            </CardFooter>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
+              <DynamicIcon name="headset" size={20} className="text-default-600" />
+              <h2 className="text-lg font-semibold">Handover і робочі години</h2>
+            </CardHeader>
+            <CardBody className="gap-4 p-4">
+              <Select
+                label="Агент для виклику (робочі години / екстрений)"
+                placeholder="Оберіть агента або введіть ID нижче"
+                selectedKeys={
+                  form.handoverAssigneeId != null ? [String(form.handoverAssigneeId)] : []
+                }
+                onSelectionChange={(keys) => {
+                  const key = Array.from(keys)[0];
+                  updateField('handoverAssigneeId', key ? Number(key) : null);
+                }}
+                description="ID користувача-агента в Chatwoot (не Agent Bot). Список — через User PAT у полі «Inbox API token»."
+              >
+                {agents.map((a) => (
+                  <SelectItem key={String(a.id)} textValue={a.name}>
+                    {a.name} (#{a.id})
+                  </SelectItem>
+                ))}
+              </Select>
+              <Input
+                type="number"
+                label="Агент ID (вручну)"
+                placeholder="напр. 2"
+                value={form.handoverAssigneeId != null ? String(form.handoverAssigneeId) : ''}
+                onValueChange={(v) =>
+                  updateField('handoverAssigneeId', v.trim() ? Number(v) || null : null)
+                }
+              />
+              <Input
+                type="number"
+                label="Inbox ID (fallback / симуляція)"
+                description="Робочі години беруться з Chatwoot → Inbox → Робочий час. У webhook використовується inbox_id з conversation; це поле — якщо його немає."
+                value={form.handoverDefaultInboxId != null ? String(form.handoverDefaultInboxId) : ''}
+                onValueChange={(v) =>
+                  updateField('handoverDefaultInboxId', v.trim() ? Number(v) || null : null)
+                }
+              />
+              <Textarea
+                label="Повідомлення клієнту (робочі години, виклик оператора)"
+                minRows={2}
+                value={form.handoverMessageInHours}
+                onValueChange={(v) => updateField('handoverMessageInHours', v)}
+              />
+              <Textarea
+                label="Повідомлення клієнту (поза годинами — бот лишається)"
+                minRows={3}
+                value={form.handoverMessageOutOfHours}
+                onValueChange={(v) => updateField('handoverMessageOutOfHours', v)}
+              />
+              <Textarea
+                label="Підтвердження після збору контактів"
+                minRows={2}
+                value={form.handoverCallbackAckMessage}
+                onValueChange={(v) => updateField('handoverCallbackAckMessage', v)}
+              />
+              <div className="flex items-center gap-3">
+                <Switch
+                  isSelected={form.handoverEmergencyEnabled}
+                  onValueChange={(v) => updateField('handoverEmergencyEnabled', v)}
+                />
+                <div>
+                  <p className="text-sm font-medium">Екстрений виклик поза годинами</p>
+                  <p className="text-xs text-default-500">Keywords зараз; пізніше — класифікація Jev</p>
+                </div>
+              </div>
+              <Input
+                label="Emergency keywords"
+                value={form.handoverEmergencyKeywordsText}
+                onValueChange={(v) => updateField('handoverEmergencyKeywordsText', v)}
+              />
+              <Textarea
+                label="Повідомлення клієнту (екстрений виклик)"
+                minRows={2}
+                value={form.handoverMessageEmergency}
+                onValueChange={(v) => updateField('handoverMessageEmergency', v)}
+              />
+            </CardBody>
+            <CardFooter className="p-4">
+              <Button color="primary" isLoading={isSaving} onPress={() => void handleSave()}>
+                Зберегти
+              </Button>
+            </CardFooter>
+          </Card>
         </div>
 
-        <Card className="flex flex-col min-h-0 h-full xl:min-h-[min(100%,calc(100vh-12rem))]">
-          <CardHeader className="flex gap-2 px-4 items-center justify-between border-b border-default-200 shrink-0">
-            <div className="flex gap-2 items-center">
-              <DynamicIcon name="scroll-text" size={20} className="text-default-600" />
-              <h2 className="text-lg font-semibold">Останні події</h2>
-            </div>
-            <Button size="sm" variant="flat" onPress={() => void loadEvents()}>
-              Оновити
-            </Button>
-          </CardHeader>
-          <CardBody className="flex flex-col flex-1 min-h-0 gap-0 overflow-hidden p-4">
-            <div className="flex-1 min-h-0 overflow-y-auto pr-1">
-              {events.length === 0 ? (
-                <p className="text-sm text-default-500">Подій ще немає. Запустіть симуляцію.</p>
-              ) : (
-                <ul className="space-y-3">
-                  {events.map((ev) => (
-                    <li key={ev.id} className="text-sm border-b border-default-100 pb-2 last:border-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Chip size="sm" color={actionColor(ev.action)} variant="flat">
-                          {ev.action}
-                        </Chip>
-                        {ev.dryRun && (
-                          <Chip size="sm" variant="bordered">
-                            dry_run
-                          </Chip>
-                        )}
-                        <span className="text-xs text-default-400 font-mono">
-                          {new Date(ev.at).toLocaleString('uk-UA')}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-default-700">
-                        {ev.reason}
-                        {ev.conversationId != null ? ` · conv #${ev.conversationId}` : ''}
-                      </p>
-                      {ev.contentPreview && (
-                        <p className="text-xs text-default-500 mt-0.5">«{ev.contentPreview}»</p>
-                      )}
-                      {ev.details && (
-                        <p className="text-xs text-default-400 mt-0.5 font-mono">{ev.details}</p>
-                      )}
-                      {ev.headersMeta && (
-                        <p className="text-xs text-default-400 mt-0.5 font-mono">
-                          auth: {ev.headersMeta.detectedScheme}
-                          {ev.webhookEvent ? ` · event: ${ev.webhookEvent}` : ''}
-                          {ev.source === 'webhook' ? ' · webhook' : ' · simulate'}
-                        </p>
-                      )}
-                      {ev.payloadJson != null && (
-                        <pre className="text-xs text-default-500 mt-1 p-2 bg-default-100 rounded-medium overflow-x-auto max-h-40">
-                          {JSON.stringify(ev.payloadJson, null, 2)}
-                        </pre>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <Divider className="my-4 shrink-0" />
-            <p className="text-xs text-default-400 shrink-0">
-              Зберігається в БД (TTL і ліміт записів — у блоці «Журнал webhook»). Показує схему auth у
-              заголовках без значень secret/signature.
-            </p>
-          </CardBody>
-        </Card>
+        <div className="flex flex-col gap-6 min-w-0 max-h-full min-h-0 pr-1">
+          <Card className="shrink-0">
+            <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
+              <DynamicIcon name="database" size={20} className="text-default-600" />
+              <h2 className="text-lg font-semibold">Журнал webhook</h2>
+            </CardHeader>
+            <CardBody className="gap-4 p-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Input
+                  type="number"
+                  label="TTL (днів)"
+                  description="Записи старші за цей термін видаляються"
+                  value={String(form.eventLogRetentionDays)}
+                  onValueChange={(v) => updateField('eventLogRetentionDays', Number(v) || 14)}
+                />
+                <Input
+                  type="number"
+                  label="Макс. записів"
+                  description="Після перевищення видаляються найстаріші"
+                  value={String(form.eventLogMaxRecords)}
+                  onValueChange={(v) => updateField('eventLogMaxRecords', Number(v) || 300)}
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch
+                  isSelected={form.eventLogStoreFullPayload}
+                  onValueChange={(v) => updateField('eventLogStoreFullPayload', v)}
+                />
+                <div>
+                  <p className="text-sm font-medium">Повний JSON payload</p>
+                  <p className="text-xs text-default-500">
+                    Увімкніть на час діагностики; збільшує розмір БД (обрізання ~64 KB).
+                  </p>
+                </div>
+              </div>
+            </CardBody>
+          </Card>
+
+          <Card className="flex-1 flex flex-col min-h-0">
+            <CardHeader className="flex gap-2 px-4 items-center justify-between border-b border-default-200 shrink-0">
+              <div className="flex gap-2 items-center">
+                <DynamicIcon name="scroll-text" size={20} className="text-default-600" />
+                <h2 className="text-lg font-semibold">Останні події</h2>
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <Button
+                  size="sm"
+                  variant="flat"
+                  color="danger"
+                  isDisabled={isClearingEvents}
+                  onPress={() => void handleClearEvents()}
+                  startContent={
+                    <DynamicIcon
+                      name={isClearingEvents ? 'loader-2' : 'trash-2'}
+                      className={isClearingEvents ? 'animate-spin' : ''}
+                      size={16}
+                    />
+                  }
+                >
+                  Очистити історію
+                </Button>
+                <Button size="sm" variant="flat" onPress={() => void loadEvents()}>
+                  Оновити
+                </Button>
+              </div>
+            </CardHeader>
+            <CardBody className="flex flex-col flex-1 min-h-0 max-h-full p-0">
+              <div className="overflow-hidden relative h-full">
+                <div className="pointer-events-none absolute bottom-0 left-0 right-4 h-12 z-10 bg-white [mask-image:linear-gradient(to_top,black_20%,transparent_100%)] [-webkit-mask-image:linear-gradient(to_top,black_20%,transparent_100%)]"/>
+                
+                <div className="absolute inset-0 overflow-y-auto p-4">
+                  {events.length === 0 ? (
+                    <p className="text-sm text-default-500">Подій ще немає. Запустіть симуляцію.</p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {events.map((ev) => (
+                        <li key={ev.id} className="text-sm border-b border-default-100 pb-2 last:border-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Chip size="sm" color={actionColor(ev.action)} variant="flat">
+                              {ev.action}
+                            </Chip>
+                            {ev.dryRun && (
+                              <Chip size="sm" variant="bordered">
+                                dry_run
+                              </Chip>
+                            )}
+                            <span className="text-xs text-default-400 font-mono">
+                              {new Date(ev.at).toLocaleString('uk-UA')}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-default-700">
+                            {ev.reason}
+                            {ev.conversationId != null ? ` · conv #${ev.conversationId}` : ''}
+                          </p>
+                          {ev.contentPreview && (
+                            <p className="text-xs text-default-500 mt-0.5">«{ev.contentPreview}»</p>
+                          )}
+                          {ev.details && (
+                            <p className="text-xs text-default-400 mt-0.5 font-mono">{ev.details}</p>
+                          )}
+                          {ev.headersMeta && (
+                            <p className="text-xs text-default-400 mt-0.5 font-mono">
+                              auth: {ev.headersMeta.detectedScheme}
+                              {ev.webhookEvent ? ` · event: ${ev.webhookEvent}` : ''}
+                              {ev.source === 'webhook' ? ' · webhook' : ' · simulate'}
+                            </p>
+                          )}
+                          {ev.payloadJson != null && (
+                            <div className="mt-1">
+                              <Button
+                                size="sm"
+                                variant="flat"
+                                className="h-7 min-w-0 pl-2 pr-3 text-xs text-default-500 gap-1"
+                                onPress={() => togglePayloadExpanded(ev.id)}
+                                disableRipple
+                                startContent={
+                                  <DynamicIcon
+                                    name="chevron-right"
+                                    className={expandedPayloadIds.has(ev.id) ? 'rotate-90 duration-200' : 'duration-200'}
+                                    size={14}
+                                  />
+                                }
+                              >
+                                {expandedPayloadIds.has(ev.id) ? 'Сховати payload' : 'Показати повний payload'}
+                              </Button>
+                              {expandedPayloadIds.has(ev.id) && (
+                                <pre className="text-xs text-default-500 mt-1 p-2 bg-default-100 rounded-medium overflow-x-auto h-60 resize-y">
+                                  {JSON.stringify(ev.payloadJson, null, 2)}
+                                </pre>
+                              )}
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+              <Divider className="shrink-0" />
+              <p className="text-xs text-default-400 shrink-0 p-4">
+                Зберігається в БД (TTL і ліміт записів — у блоці «Журнал webhook»). Показує схему auth у
+                заголовках без значень secret/signature.
+              </p>
+            </CardBody>
+          </Card>
+        </div>
       </div>
     </div>
   );

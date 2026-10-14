@@ -3,7 +3,12 @@
  */
 
 import { logServer } from '../../lib/utils.js';
-import type { ChatwootBotConnectionTestResult } from '../../../shared/types/chatwootBot.js';
+import type {
+  ChatwootBotAgentSummary,
+  ChatwootBotConnectionTestResult,
+  ChatwootInboxSchedule,
+  ChatwootInboxWorkingHourSlot,
+} from '../../../shared/types/chatwootBot.js';
 
 export interface ChatwootApiCredentials {
   baseUrl: string;
@@ -192,6 +197,13 @@ export class ChatwootApiClient {
     });
   }
 
+  async assignConversation(conversationId: number, assigneeId: number): Promise<unknown> {
+    return fetchChatwoot(this.creds, `/conversations/${conversationId}/assignments`, {
+      method: 'POST',
+      body: { assignee_id: assigneeId },
+    });
+  }
+
   /** Best-effort: зняти assignee (бот / агент), якщо API дозволяє. */
   async unassignConversation(conversationId: number): Promise<void> {
     try {
@@ -202,6 +214,83 @@ export class ChatwootApiClient {
     } catch (err) {
       logServer('[ChatwootApiClient] unassignConversation skipped/failed', err);
     }
+  }
+
+  async mergeConversationCustomAttributes(
+    conversationId: number,
+    customAttributes: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await fetchChatwoot(this.creds, `/conversations/${conversationId}/custom_attributes`, {
+        method: 'POST',
+        body: { custom_attributes: customAttributes, merge: true },
+      });
+    } catch (err) {
+      logServer('[ChatwootApiClient] mergeConversationCustomAttributes failed', err);
+      throw err;
+    }
+  }
+
+  async updateContact(
+    contactId: number,
+    fields: { phone_number?: string; name?: string },
+  ): Promise<void> {
+    try {
+      await fetchChatwoot(this.creds, `/contacts/${contactId}`, {
+        method: 'PUT',
+        body: fields,
+      });
+    } catch (err) {
+      logServer('[ChatwootApiClient] updateContact failed (non-fatal)', err);
+    }
+  }
+
+  async getInboxSchedule(inboxId: number): Promise<ChatwootInboxSchedule> {
+    const raw = await fetchChatwoot<{
+      id: number;
+      name?: string;
+      working_hours_enabled?: boolean;
+      timezone?: string;
+      working_hours?: ChatwootInboxWorkingHourSlot[];
+    }>(this.creds, `/inboxes/${inboxId}`);
+
+    return {
+      inboxId: raw.id,
+      name: raw.name?.trim() || `Inbox #${inboxId}`,
+      workingHoursEnabled: Boolean(raw.working_hours_enabled),
+      timezone: raw.timezone?.trim() || 'UTC',
+      workingHours: Array.isArray(raw.working_hours) ? raw.working_hours : [],
+    };
+  }
+
+  async listAgents(): Promise<ChatwootBotAgentSummary[]> {
+    const raw = await fetchChatwoot<
+      | Array<{
+          id: number;
+          name?: string;
+          email?: string;
+          availability_status?: string;
+          role?: string;
+        }>
+      | { payload?: Array<{
+          id: number;
+          name?: string;
+          email?: string;
+          availability_status?: string;
+          role?: string;
+        }> }
+    >(this.creds, '/agents');
+
+    const list = Array.isArray(raw) ? raw : Array.isArray(raw?.payload) ? raw.payload : [];
+    return list
+      .filter((a) => a && Number.isFinite(a.id))
+      .map((a) => ({
+        id: a.id,
+        name: a.name?.trim() || `Agent #${a.id}`,
+        email: a.email ?? '',
+        availabilityStatus: a.availability_status ?? 'offline',
+        role: a.role ?? 'agent',
+      }));
   }
 }
 

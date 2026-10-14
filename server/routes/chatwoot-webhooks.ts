@@ -10,10 +10,7 @@ import { chatwootBotOrchestrator } from '../modules/ChatwootBot/ChatwootBotOrche
 import { chatwootBotEventLogService } from '../modules/ChatwootBot/ChatwootBotEventLogService.js';
 import { chatwootBotSettingsService } from '../modules/ChatwootBot/ChatwootBotSettingsService.js';
 import { extractWebhookHeadersMeta } from '../modules/ChatwootBot/ChatwootBotWebhookUtils.js';
-import {
-  getChatwootBotFixture,
-  type ChatwootBotFixtureName,
-} from '../modules/ChatwootBot/fixtures/index.js';
+import type { ChatwootBotFixtureName } from '../modules/ChatwootBot/fixtures/index.js';
 
 const router = Router();
 const chatwootAdmin = requirePermission(
@@ -141,6 +138,10 @@ function allowSimulate(req: Request, res: Response, next: NextFunction): void {
  */
 router.post('/simulate', allowSimulate, async (req: Request, res: Response) => {
   try {
+    const { getChatwootBotFixture } = await import(
+      '../modules/ChatwootBot/fixtures/index.js'
+    );
+
     const body = req.body ?? {};
     let payload: ChatwootWebhookMessageCreated;
 

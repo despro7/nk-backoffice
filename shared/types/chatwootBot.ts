@@ -24,21 +24,72 @@ export type ChatwootBotSettings = {
   eventLogMaxRecords: number;
   /** Зберігати повний JSON payload у БД (для діагностики). */
   eventLogStoreFullPayload: boolean;
+  /** Chatwoot user id агента для handover (не Agent Bot id). */
+  handoverAssigneeId: number | null;
+  /** Inbox для симуляції / fallback, якщо в webhook немає inbox_id. */
+  handoverDefaultInboxId: number | null;
+  /**
+   * Опційний Personal Access Token користувача Chatwoot (Profile → Access Token).
+   * Потрібен для GET /agents і GET /inboxes/{id} (робочі години). Agent Bot token для цього часто недоступний.
+   */
+  inboxApiAccessToken: string;
+  /** @deprecated Fallback, якщо inbox API недоступний. Години беруться з Chatwoot inbox. */
+  handoverTimezone: string;
+  /** 1=пн … 7=нд */
+  handoverWorkDays: number[];
+  handoverWorkStart: string;
+  handoverWorkEnd: string;
+  handoverMessageInHours: string;
+  handoverMessageOutOfHours: string;
+  handoverCallbackAckMessage: string;
+  handoverEmergencyEnabled: boolean;
+  handoverEmergencyKeywords: string[];
+  handoverMessageEmergency: string;
+};
+
+export type ChatwootBotAgentSummary = {
+  id: number;
+  name: string;
+  email: string;
+  availabilityStatus: string;
+  role: string;
+};
+
+export type ChatwootInboxWorkingHourSlot = {
+  day_of_week: number;
+  closed_all_day: boolean;
+  open_all_day: boolean;
+  open_hour: number | null;
+  open_minutes: number | null;
+  close_hour: number | null;
+  close_minutes: number | null;
+};
+
+export type ChatwootInboxSchedule = {
+  inboxId: number;
+  name: string;
+  workingHoursEnabled: boolean;
+  timezone: string;
+  workingHours: ChatwootInboxWorkingHourSlot[];
 };
 
 /** PUT body — порожній secret/token не змінює збережене; для очищення — clearWebhookSecret. */
 export type ChatwootBotSettingsUpdate = Partial<ChatwootBotSettings> & {
   clearWebhookSecret?: boolean;
+  clearInboxApiAccessToken?: boolean;
 };
 
 /** GET response — token і secret маскуються. */
 export type ChatwootBotSettingsResponse = Omit<
   ChatwootBotSettings,
-  'apiAccessToken' | 'webhookSecret'
+  'apiAccessToken' | 'webhookSecret' | 'inboxApiAccessToken'
 > & {
   apiAccessToken: string;
   apiAccessTokenMasked: string;
   hasApiAccessToken: boolean;
+  inboxApiAccessToken: string;
+  inboxApiAccessTokenMasked: string;
+  hasInboxApiAccessToken: boolean;
   webhookSecret: string;
   webhookSecretMasked: string;
   hasWebhookSecret: boolean;
@@ -104,8 +155,10 @@ export type ChatwootWebhookMessageCreated = {
     id?: number;
     status?: string;
     inbox_id?: number;
+    custom_attributes?: Record<string, unknown>;
     meta?: {
       assignee?: { id?: number; type?: string } | null;
+      sender?: { id?: number; name?: string; phone_number?: string | null } | null;
     };
   };
   sender?: {
@@ -129,6 +182,18 @@ export const DEFAULT_CHATWOOT_BOT_HANDOVER_KEYWORDS = [
   'людина',
   'менеджер',
 ];
+
+export const DEFAULT_CHATWOOT_BOT_EMERGENCY_KEYWORDS = ['терміново', 'критично'];
+
+/** Ключ custom attribute на conversation (Chatwoot). */
+export const CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING = 'bot_ooh_callback_pending';
+export const CHATWOOT_BOT_ATTR_CALLBACK_REQUESTED = 'callback_requested';
+export const CHATWOOT_BOT_ATTR_CALLBACK_PHONE = 'callback_phone';
+
+export const DEFAULT_CHATWOOT_BOT_HANDOVER_TIMEZONE = 'Europe/Kyiv';
+export const DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_DAYS = [1, 2, 3, 4, 5];
+export const DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_START = '09:00';
+export const DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_END = '18:00';
 
 export const CHATWOOT_WEBHOOK_SECRET_HEADER = 'x-chatwoot-webhook-secret';
 export const CHATWOOT_SIGNATURE_HEADER = 'x-chatwoot-signature';
@@ -154,4 +219,21 @@ export const DEFAULT_CHATWOOT_BOT_SETTINGS: ChatwootBotSettings = {
   eventLogRetentionDays: DEFAULT_CHATWOOT_BOT_EVENT_LOG_RETENTION_DAYS,
   eventLogMaxRecords: DEFAULT_CHATWOOT_BOT_EVENT_LOG_MAX_RECORDS,
   eventLogStoreFullPayload: false,
+  handoverAssigneeId: null,
+  handoverDefaultInboxId: 1,
+  inboxApiAccessToken: '',
+  handoverTimezone: DEFAULT_CHATWOOT_BOT_HANDOVER_TIMEZONE,
+  handoverWorkDays: [...DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_DAYS],
+  handoverWorkStart: DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_START,
+  handoverWorkEnd: DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_END,
+  handoverMessageInHours:
+    'Зараз підключаю оператора. Зачекайте, будь ласка, кілька хвилин.',
+  handoverMessageOutOfHours:
+    'Зараз неробочий час. Можу спробувати допомогти сам — опишіть питання. Або залиште імʼя та телефон, і оператор передзвонить у робочі години. Якщо ситуація критична — напишіть «терміново».',
+  handoverCallbackAckMessage:
+    'Дякуємо! Передаємо контакти оператору — звʼяжемося з вами в робочі години.',
+  handoverEmergencyEnabled: true,
+  handoverEmergencyKeywords: [...DEFAULT_CHATWOOT_BOT_EMERGENCY_KEYWORDS],
+  handoverMessageEmergency:
+    'Розуміємо, що ситуація термінова. Підключаємо оператора незважаючи на неробочий час.',
 };
