@@ -119,8 +119,11 @@ export function sortWarehouseBatches(
         return item.quantityGp;
       case 'stockMs':
         return item.quantityMs;
-      default:
+      default: {
+        const _exhaustive: never = key;
+        void _exhaustive;
         return '';
+      }
     }
   };
 

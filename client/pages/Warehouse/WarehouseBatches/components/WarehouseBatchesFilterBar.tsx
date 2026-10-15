@@ -7,13 +7,27 @@ import {
   createDateRangeFilterConfig,
   createPeriodFilterConfig,
   createResetFilterConfig,
+  createStatusFilterConfig,
   ReportsFilterBuilder,
   type ReportFilterConfig,
 } from '@/pages/Reports/shared/filters';
+import type {
+  WarehouseBatchKind,
+  WarehouseBatchNegativeMode,
+} from '../WarehouseBatchesTypes';
+import {
+  WAREHOUSE_BATCH_DEFAULT_KINDS,
+  WAREHOUSE_BATCH_KIND_OPTIONS,
+  WAREHOUSE_BATCH_NEGATIVE_MODE_OPTIONS,
+} from '../WarehouseBatchesTypes';
 
 interface WarehouseBatchesFilterBarProps {
   onlyWithStock: boolean;
   onOnlyWithStockChange: (value: boolean) => void;
+  negativeMode: WarehouseBatchNegativeMode;
+  onNegativeModeChange: (value: WarehouseBatchNegativeMode) => void;
+  batchKinds: WarehouseBatchKind[];
+  onBatchKindsChange: (value: WarehouseBatchKind[]) => void;
   columnReorderEnabled: boolean;
   onColumnReorderEnabledChange: (value: boolean) => void;
   searchQuery: string;
@@ -30,6 +44,10 @@ interface WarehouseBatchesFilterBarProps {
 export function WarehouseBatchesFilterBar({
   onlyWithStock,
   onOnlyWithStockChange,
+  negativeMode,
+  onNegativeModeChange,
+  batchKinds,
+  onBatchKindsChange,
   columnReorderEnabled,
   onColumnReorderEnabledChange,
   searchQuery,
@@ -43,6 +61,7 @@ export function WarehouseBatchesFilterBar({
   hasActiveFilters = false,
 }: WarehouseBatchesFilterBarProps) {
   const datePresets = useMemo(() => createStandardDatePresets(), []);
+  const batchKindKeys = useMemo(() => new Set(batchKinds), [batchKinds]);
 
   const filters = useMemo<ReportFilterConfig[]>(() => {
     const configs: ReportFilterConfig[] = [
@@ -65,6 +84,48 @@ export function WarehouseBatchesFilterBar({
           />
         ),
       },
+      {
+        type: 'multiSelect',
+        key: 'batchKinds',
+        ariaLabel: 'Типи партій',
+        placeholder: 'Типи партій',
+        selectedKeys: batchKindKeys,
+        onChange: (keys) => {
+          const next = Array.from(keys).filter((key): key is WarehouseBatchKind => (
+            WAREHOUSE_BATCH_KIND_OPTIONS.some((option) => option.key === key)
+          ));
+          // Порожній вибір = дефолт (Товари + Комплекти), щоб не ловити «порожній список»
+          onBatchKindsChange(
+            next.length > 0 ? next : [...WAREHOUSE_BATCH_DEFAULT_KINDS],
+          );
+        },
+        options: WAREHOUSE_BATCH_KIND_OPTIONS.map((option) => ({
+          key: option.key,
+          label: option.label,
+        })),
+        iconName: 'layers',
+        className: 'min-w-0 w-52 sm:w-56 shrink-0',
+        triggerClassName: 'h-10 data-[hover=true]:bg-white/80 data-[open=true]:bg-white',
+        compactTrigger: true,
+      },
+      createStatusFilterConfig({
+        key: 'negativeMode',
+        selectedKey: negativeMode,
+        onChange: (key) => {
+          if (key === 'without' || key === 'only' || key === 'all') {
+            onNegativeModeChange(key);
+          }
+        },
+        options: WAREHOUSE_BATCH_NEGATIVE_MODE_OPTIONS.map((option) => ({
+          key: option.key,
+          label: option.label,
+        })),
+        className: 'min-w-0 w-44 shrink-0',
+        triggerClassName: 'h-10 min-w-40 data-[hover=true]:bg-white/80 data-[open=true]:bg-white',
+        iconName: 'filter',
+        placeholder: 'Мінуси',
+        ariaLabel: 'Фільтр мінусових залишків',
+      }),
       createPeriodFilterConfig({
         selectedKey: datePresetKey,
         onChange: (key) => {
@@ -113,13 +174,17 @@ export function WarehouseBatchesFilterBar({
 
     return configs;
   }, [
+    batchKindKeys,
     datePresetKey,
     datePresets,
     dateRange,
     hasActiveFilters,
     loading,
+    negativeMode,
+    onBatchKindsChange,
     onDatePresetKeyChange,
     onDateRangeChange,
+    onNegativeModeChange,
     onReset,
     onSearchQueryChange,
     searchQuery,

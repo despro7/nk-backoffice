@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-10-15 — Партії: типи, мінуси, віртуальні, рухи
+
+**Files:** `WarehouseBatchesService.ts`, `WarehouseController.ts`, `WarehouseBatches/*`, `shared/types/warehouse.ts`, `Docs/features/warehouse-batches.md`
+
+- Мультіселект типів (товари/комплекти/віртуальні) і select мінусів; віртуальні партії з балансу Dilovod.
+- Клік по номеру партії → drawer рухів; один широкий fetch + локальні фільтри; singleflight кешу на сервері.
+
+**Документація:** [`warehouse-batches.md`](features/warehouse-batches.md).
+
+---
+
 ## 2026-10-15 — ResultDrawer: товари замовлення + рухи
 
 **Files:** `ResultDrawer.tsx`, `ProductMovementsSummaryCards.tsx`, `ProductMovementsReportHeader.tsx`, `ProductMovementsDrawer.tsx`, `Docs/features/order-details-result-drawer.md`, `Docs/features/product-movements.md`

@@ -1,9 +1,16 @@
 import type { DateRange } from '@react-types/datepicker';
 import type { CalendarDate } from '@internationalized/date';
-import type { WarehouseBatchListItem } from './WarehouseBatchesTypes';
+import type {
+  WarehouseBatchKind,
+  WarehouseBatchListItem,
+  WarehouseBatchNegativeMode,
+} from './WarehouseBatchesTypes';
+import { WAREHOUSE_BATCH_DEFAULT_KINDS } from './WarehouseBatchesTypes';
 
 export interface WarehouseBatchesFilterState {
   onlyWithStock: boolean;
+  negativeMode: WarehouseBatchNegativeMode;
+  batchKinds: WarehouseBatchKind[];
   searchQuery: string;
   dateRange: DateRange | null;
 }
@@ -55,4 +62,10 @@ export function filterWarehouseBatches(
     if (!isDateInRange(item.createdAt, filters.dateRange)) return false;
     return true;
   });
+}
+
+export function areBatchKindsDefault(kinds: WarehouseBatchKind[]): boolean {
+  if (kinds.length !== WAREHOUSE_BATCH_DEFAULT_KINDS.length) return false;
+  const set = new Set(kinds);
+  return WAREHOUSE_BATCH_DEFAULT_KINDS.every((kind) => set.has(kind));
 }

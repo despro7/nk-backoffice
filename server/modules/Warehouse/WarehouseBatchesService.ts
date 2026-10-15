@@ -8,21 +8,30 @@ import type {
   DilovodRegisterShape,
 } from '../../services/dilovod/DilovodTypes.js';
 import {
+  extractGoodPartIdPresentation,
   formatDateForDilovod,
   getDilovodConfigFromDB,
   isDilovodDeletionMark,
   unwrapDilovodId,
+  unwrapDilovodName,
 } from '../../services/dilovod/DilovodUtils.js';
 import {
   CATALOG_FINISHED_PRODUCTS_FOLDER_ID,
   CATALOG_TRASH_ID,
 } from '../../../shared/types/catalog.js';
-import type { WarehouseBatchListItem } from '../../../shared/types/warehouse.js';
 import {
+  WAREHOUSE_BATCH_DEFAULT_KINDS,
+  type WarehouseBatchKind,
+  type WarehouseBatchListItem,
+  type WarehouseBatchNegativeMode,
+} from '../../../shared/types/warehouse.js';
+import {
+  isCatalogGoodPartId,
   isMissingDilovodDate,
   isUsableDilovodBatchId,
   pickHumanBatchLabel,
 } from '../../../shared/utils/dilovodBatchId.js';
+import { isKitAccPolicy } from '../Products/ProductsTypes.js';
 import {
   formatKitBatchBaseName,
   formatGoodPartCodeForDilovod,
@@ -42,7 +51,8 @@ import {
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_LIMIT = 500;
-const MAX_LIMIT = 500;
+/** Верхня межа для клієнтського фільтра (повний зріз з кешу). */
+const MAX_LIMIT = 5000;
 const BALANCE_SKU_CHUNK = 50;
 
 type GoodPartFieldNames = {
@@ -75,7 +85,66 @@ type BatchStockTotals = {
   total: number;
   gp: number;
   ms: number;
+  sku: string | null;
+  batchLabel: string | null;
 };
+
+type CatalogGoodInfo = {
+  id: string;
+  name: string;
+  sku: string | null;
+  isKit: boolean;
+};
+
+const FULL_LIST_CACHE_KEY = 'full';
+
+function resolveBatchKind(isVirtual: boolean, isKit: boolean): WarehouseBatchKind {
+  if (isVirtual) return isKit ? 'virtualKit' : 'virtualProduct';
+  return isKit ? 'kit' : 'product';
+}
+
+function matchesNegativeMode(
+  total: number,
+  negativeMode: WarehouseBatchNegativeMode,
+  onlyWithStock: boolean,
+): boolean {
+  switch (negativeMode) {
+    case 'only':
+      return total < 0;
+    case 'without':
+      return onlyWithStock ? total > 0 : total >= 0;
+    case 'all':
+      return onlyWithStock ? total !== 0 : true;
+    default: {
+      const _exhaustive: never = negativeMode;
+      void _exhaustive;
+      return true;
+    }
+  }
+}
+
+function parseBatchKinds(raw: unknown): WarehouseBatchKind[] {
+  const allowed = new Set<WarehouseBatchKind>([
+    'product',
+    'kit',
+    'virtualProduct',
+    'virtualKit',
+  ]);
+  const values = Array.isArray(raw)
+    ? raw
+    : String(raw ?? '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  const kinds = values.filter((item): item is WarehouseBatchKind => allowed.has(item as WarehouseBatchKind));
+  return kinds.length > 0 ? [...new Set(kinds)] : [...WAREHOUSE_BATCH_DEFAULT_KINDS];
+}
+
+function parseNegativeMode(raw: unknown): WarehouseBatchNegativeMode {
+  const value = String(raw ?? '').trim();
+  if (value === 'without' || value === 'only' || value === 'all') return value;
+  return 'all';
+}
 
 type BatchBarcodeRow = {
   code: string;
@@ -88,6 +157,8 @@ interface CacheEntry {
 }
 
 const listCache = new Map<string, CacheEntry>();
+/** Один in-flight load — щоб паралельні GET /batches не ганяли одні й ті самі chunk’и Dilovod. */
+let fullListInflight: Promise<WarehouseBatchListItem[]> | null = null;
 
 const DEFAULT_GOOD_PART_FIELDS: GoodPartFieldNames = {
   id: 'id',
@@ -215,30 +286,57 @@ export class WarehouseBatchesService {
 
   async list(options?: {
     onlyWithStock?: boolean;
+    negativeMode?: WarehouseBatchNegativeMode | string;
+    batchKinds?: WarehouseBatchKind[] | string | string[];
     limit?: number;
     forceRefresh?: boolean;
-  }): Promise<{ items: WarehouseBatchListItem[]; onlyWithStock: boolean; limit: number }> {
+  }): Promise<{
+    items: WarehouseBatchListItem[];
+    onlyWithStock: boolean;
+    negativeMode: WarehouseBatchNegativeMode;
+    batchKinds: WarehouseBatchKind[];
+    limit: number;
+  }> {
     const onlyWithStock = options?.onlyWithStock !== false;
+    const negativeMode = parseNegativeMode(options?.negativeMode);
+    const batchKinds = parseBatchKinds(options?.batchKinds);
     const limit = Math.min(Math.max(Number(options?.limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
-    const cacheKey = onlyWithStock ? 'stock:1' : 'stock:0';
+    const kindSet = new Set(batchKinds);
 
-    if (!options?.forceRefresh) {
-      const cached = listCache.get(cacheKey);
-      if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-        return {
-          items: cached.data.slice(0, limit),
-          onlyWithStock,
-          limit,
-        };
-      }
-    }
+    const fullItems = await this.getFullItems(Boolean(options?.forceRefresh));
 
-    const items = await this.loadItems(onlyWithStock, limit);
-    listCache.set(cacheKey, { data: items, timestamp: Date.now() });
-    return { items, onlyWithStock, limit };
+    const items = fullItems
+      .filter((item) => kindSet.has(item.batchKind)
+        && matchesNegativeMode(item.totalQuantity, negativeMode, onlyWithStock))
+      .slice(0, limit);
+
+    return { items, onlyWithStock, negativeMode, batchKinds, limit };
   }
 
-  private async loadItems(onlyWithStock: boolean, limit: number): Promise<WarehouseBatchListItem[]> {
+  private async getFullItems(forceRefresh: boolean): Promise<WarehouseBatchListItem[]> {
+    if (!forceRefresh) {
+      const cached = listCache.get(FULL_LIST_CACHE_KEY);
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+        return cached.data;
+      }
+      if (fullListInflight) return fullListInflight;
+    }
+
+    const pending = this.loadFullItems()
+      .then((items) => {
+        listCache.set(FULL_LIST_CACHE_KEY, { data: items, timestamp: Date.now() });
+        return items;
+      })
+      .finally(() => {
+        if (fullListInflight === pending) fullListInflight = null;
+      });
+
+    fullListInflight = pending;
+    return pending;
+  }
+
+  /** Повний зріз (реальні + віртуальні), без фільтрів qty/kind — для кешу. */
+  private async loadFullItems(): Promise<WarehouseBatchListItem[]> {
     await this.api.ensureReady();
 
     const [goodPartsMeta, goodsShape] = await Promise.all([
@@ -248,42 +346,46 @@ export class WarehouseBatchesService {
 
     const fieldNames = resolveGoodPartFieldNames(goodPartsMeta);
     const balanceShape = resolveBalanceShape(goodsShape);
-    const ownerIdsInFolder = await this.loadLeafGoodIdsInFolder(CATALOG_FINISHED_PRODUCTS_FOLDER_ID);
-    const ownerSet = new Set(ownerIdsInFolder);
+    const leafGoods = await this.loadLeafGoodsInFolder(CATALOG_FINISHED_PRODUCTS_FOLDER_ID);
+    const ownerSet = new Set(leafGoods.map((good) => good.id));
+    const goodsById = new Map(leafGoods.map((good) => [good.id, good]));
+    const goodsBySku = new Map<string, CatalogGoodInfo>();
+    for (const good of leafGoods) {
+      if (!good.sku) continue;
+      goodsBySku.set(good.sku, good);
+    }
 
     const goodPartRows = await this.fetchGoodParts(fieldNames);
     const filteredParts = goodPartRows.filter((row) => ownerSet.has(row.owner));
 
-    const ownerIds = [...new Set(filteredParts.map((row) => row.owner))];
-    const goodsById = await this.loadGoodsById(ownerIds);
-    const skus = [...new Set(
-      ownerIds
-        .map((ownerId) => goodsById.get(ownerId)?.sku)
-        .filter((sku): sku is string => Boolean(sku)),
-    )];
-
+    const skus = [...goodsBySku.keys()];
     const dilovodConfig = await getDilovodConfigFromDB();
     const stockByBatchId = await this.fetchStockByBatchId(
       balanceShape,
       skus,
-      onlyWithStock,
       dilovodConfig.mainStorageId,
       dilovodConfig.smallStorageId,
     );
-    const batchIds = filteredParts.map((row) => row.id);
-    const barcodesByPart = await this.loadBarcodesByPart(batchIds);
 
-    const rows: WarehouseBatchListItem[] = [];
+    const catalogBatchIds = new Set(filteredParts.map((row) => row.id));
+    const barcodesByPart = await this.loadBarcodesByPart([...catalogBatchIds]);
+    const rowsByBatchId = new Map<string, WarehouseBatchListItem>();
+
     for (const part of filteredParts) {
-      const stock = stockByBatchId.get(part.id) ?? { total: 0, gp: 0, ms: 0 };
-      if (onlyWithStock && stock.total <= 0) continue;
-
+      const stock = stockByBatchId.get(part.id) ?? {
+        total: 0,
+        gp: 0,
+        ms: 0,
+        sku: null,
+        batchLabel: null,
+      };
       const good = goodsById.get(part.owner);
+      const isKit = Boolean(good?.isKit);
       const barcodes = barcodesByPart.get(part.id) ?? [];
       const lastBarcode = barcodes[0] ?? null;
-      const batchNumber = pickHumanBatchLabel(part.id, part.code) || part.id;
+      const batchNumber = pickHumanBatchLabel(part.id, part.code, stock.batchLabel) || part.id;
 
-      rows.push({
+      rowsByBatchId.set(part.id, {
         batchId: part.id,
         batchNumber,
         createdAt: normalizeDilovodDate(part.date),
@@ -298,16 +400,51 @@ export class WarehouseBatchesService {
         barcodes,
         lastBarcode: lastBarcode?.code ?? null,
         lastBarcodeRegisteredAt: lastBarcode?.registeredAt ?? null,
+        batchKind: resolveBatchKind(false, isKit),
+        isVirtual: false,
+        isKit,
       });
     }
 
+    for (const [batchId, stock] of stockByBatchId) {
+      if (rowsByBatchId.has(batchId)) continue;
+      if (!isUsableDilovodBatchId(batchId)) continue;
+
+      const isVirtual = !isCatalogGoodPartId(batchId);
+      const good = stock.sku ? goodsBySku.get(stock.sku) : undefined;
+      if (!good || !ownerSet.has(good.id)) continue;
+
+      const batchNumber = pickHumanBatchLabel(batchId, stock.batchLabel) || batchId;
+      rowsByBatchId.set(batchId, {
+        batchId,
+        batchNumber,
+        createdAt: null,
+        expiration: null,
+        productId: good.id,
+        productName: good.name || '—',
+        sku: good.sku,
+        quantityGp: stock.gp,
+        quantityMs: stock.ms,
+        totalQuantity: stock.total,
+        barcodeCount: 0,
+        barcodes: [],
+        lastBarcode: null,
+        lastBarcodeRegisteredAt: null,
+        batchKind: resolveBatchKind(isVirtual, good.isKit),
+        isVirtual,
+        isKit: good.isKit,
+      });
+    }
+
+    const rows = [...rowsByBatchId.values()];
     rows.sort((a, b) => {
       const aTime = a.createdAt ? Date.parse(a.createdAt) : 0;
       const bTime = b.createdAt ? Date.parse(b.createdAt) : 0;
-      return bTime - aTime;
+      if (bTime !== aTime) return bTime - aTime;
+      return a.batchNumber.localeCompare(b.batchNumber, 'uk');
     });
 
-    return rows.slice(0, limit);
+    return rows;
   }
 
   private async fetchGoodParts(fieldNames: GoodPartFieldNames): Promise<GoodPartRow[]> {
@@ -350,7 +487,6 @@ export class WarehouseBatchesService {
   private async fetchStockByBatchId(
     shape: BalanceShapeResolved,
     skus: string[],
-    onlyWithStock: boolean,
     mainStorageId?: string,
     smallStorageId?: string,
   ): Promise<Map<string, BatchStockTotals>> {
@@ -359,6 +495,9 @@ export class WarehouseBatchesService {
 
     const formattedDate = formatDateForDilovod('Kyiv');
     const dimensions = [shape.goodDim, shape.goodPartDim, shape.storageDim, shape.firmDim];
+    // Dilovod часто додає `*__pr` у відповідь сам; не просити як field —
+    // інакше balance падає/порожніє і «Лише з залишками» відсікає всі рядки.
+    const goodPartPrAlias = `${shape.goodPartDim}__pr`;
     const fields: Record<string, string> = {
       [shape.goodDim]: 'id',
       [`${shape.goodDim}.productNum`]: 'sku',
@@ -383,52 +522,50 @@ export class WarehouseBatchesService {
           fields,
           filters: [
             { alias: 'sku', operator: 'IL', value: skuChunk },
-            ...(onlyWithStock ? [{ alias: 'qty', operator: '>', value: 0 }] : []),
           ],
         },
       });
 
       for (const row of this.asRows(resp)) {
         if (row && typeof row === 'object' && 'error' in row) continue;
-        const batchId = unwrapDilovodId(row[shape.goodPartDim]);
+        const rawGoodPart = row[shape.goodPartDim];
+        const batchId = unwrapDilovodId(rawGoodPart);
         if (!isUsableDilovodBatchId(batchId)) continue;
         const storageId = unwrapDilovodId(row[shape.storageDim]);
         const rawQty = Number.parseFloat(String(row.qty ?? row[shape.qtyResource] ?? ''));
         const qty = Number.isFinite(rawQty) ? rawQty : 0;
+        const sku = String(row.sku ?? '').trim() || null;
+        const batchLabel = pickHumanBatchLabel(
+          batchId,
+          unwrapDilovodName(row[goodPartPrAlias]),
+          extractGoodPartIdPresentation(
+            typeof rawGoodPart === 'object' && rawGoodPart
+              ? rawGoodPart as Record<string, unknown>
+              : row,
+            batchId,
+          ),
+        );
 
-        const current = stockByBatchId.get(batchId) ?? { total: 0, gp: 0, ms: 0 };
+        const current = stockByBatchId.get(batchId) ?? {
+          total: 0,
+          gp: 0,
+          ms: 0,
+          sku: null,
+          batchLabel: null,
+        };
         current.total += qty;
         if (mainStorageId && storageId === mainStorageId) {
           current.gp += qty;
         } else if (smallStorageId && storageId === smallStorageId) {
           current.ms += qty;
         }
+        if (!current.sku && sku) current.sku = sku;
+        if (!current.batchLabel && batchLabel) current.batchLabel = batchLabel;
         stockByBatchId.set(batchId, current);
       }
     }
 
     return stockByBatchId;
-  }
-
-  private async loadGoodsById(
-    ownerIds: string[],
-  ): Promise<Map<string, { id: string; name: string; sku: string | null }>> {
-    const map = new Map<string, { id: string; name: string; sku: string | null }>();
-    if (ownerIds.length === 0) return map;
-
-    const goods = await prisma.catalogGood.findMany({
-      where: { id: { in: ownerIds } },
-      select: { id: true, name: true, sku: true },
-    });
-
-    for (const good of goods) {
-      map.set(good.id, {
-        id: good.id,
-        name: good.name,
-        sku: good.sku ? String(good.sku) : null,
-      });
-    }
-    return map;
   }
 
   private async loadBarcodesByPart(batchIds: string[]): Promise<Map<string, BatchBarcodeRow[]>> {
@@ -459,7 +596,7 @@ export class WarehouseBatchesService {
     return map;
   }
 
-  private async loadLeafGoodIdsInFolder(folderId: string): Promise<string[]> {
+  private async loadLeafGoodsInFolder(folderId: string): Promise<CatalogGoodInfo[]> {
     const folderIds = new Set<string>([folderId]);
     let frontier = [folderId];
 
@@ -486,10 +623,15 @@ export class WarehouseBatchesService {
         parentId: { in: [...folderIds] },
         id: { not: CATALOG_TRASH_ID },
       },
-      select: { id: true },
+      select: { id: true, name: true, sku: true, accPolicyId: true },
     });
 
-    return leaves.map((row) => row.id);
+    return leaves.map((row) => ({
+      id: row.id,
+      name: row.name,
+      sku: row.sku ? String(row.sku) : null,
+      isKit: isKitAccPolicy(row.accPolicyId),
+    }));
   }
 
   private asRows(resp: unknown): Record<string, unknown>[] {

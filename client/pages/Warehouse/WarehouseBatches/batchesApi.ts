@@ -1,14 +1,32 @@
-import type { WarehouseBatchesListResponse } from './WarehouseBatchesTypes';
+import type {
+  WarehouseBatchKind,
+  WarehouseBatchNegativeMode,
+  WarehouseBatchesListResponse,
+} from './WarehouseBatchesTypes';
+import { WAREHOUSE_BATCH_DEFAULT_KINDS } from '@shared/types/warehouse';
+
+export interface FetchWarehouseBatchesParams {
+  onlyWithStock: boolean;
+  negativeMode: WarehouseBatchNegativeMode;
+  batchKinds: WarehouseBatchKind[];
+}
 
 export async function fetchWarehouseBatches(
-  onlyWithStock: boolean,
+  params: FetchWarehouseBatchesParams,
 ): Promise<WarehouseBatchesListResponse> {
-  const params = new URLSearchParams({
-    onlyWithStock: onlyWithStock ? 'true' : 'false',
-    limit: '500',
+  const kinds = params.batchKinds.length > 0
+    ? params.batchKinds
+    : WAREHOUSE_BATCH_DEFAULT_KINDS;
+
+  const query = new URLSearchParams({
+    onlyWithStock: params.onlyWithStock ? 'true' : 'false',
+    negativeMode: params.negativeMode,
+    batchKinds: kinds.join(','),
+    // Повний зріз для клієнтських фільтрів (серверний кеш і так тримає повний список).
+    limit: '5000',
   });
 
-  const response = await fetch(`/api/warehouse/batches?${params.toString()}`, {
+  const response = await fetch(`/api/warehouse/batches?${query.toString()}`, {
     credentials: 'include',
   });
 
@@ -26,7 +44,9 @@ export async function fetchWarehouseBatches(
     data: Array.isArray(data.data) ? data.data : [],
     meta: data.meta ?? {
       total: Array.isArray(data.data) ? data.data.length : 0,
-      onlyWithStock,
+      onlyWithStock: params.onlyWithStock,
+      negativeMode: params.negativeMode,
+      batchKinds: kinds,
       limit: 500,
     },
   };

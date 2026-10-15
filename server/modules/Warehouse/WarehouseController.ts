@@ -466,11 +466,22 @@ router.post('/batches/create', authenticateToken, warehouseOperate, async (req, 
 router.get('/batches', authenticateToken, async (req, res) => {
   try {
     const onlyWithStock = req.query.onlyWithStock !== 'false';
+    const negativeMode = typeof req.query.negativeMode === 'string'
+      ? req.query.negativeMode
+      : undefined;
+    const batchKindsRaw = req.query.batchKinds;
+    const batchKinds = Array.isArray(batchKindsRaw)
+      ? batchKindsRaw.map(String)
+      : typeof batchKindsRaw === 'string'
+        ? batchKindsRaw
+        : undefined;
     const limit = req.query.limit ? Number(req.query.limit) : undefined;
     const forceRefresh = req.query.force === 'true';
 
     const result = await warehouseBatchesService.list({
       onlyWithStock,
+      negativeMode,
+      batchKinds,
       limit,
       forceRefresh,
     });
@@ -481,6 +492,8 @@ router.get('/batches', authenticateToken, async (req, res) => {
       meta: {
         total: result.items.length,
         onlyWithStock: result.onlyWithStock,
+        negativeMode: result.negativeMode,
+        batchKinds: result.batchKinds,
         limit: result.limit,
       },
     });

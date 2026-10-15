@@ -28,12 +28,43 @@ export interface WarehouseBatchBarcodeItem {
   registeredAt: string | null;
 }
 
+/** Тип партії для фільтра /warehouse/batches */
+export type WarehouseBatchKind =
+  | 'product'
+  | 'kit'
+  | 'virtualProduct'
+  | 'virtualKit';
+
+/** Режим фільтра мінусових залишків на /warehouse/batches */
+export type WarehouseBatchNegativeMode = 'without' | 'only' | 'all';
+
+export const WAREHOUSE_BATCH_KIND_OPTIONS: Array<{
+  key: WarehouseBatchKind;
+  label: string;
+}> = [
+  { key: 'product', label: 'Товари' },
+  { key: 'kit', label: 'Комплекти' },
+  { key: 'virtualProduct', label: 'Віртуальні товари' },
+  { key: 'virtualKit', label: 'Віртуальні комплекти' },
+];
+
+export const WAREHOUSE_BATCH_DEFAULT_KINDS: WarehouseBatchKind[] = ['product', 'kit'];
+
+export const WAREHOUSE_BATCH_NEGATIVE_MODE_OPTIONS: Array<{
+  key: WarehouseBatchNegativeMode;
+  label: string;
+}> = [
+  { key: 'without', label: 'Без мінусів' },
+  { key: 'only', label: 'Лише з мінусами' },
+  { key: 'all', label: 'Всі' },
+];
+
 /** Рядок GET /api/warehouse/batches */
 export interface WarehouseBatchListItem {
   batchId: string;
   /** Серійний № / номер партії */
   batchNumber: string;
-  /** Дата виготовлення (catalogs.goodParts.date) */
+  /** Дата виготовлення (catalogs.goodParts.date); null для віртуальних */
   createdAt: string | null;
   expiration: string | null;
   productId: string;
@@ -51,6 +82,12 @@ export interface WarehouseBatchListItem {
   /** Останній доданий ШК */
   lastBarcode: string | null;
   lastBarcodeRegisteredAt: string | null;
+  /** Класифікація для фільтра типів */
+  batchKind: WarehouseBatchKind;
+  /** Не catalogs.goodParts (document-партія з балансу) */
+  isVirtual: boolean;
+  /** Комплект за accPolicy */
+  isKit: boolean;
 }
 
 export interface WarehouseBatchesListResponse {
@@ -59,6 +96,8 @@ export interface WarehouseBatchesListResponse {
   meta: {
     total: number;
     onlyWithStock: boolean;
+    negativeMode: WarehouseBatchNegativeMode;
+    batchKinds: WarehouseBatchKind[];
     limit: number;
   };
 }

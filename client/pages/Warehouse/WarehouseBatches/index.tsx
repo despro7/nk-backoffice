@@ -1,19 +1,40 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Card, CardBody } from '@heroui/react';
+import { useProductMovementsDrawer } from '@/features/product-movements/context/ProductMovementsDrawerContext';
 import MovementMobProductEditDrawer from '@/pages/Warehouse/WarehouseMovementMob/components/MovementMobProductEditDrawer';
 import { ToastService } from '@/services/ToastService';
 import { WarehouseBatchesFilterBar } from './components/WarehouseBatchesFilterBar';
 import { WarehouseBatchesTable } from './components/WarehouseBatchesTable';
 import { useWarehouseBatchesFilters } from './useWarehouseBatchesFilters';
 import { useWarehouseBatchesList } from './useWarehouseBatchesList';
+import type {
+  WarehouseBatchKind,
+  WarehouseBatchListItem,
+  WarehouseBatchNegativeMode,
+} from './WarehouseBatchesTypes';
+import { WAREHOUSE_BATCH_DEFAULT_KINDS } from './WarehouseBatchesTypes';
 
 export default function WarehouseBatches() {
   const [onlyWithStock, setOnlyWithStock] = useState(true);
+  const [negativeMode, setNegativeMode] = useState<WarehouseBatchNegativeMode>('all');
+  const [batchKinds, setBatchKinds] = useState<WarehouseBatchKind[]>([
+    ...WAREHOUSE_BATCH_DEFAULT_KINDS,
+  ]);
   const [productDrawerId, setProductDrawerId] = useState<string | null>(null);
-  const list = useWarehouseBatchesList(onlyWithStock);
+  const { open: openProductMovements } = useProductMovementsDrawer();
+
+  const list = useWarehouseBatchesList({
+    onlyWithStock,
+    negativeMode,
+    batchKinds,
+  });
   const filters = useWarehouseBatchesFilters(list.items, {
     onlyWithStock,
     setOnlyWithStock,
+    negativeMode,
+    setNegativeMode,
+    batchKinds,
+    setBatchKinds,
   });
 
   useEffect(() => {
@@ -33,6 +54,17 @@ export default function WarehouseBatches() {
     void list.refetch();
   }, [list.refetch]);
 
+  const handleBatchOpen = useCallback((item: WarehouseBatchListItem) => {
+    openProductMovements({
+      sku: item.sku ?? undefined,
+      dilovodGoodId: item.productId || undefined,
+      productName: item.productName,
+      goodPartId: item.batchId,
+      batchLabel: item.batchNumber,
+      autoGenerate: true,
+    });
+  }, [openProductMovements]);
+
   return (
     <div className="flex flex-col gap-4 px-3 md:px-0">
       <div className="flex flex-col gap-1">
@@ -45,6 +77,10 @@ export default function WarehouseBatches() {
       <WarehouseBatchesFilterBar
         onlyWithStock={filters.onlyWithStock}
         onOnlyWithStockChange={filters.setOnlyWithStock}
+        negativeMode={filters.negativeMode}
+        onNegativeModeChange={filters.setNegativeMode}
+        batchKinds={filters.batchKinds}
+        onBatchKindsChange={filters.setBatchKinds}
         columnReorderEnabled={filters.columnReorderEnabled}
         onColumnReorderEnabledChange={filters.setColumnReorderEnabled}
         searchQuery={filters.searchQuery}
@@ -65,6 +101,7 @@ export default function WarehouseBatches() {
             loading={list.loading}
             columnReorderEnabled={filters.columnReorderEnabled}
             onProductOpen={handleProductOpen}
+            onBatchOpen={handleBatchOpen}
           />
         </CardBody>
       </Card>

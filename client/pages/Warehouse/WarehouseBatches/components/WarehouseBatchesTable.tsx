@@ -30,6 +30,7 @@ interface WarehouseBatchesTableProps {
   loading: boolean;
   columnReorderEnabled: boolean;
   onProductOpen: (productId: string) => void;
+  onBatchOpen: (item: WarehouseBatchListItem) => void;
 }
 
 /** Runtime column shape for HeroUI collection — includes UI flags that must trigger header refresh. */
@@ -167,16 +168,51 @@ function ProductCell({
   );
 }
 
+function BatchNumberCell({
+  item,
+  onOpen,
+}: {
+  item: WarehouseBatchListItem;
+  onOpen: (item: WarehouseBatchListItem) => void;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <button
+        type="button"
+        className="max-w-3xs truncate text-left font-mono text-sm text-primary-600 underline-offset-2 hover:text-primary-700 hover:underline whitespace-nowrap"
+        title={`Рухи партії ${item.batchNumber}`}
+        onClick={() => onOpen(item)}
+      >
+        {item.batchNumber}
+      </button>
+      <div className="flex flex-wrap gap-1">
+        {item.isVirtual ? (
+          <span
+            className="block w-fit text-[11px] font-medium leading-snug text-amber-800 bg-amber-200/75 outline-1 outline-amber-800/40 px-1.5 py-0.5 rounded-md"
+            title="Партія з балансу Dilovod (не catalogs.goodParts)"
+          >
+            Віртуальна
+          </span>
+        ) : null}
+        {item.isKit ? (
+          <span className="block w-fit text-[11px] font-medium leading-snug text-default-600 bg-default-200/75 outline-1 outline-default-600/40 px-1.5 py-0.5 rounded-md">
+            Комплект
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function renderCell(
   item: WarehouseBatchListItem,
   columnKey: WarehouseBatchesColumnKey,
   onProductOpen: (productId: string) => void,
+  onBatchOpen: (item: WarehouseBatchListItem) => void,
 ) {
   switch (columnKey) {
     case 'batchNumber':
-      return (
-        <span className="font-mono text-sm whitespace-nowrap">{item.batchNumber}</span>
-      );
+      return <BatchNumberCell item={item} onOpen={onBatchOpen} />;
     case 'product':
       return <ProductCell item={item} onOpen={onProductOpen} />;
     case 'barcodes':
@@ -193,8 +229,11 @@ function renderCell(
       return <StockQtyCell quantity={item.quantityGp} />;
     case 'stockMs':
       return <StockQtyCell quantity={item.quantityMs} />;
-    default:
+    default: {
+      const _exhaustive: never = columnKey;
+      void _exhaustive;
       return null;
+    }
   }
 }
 
@@ -283,6 +322,7 @@ export function WarehouseBatchesTable({
   loading,
   columnReorderEnabled,
   onProductOpen,
+  onBatchOpen,
 }: WarehouseBatchesTableProps) {
   const [columnOrder, setColumnOrder] = useState(loadWarehouseBatchesColumnOrder);
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>(WAREHOUSE_BATCHES_DEFAULT_SORT);
@@ -417,7 +457,7 @@ export function WarehouseBatchesTable({
           <TableRow key={item.batchId}>
             {columns.map((column) => (
               <TableCell key={column.key}>
-                {renderCell(item, column.key, onProductOpen)}
+                {renderCell(item, column.key, onProductOpen, onBatchOpen)}
               </TableCell>
             ))}
           </TableRow>
