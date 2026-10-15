@@ -3,8 +3,14 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/utils.js';
 import { normalizeSetsArray, normalizeReleaseHistoryItems } from './historyNormalize.js';
 import { authenticateToken, requirePermission } from '../../middleware/auth.js';
-import { dilovodExportFlowService } from '../../services/dilovod/index.js';
-import { getDilovodUserId, getDilovodExportErrorMessage, translateDilovodError, getDilovodConfigFromDB } from '../../services/dilovod/DilovodUtils.js';
+import { dilovodExportFlowService, dilovodService } from '../../services/dilovod/index.js';
+import {
+  cleanDilovodErrorMessageFull,
+  getDilovodUserId,
+  getDilovodExportErrorMessage,
+  translateDilovodError,
+  getDilovodConfigFromDB,
+} from '../../services/dilovod/DilovodUtils.js';
 import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
 import {
   formatReleaseDocNumber,
@@ -627,6 +633,48 @@ async function persistFailedReleaseAttempt(
     dilovodDocId: null,
     status: RELEASE_STATUS_SEND_FAILED,
   });
+}
+
+/** Сповіщення в meta_logs при помилці відправки комплектування/розукомплектування. */
+async function logSetReleaseSendFailure(params: {
+  title: string;
+  sendError: ReleaseSendErrorInfo;
+  initiatedBy?: string | null;
+  releaseId?: number | null;
+  docNumber?: string | null;
+  setSku?: string | null;
+  operationType?: string | null;
+  dilovodResponse?: unknown;
+}): Promise<void> {
+  const docLabel = params.docNumber
+    ? `#${params.docNumber}`
+    : params.releaseId
+      ? `id=${params.releaseId}`
+      : 'без номера';
+  const detail = params.sendError.raw || params.sendError.message;
+  const cleanedDetail = cleanDilovodErrorMessageFull(String(detail));
+  try {
+    await dilovodService.logMetaDilovodExport({
+      title: params.title,
+      status: 'error',
+      message: `Помилка відправки комплектування ${docLabel}: ${params.sendError.message}`,
+      initiatedBy: params.initiatedBy != null && String(params.initiatedBy).trim() !== ''
+        ? String(params.initiatedBy)
+        : undefined,
+      data: {
+        releaseId: params.releaseId ?? undefined,
+        docNumber: params.docNumber ?? undefined,
+        setSku: params.setSku ?? undefined,
+        operationType: params.operationType ?? undefined,
+        source: params.sendError.source,
+        error: cleanedDetail || params.sendError.message,
+        errorRaw: params.sendError.raw ?? undefined,
+        dilovodResponse: params.dilovodResponse,
+      },
+    });
+  } catch (logErr) {
+    console.warn('[SetRelease] Failed to write meta_log:', logErr);
+  }
 }
 
 async function syncWarehouseReleaseToDilovod(input: {
@@ -1411,6 +1459,17 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
         await discardFailedReleasePlaceholder(releaseId);
       }
 
+      await logSetReleaseSendFailure({
+        title: translated.title || 'Помилка комплектування Dilovod',
+        sendError,
+        initiatedBy: currentUserId != null ? String(currentUserId) : null,
+        releaseId,
+        docNumber,
+        setSku: resolvedSetSku || null,
+        operationType: resolvedOperationType,
+        dilovodResponse: exportResult.dilovodResponse,
+      });
+
       return res.status(422).json({
         success: false,
         error: sendError.message,
@@ -1498,10 +1557,12 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
       componentBatches: effectiveComponentBatches,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal server error';
+    const technicalMessage = error instanceof Error ? error.message : String(error ?? 'Internal server error');
+    const translated = translateDilovodError(technicalMessage);
     const sendError = buildReleaseSendError({
-      message: 'Внутрішня помилка під час відправки в Dilovod. Спробуйте ще раз або зверніться до адміністратора.',
-      raw: message,
+      message: translated.message || technicalMessage
+        || 'Внутрішня помилка під час відправки в Dilovod. Спробуйте ще раз або зверніться до адміністратора.',
+      raw: formatReleaseSendErrorRaw(null, technicalMessage),
       source: 'internal',
     });
     if (releaseId) {
@@ -1534,8 +1595,26 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
         await discardFailedReleasePlaceholder(releaseId);
       }
     }
+    const initiatedBy = (req as { user?: { userId?: number; id?: number } }).user?.userId
+      ?? (req as { user?: { userId?: number; id?: number } }).user?.id;
+    await logSetReleaseSendFailure({
+      title: translated.title || 'Внутрішня помилка комплектування',
+      sendError,
+      initiatedBy: initiatedBy != null ? String(initiatedBy) : null,
+      releaseId,
+      docNumber: null,
+      setSku: req.body?.setSku != null ? String(req.body.setSku) : null,
+      operationType: req.body?.operationType != null ? String(req.body.operationType) : null,
+    });
     console.error('[SetRelease] Error sending set release:', error);
-    res.status(500).json({ success: false, error: sendError.message, sendError, releaseId });
+    res.status(500).json({
+      success: false,
+      error: sendError.message,
+      errorTitle: translated.title,
+      errorFallback: translated.message,
+      sendError,
+      releaseId,
+    });
   }
 });
 

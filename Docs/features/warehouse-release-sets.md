@@ -107,6 +107,11 @@ Switch у шапці сторінки. Двокроковий wizard:
 |---|---|---|
 | POST | `/api/warehouse/releases/preview` | Preview з партіями |
 | POST | `/api/warehouse/releases/send` | Відправка в Dilovod |
+
+### Помилки send
+
+- Відповідь містить `sendError` (`message` + `raw` / JSON Dilovod) — модалка `ReleaseSendConfirmModal` показує обидва явно.
+- Fail (відповідь Dilovod або exception) → запис у `meta_logs` через `logSetReleaseSendFailure` (`logMetaDilovodExport`, category `dilovod`).
 | GET | `/api/warehouse/releases/last-kit-batches` | Партії останнього kit |
 | GET | `/api/warehouse/releases/batch-correction/search-sets` | Пошук наборів для correction |
 | POST | `/api/warehouse/releases/batch-correction/ensure-set` | Інвентаризаційний `_rebatch`-набір |

@@ -1,5 +1,6 @@
 import { Button, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from '@heroui/react';
 import type { ReleaseSendSummary } from '@shared/types/warehouseRelease';
+import { formatReleaseSendErrorRaw, normalizeReleaseSendError } from '@shared/utils/releaseSendError';
 import { getReleaseSendExplanation, getReleaseSendTitle, type ReleaseConfirmMode } from '../releaseConfirmCopy';
 
 interface Props {
@@ -32,6 +33,21 @@ export default function ReleaseSendConfirmModal({
   const success = Boolean(result?.success);
   const title = getReleaseSendTitle(mode);
   const explanation = summary ? getReleaseSendExplanation(mode, summary) : '';
+  const sendError = normalizeReleaseSendError(result?.sendError)
+    ?? (result?.error != null
+      ? normalizeReleaseSendError({
+        message: String(result.error),
+        raw: formatReleaseSendErrorRaw(result.dilovodResponse, result.errorFallback != null ? String(result.errorFallback) : null),
+        source: result.dilovodResponse != null ? 'dilovod' : 'internal',
+      })
+      : null);
+  const errorMessage = sendError?.message
+    ?? (result?.error != null ? String(result.error) : null);
+  const errorRaw = sendError?.raw
+    ?? formatReleaseSendErrorRaw(result?.dilovodResponse, result?.errorFallback != null ? String(result.errorFallback) : null);
+  const errorRawLabel = sendError?.source === 'internal'
+    ? 'Технічні деталі'
+    : 'Відповідь Dilovod';
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="2xl" backdrop="blur" scrollBehavior="inside" isDismissable={!isSubmitting}>
@@ -164,13 +180,25 @@ export default function ReleaseSendConfirmModal({
               <div className="text-lg font-semibold mb-2">
                 {success ? 'Відправка успішно виконана!' : 'Відправка не вдалася'}
               </div>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <div className="opacity-80">Оновлення залишків: {result.stockSyncTriggered ? 'запущено' : 'не запущено'}</div>
                 {result.historySaved === true && !success && (
                   <div>Набір збережено в історії — можна повторити відправку в Dilovod.</div>
                 )}
-                {result.error && <div>Помилка Dilovod: {String(result.error)}</div>}
-                {result.errorFallback && <div>Деталі: {String(result.errorFallback)}</div>}
+                {errorMessage && (
+                  <div>
+                    <span className="font-medium">Помилка Dilovod:</span>{' '}
+                    {errorMessage}
+                  </div>
+                )}
+                {!success && errorRaw && errorRaw !== errorMessage && (
+                  <div className="space-y-1">
+                    <div className="text-xs font-medium text-red-800/80">{errorRawLabel}</div>
+                    <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md bg-white/70 border border-red-200 px-2 py-1.5 text-[11px] text-red-900/90 font-mono">
+                      {errorRaw}
+                    </pre>
+                  </div>
+                )}
               </div>
             </div>
           )}

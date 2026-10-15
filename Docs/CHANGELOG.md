@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-10-16 — Комплектування: помилка Dilovod у модалці + meta_log
+
+**Files:** `SetReleaseController.ts`, `ReleaseSendConfirmModal.tsx`, `Docs/features/warehouse-release-sets.md`
+
+- Модалка підтвердження send показує `sendError.message` і сиру відповідь Dilovod (`raw` / JSON).
+- При fail `/releases/send` пишеться `meta_logs` (category `dilovod`) з `releaseId`, `setSku`, `errorRaw`.
+
+**Документація:** [`warehouse-release-sets.md`](features/warehouse-release-sets.md).
+
+---
+
 ## 2026-10-16 — Каталог: порції вкладених наборів + WC regular_price
 
 **Files:** `catalogKitPortions.ts`, `ProductsCatalogService.ts`, `ProductsUtils.ts`, `BomSection.tsx`, `ProductDrawer.tsx`, `WooCommerceSyncService.ts`, `StorefrontDescriptionBuilder.ts`, `resolveStorefrontRegularPrice.ts`, docs
