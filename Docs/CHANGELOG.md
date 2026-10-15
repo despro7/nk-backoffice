@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-10-15 — ResultDrawer: товари замовлення + рухи
+
+**Files:** `ResultDrawer.tsx`, `ProductMovementsSummaryCards.tsx`, `ProductMovementsReportHeader.tsx`, `ProductMovementsDrawer.tsx`, `Docs/features/order-details-result-drawer.md`, `Docs/features/product-movements.md`
+
+- Таблиця «Замовлені товари»: кіл-ть, залишок МС / бракує з останнього error meta-лога; розгортання немонолітних наборів; кнопка рухів (МС, день відвантаження/комплектації).
+- Звіт/drawer «Рухи по товару»: компактні summary-віджети; на сторінці — identity зліва, у drawer — лише віджети.
+
+**Документація:** [`order-details-result-drawer.md`](features/order-details-result-drawer.md), [`product-movements.md`](features/product-movements.md).
+
+---
+
 ## 2026-10-15 — Статус замовлення: локальний update після комплектації
 
 **Files:** `orders.ts`, `orders-sync.ts`, `orderDatabaseService.ts`, `statusMapper.ts`, `useOrderNavigation.ts`, `Docs/features/order-status-local-update.md`

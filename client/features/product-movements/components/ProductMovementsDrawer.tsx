@@ -13,6 +13,7 @@ import { createDefaultFilters } from '../productMovementsUtils';
 import useProductMovementsMeta from '../hooks/useProductMovementsMeta';
 import useProductMovementsQuery from '../hooks/useProductMovementsQuery';
 import ProductMovementsFilters from './ProductMovementsFilters';
+import ProductMovementsReportHeader from './ProductMovementsReportHeader';
 import ProductMovementsTable from './ProductMovementsTable';
 
 interface ProductMovementsDrawerProps {
@@ -31,6 +32,7 @@ export default function ProductMovementsDrawer({
   const { meta, loading: metaLoading, error: metaError } = useProductMovementsMeta(isOpen);
   const {
     result,
+    generatedFilters,
     hasGenerated,
     loading,
     error,
@@ -109,6 +111,15 @@ export default function ProductMovementsDrawer({
             <div className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger">
               {error}
             </div>
+          ) : null}
+
+          {result && generatedFilters ? (
+            <ProductMovementsReportHeader
+              result={result}
+              filters={generatedFilters}
+              meta={meta}
+              showIdentity={false}
+            />
           ) : null}
 
           <ProductMovementsTable

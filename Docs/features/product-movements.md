@@ -47,7 +47,7 @@
 
 - **Фільтри** — `ProductMovementsFilters`: товар (Autocomplete + останні запити), партія, склад, фірма, пресет періоду + DateRangePicker.
 - **Останні запити** — `localStorage` ключ `product-movements-recent-searches-v1`, максимум **10** записів.
-- **Заголовок звіту** — `ProductMovementsReportHeader`: назва товару + блок загальної статистики по всіх партіях (початковий залишок, надходження, витрата, залишок).
+- **Заголовок звіту** — `ProductMovementsReportHeader`: зліва назва/SKU/період/склад (`showIdentity`); справа компактні віджети `ProductMovementsSummaryCards` (початковий залишок, надходження, витрата, залишок).
 - **Таблиця** — `ProductMovementsTable`: HeroUI Table, sticky header, іконки типів документів, accordion «Старі партії».
 
 ### Drawer (глобальний)
@@ -71,12 +71,14 @@ interface ProductMovementsOpenParams {
 У compact-режимі Drawer:
 - товар заблокований (`productLocked`), якщо передано `sku` / `dilovodGoodId`;
 - фільтри `size="sm"`, висота полів `h-8`;
-- таблиця без внутрішнього `p-2` у блоці групи.
+- таблиця без внутрішнього `p-2` у блоці групи;
+- після формування — ті самі summary-віджети (`showIdentity={false}`, full-width).
 
 ### Точки входу
 
 | Місце | Тригер |
 | --- | --- |
+| `ResultDrawer` (деталі замовлення) | Кнопка рухів біля SKU: МС + період = день відвантаження/`readyToShipAt`, `autoGenerate` — див. [`order-details-result-drawer.md`](order-details-result-drawer.md) |
 | `/warehouse/movement-mob/:id` | Клік по назві партії в `MovementMobProductCard` (іконка `arrow-left-right`, `autoGenerate: true`) |
 | `/warehouse/release-sets` | Кнопка «Рухи партії» в `ReleaseComponentBatchesPanel` |
 
@@ -109,5 +111,6 @@ interface ProductMovementsOpenParams {
 
 ## Пов'язана документація
 
+- [`order-details-result-drawer.md`](order-details-result-drawer.md) — таблиця товарів у деталях замовлення + кнопка рухів
 - [`warehouse-statement.md`](warehouse-statement.md) — споріднений звіт по регістру `goods`
 - [`warehouse-movement-mob.md`](warehouse-movement-mob.md) — мобільне переміщення, точка входу в Drawer
