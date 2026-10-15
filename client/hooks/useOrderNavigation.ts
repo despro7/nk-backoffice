@@ -129,11 +129,11 @@ export function useOrderNavigation({
 
   /**
    * Допоміжна функція: оновити статус поточного замовлення до "3" (Готове до відправки)
-   * 
+   *
    * Логіка:
-   * 1. Спочатку оновлюємо локальний стан (оптимістичне оновлення) → UI зміниться одразу
-   * 2. Потім відправляємо запит до SalesDrive в тлі (не блокуємо UI)
-   * 3. Якщо запит не пройде — користувач потім зі сервера отримає правильний статус
+   * 1. Оптимістично оновлюємо локальний React-стан → UI зміниться одразу
+   * 2. PUT /status зберігає статус у локальній БД одразу; SalesDrive — best-effort
+   * 3. Якщо SD не відповість / webhook не прийде — локальний статус уже коректний
    */
   const updateCurrentOrderStatusToReady = useCallback(async () => {
     if (!id) return;
@@ -186,8 +186,13 @@ export function useOrderNavigation({
 
       const statusData = await statusResponse.json();
       if (statusData.success) {
-        console.log('✅ [useOrderNavigation] Статус замовлення оновлено в SalesDrive на "3" (Готове до відправлення)');
-
+        if (statusData.salesDriveUpdated) {
+          console.log('✅ [useOrderNavigation] Статус оновлено локально та в SalesDrive на "3"');
+        } else {
+          console.warn(
+            '⚠️ [useOrderNavigation] Статус збережено локально на "3", але SalesDrive не підтвердив оновлення',
+          );
+        }
       } else {
         console.warn('⚠️ [useOrderNavigation] Помилка при оновленні статусу:', statusData.error);
       }

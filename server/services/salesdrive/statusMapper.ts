@@ -58,3 +58,37 @@ export function isCompletedStatus(status: string): boolean {
 export function isActiveStatus(status: string): boolean {
   return ['1', '2', '3', '4', '9'].includes(status);
 }
+
+export type StatusSyncGuardExisting = {
+  status?: string | null;
+  readyToShipAt?: Date | string | null;
+};
+
+/**
+ * Не відкатуємо локальний статус після комплектації (readyToShipAt),
+ * якщо sync/webhook приносить старіший статус (наприклад 3 → 2).
+ * Просування вперед (3→4→5) і «вищі» термінальні статуси — дозволені.
+ *
+ * Якщо локально ще status=2, але readyToShipAt уже є (розсинхрон),
+ * також блокуємо incoming < 3.
+ */
+export function shouldSkipStatusSyncRollback(
+  existing: StatusSyncGuardExisting,
+  incomingStatus: string | number | null | undefined,
+): boolean {
+  if (!existing.readyToShipAt) {
+    return false;
+  }
+  if (incomingStatus === undefined || incomingStatus === null || incomingStatus === '') {
+    return false;
+  }
+
+  const incoming = Number(incomingStatus);
+  if (Number.isNaN(incoming)) {
+    return false;
+  }
+
+  const local = Number(existing.status);
+  const floor = Number.isNaN(local) ? 3 : Math.max(local, 3);
+  return incoming < floor;
+}

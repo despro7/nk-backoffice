@@ -1,6 +1,7 @@
 import { prisma } from '../lib/utils.js';
 import { ordersCacheService } from './ordersCacheService.js';
 import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
+import { shouldSkipStatusSyncRollback } from './salesdrive/statusMapper.js';
 
 export interface OrderBaseData {
   externalId: string;
@@ -214,7 +215,7 @@ export class OrderDatabaseService {
       // Попередній стан потрібен до update — після update order.* уже нові
       const existingOrder = await prisma.order.findUnique({
         where: { externalId },
-        select: { status: true, externalId: true, orderNumber: true },
+        select: { status: true, externalId: true, orderNumber: true, readyToShipAt: true },
       });
       const previousStatus = existingOrder?.status ?? null;
       const previousExternalId = existingOrder?.externalId ?? externalId;
@@ -238,8 +239,18 @@ export class OrderDatabaseService {
 
       // Додаємо тільки певні поля
       if (data.orderDate !== undefined) updateData.orderDate = data.orderDate;
-      if (data.status !== undefined) updateData.status = data.status;
-      if (data.statusText !== undefined) updateData.statusText = data.statusText;
+
+      const skipStatusRollback =
+        data.status !== undefined &&
+        !!existingOrder &&
+        shouldSkipStatusSyncRollback(existingOrder, data.status);
+      if (skipStatusRollback) {
+        console.warn(
+          `⚠️ [OrderDB] Skip status rollback for ${externalId}: local=${previousStatus} readyToShipAt set, incoming=${data.status}`,
+        );
+      }
+      if (data.status !== undefined && !skipStatusRollback) updateData.status = data.status;
+      if (data.statusText !== undefined && !skipStatusRollback) updateData.statusText = data.statusText;
       if (data.customerName !== undefined) updateData.customerName = data.customerName;
       if (data.customerPhone !== undefined) updateData.customerPhone = data.customerPhone;
       if (data.deliveryAddress !== undefined) updateData.deliveryAddress = data.deliveryAddress;
@@ -283,8 +294,12 @@ export class OrderDatabaseService {
         data: updateData
       });
 
-      // Створюємо запис в історії, якщо змінився статус
-      if (data.status && data.status !== previousStatus) {
+      // Створюємо запис в історії, якщо змінився статус (і ми його реально застосували)
+      if (
+        !skipStatusRollback &&
+        data.status &&
+        data.status !== previousStatus
+      ) {
         await this.createOrderHistory(order.id, data.status, data.statusText || '', data.source || 'salesdrive');
       }
 
@@ -1132,6 +1147,7 @@ export class OrderDatabaseService {
                   orderNumber: true,
                   status: true,
                   statusText: true,
+                  readyToShipAt: true,
                   ttn: true,
                   quantity: true,
                   customerName: true,
@@ -1212,8 +1228,18 @@ export class OrderDatabaseService {
 
               // Умная проверка изменений
               const changeResult = this.detectOrderChanges(existingOrder, orderData);
-              const changes = changeResult.fields;
+              let changes = changeResult.fields;
               // console.log(`🔍 [DEBUG] Order ${orderData.orderNumber} has ${changes.length} changes: [${changes.join(', ')}]`);
+
+              if (
+                (changes.includes('status') || changes.includes('statusText')) &&
+                shouldSkipStatusSyncRollback(existingOrder, orderData.status)
+              ) {
+                console.warn(
+                  `⚠️ [SMART BATCH] Skip status rollback for ${orderData.orderNumber}: local=${existingOrder.status} readyToShipAt set, incoming=${orderData.status}`,
+                );
+                changes = changes.filter((field) => field !== 'status' && field !== 'statusText');
+              }
 
               if (changes.length === 0) {
                 // console.log(`⏭️ [DEBUG] Order ${orderData.orderNumber} has no changes - SKIPPING`);

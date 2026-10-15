@@ -4,6 +4,7 @@ import { prisma } from '../lib/utils.js';
 import { syncSettingsService } from '../services/syncSettingsService.js';
 import { salesDriveService } from '../services/salesDriveService.js';
 import { generateExternalId } from '../services/salesdrive/externalIdHelper.js';
+import { shouldSkipStatusSyncRollback } from '../services/salesdrive/statusMapper.js';
 
 const router = express.Router();
 
@@ -1305,7 +1306,18 @@ router.post('/sync/single-order', authenticateToken, async (req, res) => {
 
     // Перевіряємо зміни
     const changeResult = orderDatabaseService.detectOrderChanges(existingOrder, salesDriveOrder);
-    const changes = changeResult.fields;
+    let changes = changeResult.fields;
+    const skipStatusRollback = shouldSkipStatusSyncRollback(existingOrder, salesDriveOrder.status);
+
+    if (
+      skipStatusRollback &&
+      (changes.includes('status') || changes.includes('statusText'))
+    ) {
+      console.warn(
+        `⚠️ [SINGLE ORDER SYNC] Skip status rollback for order ${id}: local=${existingOrder.status} readyToShipAt set, incoming=${salesDriveOrder.status}`,
+      );
+      changes = changes.filter((field) => field !== 'status' && field !== 'statusText');
+    }
 
     if (changes.length === 0) {
       // Оновлюємо тільки lastSynced
@@ -1331,8 +1343,12 @@ router.post('/sync/single-order', authenticateToken, async (req, res) => {
 
     // Оновлюємо замовлення
     const updateData: any = {
-      status: salesDriveOrder.status,
-      statusText: salesDriveOrder.statusText,
+      ...(skipStatusRollback
+        ? {}
+        : {
+            status: salesDriveOrder.status,
+            statusText: salesDriveOrder.statusText,
+          }),
       items: JSON.stringify(salesDriveOrder.items),
       rawData: JSON.stringify(salesDriveOrder.rawData),
       ttn: salesDriveOrder.ttn,

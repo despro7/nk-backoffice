@@ -1021,7 +1021,8 @@ router.get('/:id/fiscal-receipts/list', authenticateToken, async (req, res) => {
 
 /**
  * PUT /api/orders/:id/status
- * Оновити статус замовлення локально, в SalesDrive та тригернути автоматичний export/відвантаження в Dilovod, якщо статус змінився на "3" (На відправку)
+ * Оновити статус локально одразу (не чекаємо webhook SD), далі best-effort у SalesDrive.
+ * При статусі "3" — readyToShipAt, списання складу, історія комплектації, Dilovod auto-export.
  */
 router.put('/:id/status', authenticateToken, async (req, res) => {
   try {
@@ -1053,57 +1054,76 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
       });
     }
 
-    const shouldDeductMonolithicStock = status === '3' && currentOrder.status === '2' && !currentOrder.readyToShipAt;
+    const nextStatus = String(status);
+    const nextStatusText = getStatusText(nextStatus);
+    const statusChanged = currentOrder.status !== nextStatus;
+    const isFirstReadyToShip = nextStatus === '3' && !currentOrder.readyToShipAt;
+    const shouldDeductMonolithicStock =
+      nextStatus === '3' && currentOrder.status === '2' && !currentOrder.readyToShipAt;
     const shipmentPayloadSource = payloadData !== undefined ? payloadData : currentOrder.payloadData;
 
-    // Якщо статус змінився на "3" (На відправку), записуємо дату в readyToShipAt
-    if (status === '3') {
-      try {
-        const stockUpdates = shouldDeductMonolithicStock
-          ? await buildMonolithicSetStockUpdates(shipmentPayloadSource)
-          : [];
+    try {
+      const stockUpdates = shouldDeductMonolithicStock
+        ? await buildMonolithicSetStockUpdates(shipmentPayloadSource)
+        : [];
 
-        await prisma.$transaction([
-          prisma.order.update({
-            where: { id: orderId },
-            data: {
-              ...(currentOrder.readyToShipAt ? {} : { readyToShipAt: new Date() }),
-              ...(payloadData !== undefined ? { payloadData } : {})
-            }
-          }),
-          ...stockUpdates
-        ]);
+      await prisma.$transaction([
+        prisma.order.update({
+          where: { id: orderId },
+          data: {
+            status: nextStatus,
+            statusText: nextStatusText,
+            ...(isFirstReadyToShip ? { readyToShipAt: new Date() } : {}),
+            ...(payloadData !== undefined ? { payloadData } : {}),
+          }
+        }),
+        ...stockUpdates
+      ]);
 
-        if (shouldDeductMonolithicStock && stockUpdates.length > 0) {
-          console.log(`✅ [Orders API] Optimistic monolithic stock deduction applied for order ${orderId} (${stockUpdates.length} product(s))`);
-        }
-
-        if (!currentOrder.readyToShipAt) {
-          console.log(`✅ [Orders API] Order ${id} readyToShipAt set to current time`);
-
-          // Фіксуємо, хто комплектував (лише для реального користувача, не system cron)
-          const historyUserId = authUser?.userId && authUser.userId > 0 ? authUser.userId : undefined;
-          await orderDatabaseService.createOrderHistory(
-            orderId,
-            status,
-            getStatusText(String(status)),
-            'manual',
-            historyUserId,
-            authUser?.name ? `Комплектував: ${authUser.name}` : undefined,
-          );
-        }
-
-      } catch (dbError) {
-        console.error(`⚠️ [Orders API] Failed to update readyToShipAt / deduct stock for order ${id}:`, dbError);
-        // Не блокуємо відповідь, якщо не вдалося оновити дату
+      if (shouldDeductMonolithicStock && stockUpdates.length > 0) {
+        console.log(`✅ [Orders API] Optimistic monolithic stock deduction applied for order ${orderId} (${stockUpdates.length} product(s))`);
       }
-    
+
+      if (isFirstReadyToShip) {
+        console.log(`✅ [Orders API] Order ${id} local status → ${nextStatus}, readyToShipAt set`);
+
+        const historyUserId = authUser?.userId && authUser.userId > 0 ? authUser.userId : undefined;
+        await orderDatabaseService.createOrderHistory(
+          orderId,
+          nextStatus,
+          nextStatusText,
+          'manual',
+          historyUserId,
+          authUser?.name ? `Комплектував: ${authUser.name}` : undefined,
+        );
+      } else if (statusChanged) {
+        console.log(`✅ [Orders API] Order ${id} local status ${currentOrder.status} → ${nextStatus}`);
+        const historyUserId = authUser?.userId && authUser.userId > 0 ? authUser.userId : undefined;
+        await orderDatabaseService.createOrderHistory(
+          orderId,
+          nextStatus,
+          nextStatusText,
+          'manual',
+          historyUserId,
+        );
+      }
+    } catch (dbError) {
+      console.error(`❌ [Orders API] Failed to update local status for order ${id}:`, dbError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to update order status locally',
+        id,
+        newStatus: nextStatus,
+      });
+    }
+
+    if (nextStatus === '3') {
       // Тригер автоматичного export/відвантаження в Dilovod (фонова операція — не блокує відповідь)
       import('../services/dilovod/DilovodAutoExportService.js')
         .then(({ dilovodAutoExportService }) =>
           dilovodAutoExportService.processOrderStatusChange(
             orderId,
-            status,
+            nextStatus,
             'manual'
           )
         )
@@ -1112,27 +1132,24 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
         );
     }
 
-    // Оновлюємо статус в SalesDrive
-    const result = await salesDriveService.updateSalesDriveOrderStatus(id, status);
+    // Best-effort: локальний статус уже збережено; webhook SD може не прийти
+    const salesDriveUpdated = await salesDriveService.updateSalesDriveOrderStatus(id, nextStatus);
 
-    if (result) {
-      res.json({
-        success: true,
-        message: 'Order status updated successfully in SalesDrive',
-        id: id,
-        newStatus: status,
-        salesDriveUpdated: true,
-        updatedAt: new Date().toISOString()
-      });
-    } else {
-      console.warn(`⚠️ Failed to update order ${id} status in SalesDrive`);
-      res.status(500).json({
-        success: false,
-        error: 'Failed to update order status in SalesDrive',
-        id: id,
-        newStatus: status
-      });
+    if (!salesDriveUpdated) {
+      console.warn(`⚠️ [Orders API] Order ${id} local status=${nextStatus}, but SalesDrive update failed`);
     }
+
+    res.json({
+      success: true,
+      message: salesDriveUpdated
+        ? 'Order status updated locally and in SalesDrive'
+        : 'Order status updated locally; SalesDrive update failed',
+      id,
+      newStatus: nextStatus,
+      statusText: nextStatusText,
+      salesDriveUpdated,
+      updatedAt: new Date().toISOString(),
+    });
   } catch (error) {
     console.error('Error updating order status:', error);
     res.status(500).json({

@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-10-15 — Статус замовлення: локальний update після комплектації
+
+**Files:** `orders.ts`, `orders-sync.ts`, `orderDatabaseService.ts`, `statusMapper.ts`, `useOrderNavigation.ts`, `Docs/features/order-status-local-update.md`
+
+- `PUT /api/orders/:id/status` одразу пише `Order.status` / `statusText` (+ `readyToShipAt`); SalesDrive — best-effort (`salesDriveUpdated`).
+- Sync/webhook/refresh не відкатують статус нижче floor після комплектації (`shouldSkipStatusSyncRollback`).
+
+**Документація:** [`order-status-local-update.md`](features/order-status-local-update.md).
+
+---
+
 ## 2026-10-14 — Наліпки: скидання чернетки
 
 **Files:** `ProductLabelsTab.tsx`, `ProductDrawer.tsx`, `Docs/features/product-labels.md`
