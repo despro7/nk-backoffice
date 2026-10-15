@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildTechCardRows,
+  catalogKitDishCount,
+  catalogKitPortionCount,
   extractParenthesizedTextFromName,
   hasParenthesizedTextInName,
   catalogMissingNameLabels,
   expectedBomWeightKg,
+  expectedMilitaryPrice,
   formatBomQtyDisplay,
   getMissingRequiredCatalogFields,
   isSuspiciousBomIngredientQty,
@@ -16,6 +19,7 @@ import {
 import {
   CATALOG_ACC_POLICY_GOOD,
   CATALOG_ACC_POLICY_KIT,
+  CATALOG_MILITARY_DISCOUNT_PER_PORTION,
   CATALOG_PRICE_TYPE_MILITARY_ID,
   CATALOG_PRICE_TYPE_REGULAR_ID,
   CATALOG_PRICE_TYPE_RETAIL_ID,
@@ -454,5 +458,35 @@ describe('catalogMissingNameLabels', () => {
         packageRatio: false,
       })
     ).toEqual(['Ціни -> Військові']);
+  });
+});
+
+describe('catalogKitDishCount / catalogKitPortionCount', () => {
+  it('без вкладених наборів страви = порції', () => {
+    const rows = [
+      { qty: 2, componentNestedPortionCount: 1 },
+      { qty: 3, componentNestedPortionCount: 1 },
+    ];
+    expect(catalogKitDishCount(rows)).toBe(5);
+    expect(catalogKitPortionCount(rows)).toBe(5);
+  });
+
+  it('вкладений набір множить порції, страви лишаються сумою qty', () => {
+    const rows = [
+      { qty: 2, componentNestedPortionCount: 1 },
+      { qty: 1, componentNestedPortionCount: 5 },
+    ];
+    expect(catalogKitDishCount(rows)).toBe(3);
+    expect(catalogKitPortionCount(rows)).toBe(7);
+  });
+});
+
+describe('expectedMilitaryPrice', () => {
+  it('набір: знижка від кількості порцій, не страв', () => {
+    const main = 200;
+    const portions = 7;
+    expect(expectedMilitaryPrice(main, true, portions)).toBe(
+      main - portions * CATALOG_MILITARY_DISCOUNT_PER_PORTION
+    );
   });
 });

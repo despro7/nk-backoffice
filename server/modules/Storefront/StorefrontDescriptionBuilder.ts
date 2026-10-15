@@ -18,6 +18,7 @@ import type {
 } from '../../../shared/types/storefront.js';
 import { STOREFRONT_WC_META } from '../../../shared/types/storefront.js';
 import { formatNetWeightLabel } from '../../../shared/utils/productLabel.js';
+import { resolveStorefrontRegularPrice } from './resolveStorefrontRegularPrice.js';
 import {
   ensureStorefrontDescriptionDoc,
   extractBlockMetaValue,
@@ -142,6 +143,7 @@ export class StorefrontDescriptionBuilder {
       descriptionHtml: html,
       weight: resolveCtx.good.weight,
       grossWeightKg: gross.kg,
+      regularPrice: resolveStorefrontRegularPrice(loaded.prices),
       categoryName: loaded.parentFolderName,
       meta,
     };
@@ -151,6 +153,7 @@ export class StorefrontDescriptionBuilder {
     const good = await prisma.catalogGood.findUnique({
       where: { id: goodId },
       include: {
+        prices: true,
         components: {
           orderBy: { rowNum: 'asc' },
           include: {
@@ -232,6 +235,7 @@ export class StorefrontDescriptionBuilder {
       kitComponentRows,
       ingredientRows,
       units: unitsList,
+      prices: good.prices.map((row) => ({ priceType: row.priceType, price: row.price })),
     };
   }
 

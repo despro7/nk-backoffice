@@ -30,6 +30,7 @@ import {
   rebalanceSortOrders,
 } from '../../../shared/utils/catalogSortOrder.js';
 import { getMissingRequiredCatalogFields } from '../../../shared/utils/catalogRequiredFields.js';
+import { computeCatalogKitPortionCounts } from '../../../shared/utils/catalogKitPortions.js';
 import { productsDilovodGateway } from './ProductsDilovodGateway.js';
 import { productsLocalSync } from './ProductsLocalSync.js';
 import { catalogMediaService } from './CatalogMediaService.js';
@@ -715,9 +716,17 @@ export class ProductsCatalogService {
           })
         : [];
     const parentNameById = new Map(parents.map((parent) => [parent.id, parent.name]));
-    return rows.map((row) =>
-      mapGoodDto(row, row.parentId ? parentNameById.get(row.parentId) ?? null : null)
-    );
+    const kitIds = rows.filter((row) => isKitAccPolicy(row.accPolicyId)).map((row) => row.id);
+    const kitPortionById =
+      kitIds.length > 0 ? await this.computeKitPortionCountsByGoodId(kitIds) : new Map<string, number>();
+    return rows.map((row) => {
+      const dto = mapGoodDto(row, row.parentId ? parentNameById.get(row.parentId) ?? null : null);
+      if (!isKitAccPolicy(row.accPolicyId)) return dto;
+      return {
+        ...dto,
+        kitPortionCount: kitPortionById.get(row.id) ?? 0,
+      };
+    });
   }
 
   async getTrash(): Promise<CatalogGoodDto[]> {
@@ -1062,6 +1071,72 @@ export class ProductsCatalogService {
     return Math.min(100, Math.max(0, n));
   }
 
+  /**
+   * Повна кількість порцій для наборів (рекурсивно через вкладені набори).
+   * Не-набір → 1. Рецептура продукції не розгортається.
+   */
+  async computeKitPortionCountsByGoodId(goodIds: string[]): Promise<Map<string, number>> {
+    const unique = [...new Set(goodIds.map((id) => id.trim()).filter(Boolean))];
+    if (unique.length === 0) return new Map();
+
+    const accPolicyById = new Map<string, string | null>();
+    const childrenByParent = new Map<string, Array<{ id: string; qty: number }>>();
+    const loaded = new Set<string>();
+    let frontier = [...unique];
+
+    while (frontier.length > 0) {
+      const batch = frontier.filter((id) => !loaded.has(id));
+      frontier = [];
+      if (batch.length === 0) break;
+      for (const id of batch) loaded.add(id);
+
+      const goods = await prisma.catalogGood.findMany({
+        where: { id: { in: batch } },
+        select: { id: true, accPolicyId: true },
+      });
+      for (const good of goods) {
+        accPolicyById.set(good.id, good.accPolicyId);
+      }
+
+      const kitIds = goods.filter((good) => isKitAccPolicy(good.accPolicyId)).map((good) => good.id);
+      if (kitIds.length === 0) continue;
+
+      const components = await prisma.catalogGoodComponent.findMany({
+        where: { parentGoodId: { in: kitIds } },
+        select: { parentGoodId: true, componentGoodId: true, qty: true },
+      });
+
+      const nextIds = new Set<string>();
+      for (const row of components) {
+        const list = childrenByParent.get(row.parentGoodId) ?? [];
+        list.push({ id: row.componentGoodId, qty: row.qty });
+        childrenByParent.set(row.parentGoodId, list);
+        nextIds.add(row.componentGoodId);
+      }
+      frontier = [...nextIds].filter((id) => !loaded.has(id));
+    }
+
+    const missingPolicyIds = [
+      ...new Set(
+        [...childrenByParent.values()]
+          .flat()
+          .map((child) => child.id)
+          .filter((id) => !accPolicyById.has(id))
+      ),
+    ];
+    if (missingPolicyIds.length > 0) {
+      const goods = await prisma.catalogGood.findMany({
+        where: { id: { in: missingPolicyIds } },
+        select: { id: true, accPolicyId: true },
+      });
+      for (const good of goods) {
+        accPolicyById.set(good.id, good.accPolicyId);
+      }
+    }
+
+    return computeCatalogKitPortionCounts(unique, accPolicyById, childrenByParent);
+  }
+
   private async readGoodDetailFromLocal(id: string): Promise<CatalogGoodDetailDto | null> {
     const row = await prisma.catalogGood.findUnique({
       where: { id },
@@ -1106,6 +1181,7 @@ export class ProductsCatalogService {
           })
         : [];
     const componentParentNameById = new Map(componentParents.map((p) => [p.id, p.name]));
+    const nestedPortionById = await this.computeKitPortionCountsByGoodId(componentIds);
 
     let parentName: string | null = null;
     const parentId = row.parentId?.trim();
@@ -1160,6 +1236,7 @@ export class ProductsCatalogService {
           componentSku: componentGood?.sku ?? null,
           componentWeight: componentGood?.weight ?? null,
           componentAccPolicyId: componentGood?.accPolicyId ?? null,
+          componentNestedPortionCount: nestedPortionById.get(c.componentGoodId) ?? 1,
           componentCategoryName,
           qty: c.qty,
           rowNum: c.rowNum,

@@ -63,6 +63,9 @@ interface BomSectionProps {
   isGood: boolean;
   isKit: boolean;
   isAdmin: boolean;
+  /** Сума qty прямих позицій («страви»), без розгортання вкладених наборів */
+  kitDishCount: number;
+  /** Повні порції з урахуванням вкладених наборів */
   kitPortionCount: number;
   packageRatioInvalid: boolean;
   weightFieldInvalid: boolean;
@@ -155,6 +158,7 @@ export function BomSection({
   isGood,
   isKit,
   isAdmin,
+  kitDishCount,
   kitPortionCount,
   packageRatioInvalid,
   weightFieldInvalid,
@@ -651,7 +655,7 @@ export function BomSection({
             {components.length > 0 && (
               <span className="font-normal text-default-400">
                 {isKit
-                  ? `(${components.length} поз. / ${kitPortionCount} ${pluralize(kitPortionCount, 'страва', 'страви', 'страв')})`
+                  ? `(${components.length} поз. / ${kitDishCount} ${pluralize(kitDishCount, 'страва', 'страви', 'страв')} / ${kitPortionCount} ${pluralize(kitPortionCount, 'порція', 'порції', 'порцій')})`
                   : `(${components.length} поз.)`}
               </span>
             )}
@@ -858,6 +862,9 @@ export function BomSection({
 }
 
 export function newBomRowFromSearch(hit: CatalogSearchHit, mainUnitId: string): BomRow {
+  const nestedFromKit = Number(hit.kitPortionCount);
+  const componentNestedPortionCount =
+    Number.isFinite(nestedFromKit) && nestedFromKit > 0 ? nestedFromKit : 1;
   return {
     componentGoodId: hit.id,
     componentName: hit.name,
@@ -867,6 +874,7 @@ export function newBomRowFromSearch(hit: CatalogSearchHit, mainUnitId: string): 
     note: '',
     componentWeight: hit.weight ?? null,
     componentAccPolicyId: hit.accPolicyId ?? null,
+    componentNestedPortionCount,
     componentCategoryName: hit.parentName ?? null,
     cookingLossPercent: 0,
   };

@@ -320,7 +320,7 @@ HTML для WC збирає `StorefrontDescriptionBuilder.resolveDescriptionDocH
 
 **Bulk pull** — до 50 товарів: матриця полів (`name`, короткий опис, storefront doc, склад, КБЖВ, вага, ціна, не публікувати, **категорія**, **зображення**), tooltip конфліктів BO↔WC, дії `pull` / `skip` / `create_on_wc`.
 
-Pull парсить WC HTML/meta через `storefrontDescriptionParser` → `storefrontDescriptionDoc`, склад, КБЖВ, **назва**, ціни; короткий опис — з `short_description` або маркетингового абзаца. Push відправляє **назву**, опис, meta, status, **категорію** (група BO). Після sync оновлюються `wooProductId`, `wooLastSyncedAt`; зображення — `catalog_good_images.wooMediaId`.
+Pull парсить WC HTML/meta через `storefrontDescriptionParser` → `storefrontDescriptionDoc`, склад, КБЖВ, **назва**, ціни; короткий опис — з `short_description` або маркетингового абзаца. Push відправляє **назву**, короткий/повний опис, meta, status, **вагу**, **роздрібну ціну** (`regular_price`), **категорію** (група BO); зображення — окремим кроком після create/update. Після sync оновлюються `wooProductId`, `wooLastSyncedAt`; зображення — `catalog_good_images.wooMediaId`.
 
 **Typography при pull:** `normalizeWcTypography` замінює довге тире (—) на коротке (–) у текстових вузлах doc, HTML override блоків і template-полях (`normalizeWcTypographyInStorefrontDoc`).
 
@@ -375,6 +375,8 @@ Pull парсить WC HTML/meta через `storefrontDescriptionParser` → `s
   descriptionHtml: string;
   weight: number | null;
   grossWeightKg: number | null;
+  regularPrice: string | null;  // → WC regular_price (Роздріб, інакше Звичайна)
+  categoryName: string | null;
   meta: Record<string, string>;  // WC meta keys → values
 }
 ```

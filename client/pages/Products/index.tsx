@@ -822,6 +822,7 @@ export default function ProductsPage() {
           weight?: number | null;
           accPolicyId?: string | null;
           parentName?: string | null;
+          kitPortionCount?: number | null;
         }) => ({
           id: r.id,
           name: r.name,
@@ -829,6 +830,7 @@ export default function ProductsPage() {
           weight: r.weight ?? null,
           accPolicyId: r.accPolicyId ?? null,
           parentName: r.parentName ?? null,
+          kitPortionCount: r.kitPortionCount ?? null,
         }));
     },
     []

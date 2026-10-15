@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-10-16 — Каталог: порції вкладених наборів + WC regular_price
+
+**Files:** `catalogKitPortions.ts`, `ProductsCatalogService.ts`, `ProductsUtils.ts`, `BomSection.tsx`, `ProductDrawer.tsx`, `WooCommerceSyncService.ts`, `StorefrontDescriptionBuilder.ts`, `resolveStorefrontRegularPrice.ts`, docs
+
+- Склад комплекту: страви vs повні порції (рекурсія вкладених наборів); військова ціна від порцій.
+- Push на WC надсилає роздрібну ціну (`regular_price`: Роздріб ІМ, інакше Звичайна).
+
+**Документація:** [`products-catalog-2.0.md`](features/products-catalog-2.0.md), [`woocommerce-storefront-phase1.md`](features/woocommerce-storefront-phase1.md).
+
+---
+
 ## 2026-10-15 — Партії: типи, мінуси, віртуальні, рухи
 
 **Files:** `WarehouseBatchesService.ts`, `WarehouseController.ts`, `WarehouseBatches/*`, `shared/types/warehouse.ts`, `Docs/features/warehouse-batches.md`

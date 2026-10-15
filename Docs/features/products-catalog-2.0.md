@@ -326,6 +326,8 @@ client/pages/Products/
   - **Продукція** — сортування колонок (назва, втрати, qty, од. вим.) + опційне **ручне сортування** перетягуванням (`bomSectionSort.ts`, `@hello-pangea/dnd`).
   - **Продукція** — **«Друк техкарти»** → `TechCardModal`: розрахунок на N порцій, нетто/брутто з урахуванням втрат, експорт PDF/Excel, друк (`buildTechCardRows` у `ProductsUtils.ts`).
   - **Товарні набори** — «Склад комплекту»; qty `StepperInput`; **без** примітки та втрат (`note: null` у save).
+  - **Підрахунок у заголовку складу:** `N поз. / X страв / Y порцій`. **Страви** = сума `qty` прямих позицій; **порції** = рекурсивно через вкладені набори (`catalogKitPortions`, `componentNestedPortionCount` з detail/search). Рецептура страви не розгортається.
+  - **Військова ціна** набору: `основа − 5 × Y порцій` (`expectedMilitaryPrice` / `withSyncedDerivedPrices`), не від кількості страв.
 - **Зворотний BOM** (`UsedInSection`, лише edit, між BOM і цінами):
   - **Інгредієнт** (`other`) — «Використовується в стравах» (`GET …/used-in?scope=products`).
   - **Продукція** (`good`) — «Використовується в комплектах» (`scope=kits`).

@@ -50,6 +50,8 @@ export interface CatalogSearchHit {
   accPolicyId?: string | null;
   /** Батьківська папка компонента в каталозі */
   parentName?: string | null;
+  /** Повні порції набору (рекурсивно); для не-наборів відсутнє */
+  kitPortionCount?: number | null;
 }
 
 export interface BomRow {
@@ -64,6 +66,11 @@ export interface BomRow {
   /** Вага компонента з картки, кг */
   componentWeight: number | null;
   componentAccPolicyId: string | null;
+  /**
+   * Порцій у компоненті: 1 для страви, розгорнутий підрахунок для вкладеного набору.
+   * Джерело — detail/search API (`componentNestedPortionCount` / `kitPortionCount`).
+   */
+  componentNestedPortionCount: number;
   /** % втрат при готуванні (0–100) */
   cookingLossPercent: number;
   /** Батьківська папка компонента в каталозі */

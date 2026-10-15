@@ -66,6 +66,7 @@ import { StockBadge } from '@/components/StockBadge';
 import {
   areRequiredCatalogPricesFilled,
   buildTechCardRows,
+  catalogKitDishCount,
   catalogKitPortionCount,
   catalogMainPrice,
   catalogNameContainsWeight,
@@ -285,6 +286,7 @@ export function ProductDrawer({
   const isOther = objectKind === 'other';
   /** BOM видимий для комплекту («Склад») і продукції («Специфікація») */
   const showBom = isKit || isGood;
+  const kitDishCount = useMemo(() => catalogKitDishCount(components), [components]);
   const kitPortionCount = useMemo(() => catalogKitPortionCount(components), [components]);
   const currentStackGoodIds = useMemo(() => {
     const ids = [...stackGoodIds];
@@ -346,6 +348,34 @@ export function ProductDrawer({
           : row
       )
     );
+    // Після зміни складу вкладеного набору — підтягнути актуальну кількість порцій
+    if (!input.components) return;
+    void fetchCatalogGoodDetail(id, { livePull: false })
+      .then((fresh) => {
+        const nestedCount = catalogKitPortionCount(
+          (fresh.components || []).map((c) => ({
+            qty: c.qty,
+            componentNestedPortionCount: c.componentNestedPortionCount ?? 1,
+          }))
+        );
+        const nextNested = nestedCount > 0 ? nestedCount : 1;
+        setComponents((prev) => {
+          let changed = false;
+          const next = prev.map((row) => {
+            if (row.componentGoodId !== id) return row;
+            if (row.componentNestedPortionCount === nextNested) return row;
+            changed = true;
+            return { ...row, componentNestedPortionCount: nextNested };
+          });
+          if (changed) {
+            pendingMilitarySyncRef.current = catalogKitPortionCount(next);
+          }
+          return changed ? next : prev;
+        });
+      })
+      .catch(() => {
+        /* ignore — локальна назва/вага вже оновлені */
+      });
   }, []);
 
   const handleMoveParenthesesToNote = useCallback(
@@ -593,18 +623,22 @@ export function ProductDrawer({
         if (firstOther) setOtherAccPolicyId(firstOther.id);
       }
       setShowPrintName(Boolean(detail.printName?.trim()));
-      const nextComponents = detail.components.map((c) => ({
-        componentGoodId: c.componentGoodId,
-        componentName: c.componentName || c.componentGoodId,
-        componentSku: c.componentSku ?? null,
-        qty: c.qty,
-        unitId: c.unitId ?? '',
-        note: c.note || '',
-        componentWeight: c.componentWeight ?? null,
-        componentAccPolicyId: c.componentAccPolicyId ?? null,
-        componentCategoryName: c.componentCategoryName ?? null,
-        cookingLossPercent: c.cookingLossPercent ?? 0,
-      }));
+      const nextComponents = detail.components.map((c) => {
+        const nested = Number(c.componentNestedPortionCount);
+        return {
+          componentGoodId: c.componentGoodId,
+          componentName: c.componentName || c.componentGoodId,
+          componentSku: c.componentSku ?? null,
+          qty: c.qty,
+          unitId: c.unitId ?? '',
+          note: c.note || '',
+          componentWeight: c.componentWeight ?? null,
+          componentAccPolicyId: c.componentAccPolicyId ?? null,
+          componentNestedPortionCount: Number.isFinite(nested) && nested > 0 ? nested : 1,
+          componentCategoryName: c.componentCategoryName ?? null,
+          cookingLossPercent: c.cookingLossPercent ?? 0,
+        };
+      });
       const nextPrices = detail.prices.map((p) => ({
         priceType: p.priceType,
         price: p.price,
@@ -1362,6 +1396,7 @@ export function ProductDrawer({
                             isGood={isGood}
                             isKit={isKit}
                             isAdmin={isAdmin}
+                            kitDishCount={kitDishCount}
                             kitPortionCount={kitPortionCount}
                             packageRatioInvalid={packageRatioInvalid}
                             weightFieldInvalid={weightInvalid}

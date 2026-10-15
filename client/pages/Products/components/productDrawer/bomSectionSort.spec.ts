@@ -22,6 +22,7 @@ function row(partial: Partial<BomRow> & Pick<BomRow, 'componentName'>): BomRow {
     note: partial.note ?? '',
     componentWeight: partial.componentWeight ?? null,
     componentAccPolicyId: partial.componentAccPolicyId ?? null,
+    componentNestedPortionCount: partial.componentNestedPortionCount ?? 1,
     cookingLossPercent: partial.cookingLossPercent ?? 0,
   };
 }

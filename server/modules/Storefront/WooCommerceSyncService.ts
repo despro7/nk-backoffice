@@ -10,6 +10,7 @@ import {
   CATALOG_PRICE_TYPE_RETAIL_ID,
 } from '../../../shared/types/catalog.js';
 import { productsDilovodGateway } from '../Products/ProductsDilovodGateway.js';
+import { resolveStorefrontRegularPrice } from './resolveStorefrontRegularPrice.js';
 import type {
   StorefrontDescriptionDoc,
   StorefrontDryRunPushPayload,
@@ -171,16 +172,6 @@ function resolveWooRegularPrice(product: {
   const parsed = Number.parseFloat(raw.replace(',', '.'));
   if (!Number.isFinite(parsed) || parsed < 0) return null;
   return String(parsed);
-}
-
-function resolveStorefrontRegularPrice(
-  prices: Array<{ priceType: string; price: number }>,
-): string | null {
-  const retail = prices.find((row) => row.priceType === CATALOG_PRICE_TYPE_RETAIL_ID);
-  if (retail != null && retail.price > 0) return String(retail.price);
-  const regular = prices.find((row) => row.priceType === CATALOG_PRICE_TYPE_REGULAR_ID);
-  if (regular != null && regular.price > 0) return String(regular.price);
-  return null;
 }
 
 const BULK_PULL_MAX_ITEMS = 50;
@@ -631,6 +622,9 @@ export class WooCommerceSyncService {
       weight: payload.weight != null ? String(payload.weight) : '',
       meta_data,
     };
+    if (payload.regularPrice != null && payload.regularPrice !== '') {
+      result.regular_price = payload.regularPrice;
+    }
     const categoryId = await wooCommerceCategoryService.resolveCategoryId(client, payload.categoryName);
     if (categoryId != null) {
       result.categories = [{ id: categoryId }];

@@ -121,6 +121,11 @@ export interface CatalogGoodDto {
   /** Has BOM or kit accPolicy */
   isKit?: boolean;
   childrenCount?: number;
+  /**
+   * Повна кількість порцій у наборі (рекурсивно через вкладені набори).
+   * Для не-наборів зазвичай не заповнюється.
+   */
+  kitPortionCount?: number | null;
   /** Обовʼязкові поля, яких бракує (продукція / набір). */
   missingRequired?: CatalogMissingRequired;
 }
@@ -162,6 +167,11 @@ export interface CatalogGoodComponentDto {
   componentWeight?: number | null;
   /** Політика обліку компонента (щоб відрізняти інгредієнти від продукції) */
   componentAccPolicyId?: string | null;
+  /**
+   * Порцій у цьому компоненті: 1 для страви, повний розгорнутий підрахунок для вкладеного набору.
+   * Використовується для військової ціни та підпису «N порцій» у складі комплекту.
+   */
+  componentNestedPortionCount?: number | null;
   qty: number;
   rowNum: number;
   /** Dilovod tpGoods.rowID (локальний кеш для save) */

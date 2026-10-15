@@ -80,6 +80,7 @@ vi.mock('./StorefrontDescriptionBuilder.js', () => ({
       shortDescription: 'short',
       descriptionHtml: '<p>desc</p>',
       weight: 0.3,
+      regularPrice: '85',
       meta: {},
       categoryName: 'Другі страви',
     }),
@@ -845,7 +846,10 @@ describe('WooCommerceSyncService', () => {
 
     expect(getProductById).toHaveBeenCalledWith(77);
     expect(getProductBySku).not.toHaveBeenCalled();
-    expect(updateProduct).toHaveBeenCalledWith(77, expect.objectContaining({ name: 'Товар' }));
+    expect(updateProduct).toHaveBeenCalledWith(
+      77,
+      expect.objectContaining({ name: 'Товар', regular_price: '85' }),
+    );
     expect(result).toMatchObject({ wooProductId: 77, created: false });
   });
 

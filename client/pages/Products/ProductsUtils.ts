@@ -879,10 +879,28 @@ export function resolveCatalogItemLabels(
   });
 }
 
-export function catalogKitPortionCount(components: Array<{ qty: number }>): number {
+/** Кількість «страв» у наборі: сума qty прямих позицій (без розгортання вкладених наборів). */
+export function catalogKitDishCount(components: Array<{ qty: number }>): number {
   return components.reduce((sum, c) => {
     const q = Number(c.qty);
     return sum + (Number.isFinite(q) ? q : 0);
+  }, 0);
+}
+
+/**
+ * Повна кількість порцій у наборі.
+ * Для вкладеного набору множимо qty на `componentNestedPortionCount` (розгорнуті порції всередині).
+ * Страва / не-набір → nested = 1.
+ */
+export function catalogKitPortionCount(
+  components: Array<{ qty: number; componentNestedPortionCount?: number | null }>
+): number {
+  return components.reduce((sum, c) => {
+    const q = Number(c.qty);
+    if (!Number.isFinite(q)) return sum;
+    const nested = Number(c.componentNestedPortionCount);
+    const perUnit = Number.isFinite(nested) && nested > 0 ? nested : 1;
+    return sum + q * perUnit;
   }, 0);
 }
 
@@ -1199,7 +1217,7 @@ export function buildTechCardRows(
   };
 }
 
-/** Військові: основа − 5 грн × порції набору; звичайний товар — основа − 5 грн. */
+/** Військові: основа − 5 грн × повні порції набору (з вкладеними); звичайний товар — основа − 5 грн. */
 export function expectedMilitaryPrice(
   mainPrice: number,
   isKit: boolean,

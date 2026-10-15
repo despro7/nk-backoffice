@@ -163,6 +163,8 @@ export interface StorefrontDryRunPushPayload {
   descriptionHtml: string;
   weight: number | null;
   grossWeightKg: number | null;
+  /** Роздрібна (ІМ) або звичайна ціна → WC `regular_price` */
+  regularPrice: string | null;
   /** Назва батьківської групи в BO → категорія WooCommerce */
   categoryName: string | null;
   meta: Record<string, string>;
