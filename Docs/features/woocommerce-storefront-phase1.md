@@ -395,6 +395,8 @@ Status `draft`: `doNotPublish` або товар у папці «Архів – 
 | meta-storage | Зберігання | `_nk_storage` |
 | meta-gross-weight | Маса брутто | `_nk_gross_weight` |
 
+Окремо при **push комплектів** (не з реєстру metaKeys): `_total_quantity_portions` — повна кількість порцій (рекурсивно через вкладені набори).
+
 ---
 
 ## Тести

@@ -40,6 +40,7 @@ import {
   type StorefrontPlaceholderValues,
   type StorefrontRenderOptions,
 } from '../../../shared/utils/storefrontDescription.js';
+import { computeKitPortionCountsByGoodId } from '../Products/computeKitPortionCountsByGoodId.js';
 import { productsDilovodGateway } from '../Products/ProductsDilovodGateway.js';
 import { storefrontService } from './StorefrontService.js';
 
@@ -130,6 +131,14 @@ export class StorefrontDescriptionBuilder {
       if (!resolved) continue;
       const value = extractBlockMetaValue(blockConfig, resolved, resolveCtx);
       if (value) meta[wcMetaKey] = value;
+    }
+
+    if (loaded.isKit) {
+      const portionById = await computeKitPortionCountsByGoodId([loaded.good.id]);
+      const portions = portionById.get(loaded.good.id) ?? 0;
+      if (portions > 0) {
+        meta[STOREFRONT_WC_META.totalQuantityPortions] = String(portions);
+      }
     }
 
     return {

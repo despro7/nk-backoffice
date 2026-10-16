@@ -328,6 +328,7 @@ client/pages/Products/
   - **Товарні набори** — «Склад комплекту»; qty `StepperInput`; **без** примітки та втрат (`note: null` у save).
   - **Підрахунок у заголовку складу:** `N поз. / X страв / Y порцій`. **Страви** = сума `qty` прямих позицій; **порції** = рекурсивно через вкладені набори (`catalogKitPortions`, `componentNestedPortionCount` з detail/search). Рецептура страви не розгортається.
   - **Військова ціна** набору: `основа − 5 × Y порцій` (`expectedMilitaryPrice` / `withSyncedDerivedPrices`), не від кількості страв.
+  - **Push WC:** meta `_total_quantity_portions` = Y (повні порції комплекту).
 - **Зворотний BOM** (`UsedInSection`, лише edit, між BOM і цінами):
   - **Інгредієнт** (`other`) — «Використовується в стравах» (`GET …/used-in?scope=products`).
   - **Продукція** (`good`) — «Використовується в комплектах» (`scope=kits`).

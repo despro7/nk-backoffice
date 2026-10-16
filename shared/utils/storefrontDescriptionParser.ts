@@ -28,10 +28,12 @@ function metaValueToString(value: unknown): string {
   }
 }
 
+const KNOWN_STOREFRONT_META_KEYS = new Set<string>(Object.values(STOREFRONT_WC_META));
+
 function extractNkMeta(product: WooCommerceProduct): Record<string, string> {
   const result: Record<string, string> = {};
   for (const row of product.meta_data || []) {
-    if (!row.key.startsWith('_nk_')) continue;
+    if (!row.key.startsWith('_nk_') && !KNOWN_STOREFRONT_META_KEYS.has(row.key)) continue;
     result[row.key] = metaValueToString(row.value);
   }
   return result;
@@ -377,6 +379,7 @@ export function summarizeWcProduct(product: WooCommerceProduct): {
   const nkMeta = extractNkMeta(product);
   const unknownMeta: Array<{ key: string; value: string }> = [];
   for (const row of product.meta_data || []) {
+    if (nkMeta[row.key] != null) continue;
     if (row.key.startsWith('_') && !row.key.startsWith('_nk_')) continue;
     if (row.key.startsWith('_nk_')) continue;
     const value = metaValueToString(row.value);

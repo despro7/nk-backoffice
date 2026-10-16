@@ -370,10 +370,8 @@ function ComparisonTable({
   const gridClass = showApplyStatus ? COMPARISON_TABLE_GRID.full : COMPARISON_TABLE_GRID.summary;
 
   return (
-    <section
-      className={embedded ? undefined : 'rounded-md border border-default-200 overflow-hidden'}
-    >
-      <div className="bg-default-100 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-default-500">
+    <section className={embedded ? undefined : 'rounded-md border border-default-200 overflow-y-auto scrollbar-thin-transparent'}>
+      <div className="bg-default-100 px-4 py-2 mt-2.5 text-xs rounded-sm font-semibold uppercase tracking-wide text-default-500">
         <div className={gridClass}>
           <span>Поле</span>
           {showApplyStatus ? (
@@ -639,7 +637,7 @@ export function StorefrontPullConfirmModal({
             )}
           </ModalHeader>
 
-          <ModalBody className="gap-5">
+          <ModalBody className="gap-5 scrollbar-thin-transparent px-3.5">
             {loading && (
               <div className="flex items-center justify-center py-10 text-default-500">
                 <Spinner size="sm" />

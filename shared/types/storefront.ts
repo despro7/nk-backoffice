@@ -9,6 +9,8 @@ export const STOREFRONT_WC_META = {
   storage: '_nk_storage',
   grossWeight: '_nk_gross_weight',
   mainProductWeight: '_nk_main_product_weight',
+  /** Повна кількість порцій у товарному наборі (рекурсивно) */
+  totalQuantityPortions: '_total_quantity_portions',
 } as const;
 
 /** Built-in block ids for default preset seed */
