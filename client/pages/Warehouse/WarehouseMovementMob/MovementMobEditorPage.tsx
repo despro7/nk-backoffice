@@ -600,17 +600,19 @@ export default function MovementMobEditorPage({
     try {
       const previous = linesRef.current;
       const receiving = ((canReceive || canReceiverEdit) && !adminCanEdit) || editingReceived;
-      const newKey = movementMobLineKey(current.sku, current.batchId, current.batchNumber);
-      const existing = findMovementMobLine(previous, current.sku, current.batchId, current.batchNumber)
+      // Партія завжди з draft (користувач міг змінити її в picker).
+      // Не брати batchId з existing за editingLineKey — інакше заміна партії відкочується.
+      const resolvedBatchId = current.batchId;
+      const resolvedBatchNumber = current.batchNumber || '—';
+      const resolvedKey = movementMobLineKey(current.sku, resolvedBatchId, resolvedBatchNumber);
+      // existing — лише для qty/received; партію з нього більше не читаємо.
+      const existing = findMovementMobLine(previous, current.sku, resolvedBatchId, resolvedBatchNumber)
         ?? (receiving
-          ? findSentLineForScan(previous, current.sku, current.batchId, current.batchNumber)
-          : previous.find((line) => line.key === newKey))
+          ? findSentLineForScan(previous, current.sku, resolvedBatchId, resolvedBatchNumber)
+          : undefined)
         ?? (current.editingLineKey
           ? previous.find((line) => line.key === current.editingLineKey)
           : undefined);
-      const resolvedKey = existing?.key ?? newKey;
-      const resolvedBatchId = existing?.batchId ?? current.batchId;
-      const resolvedBatchNumber = existing?.batchNumber ?? (current.batchNumber || '—');
       const incoming: MovementMobProductLineViewModel = current.dualQtyMode
         ? {
           key: resolvedKey,
@@ -834,9 +836,10 @@ export default function MovementMobEditorPage({
   const handleBatchSelect = useCallback(async (batch: MovementMobBatchRow) => {
     const current = draftRef.current;
     if (!current) return;
-    setBatchPickerOpen(false);
+    const nextBatchId = batch.batchId;
+    const nextBatchNumber = batch.batchNumber || batch.batchId;
     try {
-      const barcodeInfo = await fetchBarcodeForBatch(apiCall, current.sku, batch.batchId);
+      const barcodeInfo = await fetchBarcodeForBatch(apiCall, current.sku, nextBatchId);
       const stocks = await fetchMovementMobStocks(
         apiCall,
         current.sku,
@@ -844,12 +847,14 @@ export default function MovementMobEditorPage({
         destIdRef.current,
       );
       const portionsPerBox = current.portionsPerBox > 0 ? current.portionsPerBox : 0;
+      // Беремо актуальний draft після await (кількість могла змінитись у stepper).
+      const latest = draftRef.current ?? current;
       setDraft({
-        ...current,
-        batchId: batch.batchId,
-        batchNumber: barcodeInfo.batchNumber || batch.batchNumber || batch.batchId,
-        barcode: barcodeInfo.barcode ?? current.barcode,
-        barcodeKind: barcodeInfo.barcodeKind ?? current.barcodeKind,
+        ...latest,
+        batchId: nextBatchId,
+        batchNumber: barcodeInfo.batchNumber || nextBatchNumber,
+        barcode: barcodeInfo.barcode ?? latest.barcode,
+        barcodeKind: barcodeInfo.barcodeKind ?? latest.barcodeKind,
         sourceStock: breakdownStockPortions(stocks.sourcePortions, portionsPerBox),
         destStock: breakdownStockPortions(stocks.destPortions, portionsPerBox),
       });
@@ -860,6 +865,9 @@ export default function MovementMobEditorPage({
         description: err instanceof Error ? err.message : undefined,
         color: 'danger',
       });
+    } finally {
+      // Після застосування — щоб click не пробив ScanDrawer.
+      requestAnimationFrame(() => setBatchPickerOpen(false));
     }
   }, [apiCall, queryClient]);
 

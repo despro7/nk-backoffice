@@ -176,7 +176,7 @@ Lookup: `GET /api/warehouse/product-by-barcode?code=…` → `WarehouseProductBy
 
 ## Drawer кількості (`MovementMobScanDrawer`)
 
-`BottomSheet` (`client/components/motion/bottom-sheet.tsx`): snap `auto`, lock скролу body через `position: fixed` (інакше iOS Safari прокручує сторінку під sheet).
+`BottomSheet` (`client/components/motion/bottom-sheet.tsx`): snap `auto`, lock скролу body через `position: fixed` (інакше iOS Safari прокручує сторінку під sheet). Вкладений picker партії (`MovementMobBatchPickerSheet`) ділить той самий lock (refcount) і вищий z-index; backdrop під час exit лишає `pointer-events`, щоб клік вибору не закривав ScanDrawer і не залишав `overflow` на body.
 
 Усередині:
 
@@ -193,7 +193,7 @@ Lookup: `GET /api/warehouse/product-by-barcode?code=…` → `WarehouseProductBy
 
 Редагування рядка відкриває той самий drawer; `barcode` / `barcodeKind` їдуть у `MovementMobRawItem` через `serializeMobDraftItems` / `buildProductLines`, інакше ШК у drawer зникав після збереження.
 
-Підтвердження: `replaceMovementMobLine` (кількість з drawer замінює рядок, не сумується повторно).
+Підтвердження: `replaceMovementMobLine` (кількість з drawer замінює рядок, не сумується повторно). `batchId` / `batchNumber` завжди з draft (після ↻ picker) — не брати зі старого рядка за `editingLineKey`, інакше заміна партії відкочується; старий key видаляється, якщо змінився.
 
 ---
 

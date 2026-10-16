@@ -446,13 +446,16 @@ export default function ReleaseComponentBatchesPanel({
   };
 
   const handleBatchSelect = async (batch: BatchNumber) => {
-    if (!activeSku) return;
+    // Фіксуємо до будь-якого await — onClose/rAF не повинен зіпсувати replace.
+    const sku = activeSku;
+    const editIdx = editingBatchIndex;
+    if (!sku) return;
 
-    const current = [...(allocationMap.get(activeSku) ?? [])];
-    const component = components.find((row) => row.sku === activeSku);
-    const barcode = await fetchBarcodeForBatch(activeSku, batch.batchId);
+    const current = [...(allocationMap.get(sku) ?? [])];
+    const component = components.find((row) => row.sku === sku);
+    const barcode = await fetchBarcodeForBatch(sku, batch.batchId);
     const duplicate = current.some(
-      (item, index) => index !== editingBatchIndex && item.batchId === batch.batchId,
+      (item, index) => index !== editIdx && item.batchId === batch.batchId,
     );
     if (duplicate) {
       ToastService.show({
@@ -461,13 +464,15 @@ export default function ReleaseComponentBatchesPanel({
         color: 'warning',
       });
       setIsDrawerOpen(false);
+      setEditingBatchIndex(null);
+      setActiveSku(null);
       return;
     }
 
     const batchStock = allowNegativeBatches
       ? Number(batch.quantity ?? 0)
       : Math.max(0, Number(batch.quantity ?? 0));
-    const isNewBatch = editingBatchIndex === -1 || editingBatchIndex === null;
+    const isNewBatch = editIdx === -1 || editIdx === null;
 
     if (isNewBatch) {
       const otherAllocated = getOtherAllocatedQuantity(current, -1);
@@ -488,8 +493,8 @@ export default function ReleaseComponentBatchesPanel({
         batchStock,
         barcode: barcode ?? undefined,
       });
-    } else if (editingBatchIndex !== null) {
-      const otherAllocated = getOtherAllocatedQuantity(current, editingBatchIndex);
+    } else {
+      const otherAllocated = getOtherAllocatedQuantity(current, editIdx);
       const maxQuantity = component
         ? getBatchQuantityMax(
           { batchId: batch.batchId, quantity: 0, batchStock },
@@ -500,10 +505,10 @@ export default function ReleaseComponentBatchesPanel({
           isCorrectionUnkitStep,
         )
         : Math.max(0, batchStock);
-      const previousQuantity = Number(current[editingBatchIndex]?.quantity ?? 0);
+      const previousQuantity = Number(current[editIdx]?.quantity ?? 0);
 
-      current[editingBatchIndex] = {
-        ...current[editingBatchIndex],
+      current[editIdx] = {
+        ...current[editIdx],
         batchId: batch.batchId,
         batchNumber: batch.batchNumber,
         batchStock,
@@ -512,7 +517,7 @@ export default function ReleaseComponentBatchesPanel({
       };
     }
 
-    updateSkuBatches(activeSku, current);
+    updateSkuBatches(sku, current);
     setIsDrawerOpen(false);
     setEditingBatchIndex(null);
     setActiveSku(null);
@@ -646,9 +651,14 @@ export default function ReleaseComponentBatchesPanel({
 
   const addedBatchKeys = new Set<string>();
   if (activeSku) {
-    for (const batch of allocationMap.get(activeSku) ?? []) {
+    const rows = allocationMap.get(activeSku) ?? [];
+    rows.forEach((batch, index) => {
+      // Поточну редаговану партію можна «замінити» на іншу — не блокуємо її ключ як «вже додано».
+      if (editingBatchIndex !== null && editingBatchIndex !== -1 && index === editingBatchIndex) {
+        return;
+      }
       addedBatchKeys.add(`${batch.batchId}:${storageId ?? ''}`);
-    }
+    });
   }
 
   const showBulkFillActions = correctionMode

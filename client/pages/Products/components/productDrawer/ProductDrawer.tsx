@@ -1155,6 +1155,9 @@ export function ProductDrawer({
   const handleBatchSelect = (batch: BatchNumber) => {
     if (batchPickerIdx == null) return;
     const idx = batchPickerIdx;
+    const label =
+      sanitizeStoredBatchName(batch.batchNumber, batch.batchId)
+      || String(batch.batchNumber || '').trim();
     setBarcodes((prev) =>
       prev.map((row, i) =>
         i === idx
@@ -1162,12 +1165,12 @@ export function ProductDrawer({
               ...row,
               goodPart: batch.batchId,
               // Не зберігати raw Dilovod id як «назву» партії
-              goodPartName: sanitizeStoredBatchName(batch.batchNumber, batch.batchId),
+              goodPartName: label,
             }
           : row
       )
     );
-    setBatchPickerIdx(null);
+    // Закриття picker — через BatchNumbersAutocomplete (await + rAF).
   };
 
   const units = useMemo(
@@ -1947,28 +1950,29 @@ export function ProductDrawer({
         }}
         onCancel={() => setGenerateReplace(null)}
       />
-      {batchPickerIdx != null && (
-        <BatchNumbersAutocomplete
-          batches={batches}
-          isOpen={batchPickerIdx != null}
-          isLoading={batchesLoading}
-          selectedBatch={barcodes[batchPickerIdx]?.goodPartName || ''}
-          selectedStorage=""
-          includeAllStorages
-          onSelect={handleBatchSelect}
-          onClose={() => setBatchPickerIdx(null)}
-          onRefresh={() => {
-            const sku = form.sku.trim();
-            if (sku) {
-              void fetchBatches(sku, undefined, undefined, true, undefined, {
-                includeSmallStorage: true,
-              });
-            }
-          }}
-          inputRef={batchInputRef}
-          overlayZClassName={overlayZ}
-        />
-      )}
+      <BatchNumbersAutocomplete
+        batches={batches}
+        isOpen={batchPickerIdx != null}
+        isLoading={batchesLoading}
+        selectedBatch={
+          batchPickerIdx != null ? barcodes[batchPickerIdx]?.goodPartName || '' : ''
+        }
+        selectedStorage=""
+        includeAllStorages
+        shouldBlockScroll={false}
+        onSelect={handleBatchSelect}
+        onClose={() => setBatchPickerIdx(null)}
+        onRefresh={() => {
+          const sku = form.sku.trim();
+          if (sku) {
+            void fetchBatches(sku, undefined, undefined, true, undefined, {
+              includeSmallStorage: true,
+            });
+          }
+        }}
+        inputRef={batchInputRef}
+        overlayZClassName={overlayZ}
+      />
     </>
   );
 }

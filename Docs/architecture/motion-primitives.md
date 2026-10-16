@@ -25,9 +25,9 @@
 
 Портал, backdrop, snap points (`0–1` або `"auto"`), dismiss свайпом униз.
 
-Скрол під sheet на iOS: `overflow: hidden` на body **недостатньо**. Поки відкрито: `position: fixed` + `top: -scrollY`, після закриття — відновити `window.scrollTo`.
+Скрол під sheet на iOS: `overflow: hidden` на body **недостатньо**. Поки відкрито: `position: fixed` + `top: -scrollY`, після закриття — відновити `window.scrollTo`. Вкладені sheet — **refcount** на цей lock (один unlock лише коли count → 0); Escape закриває лише верхній у стеку; z-index зростає з глибиною.
 
-Exit / a11y: `PresenceGate` (`client/lib/presence-gate.tsx`) — `inert` і `pointer-events: none` з першого кадру exit, поки візуал ще грає.
+Exit / a11y: `PresenceGate` (`client/lib/presence-gate.tsx`) — на **панелі** `inert` + `pointer-events: none` з першого кадру exit. **Backdrop** лишає `pointer-events: auto` під час exit і ігнорує dismiss, щоб клік не «пробив» нижній sheet / сторінку.
 
 ---
 

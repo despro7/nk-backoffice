@@ -5,7 +5,7 @@ import {
   useDragControls,
   useReducedMotion,
 } from "motion/react";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { SPRING_PANEL } from "@/lib/ease";
 import { PresenceGate } from "@/lib/presence-gate";
@@ -13,6 +13,88 @@ import { TOUCH_GESTURE_CONTENT_CLASS } from "@/lib/touch";
 import { cn } from "@/lib/utils";
 
 const DRAWER = SPRING_PANEL;
+
+/** Спільний lock для вкладених BottomSheet — без refcount скрол «залипає». */
+let bodyScrollLockCount = 0;
+let bodyScrollLockedY = 0;
+let bodyScrollPrev: {
+  position: string;
+  top: string;
+  left: string;
+  right: string;
+  overflow: string;
+} | null = null;
+
+function acquireBodyScrollLock(): void {
+  const body = document.body;
+  if (bodyScrollLockCount === 0) {
+    bodyScrollLockedY = window.scrollY;
+    bodyScrollPrev = {
+      position: body.style.position,
+      top: body.style.top,
+      left: body.style.left,
+      right: body.style.right,
+      overflow: body.style.overflow,
+    };
+    body.style.position = "fixed";
+    body.style.top = `-${bodyScrollLockedY}px`;
+    body.style.left = "0";
+    body.style.right = "0";
+    body.style.overflow = "hidden";
+  }
+  bodyScrollLockCount += 1;
+}
+
+function releaseBodyScrollLock(): void {
+  if (bodyScrollLockCount === 0) return;
+  bodyScrollLockCount -= 1;
+  if (bodyScrollLockCount > 0 || !bodyScrollPrev) return;
+  const body = document.body;
+  const prev = bodyScrollPrev;
+  const scrollY = bodyScrollLockedY;
+  bodyScrollPrev = null;
+  body.style.position = prev.position;
+  body.style.top = prev.top;
+  body.style.left = prev.left;
+  body.style.right = prev.right;
+  body.style.overflow = prev.overflow;
+  window.scrollTo(0, scrollY);
+}
+
+/** Escape закриває лише верхній sheet у стеку. */
+const escapeStack: Array<() => void> = [];
+
+function pushEscapeHandler(handler: () => void): void {
+  escapeStack.push(handler);
+}
+
+function popEscapeHandler(handler: () => void): void {
+  const idx = escapeStack.lastIndexOf(handler);
+  if (idx >= 0) escapeStack.splice(idx, 1);
+}
+
+function onDocumentEscape(event: KeyboardEvent): void {
+  if (event.key !== "Escape" || escapeStack.length === 0) return;
+  event.preventDefault();
+  escapeStack[escapeStack.length - 1]?.();
+}
+
+let escapeListenerCount = 0;
+
+function acquireEscapeListener(): void {
+  if (escapeListenerCount === 0) {
+    window.addEventListener("keydown", onDocumentEscape);
+  }
+  escapeListenerCount += 1;
+}
+
+function releaseEscapeListener(): void {
+  if (escapeListenerCount === 0) return;
+  escapeListenerCount -= 1;
+  if (escapeListenerCount === 0) {
+    window.removeEventListener("keydown", onDocumentEscape);
+  }
+}
 
 export interface BottomSheetProps {
   open: boolean;
@@ -48,6 +130,10 @@ export function BottomSheet({
   const uid = useId();
   const titleId = `${uid}-title`;
   const descriptionId = `${uid}-description`;
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+  /** Глибина у стеку відкритих sheet — для z-index вкладених. */
+  const [stackDepth, setStackDepth] = useState(0);
 
   useEffect(() => {
     setMounted(true);
@@ -61,41 +147,25 @@ export function BottomSheet({
   // iOS Safari — boundary scrolls inside the sheet chain to the page, which
   // scrolls underneath and ends up somewhere else on close. position:fixed
   // is the lock that actually holds; restore the scroll position after.
-  useEffect(() => {
+  // Refcount: вкладений sheet не перезаписує top/scrollY і не «краде» unlock.
+  useLayoutEffect(() => {
     if (!open) return;
-    const body = document.body;
-    const scrollY = window.scrollY;
-    const prev = {
-      position: body.style.position,
-      top: body.style.top,
-      left: body.style.left,
-      right: body.style.right,
-      overflow: body.style.overflow,
-    };
-    body.style.position = "fixed";
-    body.style.top = `-${scrollY}px`;
-    body.style.left = "0";
-    body.style.right = "0";
-    body.style.overflow = "hidden";
+    acquireBodyScrollLock();
+    setStackDepth(bodyScrollLockCount);
 
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onOpenChange(false);
-      }
+    const dismiss = () => {
+      onOpenChangeRef.current(false);
     };
-    window.addEventListener("keydown", onKey);
+    pushEscapeHandler(dismiss);
+    acquireEscapeListener();
 
     return () => {
-      window.removeEventListener("keydown", onKey);
-      body.style.position = prev.position;
-      body.style.top = prev.top;
-      body.style.left = prev.left;
-      body.style.right = prev.right;
-      body.style.overflow = prev.overflow;
-      window.scrollTo(0, scrollY);
+      popEscapeHandler(dismiss);
+      releaseEscapeListener();
+      releaseBodyScrollLock();
+      setStackDepth(0);
     };
-  }, [open, onOpenChange]);
+  }, [open]);
 
   const onDragEnd = (_: unknown, info: PanInfo) => {
     const velocity = info.velocity.y;
@@ -137,6 +207,10 @@ export function BottomSheet({
   // sheet against that ancestor instead of the viewport.
   if (!mounted) return null;
 
+  // z-index: базовий 50, кожен вкладений sheet вище — інакше backdrop нижнього
+  // ловить click-through після PresenceGate (pointer-events: none на exit).
+  const layerZ = 50 + Math.max(0, stackDepth - 1) * 10;
+
   // Two fixed siblings, no wrapper: the scrim spans the viewport edges but
   // carries a colour, and the sheet is pinned to the bottom, stops short of the
   // top edge at every snap point the component ships, and paints an opaque
@@ -147,7 +221,7 @@ export function BottomSheet({
     <AnimatePresence>
       {open ? (
         <PresenceGate key="backdrop">
-          {({ gate }) => (
+          {({ isPresent }) => (
             <motion.button
               type="button"
               aria-label="Close bottom sheet"
@@ -155,12 +229,17 @@ export function BottomSheet({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={DRAWER}
-              {...gate}
-              onClick={() => onOpenChange(false)}
+              // Backdrop лишає pointer-events під час exit, щоб клік вибору
+              // у вкладеному sheet не «пробив» нижній sheet / сторінку.
+              // Закриваємо лише поки sheet ще present.
+              style={{ pointerEvents: "auto", zIndex: layerZ }}
+              onClick={() => {
+                if (isPresent) onOpenChange(false);
+              }}
               // A dim scrim with a light blur. backdrop-blur is GPU-expensive and
               // re-rasterizes every frame the sheet drags over it; a small radius
               // plus more opacity keeps the glass look without the jank.
-              className="pointer-events-auto fixed inset-0 z-50 bg-background/40 backdrop-blur-sm"
+              className="pointer-events-auto fixed inset-0 bg-background/40 backdrop-blur-sm"
             />
           )}
         </PresenceGate>
@@ -186,9 +265,9 @@ export function BottomSheet({
                   heightRef.current = sheetRef.current.offsetHeight;
               }}
               {...gate}
-              style={{ ...heightStyle, ...gate.style }}
+              style={{ ...heightStyle, ...gate.style, zIndex: layerZ }}
               className={cn(
-                "pointer-events-auto fixed bottom-0 left-0 right-0 z-50 mx-auto flex max-w-2xl flex-col overflow-hidden rounded-t-2xl will-change-transform",
+                "pointer-events-auto fixed bottom-0 left-0 right-0 mx-auto flex max-w-2xl flex-col overflow-hidden rounded-t-2xl will-change-transform",
                 "border border-border bg-background shadow-xl",
                 className,
               )}

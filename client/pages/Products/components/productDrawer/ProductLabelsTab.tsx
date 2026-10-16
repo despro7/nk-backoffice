@@ -258,7 +258,7 @@ export function ProductLabelsTab({
   const handleBatchSelect = (batch: BatchNumber) => {
     setUserPickedBatch(true);
     setSelectedBatch(batch);
-    setBatchPickerOpen(false);
+    // Закриття — через BatchNumbersAutocomplete.closeAfterSelect (rAF).
   };
 
   const patchPayload = (patch: Partial<ProductLabelPayload>) => {
@@ -745,6 +745,7 @@ export function ProductLabelsTab({
         selectedBatch={selectedBatch?.batchId || ''}
         selectedStorage={selectedBatch?.storage || ''}
         includeAllStorages
+        shouldBlockScroll={false}
         onSelect={handleBatchSelect}
         onClose={() => setBatchPickerOpen(false)}
         onRefresh={() =>
@@ -752,6 +753,7 @@ export function ProductLabelsTab({
             includeSmallStorage: true,
           })
         }
+        overlayZClassName={overlayZClassName}
       />
 
       <ConfirmModal

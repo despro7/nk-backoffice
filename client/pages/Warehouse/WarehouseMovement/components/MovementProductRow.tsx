@@ -111,10 +111,10 @@ export const MovementProductRow = ({
 
   const handleBatchSelect = (batch: BatchNumber) => {
     isDrawerJustClosed.current = true;
-
+    const editIdx = editingBatchIndex;
     const newBatches = [...product.details.batches];
-    
-    if (editingBatchIndex === -1) {
+
+    if (editIdx === -1) {
       // Перевіряємо, чи ця партія (batchId + storage) вже є в списку
       const isDuplicate = newBatches.some(
         (b) => b.batchId === batch.batchId && b.storage === batch.storage,
@@ -128,8 +128,6 @@ export const MovementProductRow = ({
           hideIcon: false,
           timeout: 4000,
         });
-        setIsDrawerOpen(false);
-        setEditingBatchIndex(null);
         return;
       }
       // Додавання нової партії
@@ -143,10 +141,10 @@ export const MovementProductRow = ({
         portions: 0,
       };
       newBatches.push(newBatch);
-    } else if (editingBatchIndex !== null) {
+    } else if (editIdx !== null) {
       // Перевіряємо, чи обрана партія вже присутня під іншим індексом
       const isDuplicate = newBatches.some(
-        (b, i) => i !== editingBatchIndex && b.batchId === batch.batchId && b.storage === batch.storage,
+        (b, i) => i !== editIdx && b.batchId === batch.batchId && b.storage === batch.storage,
       );
       if (isDuplicate) {
         ToastService.show({
@@ -157,20 +155,22 @@ export const MovementProductRow = ({
           hideIcon: false,
           timeout: 4000,
         });
-        setIsDrawerOpen(false);
-        setEditingBatchIndex(null);
         return;
       }
       // Редагування існуючої партії — лише обновляємо пов'язану інформацію партії
-      newBatches[editingBatchIndex].batchId = batch.batchId;
-      newBatches[editingBatchIndex].batchNumber = batch.batchNumber;
-      newBatches[editingBatchIndex].storage = batch.storage;
-      newBatches[editingBatchIndex].quantity = batch.quantity;
+      newBatches[editIdx] = {
+        ...newBatches[editIdx],
+        batchId: batch.batchId,
+        batchNumber: batch.batchNumber,
+        storage: batch.storage,
+        quantity: batch.quantity,
+      };
+    } else {
+      return;
     }
 
     onChange(product.id, newBatches);
-    setIsDrawerOpen(false);
-    setEditingBatchIndex(null);
+    // Закриття drawer — через BatchNumbersAutocomplete (await + rAF).
 
     ToastService.show({
       title: 'Партія успішно додана',
@@ -487,29 +487,26 @@ export const MovementProductRow = ({
                 </div> */}
               </div>
 
-              {/* BatchNumbersAutocomplete — видно коли Drawer відкритий */}
-              {isDrawerOpen && (
-                <BatchNumbersAutocomplete
-                  batches={batches}
-                  isOpen={isDrawerOpen}
-                  isLoading={loading}
-                  selectedBatch={editingBatchIndex !== null && editingBatchIndex !== -1 ? product.details.batches[editingBatchIndex]?.batchNumber : ''}
-                  selectedStorage={editingBatchIndex !== null && editingBatchIndex !== -1 ? product.details.batches[editingBatchIndex]?.storage : ''}
-                  selectedDateTime={selectedDateTime}
-                  sourceStorageName={sourceStorageName}
-                  sourceStorage={sourceStorage}
-                  addedBatchKeys={new Set(
-                    product.details.batches
-                      .filter((_, i) => i !== editingBatchIndex)
-                      .map((b) => `${b.batchId}:${b.storage}`),
-                  )}
-                  portionsPerBox={!isSetProduct ? effectivePortionsPerBox : null}
-                  onSelect={handleBatchSelect}
-                  onClose={handleDrawerClose}
-                  onRefresh={handleRefreshBatches}
-                  inputRef={batchInputRef}
-                />
-              )}
+              <BatchNumbersAutocomplete
+                batches={batches}
+                isOpen={isDrawerOpen}
+                isLoading={loading}
+                selectedBatch={editingBatchIndex !== null && editingBatchIndex !== -1 ? product.details.batches[editingBatchIndex]?.batchNumber : ''}
+                selectedStorage={editingBatchIndex !== null && editingBatchIndex !== -1 ? product.details.batches[editingBatchIndex]?.storage : ''}
+                selectedDateTime={selectedDateTime}
+                sourceStorageName={sourceStorageName}
+                sourceStorage={sourceStorage}
+                addedBatchKeys={new Set(
+                  product.details.batches
+                    .filter((_, i) => i !== editingBatchIndex)
+                    .map((b) => `${b.batchId}:${b.storage}`),
+                )}
+                portionsPerBox={!isSetProduct ? effectivePortionsPerBox : null}
+                onSelect={handleBatchSelect}
+                onClose={handleDrawerClose}
+                onRefresh={handleRefreshBatches}
+                inputRef={batchInputRef}
+              />
             </div>
           </motion.section>
         )}

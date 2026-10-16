@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-10-16 — Movement Mob: nested sheet scroll + заміна партії
+
+**Files:** `bottom-sheet.tsx`, `BatchNumbersAutocomplete.tsx`, `MovementMobEditorPage.tsx`, `MovementProductRow.tsx`, `ReleaseComponentBatchesPanel.tsx`, `ProductDrawer.tsx`, `ProductLabelsTab.tsx`
+
+- Вкладені `BottomSheet`: refcount body scroll-lock, Escape лише верхній, backdrop глушить click-through на exit (інакше скрол «залипав»).
+- `BatchNumbersAutocomplete`: `await onSelect` перед закриттям; nested → `shouldBlockScroll={false}`.
+- `handleConfirm`: партія завжди з draft — не відкочувати `batchId` зі старого `editingLineKey`.
+
+**Документація:** [`warehouse-movement-mob.md`](features/warehouse-movement-mob.md), [`motion-primitives.md`](architecture/motion-primitives.md).
+
+---
+
 ## 2026-10-16 — Dilovod docs: Europe/Kyiv wall-clock скрізь
 
 **Files:** `kyivDateTime.ts`, `WarehousePayloadBuilder.ts`, `WarehouseMovementExport.ts`, `WarehouseController.ts`, `DilovodExportBuilder.ts`, `DilovodApiClient.ts`, `DilovodUtils.ts`, CashIn/BankStatement builders, ReturnsHistory, warehouse client formatters
