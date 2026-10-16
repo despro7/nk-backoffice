@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-10-16 — Kit-партія: reuse + обовʼязковий ТП
+
+**Files:** `DilovodApiClient.ts`, `WarehouseBatchesService.ts`, `kitBatchName.ts`, `ReleaseSendConfirmModal.tsx`, `SetReleaseController.ts`, `warehouse-release-sets.md`
+
+- Root cause SKU 07139: Dilovod `IN` на `goodParts.owner/code` → `bad filter item` → порожній пошук → create «K-… уже існує». Фікс: лише `=`.
+- Якщо в партій компонентів немає ТП — модалка запитує дату комплекту (`kitExpiration`); HeroUI `DatePicker` (`uk-UA`), локальний `DateValue` без string-roundtrip (інакше клавіатурний ввід року збиває день/місяць).
+
+**Документація:** [`warehouse-release-sets.md`](features/warehouse-release-sets.md).
+
+---
+
 ## 2026-10-16 — Комплектування: помилка Dilovod у модалці + meta_log
 
 **Files:** `SetReleaseController.ts`, `ReleaseSendConfirmModal.tsx`, `Docs/features/warehouse-release-sets.md`

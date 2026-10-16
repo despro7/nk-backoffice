@@ -95,7 +95,8 @@ export function canReuseKitBatchExpiration(
   requiredMinExpiration: string | null,
 ): boolean {
   if (!requiredMinExpiration) return true;
-  if (!existingExpiration) return true;
+  // Не підмішуємо нову партію з відомим ТП до існуючої без дати.
+  if (!existingExpiration) return false;
   return requiredMinExpiration >= existingExpiration;
 }
 

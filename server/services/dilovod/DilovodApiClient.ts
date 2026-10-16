@@ -512,7 +512,11 @@ export class DilovodApiClient {
    * Пошук товарів за списком SKU (productNum) - оптимізована версія
    * Повертає ID та productNum для мапінгу SKU → ID
    */
-  /** Партії з catalogs.goodParts для вказаних товарів (owner = good id). */
+  /**
+   * Партії з catalogs.goodParts для вказаних товарів (owner = good id).
+   * Dilovod для goodParts.owner/code відхиляє operator IN (`bad filter item`) —
+   * тому лише `=` по одному значенню.
+   */
   async findGoodPartsByOwnerIds(ownerIds: string[]): Promise<Array<{ id: string; code: string; owner: string }>> {
     await this.ensureReady();
 
@@ -521,7 +525,7 @@ export class DilovodApiClient {
 
     const result: Array<{ id: string; code: string; owner: string }> = [];
 
-    for (const ownerChunk of this.chunkArray(uniqueOwnerIds, 20)) {
+    for (const ownerId of uniqueOwnerIds) {
       const resp = await this.makeRequest<unknown>({
         version: '0.25',
         key: this.apiKey,
@@ -534,9 +538,17 @@ export class DilovodApiClient {
             owner: 'owner',
             delMark: 'delMark',
           },
-          filters: [{ alias: 'owner', operator: 'IN', value: ownerChunk }],
+          filters: [{ alias: 'owner', operator: '=', value: ownerId }],
         },
       });
+
+      if (resp && typeof resp === 'object' && !Array.isArray(resp) && (resp as { error?: unknown }).error) {
+        console.warn(
+          `[DilovodApiClient] findGoodPartsByOwnerIds(${ownerId}):`,
+          (resp as { error?: unknown }).error,
+        );
+        continue;
+      }
 
       const rows = this.normalizeToArray<Record<string, unknown>>(resp);
       for (const row of rows) {
@@ -555,7 +567,11 @@ export class DilovodApiClient {
     return result;
   }
 
-  /** Партії за серійним № (`code`) — унікальність code глобальна в Dilovod. */
+  /**
+   * Партії за серійним № (`code`). Один code може бути на різних owner;
+   * create для того самого owner+code відхиляється.
+   * Operator IN для code — broken у Dilovod (`bad filter item`).
+   */
   async findGoodPartsByCodes(codes: string[]): Promise<Array<{ id: string; code: string; owner: string }>> {
     await this.ensureReady();
 
@@ -563,8 +579,9 @@ export class DilovodApiClient {
     if (uniqueCodes.length === 0) return [];
 
     const result: Array<{ id: string; code: string; owner: string }> = [];
+    const seenIds = new Set<string>();
 
-    for (const codeChunk of this.chunkArray(uniqueCodes, 20)) {
+    for (const code of uniqueCodes) {
       const resp = await this.makeRequest<unknown>({
         version: '0.25',
         key: this.apiKey,
@@ -577,18 +594,28 @@ export class DilovodApiClient {
             owner: 'owner',
             delMark: 'delMark',
           },
-          filters: [{ alias: 'code', operator: 'IN', value: codeChunk }],
+          filters: [{ alias: 'code', operator: '=', value: code }],
         },
       });
+
+      if (resp && typeof resp === 'object' && !Array.isArray(resp) && (resp as { error?: unknown }).error) {
+        console.warn(
+          `[DilovodApiClient] findGoodPartsByCodes(${code}):`,
+          (resp as { error?: unknown }).error,
+        );
+        continue;
+      }
 
       const rows = this.normalizeToArray<Record<string, unknown>>(resp);
       for (const row of rows) {
         if (isDilovodDeletionMark(row.delMark)) continue;
         const id = unwrapDilovodId(row.id);
         const owner = unwrapDilovodId(row.owner);
-        const code = String(row.code ?? '').trim();
-        if (!isUsableDilovodBatchId(id) || !owner || !code) continue;
-        result.push({ id, code, owner });
+        const partCode = String(row.code ?? '').trim();
+        if (!isUsableDilovodBatchId(id) || !owner || !partCode) continue;
+        if (seenIds.has(id)) continue;
+        seenIds.add(id);
+        result.push({ id, code: partCode, owner });
       }
     }
 

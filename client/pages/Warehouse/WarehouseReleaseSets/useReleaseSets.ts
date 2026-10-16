@@ -1125,6 +1125,8 @@ export default function useReleaseSets() {
     surplusQuantity?: number;
     surplusGoodId?: string | null;
     releaseId?: number;
+    /** ТП комплекту, якщо в партій компонентів його немає. */
+    kitExpiration?: string | null;
   }) => {
     const currentItems = items.map((item) => ({
       set_sku: item.setSku,
@@ -1140,6 +1142,9 @@ export default function useReleaseSets() {
       surplusQuantity: options?.surplusQuantity,
       surplusGoodId: options?.surplusGoodId ?? undefined,
       ...(options?.releaseId ? { releaseId: options.releaseId } : {}),
+      ...(options?.kitExpiration
+        ? { kitExpiration: String(options.kitExpiration).trim().slice(0, 10) }
+        : {}),
     };
     const sendCorrectionSessionId = normalizeCorrectionSessionId(
       (body as { correctionSessionId?: unknown }).correctionSessionId,

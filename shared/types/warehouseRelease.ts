@@ -26,6 +26,8 @@ export interface KitOutputBatchInfo {
   barcode?: string | null;
   created: boolean;
   expiration?: string | null;
+  /** true — у компонентів немає ТП, потрібна дата від користувача. */
+  expirationRequired?: boolean;
 }
 
 export interface ReleaseSendSummary {

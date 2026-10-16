@@ -1136,6 +1136,7 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
       correctionSessionId,
       operationType,
       releaseId: bodyReleaseId,
+      kitExpiration,
     } = req.body;
     let items = Array.isArray(req.body?.items) ? req.body.items : [];
     const clientSentItems = items.length > 0;
@@ -1329,6 +1330,7 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
           kitGoodId: resolvedKitGood,
           operDate: parsedDate,
           componentBatchIds: collectComponentBatchIds(effectiveComponentBatches),
+          expirationOverride: kitExpiration != null ? String(kitExpiration) : null,
           dryRun: isDryRun,
         });
       }
@@ -1737,6 +1739,7 @@ router.post('/kit-output-batch/preview', authenticateToken, warehouseOperate, as
       kitGoodId: resolvedKitGood,
       operDate: parsedDate,
       componentBatchIds: collectComponentBatchIds(parsedComponentBatches),
+      expirationOverride: req.body?.kitExpiration != null ? String(req.body.kitExpiration) : null,
       dryRun: true,
     });
 

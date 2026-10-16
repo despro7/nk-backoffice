@@ -36,6 +36,17 @@ describe('kitBatchName', () => {
     expect(plan.batchName).toBe('K-61008');
   });
 
+  it('does not reuse undated batch when required expiration is set', () => {
+    const plan = planKitOutputBatch(
+      'K-61008',
+      [{ id: '1112200000001986', code: 'K-61008', expiration: null }],
+      '2027-07-10',
+    );
+    expect(plan.reuseExisting).toBe(false);
+    expect(plan.createNew).toBe(true);
+    expect(plan.batchName).toBe('K-61008-1');
+  });
+
   it('normalizes legacy K61008-1 display name to K-61008-1', () => {
     expect(formatKitBatchDisplayName('K61008-1')).toBe('K-61008-1');
   });

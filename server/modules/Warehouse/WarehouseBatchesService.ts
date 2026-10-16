@@ -278,6 +278,8 @@ export type KitOutputBatchResult = {
   barcode: string | null;
   created: boolean;
   expiration: string | null;
+  /** Компоненти без ТП — клієнт має запитати дату комплекту. */
+  expirationRequired?: boolean;
   dryRun?: boolean;
 };
 
@@ -752,6 +754,8 @@ export class WarehouseBatchesService {
     kitGoodId: string;
     operDate: Date;
     componentBatchIds: string[];
+    /** Явний ТП комплекту (коли в партій компонентів його немає). */
+    expirationOverride?: string | null;
     dryRun?: boolean;
   }): Promise<KitOutputBatchResult> {
     const kitGoodId = String(input.kitGoodId ?? '').trim();
@@ -764,21 +768,33 @@ export class WarehouseBatchesService {
       throw new Error('Не вдалося сформувати назву партії комплекту');
     }
 
-    const [minExpiration, existingParts] = await Promise.all([
+    const [fromComponents, existingParts] = await Promise.all([
       this.resolveMinComponentExpiration(input.componentBatchIds),
       this.fetchGoodPartsForOwner(kitGoodId),
     ]);
+    const overrideExpiration = normalizeBatchExpiration(input.expirationOverride);
+    const expirationRequired = !fromComponents;
+    const minExpiration = overrideExpiration ?? fromComponents;
+
+    if (!input.dryRun && !minExpiration) {
+      throw new Error(
+        'Не вказано термін придатності комплекту. У обраних партій компонентів немає дати — вкажіть ТП вручну.',
+      );
+    }
 
     const plan = await this.resolveKitOutputBatchPlan(kitGoodId, baseName, existingParts, minExpiration);
 
     if (plan.reuseExisting && plan.batchId && !String(plan.batchId).startsWith('virtual:')) {
       const barcodes = await this.loadBarcodesByPart([plan.batchId]);
+      const reusedExpiration = existingParts.find((part) => part.id === plan.batchId)?.expiration
+        ?? minExpiration;
       return {
         batchId: plan.batchId,
         batchNumber: plan.batchName,
         barcode: barcodes.get(plan.batchId)?.[0]?.code ?? null,
         created: false,
-        expiration: minExpiration,
+        expiration: reusedExpiration,
+        ...(expirationRequired ? { expirationRequired: true } : {}),
       };
     }
 
@@ -790,6 +806,7 @@ export class WarehouseBatchesService {
         created: true,
         expiration: minExpiration,
         dryRun: true,
+        ...(expirationRequired ? { expirationRequired: true } : {}),
       };
     }
 

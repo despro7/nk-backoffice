@@ -1,7 +1,26 @@
-import { Button, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from '@heroui/react';
+import { Button, DatePicker, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from '@heroui/react';
+import { parseDate, type DateValue } from '@internationalized/date';
+import { I18nProvider } from '@react-aria/i18n';
+import { useEffect, useState } from 'react';
 import type { ReleaseSendSummary } from '@shared/types/warehouseRelease';
 import { formatReleaseSendErrorRaw, normalizeReleaseSendError } from '@shared/utils/releaseSendError';
 import { getReleaseSendExplanation, getReleaseSendTitle, type ReleaseConfirmMode } from '../releaseConfirmCopy';
+
+function ymdToDateValue(value: string | null | undefined): DateValue | null {
+  const day = String(value ?? '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  try {
+    return parseDate(day);
+  } catch {
+    return null;
+  }
+}
+
+/** Повний YMD лише коли рік уже 4-значний — інакше клавіатурний ввід року ламається. */
+function dateValueToYmd(value: DateValue | null): string {
+  if (!value || value.year < 1000) return '';
+  return `${value.year}-${String(value.month).padStart(2, '0')}-${String(value.day).padStart(2, '0')}`;
+}
 
 interface Props {
   isOpen: boolean;
@@ -12,6 +31,10 @@ interface Props {
   result: Record<string, unknown> | null;
   sendDisabled?: boolean;
   kitBatchPreviewLoading?: boolean;
+  /** Коли в партій компонентів немає ТП — користувач вводить дату комплекту. */
+  kitExpirationRequired?: boolean;
+  kitExpiration?: string | null;
+  onKitExpirationChange?: (value: string) => void;
   sendLabel: string;
   onConfirm: () => void;
   onClose: () => void;
@@ -26,6 +49,9 @@ export default function ReleaseSendConfirmModal({
   result,
   sendDisabled = false,
   kitBatchPreviewLoading = false,
+  kitExpirationRequired = false,
+  kitExpiration = null,
+  onKitExpirationChange,
   sendLabel,
   onConfirm,
   onClose,
@@ -48,6 +74,32 @@ export default function ReleaseSendConfirmModal({
   const errorRawLabel = sendError?.source === 'internal'
     ? 'Технічні деталі'
     : 'Відповідь Dilovod';
+  // DateValue локально — без roundtrip string↔parse на кожен символ року.
+  const [localKitExpiration, setLocalKitExpiration] = useState<DateValue | null>(null);
+
+  useEffect(() => {
+    if (!isOpen || !kitExpirationRequired) {
+      setLocalKitExpiration(null);
+      return;
+    }
+    // Сід лише з повного YMD (прев’ю). Порожній prop під час вводу року не чіпаємо.
+    const parsed = ymdToDateValue(kitExpiration);
+    if (!parsed) return;
+    setLocalKitExpiration((prev) => (
+      prev && dateValueToYmd(prev) === dateValueToYmd(parsed) ? prev : parsed
+    ));
+  }, [isOpen, kitExpirationRequired, kitExpiration]);
+
+  const kitExpirationMissing = kitExpirationRequired && !dateValueToYmd(localKitExpiration);
+  const confirmDisabled = isSubmitting
+    || sendDisabled
+    || kitExpirationMissing
+    || (!summary && result?.canRetry !== true);
+
+  const handleKitExpirationChange = (date: DateValue | null): void => {
+    setLocalKitExpiration(date);
+    onKitExpirationChange?.(dateValueToYmd(date));
+  };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="2xl" backdrop="blur" scrollBehavior="inside" isDismissable={!isSubmitting}>
@@ -92,7 +144,7 @@ export default function ReleaseSendConfirmModal({
           )}
 
           {summary && summary.components.length > 0 && (
-            <div className="overflow-hidden rounded-xl border border-gray-200">
+            <div className="overflow-y-auto max-h-[300px] rounded-xl border border-gray-200 scrollbar-hide">
               <table className="min-w-full text-sm">
                 <thead className="bg-gray-100 text-left text-gray-600">
                   <tr>
@@ -141,7 +193,7 @@ export default function ReleaseSendConfirmModal({
                 Партія набору: <strong>{summary.kitOutputBatch.batchNumber}</strong>
                 {summary.kitOutputBatch.created ? ' (нова)' : ' (існуюча)'}
               </div>
-              {summary.kitOutputBatch.expiration && (
+              {summary.kitOutputBatch.expiration && !kitExpirationRequired && (
                 <div>Термін придатності: <strong>{summary.kitOutputBatch.expiration}</strong></div>
               )}
               {summary.kitOutputBatch.barcode && (
@@ -150,6 +202,34 @@ export default function ReleaseSendConfirmModal({
               {summary.kitOutputBatch.created && !summary.kitOutputBatch.barcode && (
                 <div>Буде згенеровано новий штрих-код.</div>
               )}
+            </div>
+          )}
+
+          {mode === 'kit' && kitExpirationRequired && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 flex flex-col md:flex-row gap-4">
+              <div>
+                У обраних партій компонентів немає терміну придатності.
+                Вкажіть ТП комплекту (орієнтир – найстаріший компонент, дивіться дату на упаковці).
+              </div>
+              <I18nProvider locale="uk-UA">
+                <DatePicker
+                  label="Термін придатності комплекту"
+                  labelPlacement="outside"
+                  value={localKitExpiration}
+                  onChange={handleKitExpirationChange}
+                  isRequired
+                  isDisabled={isSubmitting}
+                  showMonthAndYearPickers
+                  granularity="day"
+                  selectorButtonPlacement="start"
+                  classNames={{
+                    base: 'w-auto flex-1',
+                    inputWrapper: 'bg-white hover:bg-white focus-within:hover:bg-white border-1 border-amber-300',
+                    segment: 'rounded focus:bg-default-400/30',
+                    label: 'text-xs font-medium text-nowrap',
+                  }}
+                />
+              </I18nProvider>
             </div>
           )}
 
@@ -209,7 +289,7 @@ export default function ReleaseSendConfirmModal({
             {success ? 'Закрити' : 'Скасувати'}
           </Button>
           {!success && (
-            <Button color="primary" onPress={onConfirm} isLoading={isSubmitting} isDisabled={isSubmitting || sendDisabled || (!summary && result?.canRetry !== true)}>
+            <Button color="primary" onPress={onConfirm} isLoading={isSubmitting} isDisabled={confirmDisabled}>
               {result?.canRetry === true && result?.historySaved === true ? 'Повторити відправку' : sendLabel}
             </Button>
           )}

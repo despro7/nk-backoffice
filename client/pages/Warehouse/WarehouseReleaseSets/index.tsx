@@ -49,6 +49,7 @@ export default function ReleaseSetsPage() {
   const [isSavingEdit, setIsSavingEdit] = React.useState(false);
   const [searchResetSignal, setSearchResetSignal] = React.useState(0);
   const [kitOutputBatchPreview, setKitOutputBatchPreview] = React.useState<KitOutputBatchInfo | null>(null);
+  const [kitExpirationOverride, setKitExpirationOverride] = React.useState<string | null>(null);
   const [isKitBatchPreviewLoading, setIsKitBatchPreviewLoading] = React.useState(false);
 
   React.useEffect(() => {
@@ -234,12 +235,18 @@ export default function ReleaseSetsPage() {
     setSendSnapshot(rs.items[0]);
     setSendResult(null);
     setKitOutputBatchPreview(null);
+    setKitExpirationOverride(null);
     setShowSendConfirm(true);
 
     if (sendMode === 'kit') {
       setIsKitBatchPreviewLoading(true);
       void rs.previewKitOutputBatch()
-        .then((preview) => setKitOutputBatchPreview(preview))
+        .then((preview) => {
+          setKitOutputBatchPreview(preview);
+          if (preview?.expirationRequired && preview.expiration) {
+            setKitExpirationOverride(String(preview.expiration).slice(0, 10));
+          }
+        })
         .catch(() => setKitOutputBatchPreview(null))
         .finally(() => setIsKitBatchPreviewLoading(false));
     }
@@ -256,6 +263,9 @@ export default function ReleaseSetsPage() {
         createSurplusBatch: createSurplus,
         surplusQuantity: createSurplus ? rs.correctionUnkitDiff.surplus : undefined,
         surplusGoodId: createSurplus ? rs.correctionSourceGoodId : null,
+        kitExpiration: kitOutputBatchPreview?.expirationRequired
+          ? (kitExpirationOverride || undefined)
+          : undefined,
         ...(Number.isFinite(retryReleaseId) && retryReleaseId! > 0 ? { releaseId: retryReleaseId } : {}),
       });
       setSendResult(result ?? null);
@@ -690,6 +700,9 @@ export default function ReleaseSetsPage() {
         result={sendResult}
         sendDisabled={sendDisabled}
         kitBatchPreviewLoading={isKitBatchPreviewLoading}
+        kitExpirationRequired={Boolean(kitOutputBatchPreview?.expirationRequired)}
+        kitExpiration={kitExpirationOverride}
+        onKitExpirationChange={setKitExpirationOverride}
         sendLabel={sendButtonLabel}
         onConfirm={() => void handleConfirmSend()}
         onClose={() => {
@@ -697,6 +710,7 @@ export default function ReleaseSetsPage() {
           setShowSendConfirm(false);
           setSendResult(null);
           setSendSnapshot(null);
+          setKitExpirationOverride(null);
         }}
       />
     </div>

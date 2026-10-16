@@ -86,6 +86,13 @@ Switch у шапці сторінки. Двокроковий wizard:
 ### Kit-партія: колізії серійного номера
 
 - `refineKitOutputBatchPlanForOccupiedCodes` у `kitBatchName.ts` — якщо запланований `K{YMMDD}` уже існує в Dilovod для іншого запису, план зсувається (suffix `-2`, `-3`, …) перед `ensureKitOutputBatch`.
+- Пошук `findGoodPartsByOwnerIds` / `findGoodPartsByCodes`: Dilovod для `catalogs.goodParts` **не приймає** filter `IN` (`bad filter item`) — лише `=`. Інакше reuse існуючої `K-…` ламається (create → «партія вже існує»).
+
+### Термін придатності комплекту
+
+- ТП комплекту = `pickMinExpiration` по партіях компонентів (найстаріший).
+- Якщо в **усіх** обраних партій компонентів немає ТП — модалка send запитує дату (`kitExpiration`); send без дати блокується.
+- UI: HeroUI `DatePicker` + `I18nProvider locale="uk-UA"`; значення тримається як локальний `DateValue`, у батька йде YMD лише з 4-значним роком (щоб клавіатурний ввід не скидався через `parseDate`).
 
 ## Ключові файли
 
