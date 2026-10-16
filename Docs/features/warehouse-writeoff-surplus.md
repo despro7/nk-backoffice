@@ -42,9 +42,11 @@ Payload збирає `buildGoodDocumentPayload` (`server/modules/Warehouse/wareh
 | POST | `/send` | Створення документа в Dilovod + запис у локальну історію |
 | GET | `/history` | Список (пагінація, sync з Dilovod) |
 | GET | `/history/:id/details` | Деталі рядків (lazy enrich) |
-| PATCH | `/history/:id` | Редагування (Dilovod `saveType: 2` + локальна БД) |
+| PATCH | `/history/:id` | Редагування (Dilovod `saveType: 1` + локальна БД) |
 | GET | `/history/:id/audit` | Журнал змін |
 | DELETE | `/history/:id` | Видалення (опційно `delMark` у Dilovod) |
+
+**Проведення Dilovod (2026-10-16):** PATCH історії шле `saveType: 1` (REGISTER) + `posted: 1`, щоб edit не знімав проведення. `header.id` = існуючий `writeOffNumber` / `surplusNumber`. `saveType: 2` лише при delete/`delMark`. Логіка id/payload — `buildGoodDocumentPayload`.
 
 Спільна логіка списку/sync: `warehouseGoodDocumentHistoryList.ts`, `WarehouseGoodDocumentHistorySync.ts`.
 

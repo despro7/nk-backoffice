@@ -246,8 +246,11 @@ export async function buildGoodDocumentPayload(input: {
 
   const isSurplus = input.docType === WAREHOUSE_SURPLUS_DOC_TYPE;
 
+  // Новий документ: id = тип (documents.goodWriteOff / goodWriteOn).
+  // Редагування: id = існуючий dilovodDocId + saveType 1 (REGISTER), щоб не знімати проведення.
+  // Видалення (delMark) збирається окремо з saveType 2, не через цей helper.
   const header: Record<string, unknown> = {
-    id: input.saveType === 2 && input.dilovodDocId ? input.dilovodDocId : input.docType,
+    id: input.dilovodDocId ? input.dilovodDocId : input.docType,
     date: formattedDate,
     storage: input.storageId,
     firm: input.firmId,

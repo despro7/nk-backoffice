@@ -17,6 +17,18 @@
 
 ---
 
+## 2026-10-16 — Списання / оприбуткування: edit лишає проведення Dilovod
+
+**Files:** `WriteOffController.ts`, `SurplusController.ts`, `warehouseGoodDocumentUtils.ts`, `warehouse-writeoff-surplus.md`
+
+- PATCH writeoff/surplus у Dilovod: `saveType: 1` (REGISTER) + `posted: 1`, не `2` (UNREGISTER) — редагування більше не знімає проведення.
+- `buildGoodDocumentPayload`: `header.id` = `dilovodDocId` при edit (не залежить від `saveType`), щоб update не створював новий документ.
+- Видалення (`delMark: 1`) як і раніше з `saveType: 2`.
+
+**Документація:** [`warehouse-writeoff-surplus.md`](features/warehouse-writeoff-surplus.md).
+
+---
+
 ## 2026-10-16 — Dilovod docs: Europe/Kyiv wall-clock скрізь
 
 **Files:** `kyivDateTime.ts`, `WarehousePayloadBuilder.ts`, `WarehouseMovementExport.ts`, `WarehouseController.ts`, `DilovodExportBuilder.ts`, `DilovodApiClient.ts`, `DilovodUtils.ts`, CashIn/BankStatement builders, ReturnsHistory, warehouse client formatters

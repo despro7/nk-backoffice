@@ -270,10 +270,11 @@ router.patch('/history/:id', authenticateToken, warehouseOperate, async (req, re
         authorDilovodId = null;
       }
 
+      // saveType: 1 (REGISTER) — оновлення з проведенням; 2 (UNREGISTER) знімає проведення.
       const { payload } = await buildGoodDocumentPayload({
         docType: WAREHOUSE_SURPLUS_DOC_TYPE,
         dilovodDocId,
-        saveType: 2,
+        saveType: 1,
         items: bodyItems,
         reason: nextReason,
         comment: String(nextComment ?? '').trim(),
