@@ -298,6 +298,8 @@ export default function ReleaseComponentBatchesPanel({
     [components],
   );
 
+  const asOfDateKey = selectedDateTime?.getTime() ?? null;
+
   useEffect(() => {
     if (readOnly || !componentSkusKey) {
       setWarehouseBatchesBySku({});
@@ -333,6 +335,7 @@ export default function ReleaseComponentBatchesPanel({
     };
   }, [
     allowNegativeBatches,
+    asOfDateKey,
     componentSkusKey,
     correctionMode,
     firmId,
@@ -341,7 +344,7 @@ export default function ReleaseComponentBatchesPanel({
     storageId,
   ]);
 
-  // Підставляємо batchStock з балансу складу, якщо в алокації його ще немає (історія / last-kit).
+  // Синхронізуємо batchStock з балансом складу (дата / склад / фірма → свіжі qty).
   useEffect(() => {
     if (readOnly || Object.keys(warehouseBatchesBySku).length === 0 || componentBatches.length === 0) {
       return;
@@ -356,9 +359,9 @@ export default function ReleaseComponentBatchesPanel({
       );
       let allocationChanged = false;
       const batches = (allocation.batches ?? []).map((batch) => {
-        if (typeof batch.batchStock === 'number' && Number.isFinite(batch.batchStock)) return batch;
         const stock = stockById.get(batch.batchId);
         if (stock == null || !Number.isFinite(stock)) return batch;
+        if (batch.batchStock === stock) return batch;
         allocationChanged = true;
         anyChanged = true;
         return { ...batch, batchStock: stock };

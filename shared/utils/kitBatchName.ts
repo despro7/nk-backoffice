@@ -1,4 +1,5 @@
 import { generateBatchSerialFromDate, isMissingDilovodDate } from './dilovodBatchId.js';
+import { formatKyivDateTime } from './kyivDateTime.js';
 
 export const KIT_BATCH_PREFIX = 'K-';
 export const REBATCH_NAME_PREFIX = 'REBATCH: ';
@@ -6,8 +7,7 @@ export const REBATCH_NAME_PREFIX = 'REBATCH: ';
 export function formatKitBatchBaseName(date: Date | string): string | null {
   let isoDay: string;
   if (date instanceof Date) {
-    const pad = (value: number): string => String(value).padStart(2, '0');
-    isoDay = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    isoDay = formatKyivDateTime(date).slice(0, 10);
   } else {
     isoDay = String(date ?? '').trim().slice(0, 10);
   }

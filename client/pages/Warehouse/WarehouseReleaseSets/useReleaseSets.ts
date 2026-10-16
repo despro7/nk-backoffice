@@ -571,6 +571,7 @@ export default function useReleaseSets() {
     const skus = items.map((item) => item.setSku).filter(Boolean);
     if (skus.length === 0) return;
 
+    const asOfDate = getPayloadDate();
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
@@ -582,6 +583,7 @@ export default function useReleaseSets() {
             skus,
             storageId,
             firmId: returns.receiveFirmId ?? undefined,
+            asOfDate: asOfDate ?? undefined,
           }),
         });
         if (!response.ok || cancelled) return;
@@ -610,7 +612,14 @@ export default function useReleaseSets() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [itemsSkuSignature, selectedStorage, defaultSmallStorageId, returns.receiveFirmId, items.length]);
+  }, [
+    itemsSkuSignature,
+    selectedStorage,
+    defaultSmallStorageId,
+    returns.receiveFirmId,
+    returns.returnDate,
+    items.length,
+  ]);
 
   const addSet = async (setItem: any) => {
     if (items.length > 0) {

@@ -169,7 +169,7 @@ export default function useWarehouseParams(opts: UseWarehouseParamsOpts = {}) {
       // ignore
     }
     return new Date();
-  }, [returns?.returnDate]);
+  }, [dateStateKey, returns?.operDate, returns?.returnDate]);
 
   const onDateChange = (d: Date) => {
     const formatted = formatLocalDate(d);

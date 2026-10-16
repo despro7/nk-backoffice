@@ -82,6 +82,18 @@ Switch у шапці сторінки. Двокроковий wizard:
 - **Повтор send** для статусу `send_failed` — `retryFailedRelease` у `useReleaseSets.ts` (ті самі `componentBatches` з БД, якщо не передані з UI).
 - **Аудит:** `WarehouseReleaseAuditService` → `hr_audit_log` (`entityType: warehouse_release_set`), `GET /api/warehouse/releases/:id/audit`, акордеон у `WarehouseReleaseAuditAccordion.tsx`.
 - **Примітка Dilovod** при зміні полів історії — `warehouseReleaseRemark.ts` (`appendWarehouseReleaseDilovodRemark`).
+- **Формат remark (2026-10-16):** оригінальний коментар зберігається; суфікс ` | Редакція → {хто}, {коли}` (без деталей diff). Повторне редагування замінює попередній суфікс (і legacy `Редаговано в backoffice…`). База — `dilovod_remark` після strip, інакше `comment` запису.
+
+### Час операції — Europe/Kyiv (2026-10-16)
+
+- Рядки `YYYY-MM-DD HH:mm:ss` без TZ парсяться/форматуються як wall-clock **Europe/Kyiv** (`shared/utils/kyivDateTime.ts`), незалежно від TZ Node-процесу.
+- Інакше Dilovod отримував «локальний» час сервера, а звіти UI (`formatDate` / `operDate` з БД) показували +1 год (типово сервер UTC+2 vs Kyiv UTC+3).
+- `formatDate` / `formatDateTime` на клієнті також з `timeZone: 'Europe/Kyiv'`.
+
+### Рефреш залишків при мета-змінах (2026-10-16)
+
+- Зміна **дати / складу / фірми** перезапитує залишки набору (`availableQuantity` через `/stock-snapshot` + `asOfDate`) і партій компонентів (bulk batch-numbers).
+- `batchStock` у вже обраних алокаціях **синхронізується** зі свіжим балансом (раніше писався лише якщо поле було порожнім).
 
 ### Kit-партія: колізії серійного номера
 
@@ -107,6 +119,8 @@ Switch у шапці сторінки. Двокроковий wizard:
 | Dilovod | `DilovodGoodPartsService.ts`, `DilovodApiClient.findGoodPartsByOwnerIds` |
 | Типи | `shared/types/warehouseRelease.ts` |
 | Валідація | `releaseBatchValidation.ts` |
+| Kyiv datetime | `shared/utils/kyivDateTime.ts` |
+| Dilovod remark | `shared/utils/warehouseReleaseRemark.ts` |
 
 ## API (релізи)
 

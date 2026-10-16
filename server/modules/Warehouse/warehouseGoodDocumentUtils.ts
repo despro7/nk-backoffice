@@ -1,6 +1,10 @@
 import { prisma } from '../../lib/utils.js';
 import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
 import {
+  formatKyivDateTime,
+  parseKyivDateTime,
+} from '../../../shared/utils/kyivDateTime.js';
+import {
   appendWarehouseReleaseDilovodRemark,
   buildWarehouseReleaseEditRemarkNote,
 } from '../../../shared/utils/warehouseReleaseRemark.js';
@@ -11,26 +15,9 @@ import {
   WAREHOUSE_SURPLUS_INCOME_ITEM,
 } from '../../../shared/types/warehouseGoodDocument.js';
 
-export const parseLocalDate = (dt: unknown): Date | null => {
-  if (!dt) return null;
-  if (dt instanceof Date) return dt;
-  if (typeof dt !== 'string') return null;
+export const parseLocalDate = (dt: unknown): Date | null => parseKyivDateTime(dt);
 
-  const trimmed = dt.trim();
-  const localMatch = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
-  if (localMatch) {
-    const [, year, month, day, hours, minutes, seconds] = localMatch;
-    return new Date(Number(year), Number(month) - 1, Number(day), Number(hours), Number(minutes), Number(seconds ?? '0'));
-  }
-
-  const parsed = new Date(trimmed);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
-
-export const formatLocalDateTime = (d: Date): string => {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-};
+export const formatLocalDateTime = (d: Date): string => formatKyivDateTime(d);
 
 const parseStockBalanceByStock = (value: unknown): Record<string, number> => {
   if (!value) return {};

@@ -1,36 +1,57 @@
-const EDIT_PREFIX = 'Редаговано в backoffice';
+const EDIT_MARKER = 'Редакція →';
+const LEGACY_EDIT_PREFIX = 'Редаговано в backoffice';
 
+/** Суфікс редакції для Dilovod remark (без деталей змін). */
 export function buildWarehouseReleaseEditRemarkNote(
   editorLabel: string,
-  changes: Array<{ field: string; from: unknown; to: unknown }>,
+  _changes?: Array<{ field: string; from: unknown; to: unknown }>,
 ): string {
-  const fieldLabels: Record<string, string> = {
-    operDate: 'дата операції',
-    comment: 'коментар',
-    quantity: 'кількість',
-    setSku: 'SKU набору',
-  };
-
-  const details = changes
-    .map((change) => {
-      const label = fieldLabels[change.field] ?? change.field;
-      const from = change.from == null || change.from === '' ? '—' : String(change.from);
-      const to = change.to == null || change.to === '' ? '—' : String(change.to);
-      return `${label}: ${from} → ${to}`;
-    })
-    .join('; ');
-
   const who = editorLabel.trim() || 'користувач';
   const when = new Date().toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv' });
-  return `${EDIT_PREFIX} (${who}, ${when}): ${details}`;
+  return `${EDIT_MARKER} ${who}, ${when}`;
 }
 
+/** Прибирає попередні маркери редакції, залишає оригінальний коментар. */
+export function stripWarehouseReleaseEditRemarkSuffixes(remark: string): string {
+  let result = String(remark ?? '').trim();
+  if (!result) return '';
+
+  // без \b після «→» — стрілка не word-char, boundary не спрацьовує
+  const editTail =
+    /^(.*?)\s*\|\s*(?:Редакція\s*→|Редаговано в backoffice)[\s\S]*$/i;
+
+  for (;;) {
+    const pipeMatch = editTail.exec(result);
+    if (pipeMatch) {
+      result = String(pipeMatch[1] ?? '').trim();
+      continue;
+    }
+    if (
+      result.startsWith(EDIT_MARKER)
+      || result.startsWith(LEGACY_EDIT_PREFIX)
+    ) {
+      return '';
+    }
+    break;
+  }
+
+  return result;
+}
+
+/**
+ * Дописує короткий маркер редакції до оригінального коментаря:
+ * `[ориг] | Редакція → Name, 16.10.2026, 04:03:51`
+ * Повторне редагування замінює попередній суфікс редакції.
+ */
 export function appendWarehouseReleaseDilovodRemark(
   previousRemark: string | null | undefined,
   editNote: string,
 ): string {
-  const parts = [String(previousRemark ?? '').trim(), String(editNote ?? '').trim()].filter(Boolean);
-  return parts.join(' | ');
+  const base = stripWarehouseReleaseEditRemarkSuffixes(String(previousRemark ?? ''));
+  const note = String(editNote ?? '').trim();
+  if (!base) return note;
+  if (!note) return base;
+  return `${base} | ${note}`;
 }
 
 export function extractDilovodRemarkFromReleaseItems(items: unknown): string | null {

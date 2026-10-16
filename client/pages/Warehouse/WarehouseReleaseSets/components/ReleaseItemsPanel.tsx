@@ -237,6 +237,11 @@ export default function ReleaseItemsPanel({
     return aggregatedRows.reduce((sum, row) => sum + Number(row.total ?? 0), 0);
   }, [aggregatedRows]);
 
+  const selectedDateTime = useMemo(
+    () => parseLocalDate(returns?.operDate ?? returns?.returnDate),
+    [returns?.operDate, returns?.returnDate],
+  );
+
   useEffect(() => {
     let cancelled = false;
     const skus = Object.keys(aggregated).sort();
@@ -249,8 +254,7 @@ export default function ReleaseItemsPanel({
       try {
         const skusParam = skus.join(',');
         const firmId = returns?.receiveFirmId ?? undefined;
-        const parsedAsOfDate = parseLocalDate(returns?.operDate ?? returns?.returnDate);
-        const asOfDate = parsedAsOfDate ? parsedAsOfDate.toISOString() : undefined;
+        const asOfDate = selectedDateTime ? selectedDateTime.toISOString() : undefined;
         const encodedLen =
           encodeURIComponent(skusParam).length +
           (firmId ? encodeURIComponent(String(firmId)).length : 0) +
@@ -301,7 +305,7 @@ export default function ReleaseItemsPanel({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [aggregatedSkuSignature, selectedStorage, smallStorageId, returns?.receiveFirmId, returns?.operDate, returns?.returnDate]);
+  }, [aggregatedSkuSignature, selectedStorage, smallStorageId, returns?.receiveFirmId, selectedDateTime]);
 
   const stockColumnLabel = selectedStorageName
     ? `Залишки ${selectedStorageName}`
@@ -482,7 +486,7 @@ export default function ReleaseItemsPanel({
         components={batchPanelComponents}
         componentBatches={componentBatches}
         onChange={onComponentBatchesChange}
-        selectedDateTime={parseLocalDate(returns?.operDate ?? returns?.returnDate)}
+        selectedDateTime={selectedDateTime}
         firmId={returns?.receiveFirmId}
         storageId={selectedStorage ?? smallStorageId ?? null}
         storageName={selectedStorageName}

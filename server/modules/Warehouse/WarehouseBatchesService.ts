@@ -43,6 +43,7 @@ import {
   planKitOutputBatch,
   refineKitOutputBatchPlanForOccupiedCodes,
 } from '../../../shared/utils/kitBatchName.js';
+import { formatKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import { productsDilovodGateway } from '../Products/ProductsDilovodGateway.js';
 import {
   warehouseStatementValueTypeIncludes,
@@ -810,8 +811,7 @@ export class WarehouseBatchesService {
       };
     }
 
-    const pad = (value: number): string => String(value).padStart(2, '0');
-    const productionDate = `${input.operDate.getFullYear()}-${pad(input.operDate.getMonth() + 1)}-${pad(input.operDate.getDate())} ${pad(input.operDate.getHours())}:${pad(input.operDate.getMinutes())}:${pad(input.operDate.getSeconds())}`;
+    const productionDate = formatKyivDateTime(input.operDate);
 
     const created = await this.createGoodPartBatch({
       goodId: kitGoodId,

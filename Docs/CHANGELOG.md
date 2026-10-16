@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-10-16 — Комплектація: Kyiv-час, remark редакції, рефреш залишків
+
+**Files:** `kyivDateTime.ts`, `warehouseReleaseRemark.ts`, `SetReleaseController.ts`, `formatUtils.ts`, `useReleaseSets.ts`, `ReleaseComponentBatchesPanel.tsx`, `warehouse-release-sets.md`
+
+- Дати операції складу — wall-clock **Europe/Kyiv** (не TZ процесу): звіти більше не зсуваються на +1 год при коректному Dilovod.
+- Remark при edit: `[ориг] | Редакція → Name, дата/час` (без затирання оригіналу; повторний edit замінює суфікс).
+- Unkit/kit: залишки набору й `batchStock` партій оновлюються при зміні дати / складу / фірми (`asOfDate` у stock-snapshot).
+
+**Документація:** [`warehouse-release-sets.md`](features/warehouse-release-sets.md).
+
+---
+
 ## 2026-10-16 — Рухи по товару: drawer UX + дата/час + партії
 
 **Files:** `ProductMovementsDrawer*.tsx`, `ProductMovementsTable.tsx`, `ProductMovementsSummaryCards.tsx`, `useProductMovementsDrawerWidth.ts`, `ProductMovementsService.ts`, `shared/types/productMovements.ts`, `ResultDrawer.tsx`, `App.tsx`, docs

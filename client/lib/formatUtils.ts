@@ -185,6 +185,7 @@ export const formatDate = (dateString: string): string => {
   if (!dateString) return "-";
   const date = new Date(dateString);
   return date.toLocaleDateString("uk-UA", {
+    timeZone: "Europe/Kyiv",
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -204,7 +205,7 @@ export const formatDate = (dateString: string): string => {
  */
 export const formatDateTime = (dateString: string | Date): string => {
   if (!dateString) return "-";
-  return new Date(dateString).toLocaleString('uk-UA');
+  return new Date(dateString).toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv' });
 };
 
 /**
@@ -239,7 +240,7 @@ export const formatDateTimeUS = (dateString: string | Date): string => {
  */
 export const formatDateOnly = (dateString: string): string => {
   if (!dateString) return "-";
-  return new Date(dateString).toLocaleDateString('uk-UA');
+  return new Date(dateString).toLocaleDateString('uk-UA', { timeZone: 'Europe/Kyiv' });
 };
 
 /**
@@ -252,7 +253,7 @@ export const formatDateOnly = (dateString: string): string => {
  */
 export const formatTimeOnly = (dateString: string): string => {
   if (!dateString) return "-";
-  return new Date(dateString).toLocaleTimeString('uk-UA');
+  return new Date(dateString).toLocaleTimeString('uk-UA', { timeZone: 'Europe/Kyiv' });
 };
 
 /**

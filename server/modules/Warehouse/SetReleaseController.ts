@@ -36,9 +36,14 @@ import {
 } from '../../../shared/utils/releaseHistoryAccess.js';
 import { warehouseReleaseAuditService } from './WarehouseReleaseAuditService.js';
 import {
+  formatKyivDateTime,
+  parseKyivDateTime,
+} from '../../../shared/utils/kyivDateTime.js';
+import {
   appendWarehouseReleaseDilovodRemark,
   buildWarehouseReleaseEditRemarkNote,
   extractDilovodRemarkFromReleaseItems,
+  stripWarehouseReleaseEditRemarkSuffixes,
 } from '../../../shared/utils/warehouseReleaseRemark.js';
 import {
   buildReleaseSendError,
@@ -62,8 +67,7 @@ const SET_RELEASE_DOC_ID = 'documents.goodWriteOff';
 const SET_RELEASE_DOC_MODE_KIT = '1004000000000305';
 const SET_RELEASE_DOC_MODE_UNKIT = '1004000000000306';
 function formatLocalDate(date: Date): string {
-  const pad = (value: number): string => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return formatKyivDateTime(date);
 }
 
 /** Dilovod balance може повертати кілька рядків на одну пару batchId+storage (різні firm). */
@@ -80,27 +84,7 @@ function dedupeBatchesByStorage<T extends { batchId: string; storage?: string }>
 }
 
 function parseLocalDate(value: unknown): Date | null {
-  if (typeof value !== 'string' || value.trim() === '') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-
-  const localMatch = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
-  if (localMatch) {
-    const [, year, month, day, hours, minutes, seconds] = localMatch;
-    return new Date(
-      Number(year),
-      Number(month) - 1,
-      Number(day),
-      Number(hours),
-      Number(minutes),
-      Number(seconds ?? '0'),
-    );
-  }
-
-  const parsed = new Date(trimmed);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  return parseKyivDateTime(value);
 }
 
 async function resolveKitGoodId(setSku: string | number | undefined, kitGood: string | number | undefined): Promise<string | null> {
@@ -686,6 +670,7 @@ async function syncWarehouseReleaseToDilovod(input: {
     firmId: string | null;
     operationType: string;
     internalDocNumber: string | null;
+    comment?: string | null;
   };
   operDate: Date;
   quantity: number;
@@ -736,8 +721,11 @@ async function syncWarehouseReleaseToDilovod(input: {
   );
 
   const storedKitBatch = extractStoredKitOutputBatch(input.record.items);
-  const previousRemark = extractDilovodRemarkFromReleaseItems(input.record.items);
-  const remark = appendWarehouseReleaseDilovodRemark(previousRemark, input.remarkNote);
+  const storedRemark = extractDilovodRemarkFromReleaseItems(input.record.items);
+  const originalRemark =
+    stripWarehouseReleaseEditRemarkSuffixes(storedRemark ?? '')
+    || (input.record.comment != null ? String(input.record.comment).trim() : '');
+  const remark = appendWarehouseReleaseDilovodRemark(originalRemark || null, input.remarkNote);
   const resolvedDocMode = String(input.record.operationType ?? '').trim() === 'unkit'
     ? SET_RELEASE_DOC_MODE_UNKIT
     : SET_RELEASE_DOC_MODE_KIT;
@@ -2011,6 +1999,7 @@ router.patch('/:id', authenticateToken, warehouseOperate, async (req, res) => {
           storageId: nextStorageId,
           firmId: nextFirmId,
           operationType: nextOperationType,
+          comment: nextComment,
         },
         operDate: nextOperDate,
         quantity: nextQuantity,
