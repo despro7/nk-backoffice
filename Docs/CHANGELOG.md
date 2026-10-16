@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-10-16 — Комплектація: edit лишає проведення Dilovod
+
+**Files:** `SetReleaseController.ts`, `warehouse-release-sets.md`
+
+- Patch kit/unkit у Dilovod: `saveType: 1` (REGISTER), не `2` (UNREGISTER) — редагування більше не знімає проведення.
+- Видалення (`delMark: 1`) як і раніше з `saveType: 2`.
+
+**Документація:** [`warehouse-release-sets.md`](features/warehouse-release-sets.md).
+
+---
+
 ## 2026-10-16 — Комплектація: Kyiv-час, remark редакції, рефреш залишків
 
 **Files:** `kyivDateTime.ts`, `warehouseReleaseRemark.ts`, `SetReleaseController.ts`, `formatUtils.ts`, `useReleaseSets.ts`, `ReleaseComponentBatchesPanel.tsx`, `warehouse-release-sets.md`

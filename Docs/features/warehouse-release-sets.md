@@ -83,6 +83,7 @@ Switch у шапці сторінки. Двокроковий wizard:
 - **Аудит:** `WarehouseReleaseAuditService` → `hr_audit_log` (`entityType: warehouse_release_set`), `GET /api/warehouse/releases/:id/audit`, акордеон у `WarehouseReleaseAuditAccordion.tsx`.
 - **Примітка Dilovod** при зміні полів історії — `warehouseReleaseRemark.ts` (`appendWarehouseReleaseDilovodRemark`).
 - **Формат remark (2026-10-16):** оригінальний коментар зберігається; суфікс ` | Редакція → {хто}, {коли}` (без деталей diff). Повторне редагування замінює попередній суфікс (і legacy `Редаговано в backoffice…`). База — `dilovod_remark` після strip, інакше `comment` запису.
+- **Проведення Dilovod (2026-10-16):** `syncWarehouseReleaseToDilovod` шле `saveType: 1` (REGISTER) + `posted: 1`, щоб edit не знімав проведення. `saveType: 2` лише при delete/`delMark`.
 
 ### Час операції — Europe/Kyiv (2026-10-16)
 

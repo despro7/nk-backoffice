@@ -730,8 +730,9 @@ async function syncWarehouseReleaseToDilovod(input: {
     ? SET_RELEASE_DOC_MODE_UNKIT
     : SET_RELEASE_DOC_MODE_KIT;
 
+  // saveType: 1 (REGISTER) — оновлення з проведенням; 2 (UNREGISTER) знімає проведення.
   const payload: Record<string, unknown> = {
-    saveType: 2,
+    saveType: 1,
     header: {
       id: dilovodDocId,
       date: formatLocalDate(input.operDate),
