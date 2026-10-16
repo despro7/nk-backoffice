@@ -78,6 +78,12 @@ model User {
 - **«Завершити переміщення»** — пряма відправка `dryRun=false`
 - **«Показати payload»** — видима тільки адміністраторам, викликає `dryRun=true`, відкриває `PayloadPreviewModal` з можливістю відправити звідти
 
+## Дата операції — Europe/Kyiv (2026-10-16)
+
+- `header.date` у payload і парсинг `movementDate` / `asOfDate` — через `shared/utils/kyivDateTime.ts` (`formatKyivDateTime` / `parseKyivDateTime`), **не** TZ Node-процесу.
+- Раніше `WarehousePayloadBuilder` збирав дату через `getHours()`/`getFullYear()` → зсув +1 год у звітах при коректному тексті в Dilovod (як у комплектації).
+- Клієнт: `formatLocalDateTime` у `useMovementDraftState` також Kyiv wall-clock.
+
 ## Мобільна гілка (прийом і перезапис)
 
 Окремий цикл `/warehouse/movement-mob` **не** викликає `POST /api/warehouse/movements/send`. Dilovod з’являється лише після підтвердження отримання:

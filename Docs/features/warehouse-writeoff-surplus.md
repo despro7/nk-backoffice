@@ -24,6 +24,8 @@
 
 Payload збирає `buildGoodDocumentPayload` (`server/modules/Warehouse/warehouseGoodDocumentUtils.ts`). Таблична частина — `tpGoods` з `good`, `goodPart`, `qty`, `accGood`.
 
+**Дата (2026-10-16):** `parseLocalDate` / `formatLocalDateTime` у utils і клієнтські `formatLocalDate` — wall-clock **Europe/Kyiv** (`shared/utils/kyivDateTime.ts`), щоб не було зсуву +1 год при TZ процесу ≠ Kyiv.
+
 Для оприбуткування використовуються типові значення з існуючих документів у базі:
 
 - `WAREHOUSE_SURPLUS_INCOME_ITEM` — «Інші доходи»

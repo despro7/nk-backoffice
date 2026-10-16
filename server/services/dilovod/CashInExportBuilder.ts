@@ -13,6 +13,7 @@ import { PrismaClient } from '@prisma/client';
 import { dilovodExportFlowService, dilovodService } from './index.js';
 import { getDilovodUserId } from './DilovodUtils.js';
 import { logServer } from '../../lib/utils.js';
+import { formatKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import type { CashInConfirmedRow, CashInExportResponse } from '../../../shared/types/cashIn.js';
 
 const prisma = new PrismaClient();
@@ -371,10 +372,8 @@ export class CashInExportBuilder {
   private formatDateForDilovod(isoDate: string): string {
     const d = new Date(isoDate);
     if (isNaN(d.getTime())) return isoDate;
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day} 23:00:00`;
+    // Календарний день Europe/Kyiv + фіксований час (історична конвенція cashIn)
+    return `${formatKyivDateTime(d).slice(0, 10)} 23:00:00`;
   }
 }
 

@@ -28,6 +28,7 @@ import {
   isUsableDilovodBatchId,
   sanitizeStoredBatchName,
 } from '../../../shared/utils/dilovodBatchId.js';
+import { parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 
 const router = Router();
 const warehouseOperate = requirePermission('warehouse', 'operate', 'Створювати/відправляти складські документи');
@@ -272,12 +273,13 @@ router.get('/drafts', authenticateToken, async (req, res) => {
 router.get('/products-for-movement', authenticateToken, async (req, res) => {
   try {
     console.log('🏪 [Warehouse] GET /products-for-movement - запит товарів для переміщення...');
-    // Парсимо asOfDate якщо передано в query
+    // Парсимо asOfDate якщо передано в query (wall-clock Europe/Kyiv або ISO)
     let parsedDate: Date | undefined;
     if (req.query.asOfDate && typeof req.query.asOfDate === 'string') {
-      parsedDate = new Date(req.query.asOfDate);
-      if (isNaN(parsedDate.getTime())) parsedDate = undefined;
-      else console.log(`📅 /products-for-movement requested for date: ${parsedDate.toLocaleString('uk-UA')}`);
+      parsedDate = parseKyivDateTime(req.query.asOfDate) ?? undefined;
+      if (parsedDate) {
+        console.log(`📅 /products-for-movement requested for date: ${parsedDate.toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv' })}`);
+      }
     }
 
     const [result, settings] = await Promise.all([
@@ -539,9 +541,9 @@ router.get('/batch-numbers', authenticateToken, async (req, res) => {
 
     let parsedDate: Date | undefined;
     if (asOfDate && typeof asOfDate === 'string') {
-      parsedDate = new Date(asOfDate);
-      if (isNaN(parsedDate.getTime())) {
-        return res.status(400).json({ error: 'Invalid date format. Expected ISO string (e.g., 2026-04-09T14:30:00Z)' });
+      parsedDate = parseKyivDateTime(asOfDate) ?? undefined;
+      if (!parsedDate) {
+        return res.status(400).json({ error: 'Invalid date format. Expected YYYY-MM-DD HH:mm:ss (Kyiv) or ISO' });
       }
     }
 
@@ -685,14 +687,14 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'SKU is required' });
     }
 
-    // Парсимо дату якщо вона передана
+    // Парсимо дату якщо вона передана (wall-clock Europe/Kyiv або ISO)
     let parsedDate: Date | undefined;
     if (asOfDate && typeof asOfDate === 'string') {
-      parsedDate = new Date(asOfDate);
-      if (isNaN(parsedDate.getTime())) {
-        return res.status(400).json({ error: 'Invalid date format. Expected ISO string (e.g., 2026-04-09T14:30:00Z)' });
+      parsedDate = parseKyivDateTime(asOfDate) ?? undefined;
+      if (!parsedDate) {
+        return res.status(400).json({ error: 'Invalid date format. Expected YYYY-MM-DD HH:mm:ss (Kyiv) or ISO' });
       }
-      console.log(`📦 [Warehouse] Партії запитуються на дату: ${parsedDate.toLocaleString('uk-UA')}`);
+      console.log(`📦 [Warehouse] Партії запитуються на дату: ${parsedDate.toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv' })}`);
     }
 
     // Імпортуємо DilovodService і getDilovodConfigFromDB для отримання партій
@@ -846,9 +848,9 @@ router.get('/stock-snapshot', authenticateToken, async (req, res) => {
 
     let parsedDate: Date | undefined;
     if (asOfDateRaw && typeof asOfDateRaw === 'string') {
-      parsedDate = new Date(asOfDateRaw);
-      if (isNaN(parsedDate.getTime())) {
-        return res.status(400).json({ error: 'Invalid "asOfDate" format. Expected ISO string.' });
+      parsedDate = parseKyivDateTime(asOfDateRaw) ?? undefined;
+      if (!parsedDate) {
+        return res.status(400).json({ error: 'Invalid "asOfDate" format. Expected YYYY-MM-DD HH:mm:ss (Kyiv) or ISO.' });
       }
     }
 
@@ -907,9 +909,9 @@ router.post('/stock-snapshot', authenticateToken, async (req, res) => {
 
     let parsedDate: Date | undefined;
     if (asOfDate && typeof asOfDate === 'string') {
-      parsedDate = new Date(asOfDate);
-      if (isNaN(parsedDate.getTime())) {
-        return res.status(400).json({ error: 'Invalid "asOfDate" format. Expected ISO string.' });
+      parsedDate = parseKyivDateTime(asOfDate) ?? undefined;
+      if (!parsedDate) {
+        return res.status(400).json({ error: 'Invalid "asOfDate" format. Expected YYYY-MM-DD HH:mm:ss (Kyiv) or ISO.' });
       }
     }
 
@@ -1420,14 +1422,14 @@ router.put('/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Draft not found or access denied' });
     }
 
-    // Парсимо дату переміщення якщо вона передана
+    // Парсимо дату переміщення якщо вона передана (wall-clock Europe/Kyiv)
     let parsedMovementDate: Date | undefined;
     if (movementDate) {
-      parsedMovementDate = new Date(movementDate);
-      if (isNaN(parsedMovementDate.getTime())) {
-        return res.status(400).json({ error: 'Invalid movementDate format. Expected ISO string (e.g., 2026-04-09T14:30:00Z)' });
+      parsedMovementDate = parseKyivDateTime(movementDate) ?? undefined;
+      if (!parsedMovementDate) {
+        return res.status(400).json({ error: 'Invalid movementDate format. Expected YYYY-MM-DD HH:mm:ss (Kyiv) or ISO' });
       }
-      console.log(`📦 [Warehouse] Дата переміщення: ${parsedMovementDate.toLocaleString('uk-UA')}`);
+      console.log(`📦 [Warehouse] Дата переміщення: ${parsedMovementDate.toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv' })}`);
     }
 
     const updatedDraft = await WarehouseService.updateMovement(Number(id), {
@@ -1867,12 +1869,12 @@ router.post('/', authenticateToken, async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Парсимо дату переміщення якщо вона передана
+    // Парсимо дату переміщення якщо вона передана (wall-clock Europe/Kyiv)
     let parsedMovementDate: Date | undefined;
     if (movementDate) {
-      parsedMovementDate = new Date(movementDate);
-      if (isNaN(parsedMovementDate.getTime())) {
-        return res.status(400).json({ error: 'Invalid movementDate format. Expected ISO string (e.g., 2026-04-09T14:30:00Z)' });
+      parsedMovementDate = parseKyivDateTime(movementDate) ?? undefined;
+      if (!parsedMovementDate) {
+        return res.status(400).json({ error: 'Invalid movementDate format. Expected YYYY-MM-DD HH:mm:ss (Kyiv) or ISO' });
       }
       console.log(`📦 [Warehouse] Дата переміщення: ${parsedMovementDate.toISOString()}`);
     }

@@ -3,6 +3,7 @@
 import { DilovodConfig } from './DilovodTypes.js';
 import { prisma } from '../../lib/utils.js';
 import { pickHumanBatchLabel } from '../../../shared/utils/dilovodBatchId.js';
+import { formatKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 
 // ============================================================
 // Діагностика результату saveObject від Dilovod API
@@ -546,11 +547,7 @@ export function formatDateForDilovod(
   }
 
   // mode === 'Kyiv' за замовчуванням
-  return now.toLocaleString('sv-SE', {
-    // Формат: YYYY-MM-DD HH:mm:ss за часовим поясом Europe/Kyiv
-    timeZone: 'Europe/Kyiv',
-    hour12: false
-  }).replace('T', ' ');
+  return formatKyivDateTime(now);
 }
 
 // Валідація конфігурації Dilovod

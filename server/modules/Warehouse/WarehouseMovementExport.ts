@@ -1,5 +1,6 @@
 import { prisma } from '../../lib/utils.js';
 import { isUsableDilovodBatchId } from '../../../shared/utils/dilovodBatchId.js';
+import { parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import { WarehousePayloadBuilder, type PayloadMovementProduct } from './WarehousePayloadBuilder.js';
 import type { WarehouseMovementSettings } from '../../../shared/types/movement.js';
 
@@ -112,8 +113,15 @@ export async function exportWarehouseMovementToDilovod(
   const settings = await WarehousePayloadBuilder.loadSettings();
   const authorDilovodId = await WarehousePayloadBuilder.getAuthorDilovodId(userId);
   const docDate = movementDate
-    ? new Date(movementDate)
+    ? (parseKyivDateTime(movementDate) ?? new Date(movementDate as string | Date))
     : (draft.movementDate ?? new Date());
+  if (Number.isNaN(docDate.getTime())) {
+    return {
+      kind: 'error',
+      httpStatus: 400,
+      body: { success: false, error: 'Invalid movementDate' },
+    };
+  }
 
   const payload = await WarehousePayloadBuilder.buildPayload({
     draft: {

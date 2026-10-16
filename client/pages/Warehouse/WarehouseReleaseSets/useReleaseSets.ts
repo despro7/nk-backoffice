@@ -17,6 +17,7 @@ import type {
   ReleasePreviewComponent,
 } from '@shared/types/warehouseRelease';
 import { buildRebatchSku, isRebatchSku } from '@shared/types/warehouseRelease';
+import { formatKyivDateTime, parseKyivDateTime } from '@shared/utils/kyivDateTime';
 import { formatCorrectionBatchDateLabel } from './releaseConfirmCopy';
 
 export type ReleaseSetsOperationKey = 'goodKit' | 'goodUnKit';
@@ -481,33 +482,8 @@ export default function useReleaseSets() {
   const [editingRelease, setEditingRelease] = useState<EditingWarehouseRelease | null>(null);
   const syncedSetQuantityRef = useRef<number | null>(null);
 
-  const formatLocalDate = (date: Date): string => {
-    const pad = (value: number): string => String(value).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-  };
-
-  const parseLocalDate = (value: unknown): Date | null => {
-    if (typeof value !== 'string' || value.trim() === '') {
-      return null;
-    }
-
-    const trimmed = value.trim();
-    const localMatch = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
-    if (localMatch) {
-      const [, year, month, day, hours, minutes, seconds] = localMatch;
-      return new Date(
-        Number(year),
-        Number(month) - 1,
-        Number(day),
-        Number(hours),
-        Number(minutes),
-        Number(seconds ?? '0'),
-      );
-    }
-
-    const parsed = new Date(trimmed);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  };
+  const formatLocalDate = (date: Date): string => formatKyivDateTime(date);
+  const parseLocalDate = (value: unknown): Date | null => parseKyivDateTime(value);
 
   const getPayloadDate = (): string | null => {
     const parsed = parseLocalDate(returns.returnDate);

@@ -90,6 +90,7 @@ Switch у шапці сторінки. Двокроковий wizard:
 - Рядки `YYYY-MM-DD HH:mm:ss` без TZ парсяться/форматуються як wall-clock **Europe/Kyiv** (`shared/utils/kyivDateTime.ts`), незалежно від TZ Node-процесу.
 - Інакше Dilovod отримував «локальний» час сервера, а звіти UI (`formatDate` / `operDate` з БД) показували +1 год (типово сервер UTC+2 vs Kyiv UTC+3).
 - `formatDate` / `formatDateTime` на клієнті також з `timeZone: 'Europe/Kyiv'`.
+- **Розширення (той самий день):** той самий контракт застосовано до переміщень, sale/return, writeoff/surplus UI, returns, cash-in/виписки — див. [`warehouse-movement-dilovod-export.md`](warehouse-movement-dilovod-export.md).
 
 ### Рефреш залишків при мета-змінах (2026-10-16)
 

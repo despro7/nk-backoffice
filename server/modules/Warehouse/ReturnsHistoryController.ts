@@ -4,22 +4,9 @@ import { resolveAuthorNames, getFirmDisplayNameServer } from '../../lib/utils.js
 import { safeParseItems, normalizeItemsArray } from './historyNormalize.js';
 import { salesDriveService } from '../../services/salesDriveService.js';
 import { authenticateToken, requirePermission } from '../../middleware/auth.js';
+import { parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 
-const parseLocalDate = (value: any): Date | null => {
-  if (!value) return null;
-  if (value instanceof Date) return value;
-  if (typeof value !== 'string') return null;
-
-  const trimmed = value.trim();
-  const localMatch = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(trimmed);
-  if (localMatch) {
-    const [, year, month, day, hours, minutes, seconds] = localMatch;
-    return new Date(Number(year), Number(month) - 1, Number(day), Number(hours), Number(minutes), Number(seconds ?? '0'));
-  }
-
-  const parsed = new Date(trimmed);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
+const parseLocalDate = (value: unknown): Date | null => parseKyivDateTime(value);
 
 const router = Router();
 const warehouseOperate = requirePermission('warehouse', 'operate', 'Створювати/відправляти складські документи');

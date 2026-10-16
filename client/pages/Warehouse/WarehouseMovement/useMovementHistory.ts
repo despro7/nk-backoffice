@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { GoodMovingDocument, GoodMovingDocumentDetails, MovementHistoryResponse } from '@shared/types/movement';
+import { formatKyivDateTime } from '@shared/utils/kyivDateTime';
 
 // ---------------------------------------------------------------------------
 // Типи пресетів дат
@@ -9,8 +10,7 @@ export type DatePreset = '7d' | '14d' | '30d' | 'month';
 
 /** Обчислює fromDate і toDate на основі пресету і вибраного місяця */
 function computeDateRange(preset: DatePreset, selectedMonth: Date): { fromDate: string; toDate?: string } {
-  const toIsoDateTime = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+  const toIsoDateTime = (d: Date) => formatKyivDateTime(d);
 
   if (preset === 'month') {
     const y = selectedMonth.getFullYear();

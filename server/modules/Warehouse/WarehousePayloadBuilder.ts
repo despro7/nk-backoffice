@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/utils.js';
 import { getDilovodUserId } from '../../services/dilovod/DilovodUtils.js';
 import { isUsableDilovodBatchId } from '../../../shared/utils/dilovodBatchId.js';
+import { formatKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import {
   WAREHOUSE_MOVEMENT_DOC_MODE,
   WAREHOUSE_MOVEMENT_SETTING_DEFAULTS,
@@ -107,16 +108,15 @@ export class WarehousePayloadBuilder {
   // Генерування номера документа за шаблоном (напр. П-{#####})
   // --------------------------------------------------------------------------
   static generateDocumentNumber(template: string, internalDocNumber: string): string {
-    const now = new Date();
-    const pad = (n: number, len = 2): string => String(n).padStart(len, '0');
+    const kyiv = formatKyivDateTime(new Date()); // YYYY-MM-DD HH:mm:ss
     const numeric = String(internalDocNumber).replace(/^П-/i, '').replace(/\D/g, '') || internalDocNumber;
 
     return template
-      .replace('{YYYY}', String(now.getFullYear()))
-      .replace('{MM}', pad(now.getMonth() + 1))
-      .replace('{DD}', pad(now.getDate()))
-      .replace('{HH}', pad(now.getHours()))
-      .replace('{mm}', pad(now.getMinutes()))
+      .replace('{YYYY}', kyiv.slice(0, 4))
+      .replace('{MM}', kyiv.slice(5, 7))
+      .replace('{DD}', kyiv.slice(8, 10))
+      .replace('{HH}', kyiv.slice(11, 13))
+      .replace('{mm}', kyiv.slice(14, 16))
       .replace('{###}', numeric.padStart(3, '0'))
       .replace('{#####}', numeric.padStart(5, '0'));
   }
@@ -205,9 +205,8 @@ export class WarehousePayloadBuilder {
     const storageFrom = draft.sourceWarehouse || overrides?.storageFrom || settings.storageFrom;
     const storageTo = draft.destinationWarehouse || overrides?.storageTo || settings.storageTo;
 
-    // Форматуємо дату у локальному часі (без UTC-конвертації)
-    const pad = (n: number): string => String(n).padStart(2, '0');
-    const formattedDate = `${movementDate.getFullYear()}-${pad(movementDate.getMonth() + 1)}-${pad(movementDate.getDate())} ${pad(movementDate.getHours())}:${pad(movementDate.getMinutes())}:${pad(movementDate.getSeconds())}`;
+    // Wall-clock Europe/Kyiv для Dilovod (не TZ процесу Node)
+    const formattedDate = formatKyivDateTime(movementDate);
 
     // Номер у Dilovod: для нових — лише якщо numberGeneration='server'.
     // При повторній відправці зберігаємо номер, який уже стоїть у Dilovod.

@@ -10,6 +10,7 @@ import {
   filterWarehouseSelectableBatches,
   pickDefaultRealWarehouseBatch,
 } from '../shared/filterWarehouseSelectableBatches';
+import { formatKyivDateTime, parseKyivDateTime } from '@shared/utils/kyivDateTime';
 import { isMonolithicForReturn, type ReturnItem, type ReturnBatch, type ReturnHistoryRecord } from './WarehouseReturnsTypes';
 
 interface OrderSearchResult {
@@ -542,25 +543,9 @@ export function useWarehouseReturns() {
     if (!selectedOrderId) return;
     setIsSubmitting(true);
     try {
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const formatDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-      const parseStoredDate = (s?: string | null) => {
-        if (!s) return null;
-        try {
-          if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
-            const [datePart, timePart] = s.split(' ');
-            const [y, m, d] = datePart.split('-').map(Number);
-            const [hh, mm, ss] = timePart.split(':').map(Number);
-            return new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, ss || 0);
-          }
-          const parsed = new Date(s);
-          if (!Number.isNaN(parsed.getTime())) return parsed;
-        } catch (e) {}
-        return null;
-      };
       const payloadDate = (() => {
-        const parsed = parseStoredDate(returnDate);
-        return parsed ? formatDate(parsed) : formatDate(new Date());
+        const parsed = parseKyivDateTime(returnDate);
+        return parsed ? formatKyivDateTime(parsed) : formatKyivDateTime(new Date());
       })();
       const sanitizedComment = sanitizeText(comment) ?? '';
       const sanitizedReason = sanitizeText(returnReason) ?? '';

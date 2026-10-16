@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-10-16 — Dilovod docs: Europe/Kyiv wall-clock скрізь
+
+**Files:** `kyivDateTime.ts`, `WarehousePayloadBuilder.ts`, `WarehouseMovementExport.ts`, `WarehouseController.ts`, `DilovodExportBuilder.ts`, `DilovodApiClient.ts`, `DilovodUtils.ts`, CashIn/BankStatement builders, ReturnsHistory, warehouse client formatters
+
+- Той самий зсув +1 год, що в комплектації: дати payload/`asOfDate` йшли через TZ процесу (`getHours` / `getTimezoneOffset`).
+- Уніфікація на `parseKyivDateTime` / `formatKyivDateTime`: переміщення, sale/return/order, writeoff/surplus (клієнт), returns, cash-in, виписка, stock/batches API.
+
+**Документація:** [`warehouse-movement-dilovod-export.md`](features/warehouse-movement-dilovod-export.md), [`warehouse-release-sets.md`](features/warehouse-release-sets.md), [`warehouse-writeoff-surplus.md`](features/warehouse-writeoff-surplus.md).
+
+---
+
 ## 2026-10-16 — Комплектація: edit лишає проведення Dilovod
 
 **Files:** `SetReleaseController.ts`, `warehouse-release-sets.md`

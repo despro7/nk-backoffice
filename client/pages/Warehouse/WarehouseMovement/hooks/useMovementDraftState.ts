@@ -4,6 +4,7 @@ import { LoggingService } from '@/services/LoggingService';
 import { serializeMovementItems } from '../WarehouseMovementUtils';
 import type { MovementProduct, MovementDraft, MovementBatch } from '../WarehouseMovementTypes';
 import { DILOVOD_WAREHOUSE_DEFAULTS } from '@shared/types/dilovod';
+import { formatKyivDateTime } from '@shared/utils/kyivDateTime';
 
 // ---------------------------------------------------------------------------
 // useMovementDraftState — стан і логіка чернетки переміщення
@@ -18,11 +19,8 @@ import { DILOVOD_WAREHOUSE_DEFAULTS } from '@shared/types/dilovod';
 //   • loadMovementFromHistory — відновлення документа з Dilovod-History
 // ---------------------------------------------------------------------------
 
-/** Форматує Date у "YYYY-MM-DD HH:mm:ss" в локальному часі (без UTC-конвертації) */
-export const formatLocalDateTime = (date: Date): string => {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-};
+/** Форматує Date у "YYYY-MM-DD HH:mm:ss" (Europe/Kyiv wall-clock для Dilovod) */
+export const formatLocalDateTime = (date: Date): string => formatKyivDateTime(date);
 
 /** Генерує суфікс коментаря. isAdd=true → "Додано", false → "Оновлено" */
 const buildDefaultNotes = (isAdd: boolean): string => {

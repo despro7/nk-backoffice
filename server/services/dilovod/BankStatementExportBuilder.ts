@@ -7,6 +7,7 @@ import { PrismaClient } from '@prisma/client';
 import { dilovodExportFlowService, dilovodService } from './index.js';
 import { getDilovodUserId } from './DilovodUtils.js';
 import { logServer } from '../../lib/utils.js';
+import { formatKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import type {
   BankStatementConfirmedRow,
   BankStatementExportResponse,
@@ -344,10 +345,8 @@ export class BankStatementExportBuilder {
   private formatDateForDilovod(isoDate: string): string {
     const d = new Date(isoDate);
     if (isNaN(d.getTime())) return isoDate;
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day} 00:00:01`;
+    // Календарний день Europe/Kyiv + фіксований час (історична конвенція виписки)
+    return `${formatKyivDateTime(d).slice(0, 10)} 00:00:01`;
   }
 }
 

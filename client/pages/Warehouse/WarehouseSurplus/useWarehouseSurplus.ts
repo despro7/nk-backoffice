@@ -5,6 +5,7 @@ import {
   DEFAULT_WAREHOUSE_DOC_HISTORY_PAGINATION,
   type WarehouseDocHistoryPagination,
 } from '@/pages/Warehouse/shared/warehouseDocHistoryTypes';
+import { formatKyivDateTime } from '@shared/utils/kyivDateTime';
 
 export type EditingWarehouseSurplus = {
   id: number;
@@ -20,10 +21,7 @@ export default function useWarehouseSurplus(opts: { returns?: any } = {}) {
   const { returns: returnsOpt } = opts;
   const dirsCtx = useDilovodDirectories();
 
-  const formatLocalDate = (date: Date): string => {
-    const pad = (value: number): string => String(value).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-  };
+  const formatLocalDate = (date: Date): string => formatKyivDateTime(date);
 
   const [storages, setStorages] = useState<any[]>([]);
   const [productSearchResults, setProductSearchResults] = useState<any[]>([]);

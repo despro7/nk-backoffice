@@ -31,6 +31,7 @@ import {
   extractBatchLabelFromGoodPartHeader,
 } from './DilovodUtils.js';
 import { delay } from './DilovodUtils.js';
+import { formatKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import {
   batchNumberNeedsResolution,
   isMissingDilovodDate,
@@ -1138,14 +1139,9 @@ export class DilovodApiClient {
     await this.ensureReady();
 
     // Якщо дата передана — форматуємо у Kyiv timezone; інакше поточна дата
-    let formattedDate: string;
-    if (asOfDate) {
-      const pad = (n: number) => n.toString().padStart(2, '0');
-      const kyivDate = new Date(asOfDate.toLocaleString('en-US', { timeZone: 'Europe/Kyiv' }));
-      formattedDate = `${kyivDate.getFullYear()}-${pad(kyivDate.getMonth() + 1)}-${pad(kyivDate.getDate())} ${pad(kyivDate.getHours())}:${pad(kyivDate.getMinutes())}:${pad(kyivDate.getSeconds())}`;
-    } else {
-      formattedDate = formatDateForDilovod('Kyiv');
-    }
+    const formattedDate = asOfDate
+      ? formatKyivDateTime(asOfDate)
+      : formatDateForDilovod('Kyiv');
 
     const request: DilovodApiRequest = {
       version: "0.25",
@@ -2061,15 +2057,9 @@ export class DilovodApiClient {
     const includeNonPositiveQty = Boolean(options?.includeNonPositiveQty);
     const skipExpiration = Boolean(options?.skipExpiration);
 
-    let formattedDate: string;
-    if (asOfDate) {
-      const date = new Date(asOfDate);
-      const pad = (n: number) => n.toString().padStart(2, '0');
-      const kyivDate = new Date(date.toLocaleString('en-US', { timeZone: 'Europe/Kyiv' }));
-      formattedDate = `${kyivDate.getFullYear()}-${pad(kyivDate.getMonth() + 1)}-${pad(kyivDate.getDate())} ${pad(kyivDate.getHours())}:${pad(kyivDate.getMinutes())}:${pad(kyivDate.getSeconds())}`;
-    } else {
-      formattedDate = formatDateForDilovod('Kyiv');
-    }
+    const formattedDate = asOfDate
+      ? formatKyivDateTime(new Date(asOfDate))
+      : formatDateForDilovod('Kyiv');
 
     const effectiveFirmId = firmId || this.config.defaultFirmId;
 

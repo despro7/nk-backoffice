@@ -20,6 +20,7 @@ import type {
   DilovodChannelMapping
 } from '../../../shared/types/dilovod.js';
 import { normalizePhoneNumber } from '../../../shared/utils/phoneNormalizer.js';
+import { formatKyivDateTime, parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import { getDilovodConfigFromDB, getDilovodUserId } from './DilovodUtils.js';
 import { catalogOpsLookup } from '../../modules/Products/CatalogOpsLookup.js';
 import { DilovodService } from './index.js';
@@ -209,16 +210,10 @@ export class DilovodExportBuilder {
       // Використовуємо readyToShipAt як дату відвантаження, якщо вона є
       let saleDate: string;
       if (context.order.readyToShipAt) {
-        // Конвертуємо readyToShipAt в формат Dilovod (YYYY-MM-DD HH:MM:SS) з UTC в локальний час (Київ UTC+2/+3)
-        const utcReadyDate = new Date(context.order.readyToShipAt);
-        const readyDate = new Date(utcReadyDate.getTime() - utcReadyDate.getTimezoneOffset() * 60000);
-        saleDate = readyDate.toISOString().replace('T', ' ').substring(0, 19);
+        saleDate = formatKyivDateTime(new Date(context.order.readyToShipAt));
         console.log(`  📅 Використовуємо дату готовності до відправки: ${saleDate}`);
       } else {
-        // Fallback на поточну дату, якщо readyToShipAt не встановлено
-        const utcNow = new Date();
-        const localNow = new Date(utcNow.getTime() - utcNow.getTimezoneOffset() * 60000);
-        saleDate = localNow.toISOString().replace('T', ' ').substring(0, 19);
+        saleDate = formatKyivDateTime(new Date());
         context.warnings.push('Дата готовності до відправки (readyToShipAt) не встановлена, використовується поточна дата');
         console.log(`  ⚠️  readyToShipAt не встановлено, використовуємо поточну дату: ${saleDate}`);
       }
@@ -297,33 +292,14 @@ export class DilovodExportBuilder {
       const { header: baseHeader } = await this.buildHeaderWithMapping(context, { allowCreatePerson: false, userId: userId, overrideFirmId });
       const person = await this.findOrCreatePerson(context, { allowCreatePerson: false });
 
-      // Determine document date: prefer provided documentDate, fall back to current local time
-      const parseProvidedDate = (s?: string | null) => {
-        if (!s) return null;
-        try {
-          // Accept format YYYY-MM-DD HH:mm:ss
-          if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
-            const [datePart, timePart] = s.split(' ');
-            const [y, m, d] = datePart.split('-').map(Number);
-            const [hh, mm, ss] = timePart.split(':').map(Number);
-            return new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, ss || 0);
-          }
-          const parsed = new Date(s);
-          if (!Number.isNaN(parsed.getTime())) return parsed;
-        } catch (e) {}
-        return null;
-      };
-
-      const utcNow = new Date();
-      const localNow = new Date(utcNow.getTime() - utcNow.getTimezoneOffset() * 60000);
-
       // If the caller provided a date in the exact `YYYY-MM-DD HH:mm:ss` form, preserve it verbatim
+      // (вже wall-clock Kyiv з клієнта). Інакше — parseKyiv / formatKyiv.
       let docDate: string;
       if (documentDate && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(documentDate)) {
         docDate = String(documentDate).substring(0, 19);
       } else {
-        const effectiveDate = parseProvidedDate(documentDate) ?? localNow;
-        docDate = effectiveDate.toISOString().replace('T', ' ').substring(0, 19);
+        const effectiveDate = parseKyivDateTime(documentDate) ?? new Date();
+        docDate = formatKyivDateTime(effectiveDate);
       }
 
       // Об'єднуємо comment та reason у remark
@@ -506,18 +482,10 @@ export class DilovodExportBuilder {
       deliveryAddress = order.deliveryAddress;
     }
 
-    // Формуємо дату документа - конвертуємо з UTC в локальний час (Київ UTC+2/+3)
-    let documentDate: string;
-    if (order.orderDate) {
-      const utcDate = new Date(order.orderDate);
-      // Конвертуємо UTC в локальний час (Київ UTC+2/+3)
-      const localDate = new Date(utcDate.getTime() - utcDate.getTimezoneOffset() * 60000);
-      documentDate = localDate.toISOString().replace('T', ' ').substring(0, 19);
-    } else {
-      const utcNow = new Date();
-      const localNow = new Date(utcNow.getTime() - utcNow.getTimezoneOffset() * 60000);
-      documentDate = localNow.toISOString().replace('T', ' ').substring(0, 19);
-    }
+    // Дата документа — wall-clock Europe/Kyiv (не TZ процесу Node)
+    const documentDate = formatKyivDateTime(
+      order.orderDate ? new Date(order.orderDate) : new Date(),
+    );
 
     // Отримуємо номер замовлення для поля number (з суфіксом/префіксом, якщо потрібно)
     const orderNumber = await orderDatabaseService.getOrderNumberFromId(Number(order.id));

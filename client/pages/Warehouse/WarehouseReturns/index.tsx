@@ -17,6 +17,7 @@ import { formatPrice } from '@/lib/formatUtils';
 import { ToastService } from '@/services/ToastService';
 import { ReturnsHistoryService } from '@/services/ReturnsHistoryService';
 import { DateTimePicker } from '@/components/DateTimePicker';
+import { formatKyivDateTime, parseKyivDateTime } from '@shared/utils/kyivDateTime';
 import { isMonolithicForReturn, type ReturnHistoryRecord } from './WarehouseReturnsTypes';
 
 const RETURN_REASONS: string[] = [
@@ -110,22 +111,8 @@ export default function WarehouseReturns() {
     setIsLoadingPayload(true);
       try {
       console.debug('[WarehouseReturns] handleShowPayload - returns.returnDate:', returns.returnDate);
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const formatDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-      const parseStoredDate = (s?: string | null) => {
-        if (!s) return null;
-        try {
-          if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
-            const [datePart, timePart] = s.split(' ');
-            const [y, m, d] = datePart.split('-').map(Number);
-            const [hh, mm, ss] = timePart.split(':').map(Number);
-            return new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, ss || 0);
-          }
-          const parsed = new Date(s);
-          if (!Number.isNaN(parsed.getTime())) return parsed;
-        } catch (e) {}
-        return null;
-      };
+      const formatDate = (d: Date) => formatKyivDateTime(d);
+      const parseStoredDate = (s?: string | null) => parseKyivDateTime(s);
 const dateValue = (() => {
         const parsed = parseStoredDate(returns.returnDate);
         return parsed ? formatDate(parsed) : formatDate(new Date());
@@ -581,28 +568,9 @@ const dateValue = (() => {
                           size="md"
                           labelStyle="text-xs font-medium text-gray-800"
                           inputStyle="border border-gray-200 bg-white hover:bg-gray-100 focus-within:bg-gray-100"
-                          value={(() => {
-                            const s = returns.returnDate;
-                            if (!s) return new Date();
-                            // Accept either our formatted `YYYY-MM-DD HH:mm:ss` or ISO strings
-                            try {
-                              if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
-                                const [datePart, timePart] = s.split(' ');
-                                const [y, m, d] = datePart.split('-').map(Number);
-                                const [hh, mm, ss] = timePart.split(':').map(Number);
-                                return new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, ss || 0);
-                              }
-                              // fallback to Date parsing (handles ISO)
-                              const parsed = new Date(s);
-                              if (!Number.isNaN(parsed.getTime())) return parsed;
-                            } catch (e) {
-                              // ignore
-                            }
-                            return new Date();
-                          })()}
+                          value={parseKyivDateTime(returns.returnDate) ?? new Date()}
                           onChange={(d) => {
-                            const pad = (n: number) => String(n).padStart(2, '0');
-                            const formatted = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+                            const formatted = formatKyivDateTime(d);
                             console.debug('[WarehouseReturns] DateTimePicker onChange -> formatted:', formatted);
                             returns.setReturnDate?.(formatted);
                           }}

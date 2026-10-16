@@ -19,6 +19,7 @@ import { ToastService } from '@/services/ToastService';
 import { useDebug } from '@/contexts/debug-context';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { pluralize } from '@/lib';
+import { formatKyivDateTime } from '@shared/utils/kyivDateTime';
 
 export default function WarehouseWriteOff() {
   const returns = useWarehouseReturns();
@@ -97,10 +98,7 @@ export default function WarehouseWriteOff() {
   const activeWriteOffItems = (returns.items || []).filter((item: any) => !(Array.isArray(item.availableBatches) && item.availableBatches.length === 0));
   const hasActiveWriteOffItems = activeWriteOffItems.length > 0;
 
-  const formatLocalDate = (date: Date): string => {
-    const pad = (value: number): string => String(value).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-  };
+  const formatLocalDate = (date: Date): string => formatKyivDateTime(date);
 
   // Винесена логіка додавання рядка замовлення у товари для списання
   const handleAddOrderLine = async (sku: string, line: any, maxQty: number, qtyArg?: number) => {

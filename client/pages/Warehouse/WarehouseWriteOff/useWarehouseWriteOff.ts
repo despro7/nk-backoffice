@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 import { filterWarehouseSelectableBatches } from '@/pages/Warehouse/shared/filterWarehouseSelectableBatches';
 import { lazyEnrichHistoryPage } from '@/pages/Warehouse/shared/lazyEnrichHistoryPage';
+import { formatKyivDateTime } from '@shared/utils/kyivDateTime';
 
 export type EditingWarehouseWriteOff = {
   id: number;
@@ -34,10 +35,7 @@ export default function useWarehouseWriteOff(opts: Opts = {}) {
   // useDilovodDirectories на верхньому рівні хука (правило хуків)
   const dirsCtx = useDilovodDirectories();
 
-  const formatLocalDate = (date: Date): string => {
-    const pad = (value: number): string => String(value).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-  };
+  const formatLocalDate = (date: Date): string => formatKyivDateTime(date);
 
   const [storages, setStorages] = useState<any[]>([]);
   const [selectedStorage, setSelectedStorage] = useState<string | null>(null);
