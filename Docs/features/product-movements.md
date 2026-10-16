@@ -1,6 +1,6 @@
 # Рухи по товару
 
-**Дата:** 2026-10-05  
+**Дата:** 2026-10-05 (оновлено 2026-10-16)  
 **Маршрут:** `/reports/product-movements` (`STOREKEEPER`+)  
 **Дозвіл:** `page.reports.productMovements`  
 **API:** `GET /api/reports/product-movements/meta`, `POST /api/reports/product-movements`
@@ -47,12 +47,15 @@
 
 - **Фільтри** — `ProductMovementsFilters`: товар (Autocomplete + останні запити), партія, склад, фірма, пресет періоду + DateRangePicker.
 - **Останні запити** — `localStorage` ключ `product-movements-recent-searches-v1`, максимум **10** записів.
-- **Заголовок звіту** — `ProductMovementsReportHeader`: зліва назва/SKU/період/склад (`showIdentity`); справа компактні віджети `ProductMovementsSummaryCards` (початковий залишок, надходження, витрата, залишок).
+- **Заголовок звіту** — `ProductMovementsReportHeader`: зліва назва/SKU/період/склад (`showIdentity`); справа компактні віджети `ProductMovementsSummaryCards`:
+  1. **Партії** — `всього / без рухів` (групи з `lines.length === 0`);
+  2. початковий залишок, надходження, витрата, залишок.
 - **Таблиця** — `ProductMovementsTable`: HeroUI Table, sticky header, іконки типів документів, accordion «Старі партії».
+  - Колонка «Дата» — `ДД.ММ.РРРР`; Tooltip — повна дата+час (`dateTime` з API).
 
 ### Drawer (глобальний)
 
-`ProductMovementsDrawerProvider` обгортає додаток у `App.tsx`. Відкриття через `useProductMovementsDrawer().open(params)`:
+`ProductMovementsDrawerProvider` обгортає додаток у `App.tsx` (drawer підвантажується `lazy`, щоб context не тягнув UI eager-ом). Відкриття: `useProductMovementsDrawer().open(params)`.
 
 ```ts
 interface ProductMovementsOpenParams {
@@ -64,9 +67,23 @@ interface ProductMovementsOpenParams {
   storageId?: string;
   firmId?: string;
   period?: { startDate: string; endDate: string };
-  autoGenerate?: boolean; // автоматично сформувати звіт після відкриття
+  autoGenerate?: boolean;
+  /** Сторона панелі. Default: `right`. */
+  placement?: 'left' | 'right';
+  /**
+   * Side-panel режим: не закривати кліком/Escape, `backdrop="transparent"`,
+   * `shouldBlockScroll={false}`, кліки крізь wrapper на фон.
+   * Default: `false`.
+   */
+  nonDismissable?: boolean;
 }
 ```
+
+У header біля ✕ (на льоту, локальний стан сесії):
+- **pin / pin-off** — перемикач `nonDismissable`;
+- **arrow-left-to-line / arrow-right-to-line** — перемикач `placement`.
+
+**Resize:** смужка на внутрішньому краю; ширина 622–1024 px (кламп також ≤92vw); default ~896; persist у `localStorage` `product-movements-drawer-width-v1` (`useProductMovementsDrawerWidth`).
 
 У compact-режимі Drawer:
 - товар заблокований (`productLocked`), якщо передано `sku` / `dilovodGoodId`;
@@ -78,8 +95,9 @@ interface ProductMovementsOpenParams {
 
 | Місце | Тригер |
 | --- | --- |
-| `ResultDrawer` (деталі замовлення) | Кнопка рухів біля SKU: МС + період = день відвантаження/`readyToShipAt`, `autoGenerate` — див. [`order-details-result-drawer.md`](order-details-result-drawer.md) |
-| `/warehouse/movement-mob/:id` | Клік по назві партії в `MovementMobProductCard` (іконка `arrow-left-right`, `autoGenerate: true`) |
+| `ResultDrawer` (деталі замовлення) | Кнопка рухів: МС + день відвантаження, `autoGenerate`, `placement: 'left'`, `nonDismissable: true` — див. [`order-details-result-drawer.md`](order-details-result-drawer.md) |
+| `/warehouse/batches` | Клік по партії → `autoGenerate: true` |
+| `/warehouse/movement-mob/:id` | Клік по назві партії в `MovementMobProductCard` (`autoGenerate: true`) |
 | `/warehouse/release-sets` | Кнопка «Рухи партії» в `ReleaseComponentBatchesPanel` |
 
 ---
@@ -92,6 +110,7 @@ interface ProductMovementsOpenParams {
 - **Кеш довідників** — `catalogs.storages` і `catalogs.firms` в пам'яті (TTL 5 хв) + dedup in-flight promise.
 - **Паралелізація** — `fetchMovementRows` і `fetchOpeningBalances` через `Promise.all`.
 - **Резолв партій** — `extractGoodPartIdPresentation` / `extractBatchLabelFromGoodPartHeader` у `DilovodUtils.ts` (підтримка `id__pr`, `id.pr`, вкладених структур Dilovod).
+- Рядок руху: `date` (день) + `dateTime` (день+час з `period` Dilovod) для Tooltip у таблиці.
 
 ### Обмеження
 

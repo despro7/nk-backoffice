@@ -43,6 +43,7 @@
 
 - `storageId` = Dilovod `smallStorageId` (малий склад);
 - `period` = один день: `dilovodSaleExportDate` → інакше `readyToShipAt`;
-- `autoGenerate: true`.
+- `autoGenerate: true`;
+- `placement: 'left'`, `nonDismissable: true` — side-panel поруч із деталями замовлення (фон лишається інтерактивним).
 
 Деталі UI звіту / drawer: [`product-movements.md`](product-movements.md).

@@ -10,6 +10,8 @@ import type {
 } from './types';
 
 export interface ProductMovementsGrandTotals {
+  batchesTotal: number;
+  batchesWithoutMovements: number;
   openingBalance: number;
   receiptQty: number;
   expenseQty: number;
@@ -19,7 +21,7 @@ export interface ProductMovementsGrandTotals {
 export function buildProductMovementsGrandTotals(
   groups: ProductMovementsGroup[],
 ): ProductMovementsGrandTotals {
-  return groups.reduce(
+  const qtyTotals = groups.reduce(
     (acc, group) => ({
       openingBalance: acc.openingBalance + group.openingBalance,
       receiptQty: acc.receiptQty + group.totals.receiptQty,
@@ -28,6 +30,12 @@ export function buildProductMovementsGrandTotals(
     }),
     { openingBalance: 0, receiptQty: 0, expenseQty: 0, balanceQty: 0 },
   );
+
+  return {
+    batchesTotal: groups.length,
+    batchesWithoutMovements: groups.filter((group) => group.lines.length === 0).length,
+    ...qtyTotals,
+  };
 }
 
 export function formatYmdToDmy(value: string): string {

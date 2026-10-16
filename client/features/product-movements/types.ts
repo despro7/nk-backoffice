@@ -19,6 +19,8 @@ export interface ProductMovementsFilterState {
   firmId: string | null;
 }
 
+export type ProductMovementsDrawerPlacement = 'left' | 'right';
+
 export interface ProductMovementsOpenParams {
   sku?: string;
   dilovodGoodId?: string;
@@ -30,4 +32,8 @@ export interface ProductMovementsOpenParams {
   period?: { startDate: string; endDate: string };
   /** Автоматично сформувати звіт після відкриття drawer. */
   autoGenerate?: boolean;
+  /** Сторона екрану. За замовчуванням `right`  */
+  placement?: ProductMovementsDrawerPlacement;
+  /** Не закривати кліком зовні / Escape; прозорий backdrop; кліки проходять на контент поза drawer (можна працювати з фоном паралельно). За замовчуванням `false`. */
+  nonDismissable?: boolean;
 }

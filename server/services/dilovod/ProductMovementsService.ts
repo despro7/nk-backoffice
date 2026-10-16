@@ -422,6 +422,7 @@ export class ProductMovementsService {
         lines.push({
           rowNum,
           date: formatDisplayDate(row.period),
+          dateTime: formatDisplayDateTime(row.period),
           documentId: recorderId || null,
           documentLabel,
           receiptQty,
@@ -872,6 +873,26 @@ function formatDisplayDate(value: unknown): string {
   }
 
   return raw;
+}
+
+/** Повна дата+час для Tooltip; якщо часу немає — лише дата. */
+function formatDisplayDateTime(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '—';
+
+  const withTime = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(raw);
+  if (withTime) {
+    const [, y, m, d, hh, mm, ss] = withTime;
+    return `${d}.${m}.${y}, ${hh}:${mm}${ss != null ? `:${ss}` : ''}`;
+  }
+
+  const dottedWithTime = /^(\d{2})\.(\d{2})\.(\d{4})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(raw);
+  if (dottedWithTime) {
+    const [, d, m, y, hh, mm, ss] = dottedWithTime;
+    return `${d}.${m}.${y}, ${hh}:${mm}${ss != null ? `:${ss}` : ''}`;
+  }
+
+  return formatDisplayDate(raw);
 }
 
 function str(value: unknown): string {

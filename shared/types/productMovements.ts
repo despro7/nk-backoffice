@@ -48,7 +48,10 @@ export interface ProductMovementsProductInfo {
 
 export interface ProductMovementsLine {
   rowNum: number;
+  /** Дата операції для таблиці (ДД.ММ.РРРР). */
   date: string;
+  /** Повна дата+час для Tooltip (ДД.ММ.РРРР, ГГ:ХХ:СС). */
+  dateTime: string;
   documentId: string | null;
   documentLabel: string;
   receiptQty: number | null;

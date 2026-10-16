@@ -8,6 +8,7 @@ import {
   TableColumn,
   TableHeader,
   TableRow,
+  Tooltip,
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { ProductMovementsGroup, ProductMovementsQueryResponse } from '../types';
@@ -48,12 +49,24 @@ function OldBatchRow({ group }: { group: ProductMovementsGroup }) {
 function OldBatchesAccordion({ groups }: { groups: ProductMovementsGroup[] }) {
   if (groups.length === 0) return null;
 
+  const totalOldBatchQty = groups.reduce((acc, group) => acc + group.openingBalance, 0);
+
   return (
     <Accordion variant="shadow">
       <AccordionItem
         key="old-batches"
         aria-label="Старі партії"
-        title={`Партії без рухів за обраний період (${groups.length})`}
+        title={
+          <>
+            Партії без рухів за обраний період ({groups.length})<span className="font-normal mx-3 text-default-300">|</span><span className="font-normal">Залишок:{' '}
+            {totalOldBatchQty < 0 ? (
+              <span className="text-danger">{formatQty(totalOldBatchQty)}</span>
+            ) : (
+              formatQty(totalOldBatchQty) || '0'
+            )}
+            </span>
+          </>
+        }
         startContent={<DynamicIcon name="archive" size={18} className="text-default-400" />}
         classNames={{
           title: 'text-sm font-semibold',
@@ -100,19 +113,19 @@ function GroupBlock({ group, compact = false }: { group: ProductMovementsGroup; 
           removeWrapper
           classNames={{
             base: 'gap-0 min-w-0',
-            table: 'min-w-[640px] md:min-w-[720px]',
+            table: 'min-w-[560px]',
             thead: 'md:sticky md:top-[2.375rem] md:z-20',
             th: 'bg-default-100 text-default-500 text-xs font-medium whitespace-nowrap first:rounded-tl-none first:rounded-bl-md last:rounded-tr-none last:rounded-br-md',
-            td: 'text-sm',
+            td: 'text-sm px-1.5',
           }}
         >
           <TableHeader>
-            <TableColumn className="w-12">№</TableColumn>
-            <TableColumn className="w-28">Дата</TableColumn>
+            <TableColumn className="w-8">№</TableColumn>
+            <TableColumn className="w-26">Дата</TableColumn>
             <TableColumn>Документ</TableColumn>
-            <TableColumn className="w-28 text-right">Надходження</TableColumn>
-            <TableColumn className="w-28 text-right">Витрата</TableColumn>
-            <TableColumn className="w-28 text-right">Залишок</TableColumn>
+            <TableColumn className="w-20 text-center truncate text-nowrap">Надходж.</TableColumn>
+            <TableColumn className="w-20 text-center truncate text-nowrap">Витрата</TableColumn>
+            <TableColumn className="w-20 text-center truncate text-nowrap">Залишок</TableColumn>
           </TableHeader>
           <TableBody
             items={tableRows}
@@ -130,13 +143,26 @@ function GroupBlock({ group, compact = false }: { group: ProductMovementsGroup; 
                     : `${group.groupKey}-${line.rowNum}-${line.date}-${line.documentLabel}`}
                   className={`${isSummary ? 'bg-default-200/50 [&>td]:font-semibold' : 'hover:bg-default-100/60'} [&>td:first-child]:rounded-s-md [&>td:last-child]:rounded-e-md`}
                 >
-                  <TableCell className={isSummary ? '' : 'text-default-500'}>
+                  <TableCell className={isSummary ? '' : 'text-default-500 text-center'}>
                     {isSummary ? '' : line.rowNum}
                   </TableCell>
                   <TableCell className="whitespace-nowrap tabular-nums">
-                    {isSummary ? '' : line.date}
+                    {isSummary ? '' : (
+                      <Tooltip
+                        placement="top"
+                        content={line.dateTime || line.date}
+                        delay={200}
+                        showArrow
+                        classNames={{ 
+                          base: 'before:bg-white before:rounded-[2px] before:z-[10] before:shadow-[1px_1px_1px_rgba(0,0,0,0.08)]',
+                          content: 'rounded-sm text-xs bg-white border-0 text-gray-700'
+                        }}
+                      >
+                        <span className="cursor-help">{line.date}</span>
+                      </Tooltip>
+                    )}
                   </TableCell>
-                  <TableCell className="min-w-[220px]">
+                  <TableCell className="min-w-[160px]">
                     <div className="flex items-center gap-2">
                       {iconName ? (
                         <DynamicIcon name={iconName as any} size={15} className={`shrink-0 ${iconClass}`} />
@@ -144,13 +170,13 @@ function GroupBlock({ group, compact = false }: { group: ProductMovementsGroup; 
                       <span>{line.documentLabel}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-right font-mono">
+                  <TableCell className="text-center font-mono">
                     {formatQty(line.receiptQty) || ''}
                   </TableCell>
-                  <TableCell className="text-right font-mono">
+                  <TableCell className="text-center font-mono">
                     {formatQty(line.expenseQty) || ''}
                   </TableCell>
-                  <TableCell className={`text-right font-mono ${line.balanceQty < 0 ? 'text-danger' : ''}`}>
+                  <TableCell className={`text-center font-mono ${line.balanceQty < 0 ? 'text-danger' : ''}`}>
                     {formatQty(line.balanceQty) || '0'}
                   </TableCell>
                 </TableRow>

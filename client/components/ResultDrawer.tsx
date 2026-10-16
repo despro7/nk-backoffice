@@ -623,6 +623,8 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 																								storageId: smallStorageId,
 																								...(movementsDayPeriod ? { period: movementsDayPeriod } : {}),
 																								autoGenerate: true,
+																								placement: 'left',
+																								nonDismissable: true,
 																							})}
 																						>
 																						</Button>

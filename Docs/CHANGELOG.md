@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-10-16 — Рухи по товару: drawer UX + дата/час + партії
+
+**Files:** `ProductMovementsDrawer*.tsx`, `ProductMovementsTable.tsx`, `ProductMovementsSummaryCards.tsx`, `useProductMovementsDrawerWidth.ts`, `ProductMovementsService.ts`, `shared/types/productMovements.ts`, `ResultDrawer.tsx`, `App.tsx`, docs
+
+- Tooltip з повною датою+часом операції (`dateTime`); віджет «Партії» (всього / без рухів).
+- Drawer: `placement` / `nonDismissable`, pin + side toggle у header, resize (min/max, localStorage); provider lazy-load drawer.
+- З деталей замовлення — `left` + `nonDismissable`.
+
+**Документація:** [`product-movements.md`](features/product-movements.md), [`order-details-result-drawer.md`](features/order-details-result-drawer.md).
+
+---
+
 ## 2026-10-16 — Kit-партія: reuse + обовʼязковий ТП
 
 **Files:** `DilovodApiClient.ts`, `WarehouseBatchesService.ts`, `kitBatchName.ts`, `ReleaseSendConfirmModal.tsx`, `SetReleaseController.ts`, `warehouse-release-sets.md`
