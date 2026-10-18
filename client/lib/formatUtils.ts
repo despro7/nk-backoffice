@@ -1,34 +1,35 @@
 /**
- * Утилиты для форматирования дат, времени и других данных
- * 
- * Основные функции:
- * - formatRelativeDate: базовое относительное форматирование дат
- * - formatRelativeDateExtended: расширенное форматирование с настройками
- * - formatDate: стандартное форматирование даты
- * - formatDateTime: форматирование даты и времени
- * - formatDateOnly: только дата
- * - formatTimeOnly: только время
- * - formatPrice: форматирование цены
- * - formatNumber: форматирование чисел
- * - formatPercentage: форматирование процентов
- * - formatFileSize: форматирование размера файла
- * - formatPhone: форматування українського телефону
- * - getStatusColor: возвращает CSS классы для цвета статуса заказа
- * - ORDER_STATUSES: массив статусов заказа
- * - getStatusLabel: возвращает текстовое название статуса заказа
+ * Утиліти для форматування дат, часу та інших даних.
+ *
+ * Основні експорти:
+ * - formatRelativeDate — відносне форматування дати з опціями
+ * - formatDate — дата й час у короткому форматі (uk-UA, Europe/Kyiv)
+ * - formatDateTime — дата й час (uk-UA)
+ * - formatDateTimeUS — дата й час у форматі YYYY-MM-DD HH:mm:ss
+ * - formatDateOnly — лише дата
+ * - formatTimeOnly — лише час (опційно секунди)
+ * - formatDateLong — дата з назвою місяця
+ * - formatWeekdayOnly — назва дня тижня
+ * - formatPrice — сума в UAH
+ * - formatMoney — грошова сума без символу валюти
+ * - formatNumber — число з роздільниками тисяч
+ * - formatPercentage — відсоткове значення
+ * - formatFileSize — розмір файлу (Б, КБ, …)
+ * - formatPhone, isValidPhone — відображення та валідація UA-телефону
+ * - formatUkrainianPhone, parseUkrainianPhone — реекспорт з @shared/utils/phoneFormat
+ * - pluralize — відмінювання українських слів за числом
+ * - truncateText — обрізання довгого тексту
+ * - getStatusColor, getStatusTextColor — Tailwind-класи статусу замовлення
+ * - ORDER_STATUSES, getStatusLabel — довідник і підпис статусу
+ * - formatDuration, normalizeSyncHistoryDurationSeconds, formatSyncHistoryDuration — тривалість
+ * - formatTrackingNumber — форматування ТТН
+ * - getChannelClass — кольори каналу SalesDrive
+ * - getCategoryColors — кольори категорії товару
  */
 
 
 /**
- * Форматирует дату в относительном формате (например, "5 хв тому", "2 год тому", "Вчора в 16:16")
- * @param dateString - строка с датой или null
- * @returns отформатированная строка
- * 
- * @example
- * formatRelativeDate('2024-01-15T10:30:00Z') // "5 хв тому" (если сейчас 10:35)
- * formatRelativeDate('2024-01-14T15:20:00Z') // "Вчора о 15:20"
- * formatRelativeDate('2024-01-10T12:00:00Z') // "10.01.2024, 12:00"
- * formatRelativeDate(null) // "Немає даних"
+ * Застарілий варіант formatRelativeDate (закоментовано; використовуйте export formatRelativeDate нижче).
  */
 // export const formatRelativeDate = (dateString: string | null): string => {
 //   if (!dateString) return 'Немає даних';
@@ -37,24 +38,24 @@
 //   const now = new Date();
 //   const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
   
-//   // Только что
+//   // Щойно
 //   if (diffInMinutes < 1) return 'Щойно';
   
-//   // Минуты назад
+//   // Хвилини тому
 //   if (diffInMinutes < 60) return `${diffInMinutes} хв тому`;
   
-//   // Часы назад
+//   // Години тому
 //   if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)} год тому`;
   
-//   // Дни назад
+//   // Дні тому
 //   const diffInDays = Math.floor(diffInMinutes / 1440);
   
-//   // Вчера
+//   // Вчора
 //   if (diffInDays === 1) {
 //     return `Вчора о ${date.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}`;
 //   }
     
-//   // Более суток назад - показываем полную дату
+//   // Понад добу тому — повна дата
 //   return date.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 // };
 
@@ -68,14 +69,14 @@
  * @param options.maxRelativeHours - максимальна кількість годин для відносного формату (за замовчуванням 7)
  * @param options.includeWeekdays - чи включати назву дня тижня для дат в межах maxRelativeDays (за замовчуванням false)
  * @param options.include2DaysAgo - чи включати "Позавчора" для дат, що на 2 дні старші за сьогодні (за замовчуванням false)
- * @param options.weekdayOnly - якщо true, то для дат в межах maxRelativeDays буде повертатися только день недели (за замовчуванням false)
- * @param options.shortWeekday - якщо true, то для дат в межах maxRelativeDays буде повертатися коротке назва дня тижня (за замовчуванням false)
+ * @param options.weekdayOnly - якщо true, для дат у межах maxRelativeDays повертається лише день тижня (за замовчуванням false)
+ * @param options.shortWeekday - якщо true, повертається коротка назва дня тижня (за замовчуванням false)
  * @returns відформатований рядок
  * 
  * @example // Якщо зараз 15.01.2025, 10:35, то:
- * formatRelativeDateExtended('2024-01-15T10:30:00Z') // "5 хв тому"
- * formatRelativeDateExtended('2024-01-14T15:20:00Z') // "Вчора о 15:20"
- * formatRelativeDateExtended('2024-01-12T15:20:00Z') // "3 дн тому в 15:20"
+ * formatRelativeDate('2024-01-15T10:30:00Z') // "5 хв тому"
+ * formatRelativeDate('2024-01-14T15:20:00Z') // "Вчора о 15:20"
+ * formatRelativeDate('2024-01-12T15:20:00Z') // "3 дні тому, о 15:20"
  */
 
 const SHORT_WEEKDAYS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
@@ -118,20 +119,20 @@ export const formatRelativeDate = (
     if (diffInMinutes < 1440 && diffInMinutes < maxRelativeHours * 60) return `${Math.floor(diffInMinutes / 60)} год тому`;
   }
 
-  // Сравниваем только даты (без времени) для "Вчора" и "Позавчора"
+  // Порівнюємо лише календарні дати (без часу) для «Вчора» та «Позавчора»
   const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const diffInDays = Math.round((nowDate.getTime() - dateOnly.getTime()) / (1000 * 60 * 60 * 24));
   
-  // Дни недели (shortWeekday - короткое название)
+  // День тижня (shortWeekday — коротка назва)
   const dayName = shortWeekday ? SHORT_WEEKDAYS[date.getDay()] : FULL_WEEKDAYS[date.getDay()];
 
-  // Форматируем время
+  // Форматуємо час
   const hour = date.getHours();
   const preposition = hour === 11 ? 'об' : 'о';
   const timeStr = showTime ? ` ${preposition} ${date.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}` : '';
   
-  // Дата (showYear - показать год, showTime - показать время)
+  // Дата (showYear — рік, showTime — час)
   const dateStr = date.toLocaleDateString('uk-UA', {
     day: '2-digit',
     month: '2-digit',
@@ -139,7 +140,7 @@ export const formatRelativeDate = (
     // ...(showTime && { hour: '2-digit', minute: '2-digit' })
   });
   
-  // Определяем правильное окончание для "день/дні/днів"
+  // Відмінювання «день / дні / днів»
   const lastDigit = diffInDays % 10;
   const lastTwoDigits = diffInDays % 100;
   let dayWord = "днів";
@@ -149,19 +150,19 @@ export const formatRelativeDate = (
     dayWord = "дні";
   }
 
-  // weekdayOnly - только день недели
+  // weekdayOnly — лише назва дня тижня
   if (weekdayOnly) {
     return dayName;
   }
 
-  // Если разница в днях равна 0, то возвращаем "Сьогодні"
+  // diffInDays === 0 → «Сьогодні»
   if (diffInDays === 0) return `Сьогодні${timeStr}`;
   
-  // Если разница в днях равна 1 или 2, то возвращаем "Вчора/Позавчора" (showTime? опционально)
+  // diffInDays 1 або 2 → «Вчора» / «Позавчора» (час — за showTime)
   if (diffInDays === 1) return `Вчора${timeStr}`;
   if (diffInDays === 2 && include2DaysAgo) return `Позавчора${timeStr}`;
 
-  // В остальных случаях возвращаем дату согласно логике
+  // Інакше — дата за правилами maxRelativeDays / includeWeekdays
   if (diffInDays > maxRelativeDays) {
     return `${dateStr}${timeStr}`;
   } else if (includeWeekdays) {
@@ -173,9 +174,9 @@ export const formatRelativeDate = (
 };
 
 /**
- * Форматирует дату в стандартном украинском формате
- * @param dateString - строка с датой
- * @returns отформатированная строка
+ * Форматує дату в стандартному українському форматі (дата + час).
+ * @param dateString - рядок із датою
+ * @returns відформатований рядок
  * 
  * @example
  * formatDate('2024-01-15T10:30:00Z') // "15.01.2024, 10:30"
@@ -195,9 +196,9 @@ export const formatDate = (dateString: string): string => {
 };
 
 /**
- * Форматирует дату и время в украинском формате
- * @param dateString - строка с датой
- * @returns отформатированная строка
+ * Форматує дату й час українською локаллю (Europe/Kyiv).
+ * @param dateString - рядок із датою або Date
+ * @returns відформатований рядок
  * 
  * @example
  * formatDateTime('2024-01-15T10:30:00Z') // "15.01.2024, 10:30:46"
@@ -209,9 +210,9 @@ export const formatDateTime = (dateString: string | Date): string => {
 };
 
 /**
- * Форматирует дату и время в американском формате
- * @param dateString - строка с датой
- * @returns отформатированная строка
+ * Форматує дату й час у форматі YYYY-MM-DD HH:mm:ss (локальний час без таймзони).
+ * @param dateString - рядок із датою або Date
+ * @returns відформатований рядок
  * 
  * @example
  * formatDateTimeUS('2024-01-15T10:30:00Z') // "2025-09-24 10:30:12"
@@ -230,9 +231,9 @@ export const formatDateTimeUS = (dateString: string | Date): string => {
 };
 
 /**
- * Форматирует только дату в украинском формате
- * @param dateString - строка с датой
- * @returns отформатированная строка
+ * Форматує лише дату українською локаллю (Europe/Kyiv).
+ * @param dateString - рядок із датою
+ * @returns відформатований рядок
  * 
  * @example
  * formatDateOnly('2024-01-15T10:30:00Z') // "15.01.2024"
@@ -244,16 +245,23 @@ export const formatDateOnly = (dateString: string): string => {
 };
 
 /**
- * Форматирует только время в украинском формате
- * @param dateString - строка с датой
- * @returns отформатированная строка
- * 
+ * Форматує лише час українською локаллю (Europe/Kyiv).
+ * @param dateString - рядок із датою
+ * @param showSeconds - показувати секунди (за замовчуванням false)
+ * @returns відформатований рядок
+ *
  * @example
  * formatTimeOnly('2024-01-15T10:30:00Z') // "10:30"
+ * formatTimeOnly('2024-01-15T10:30:45Z', true) // "10:30:45"
  */
-export const formatTimeOnly = (dateString: string): string => {
+export const formatTimeOnly = (dateString: string, showSeconds = false): string => {
   if (!dateString) return "-";
-  return new Date(dateString).toLocaleTimeString('uk-UA', { timeZone: 'Europe/Kyiv' });
+  return new Date(dateString).toLocaleTimeString("uk-UA", {
+    timeZone: "Europe/Kyiv",
+    hour: "2-digit",
+    minute: "2-digit",
+    ...(showSeconds ? { second: "2-digit" } : {}),
+  });
 };
 
 /**
@@ -289,9 +297,9 @@ export const formatWeekdayOnly = (dateString: string | Date): string => {
 };
 
 /**
- * Форматирует цену в украинской валюте
- * @param price - цена в числах
- * @returns отформатированная строка
+ * Форматує ціну в українській валюті (UAH).
+ * @param price - сума числом
+ * @returns відформатований рядок
  * 
  * @example
  * formatPrice(1000) // "1 000 грн"
@@ -319,9 +327,9 @@ export function formatMoney(value: string | number): string {
 }
 
 /**
- * Форматирует число с разделителями тысяч
- * @param number - число для форматирования
- * @returns отформатированная строка
+ * Форматує число з роздільниками тисяч (uk-UA).
+ * @param number - число
+ * @returns відформатований рядок
  * 
  * @example
  * formatNumber(1000) // "1 000"
@@ -333,10 +341,10 @@ export const formatNumber = (number: number): string => {
 };
 
 /**
- * Форматирует процентное значение
- * @param value - значение от 0 до 1
- * @param decimals - количество знаков после запятой
- * @returns отформатированная строка
+ * Форматує відсоткове значення (доля 0–1 → «%»).
+ * @param value - значення від 0 до 1
+ * @param decimals - кількість знаків після коми
+ * @returns відформатований рядок
  * 
  * @example
  * formatPercentage(0.5) // "50.0%"
@@ -347,9 +355,9 @@ export const formatPercentage = (value: number, decimals: number = 1): string =>
 };
 
 /**
- * Форматирует размер файла в читаемом виде
- * @param bytes - размер в байтах
- * @returns отформатированная строка
+ * Форматує розмір файлу в читабельному вигляді.
+ * @param bytes - розмір у байтах
+ * @returns відформатований рядок
  * 
  * @example
  * formatFileSize(100) // "100 Б"
@@ -439,9 +447,9 @@ export const truncateText = (text: any, length: number): import("react").ReactNo
 
 
 /**
- * Возвращает CSS классы для цвета статуса заказа
- * @param status - строка со статусом заказа
- * @returns строка с CSS классами для цвета
+ * Повертає Tailwind CSS-класи фону та тексту для статусу замовлення.
+ * @param status - ключ статусу
+ * @returns рядок класів
  */
 export const getStatusColor = (status: string): string => {
   switch (status) {
@@ -515,7 +523,7 @@ export const formatDuration = (
   const unit = options.unit || "ms";
   if (typeof duration !== "number" || duration <= 0) return "0с";
 
-  // Приводим к миллисекундам для расчёта
+  // Переводимо в мілісекунди для розрахунку
   const ms = unit === "s" ? duration * 1000 : duration;
 
   const hours = Math.floor(ms / (1000 * 60 * 60));
