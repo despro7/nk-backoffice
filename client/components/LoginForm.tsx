@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/auth-context';
 import { useServerStatus } from '../hooks/useServerStatus';
@@ -7,8 +7,9 @@ import { Alert } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
 export const LoginForm: React.FC = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const { login } = useAuth();
@@ -19,6 +20,9 @@ export const LoginForm: React.FC = () => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
+
+    const email = emailRef.current?.value.trim() ?? '';
+    const password = passwordRef.current?.value ?? '';
 
     try {
       await login({ email, password });
@@ -73,32 +77,39 @@ export const LoginForm: React.FC = () => {
                 Email
               </label>
               <input
+                ref={emailRef}
                 id="email"
                 name="email"
                 type="email"
                 autoComplete="email"
                 required
-                className="appearance-none bg-white rounded-none relative block w-full p-4 border border-gray-300 placeholder-gray-400 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-lg"
+                className="appearance-none bg-white rounded-none relative block w-full p-4 border border-gray-300 placeholder-gray-400 text-gray-900 rounded-t-md focus:outline-none focus:border-gray-400/75 focus:z-10"
                 placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
               />
             </div>
-            <div>
+            <div className="relative">
               <label htmlFor="password" className="sr-only">
                 Пароль
               </label>
               <input
+                ref={passwordRef}
                 id="password"
                 name="password"
-                type="password"
+                type={isPasswordVisible ? 'text' : 'password'}
                 autoComplete="current-password"
                 required
-                className="appearance-none bg-white rounded-none relative block w-full p-4 border border-gray-300 placeholder-gray-400 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-lg"
+                className="appearance-none bg-white rounded-none relative block w-full p-4 pr-12 border border-gray-300 placeholder-gray-400 text-gray-900 rounded-b-md focus:outline-none focus:border-gray-400/75 focus:z-10"
                 placeholder="Пароль"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
               />
+              <button
+                type="button"
+                className="absolute inset-y-0 right-0 z-20 flex items-center pr-4 text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600"
+                onClick={() => setIsPasswordVisible((v) => !v)}
+                aria-label={isPasswordVisible ? 'Приховати пароль' : 'Показати пароль'}
+                tabIndex={-1}
+              >
+                <DynamicIcon name={isPasswordVisible ? 'eye-off' : 'eye'} size={20} />
+              </button>
             </div>
           </div>
 
@@ -112,7 +123,7 @@ export const LoginForm: React.FC = () => {
             <button
               type="submit"
               disabled={isLoading || !isOnline}
-              className="group relative w-full flex justify-center py-4 px-4 border border-transparent text-lg font-medium rounded-md text-white bg-gradient-to-r from-green-400 to-blue-500 hover:from-blue-500 hover:to-purple-500 transition-colors duration-600 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              className="w-full flex justify-center py-4 px-4 text-lg font-medium rounded-md text-white bg-gradient-to-r from-blue-500 to-purple-500 hover:opacity-80 transition-opacity duration-600 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {isLoading ? 'Вхід...' : !isOnline ? 'Сервер недоступний' : 'Увійти'}
             </button>
