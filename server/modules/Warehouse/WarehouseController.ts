@@ -29,6 +29,10 @@ import {
   sanitizeStoredBatchName,
 } from '../../../shared/utils/dilovodBatchId.js';
 import { parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
+import {
+  repairWarehouseInventorySession,
+  resolveInventorySessionWarehouseScope,
+} from '../../../shared/utils/inventorySessionWarehouse.js';
 
 const router = Router();
 const warehouseOperate = requirePermission('warehouse', 'operate', 'Створювати/відправляти складські документи');
@@ -2117,23 +2121,67 @@ router.get('/inventory/sets', authenticateToken, async (req, res) => {
 // ІНВЕНТАРИЗАЦІЯ — СЕСІЇ (CRUD)
 // ============================================================================
 
-// GET /api/warehouse/inventory/draft
-// Повертає активну чернетку (статус draft/in_progress) для авторизованого юзера
+const ACTIVE_INVENTORY_STATUSES = ['draft', 'in_progress', 'revising'] as const;
+
+function serializeInventorySessionRow(session: {
+  id: number;
+  warehouse: string;
+  status: string;
+  comment: string | null;
+  items: string;
+  createdBy: number;
+  createdAt: Date;
+  updatedAt: Date;
+  completedAt: Date | null;
+  inventoryDate: Date | null;
+}) {
+  return {
+    ...session,
+    inventoryDate: session.inventoryDate?.toISOString() ?? null,
+    createdAt: session.createdAt.toISOString(),
+    updatedAt: session.updatedAt.toISOString(),
+    completedAt: session.completedAt?.toISOString() ?? null,
+  };
+}
+
+function parseInventoryWarehouseParam(value: unknown): 'small' | 'gp' {
+  return value === 'gp' ? 'gp' : 'small';
+}
+
+// GET /api/warehouse/inventory/drafts
+// Усі активні чернетки користувача (окремо для МС та ГП)
+router.get('/inventory/drafts', authenticateToken, async (req, res) => {
+  try {
+    const userId: number = (req as any).user?.userId ?? (req as any).user?.id;
+    if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
+
+    const drafts = await prisma.warehouseInventory.findMany({
+      where: { createdBy: userId, status: { in: [...ACTIVE_INVENTORY_STATUSES] } },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    res.json({ drafts: drafts.map(serializeInventorySessionRow) });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error fetching drafts:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/warehouse/inventory/draft?warehouse=small|gp
+// Повертає активну чернетку для обраного складу
 router.get('/inventory/draft', authenticateToken, async (req, res) => {
   try {
     const userId: number = (req as any).user?.userId ?? (req as any).user?.id;
     if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
 
+    const warehouse = parseInventoryWarehouseParam(req.query.warehouse);
+
     const draft = await prisma.warehouseInventory.findFirst({
-      where: { createdBy: userId, status: { in: ['draft', 'in_progress', 'revising'] } },
+      where: { createdBy: userId, warehouse, status: { in: [...ACTIVE_INVENTORY_STATUSES] } },
       orderBy: { updatedAt: 'desc' },
     });
 
-    // Повертаємо inventoryDate як ISO-рядок для зручності клієнта
-    const result = draft ? {
-      ...draft,
-      inventoryDate: draft.inventoryDate?.toISOString() ?? null,
-    } : null;
+    const result = draft ? serializeInventorySessionRow(draft) : null;
 
     res.json({ draft: result });
   } catch (error) {
@@ -2149,18 +2197,21 @@ router.post('/inventory/draft', authenticateToken, async (req, res) => {
     const userId: number = (req as any).user?.userId ?? (req as any).user?.id;
     if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
 
-    const { comment, items, inventoryDate } = req.body as {
+    const { comment, items, inventoryDate, warehouse: warehouseBody } = req.body as {
       comment?: string;
       items?: unknown[];
       inventoryDate?: string;
+      warehouse?: string;
     };
+
+    const warehouse = parseInventoryWarehouseParam(warehouseBody);
 
     const parsedInventoryDate = inventoryDate ? new Date(inventoryDate) : null;
     const effectiveInventoryDate = parsedInventoryDate ?? new Date();
 
-    // Якщо є незавершена сесія — оновлюємо її замість створення нової
+    // Якщо є незавершена сесія для цього складу — оновлюємо її замість створення нової
     const existing = await prisma.warehouseInventory.findFirst({
-      where: { createdBy: userId, status: { in: ['draft', 'in_progress'] } },
+      where: { createdBy: userId, warehouse, status: { in: ['draft', 'in_progress'] } },
       orderBy: { updatedAt: 'desc' },
     });
 
@@ -2175,13 +2226,13 @@ router.post('/inventory/draft', authenticateToken, async (req, res) => {
         },
       });
       console.log(`✅ [Inventory] Відновлено існуючу сесію #${updated.id} для userId=${userId}`);
-      return res.json({ session: { ...updated, inventoryDate: updated.inventoryDate?.toISOString() ?? null } });
+      return res.json({ session: serializeInventorySessionRow(updated) });
     }
 
     const session = await prisma.warehouseInventory.create({
       data: {
         createdBy: userId,
-        warehouse: 'small',
+        warehouse,
         status: 'in_progress',
         comment: comment ?? null,
         items: items !== undefined ? JSON.stringify(items) : '[]',
@@ -2189,7 +2240,7 @@ router.post('/inventory/draft', authenticateToken, async (req, res) => {
       },
     });
     console.log(`✅ [Inventory] Створено нову сесію #${session.id} для userId=${userId}`);
-    res.status(201).json({ session: { ...session, inventoryDate: session.inventoryDate?.toISOString() ?? null } });
+    res.status(201).json({ session: serializeInventorySessionRow(session) });
   } catch (error) {
     console.error('🚨 [Inventory] Error creating draft:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -2257,11 +2308,14 @@ router.post('/inventory/complete', authenticateToken, async (req, res) => {
     const userId: number = (req as any).user?.userId ?? (req as any).user?.id;
     if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
 
-    const { comment, items, inventoryDate } = req.body as {
+    const { comment, items, inventoryDate, warehouse: warehouseBody } = req.body as {
       comment?: string;
       items?: unknown[];
       inventoryDate?: string;
+      warehouse?: string;
     };
+
+    const warehouse = parseInventoryWarehouseParam(warehouseBody);
 
     const parsedInventoryDate = inventoryDate ? new Date(inventoryDate) : null;
     const effectiveInventoryDate = parsedInventoryDate ?? new Date();
@@ -2269,7 +2323,7 @@ router.post('/inventory/complete', authenticateToken, async (req, res) => {
     const completed = await prisma.warehouseInventory.create({
       data: {
         createdBy: userId,
-        warehouse: 'small',
+        warehouse,
         status: 'completed',
         completedAt: new Date(),
         comment: comment ?? null,
@@ -2279,7 +2333,7 @@ router.post('/inventory/complete', authenticateToken, async (req, res) => {
     });
 
     console.log(`✅ [Inventory] Створено та завершено інвентаризацію #${completed.id} для userId=${userId}`);
-    res.status(201).json({ session: { ...completed, inventoryDate: completed.inventoryDate?.toISOString() ?? null } });
+    res.status(201).json({ session: serializeInventorySessionRow(completed) });
   } catch (error) {
     console.error('🚨 [Inventory] Error completing inventory without draft:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -2394,6 +2448,42 @@ router.post('/inventory/:id/revision', authenticateToken, async (req, res) => {
     res.json({ session: { ...updated, inventoryDate: updated.inventoryDate?.toISOString() ?? null } });
   } catch (error) {
     console.error('🚨 [Inventory] Error marking session revising:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/warehouse/inventory/:id/abort-revision
+// Повертає статус revising → completed при закритті редагування без збереження
+router.post('/inventory/:id/abort-revision', authenticateToken, async (req, res) => {
+  try {
+    const userId: number = (req as any).user?.userId ?? (req as any).user?.id;
+    if (!userId) return res.status(401).json({ error: 'User ID not found in token' });
+
+    const userRole = (req as any).user?.role;
+    const isAdmin = userRole === ROLES.ADMIN;
+
+    const sessionId = parseInt(req.params.id);
+    if (isNaN(sessionId)) return res.status(400).json({ error: 'Invalid session ID' });
+
+    const existing = await prisma.warehouseInventory.findUnique({ where: { id: sessionId } });
+    if (!existing) return res.status(404).json({ error: 'Session not found' });
+    if (!isAdmin && existing.createdBy !== userId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    if (existing.status !== 'revising') {
+      return res.json({ session: serializeInventorySessionRow(existing) });
+    }
+
+    const updated = await prisma.warehouseInventory.update({
+      where: { id: sessionId },
+      data: { status: 'completed' },
+    });
+
+    console.log(`✅ [Inventory] Скасовано редагування #${sessionId} → completed`);
+    res.json({ session: serializeInventorySessionRow(updated) });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error aborting revision:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -2525,6 +2615,44 @@ router.delete('/inventory/:id/permanent', authenticateToken, async (req, res) =>
   }
 });
 
+// POST /api/warehouse/inventory/:id/reconcile
+// Виправляє warehouse та legacy-поля items (ГП у полях МС, некоректний тип складу)
+router.post('/inventory/:id/reconcile', authenticateToken, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.id);
+    if (isNaN(sessionId)) return res.status(400).json({ error: 'Invalid session ID' });
+
+    const session = await prisma.warehouseInventory.findUnique({ where: { id: sessionId } });
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    let items: unknown[] = [];
+    try {
+      items = session.items ? JSON.parse(session.items) : [];
+    } catch {
+      items = [];
+    }
+
+    const repair = repairWarehouseInventorySession(session.warehouse, items);
+    if (!repair.changed) {
+      return res.json({ session: serializeInventorySessionRow(session), repaired: false });
+    }
+
+    const updated = await prisma.warehouseInventory.update({
+      where: { id: sessionId },
+      data: {
+        warehouse: repair.warehouse,
+        items: JSON.stringify(repair.items),
+      },
+    });
+
+    console.log(`✅ [Inventory] Reconciled session #${sessionId} → warehouse=${repair.warehouse}`);
+    res.json({ session: serializeInventorySessionRow(updated), repaired: true });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error reconciling session:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/warehouse/inventory/:id/refresh-balances
 // Оновлює залишки у БД для SKU, що присутні в сесії інвентаризації, на дату інвентаризації
 router.post('/inventory/:id/refresh-balances', authenticateToken, async (req, res) => {
@@ -2571,14 +2699,33 @@ router.post('/inventory/:id/refresh-balances', authenticateToken, async (req, re
     for (const b of balances) {
       const sku = b.sku;
       const newSmall = Number(b.smallStorage ?? 0);
+      const newMain = Number(b.mainStorage ?? 0);
       const sessionItem = sessionItemsBySku.get(sku);
 
       if (sessionItem) {
         const before = typeof sessionItem.systemBalance === 'number' ? Number(sessionItem.systemBalance) : (sessionItem.systemBalance ? Number(sessionItem.systemBalance) : null);
-        report.push({ sku, name: sessionItem.name ?? null, type: sessionItem.type ?? 'product', before, after: newSmall });
+        const beforeGp = typeof sessionItem.systemBalanceGp === 'number'
+          ? Number(sessionItem.systemBalanceGp)
+          : (sessionItem.systemBalanceGp ? Number(sessionItem.systemBalanceGp) : null);
+        report.push({
+          sku,
+          name: sessionItem.name ?? null,
+          type: sessionItem.type ?? 'product',
+          before,
+          after: newSmall,
+          beforeGp,
+          afterGp: newMain,
+        });
       } else {
-        // Якщо SKU відсутній у сесії — віддаємо у звіт з before = null
-        report.push({ sku, name: null, type: 'missing', before: null, after: newSmall });
+        report.push({
+          sku,
+          name: null,
+          type: 'missing',
+          before: null,
+          after: newSmall,
+          beforeGp: null,
+          afterGp: newMain,
+        });
       }
     }
 
@@ -2600,16 +2747,25 @@ router.post('/inventory/:id/refresh-balances', authenticateToken, async (req, re
         }
 
         // Map SKU -> after value
-        const afterBySku = new Map<string, number>();
+        const afterBySku = new Map<string, { small: number; main: number }>();
         for (const r of report) {
-          if (r && r.sku) afterBySku.set(String(r.sku), Number(r.after ?? 0));
+          if (r && r.sku) {
+            afterBySku.set(String(r.sku), {
+              small: Number(r.after ?? 0),
+              main: Number(r.afterGp ?? 0),
+            });
+          }
         }
 
-        // Build updated items array (only update systemBalance for matching SKUs)
+        const sessionWarehouseScope = resolveInventorySessionWarehouseScope(session.warehouse, originalItems);
+
         const updatedItems = originalItems.map((it: any) => {
           if (it && it.sku && afterBySku.has(String(it.sku))) {
-            const newVal = afterBySku.get(String(it.sku));
-            return { ...it, systemBalance: typeof newVal === 'number' ? newVal : it.systemBalance };
+            const vals = afterBySku.get(String(it.sku))!;
+            if (sessionWarehouseScope === 'gp') {
+              return { ...it, systemBalanceGp: vals.main };
+            }
+            return { ...it, systemBalance: vals.small };
           }
           return it;
         });

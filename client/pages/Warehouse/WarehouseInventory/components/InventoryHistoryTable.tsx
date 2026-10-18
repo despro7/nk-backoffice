@@ -1,11 +1,11 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Button, Chip, Pagination, Select, SelectItem } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDate } from '@/lib/formatUtils';
 import { useAuth } from '@/contexts/auth-context';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PERMISSIONS } from '@shared/constants/permissions';
-import type { InventorySession } from '../WarehouseInventoryTypes';
+import type { InventorySession, InventoryWarehouseScope } from '../WarehouseInventoryTypes';
 import { statusLabel, statusColor, statusClass, totalPortions, totalPortionsGp } from '../WarehouseInventoryUtils';
 import useRowHistory from '../useRowHistory';
 import { ToastService } from '@/services/ToastService';
@@ -13,6 +13,8 @@ import { StockBadge } from '@/components/StockBadge';
 import InventoryRefreshReportModal from './InventoryRefreshReportModal';
 import InventoryTableSection from './InventoryTableSection';
 import useUserNames from '@/hooks/useUserNames';
+import { buildInventoryHistoryDisplayEntries, resolveSessionWarehouseScope } from '../inventoryHistoryGroups';
+import { computeInventorySessionStats } from '../inventorySessionStats';
 
 const PAGE_SIZE_OPTIONS = [6, 12, 24];
 
@@ -34,7 +36,14 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
   const { hasPermission } = useRoleAccess();
   const isAdmin = hasPermission(PERMISSIONS.ACTION_WAREHOUSE_HISTORY_DELETE);
   const currentUserId = user?.id ? String(user.id) : null;
-  const latestOwnSessionId = currentUserId ? sessions.find((s) => String(s.createdBy) === currentUserId)?.id ?? null : null;
+  const canAuthorEditSession = (sess: InventorySession): boolean => {
+    if (!currentUserId || String(sess.createdBy) !== currentUserId) return false;
+    const scope = resolveSessionWarehouseScope(sess);
+    const latestForScope = sessions.find(
+      (s) => String(s.createdBy) === currentUserId && resolveSessionWarehouseScope(s) === scope,
+    );
+    return latestForScope != null && String(latestForScope.id) === String(sess.id);
+  };
 
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const [loadingLoadId, setLoadingLoadId] = useState<string | null>(null);
@@ -57,17 +66,21 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
   const [refreshInventoryDate, setRefreshInventoryDate] = useState<string | null>(null);
   const [refreshSessionItems, setRefreshSessionItems] = useState<any[]>([]);
   const [refreshSessionId, setRefreshSessionId] = useState<string | null>(null);
+  const [refreshSessionIds, setRefreshSessionIds] = useState<string[]>([]);
+  const [refreshWarehouseScope, setRefreshWarehouseScope] = useState<InventoryWarehouseScope | 'multi'>('small');
   const [isApplying, setIsApplying] = useState(false);
+
+  const displayEntries = useMemo(() => buildInventoryHistoryDisplayEntries(sessions), [sessions]);
 
   const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null);
   const { rowHistoryCache, loadingSku, fetchHistory } = useRowHistory();
 
-  const total = sessions.length;
+  const total = displayEntries.length;
   const pages = Math.max(1, Math.ceil(total / limit));
   const safePage = Math.min(page, pages);
   const rangeStart = total === 0 ? 0 : (safePage - 1) * limit + 1;
   const rangeEnd = Math.min(safePage * limit, total);
-  const pagedSessions = sessions.slice((safePage - 1) * limit, safePage * limit);
+  const pagedEntries = displayEntries.slice((safePage - 1) * limit, safePage * limit);
 
   useEffect(() => {
     if (page > pages) setPage(pages);
@@ -147,22 +160,20 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
   };
 
   const handleApplyRefresh = async () => {
-    if (!refreshSessionId) return;
+    const idsToApply = refreshSessionIds.length > 0 ? refreshSessionIds : (refreshSessionId ? [refreshSessionId] : []);
+    if (idsToApply.length === 0) return;
     setIsApplying(true);
     try {
-      const res = await fetch(`/api/warehouse/inventory/${refreshSessionId}/refresh-balances?apply=true`, { method: 'POST', credentials: 'include' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      if (data && data.applyScheduled) {
-        ToastService.show({ title: 'Оновлення запущено', description: 'Оновлення облікових залишків запущено у фоновому режимі', color: 'success' });
-      } else {
-        ToastService.show({ title: 'Оновлення застосовано', color: 'success' });
-        try {
-          const maybe: any = onRefresh?.();
-          if (maybe && typeof maybe.then === 'function') await maybe;
-        } catch {
-          // swallow
-        }
+      for (const id of idsToApply) {
+        const res = await fetch(`/api/warehouse/inventory/${id}/refresh-balances?apply=true`, { method: 'POST', credentials: 'include' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      }
+      ToastService.show({ title: 'Оновлення застосовано', color: 'success' });
+      try {
+        const maybe: any = onRefresh?.();
+        if (maybe && typeof maybe.then === 'function') await maybe;
+      } catch {
+        // swallow
       }
       setIsRefreshModalOpen(false);
     } catch (err) {
@@ -172,118 +183,85 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
     }
   };
 
-  const getSessionItems = (sessionItems: any[]) => {
-    const shouldKeepItem = (item: any): boolean => {
-      if (!item?.isOutdated) return true;
-      const fact = totalPortions(item);
-      const factGp = totalPortionsGp(item);
-      const actualOrSystem = Math.max(fact ?? 0, item.systemBalance ?? 0);
-      const actualOrSystemGp = Math.max(factGp ?? 0, item.systemBalanceGp ?? 0);
-      return actualOrSystem > 0 || actualOrSystemGp > 0;
-    };
-
-    const materials = sessionItems.filter((item) => item.type === 'material' && shouldKeepItem(item));
-    const sets = sessionItems.filter((item) => item.type === 'set' && shouldKeepItem(item));
-    const products = sessionItems.filter((item) => (item.type === 'product' || item.type === undefined) && shouldKeepItem(item));
-
-    return { materials, sets, products };
+  const openRefreshModal = async (
+    sessionIds: string[],
+    sessionItems: any[],
+    inventoryDateLabel: string,
+    entryKey: string,
+    warehouseScope: InventoryWarehouseScope | 'multi',
+  ) => {
+    if (!onRefreshSessionBalances) return;
+    setLoadingRefreshId(entryKey);
+    try {
+      const mergedItems: any[] = [];
+      for (const sid of sessionIds) {
+        const report = await onRefreshSessionBalances(sid);
+        if (report?.items) mergedItems.push(...report.items);
+      }
+      const mergedBySku = new Map<string, any>();
+      for (const it of mergedItems) {
+        if (!it?.sku) continue;
+        const prev = mergedBySku.get(String(it.sku)) ?? {};
+        mergedBySku.set(String(it.sku), { ...prev, ...it });
+      }
+      setRefreshReportItems(Array.from(mergedBySku.values()));
+      setRefreshSessionItems(sessionItems);
+      setRefreshSessionId(sessionIds[0] ?? null);
+      setRefreshSessionIds(sessionIds);
+      setRefreshInventoryDate(inventoryDateLabel);
+      setRefreshWarehouseScope(warehouseScope);
+      setIsRefreshModalOpen(true);
+    } finally {
+      setLoadingRefreshId(null);
+    }
   };
 
   return (
     <div className="space-y-2">
-      {pagedSessions.map((session) => {
-        const canAuthorEditThisSession = !isAdmin && currentUserId !== null && String(session.createdBy) === currentUserId && latestOwnSessionId !== null && String(session.id) === String(latestOwnSessionId);
-        const items: any[] = session.items as any[];
-        const { materials, sets, products } = getSessionItems(items);
+      {pagedEntries.map((entry) => {
+        const isGroup = entry.kind === 'group';
+        const msSession = isGroup ? entry.msSession : entry.session;
+        const gpSession = isGroup ? entry.gpSession : entry.session;
+        const session = entry.kind === 'single' ? entry.session : entry.msSession;
+        const entryKey = isGroup ? `group-${entry.msSession.id}-${entry.gpSession.id}` : session.id;
 
-        const productSystem = products.reduce((s, it) => s + (it.systemBalance ?? 0), 0);
-        const materialSystem = materials.reduce((s, it) => s + (it.systemBalance ?? 0), 0);
-        const setSystem = sets.reduce((s, it) => s + (it.systemBalance ?? 0), 0);
-        const productActualSum = products.reduce((s, it) => s + (totalPortions(it) ?? 0), 0);
-        const materialActualSum = materials.reduce((s, it) => s + (totalPortions(it) ?? 0), 0);
-        const setActualSum = sets.reduce((s, it) => s + (totalPortions(it) ?? 0), 0);
-        const productDevShortfall = products.reduce((s, it) => {
-          const total = totalPortions(it);
-          const system = it.systemBalance ?? 0;
-          return s + (total !== null && total < system ? system - total : 0);
-        }, 0);
-        const productDevSurplus = products.reduce((s, it) => {
-          const total = totalPortions(it);
-          const system = it.systemBalance ?? 0;
-          return s + (total !== null && total > system ? total - system : 0);
-        }, 0);
-        const materialDevShortfall = materials.reduce((s, it) => {
-          const total = totalPortions(it);
-          const system = it.systemBalance ?? 0;
-          return s + (total !== null && total < system ? system - total : 0);
-        }, 0);
-        const materialDevSurplus = materials.reduce((s, it) => {
-          const total = totalPortions(it);
-          const system = it.systemBalance ?? 0;
-          return s + (total !== null && total > system ? total - system : 0);
-        }, 0);
-        const setDevShortfall = sets.reduce((s, it) => {
-          const total = totalPortions(it);
-          const system = it.systemBalance ?? 0;
-          return s + (total !== null && total < system ? system - total : 0);
-        }, 0);
-        const setDevSurplus = sets.reduce((s, it) => {
-          const total = totalPortions(it);
-          const system = it.systemBalance ?? 0;
-          return s + (total !== null && total > system ? total - system : 0);
-        }, 0);
-        const productHasActual = products.some((it) => totalPortions(it) !== null);
-        const materialHasActual = materials.some((it) => totalPortions(it) !== null);
-        const setHasActual = sets.some((it) => totalPortions(it) !== null);
+        const msStats = computeInventorySessionStats(msSession);
+        const gpStats = isGroup ? computeInventorySessionStats(gpSession) : msStats;
 
-        // GP (готова продукція) підрахунки
-        const productSystemGp = products.reduce((s, it) => s + (it.systemBalanceGp ?? 0), 0);
-        const materialSystemGp = materials.reduce((s, it) => s + (it.systemBalanceGp ?? 0), 0);
-        const setSystemGp = sets.reduce((s, it) => s + (it.systemBalanceGp ?? 0), 0);
-        const productActualSumGp = products.reduce((s, it) => s + (totalPortionsGp(it) ?? 0), 0);
-        const materialActualSumGp = materials.reduce((s, it) => s + (totalPortionsGp(it) ?? 0), 0);
-        const setActualSumGp = sets.reduce((s, it) => s + (totalPortionsGp(it) ?? 0), 0);
-        const productDevShortfallGp = products.reduce((s, it) => {
-          const total = totalPortionsGp(it);
-          const system = it.systemBalanceGp ?? 0;
-          return s + (total !== null && total < system ? system - total : 0);
-        }, 0);
-        const productDevSurplusGp = products.reduce((s, it) => {
-          const total = totalPortionsGp(it);
-          const system = it.systemBalanceGp ?? 0;
-          return s + (total !== null && total > system ? total - system : 0);
-        }, 0);
-        const materialDevShortfallGp = materials.reduce((s, it) => {
-          const total = totalPortionsGp(it);
-          const system = it.systemBalanceGp ?? 0;
-          return s + (total !== null && total < system ? system - total : 0);
-        }, 0);
-        const materialDevSurplusGp = materials.reduce((s, it) => {
-          const total = totalPortionsGp(it);
-          const system = it.systemBalanceGp ?? 0;
-          return s + (total !== null && total > system ? total - system : 0);
-        }, 0);
-        const setDevShortfallGp = sets.reduce((s, it) => {
-          const total = totalPortionsGp(it);
-          const system = it.systemBalanceGp ?? 0;
-          return s + (total !== null && total < system ? system - total : 0);
-        }, 0);
-        const setDevSurplusGp = sets.reduce((s, it) => {
-          const total = totalPortionsGp(it);
-          const system = it.systemBalanceGp ?? 0;
-          return s + (total !== null && total > system ? total - system : 0);
-        }, 0);
-        const productHasActualGp = products.some((it) => totalPortionsGp(it) !== null);
-        const materialHasActualGp = materials.some((it) => totalPortionsGp(it) !== null);
-        const setHasActualGp = sets.some((it) => totalPortionsGp(it) !== null);
+        const {
+          materials, sets, products,
+          productDevShortfall, productDevSurplus,
+          materialDevShortfall, materialDevSurplus,
+          setDevShortfall, setDevSurplus,
+          productHasActual, materialHasActual, setHasActual,
+          productDevShortfallGp, productDevSurplusGp, productHasActualGp,
+        } = {
+          ...msStats,
+          productDevShortfallGp: isGroup ? gpStats.productDevShortfallGp : msStats.productDevShortfallGp,
+          productDevSurplusGp: isGroup ? gpStats.productDevSurplusGp : msStats.productDevSurplusGp,
+          productHasActualGp: isGroup ? gpStats.productHasActualGp : msStats.productHasActualGp,
+        };
+
+        const canAuthorEditThisSession = !isAdmin && canAuthorEditSession(session);
+
+        const headerDateLabel = isGroup
+          ? `${formatDate(msSession.inventoryDate)} – ${formatDate(gpSession.inventoryDate)}`
+          : formatDate(session.inventoryDate);
+
+        const sessionsInEntry = isGroup ? [msSession, gpSession] : [session];
+        const mergedItemsForRefresh = sessionsInEntry.flatMap((s) => s.items as any[]);
 
         return (
-          <div key={session.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-            <button className="w-full px-4 pt-3 pb-2.5 flex items-center justify-between bg-neutral-100 transition-colors" onClick={() => setExpandedSessionId(expandedSessionId === session.id ? null : session.id)}>
+          <div key={entryKey} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+            <button className="w-full px-4 pt-3 pb-2.5 flex items-center justify-between bg-neutral-100 transition-colors" onClick={() => setExpandedSessionId(expandedSessionId === entryKey ? null : entryKey)}>
               <div className="flex items-center gap-2 flex-1">
-                <DynamicIcon name="chevron-right" className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${expandedSessionId === session.id ? 'rotate-90' : ''}`} />
-                <div className="text-left pr-2"><p className="text-sm font-medium text-gray-700 tabular-nums">{formatDate(session.inventoryDate)}</p></div>
-                <Chip size="sm" color={statusColor[session.status]} className={statusClass[session.status]} variant="flat">{statusLabel[session.status]}</Chip>
+                <DynamicIcon name="chevron-right" className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${expandedSessionId === entryKey ? 'rotate-90' : ''}`} />
+                <div className="text-left pr-2"><p className="text-sm font-medium text-gray-700 tabular-nums">{headerDateLabel}</p></div>
+                {isGroup ? (
+                  <Chip size="sm" variant="flat" className="bg-default-100">МС + ГП</Chip>
+                ) : (
+                  <Chip size="sm" color={statusColor[session.status]} className={statusClass[session.status]} variant="flat">{statusLabel[session.status]}</Chip>
+                )}
               </div>
 
               <div className="grid grid-cols-[120px_120px_120px_100px] gap-6 ml-2 text-xs text-gray-500">
@@ -320,17 +298,19 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
               </div>
             </button>
 
-            <div style={{ maxHeight: expandedSessionId === session.id ? `${contentHeights[session.id] || 0}px` : '0', opacity: expandedSessionId === session.id ? 1 : 0, overflow: 'hidden', transition: 'all 300ms ease-in-out' }} className="bg-gray-50 border-t border-gray-200">
-              <div ref={(el) => { if (el) contentRefs.current[session.id] = el; }} className="p-4">
+            <div style={{ maxHeight: expandedSessionId === entryKey ? `${contentHeights[entryKey] || 0}px` : '0', opacity: expandedSessionId === entryKey ? 1 : 0, overflow: 'hidden', transition: 'all 300ms ease-in-out' }} className="bg-gray-50 border-t border-gray-200">
+              <div ref={(el) => { if (el) contentRefs.current[entryKey] = el; }} className="p-4">
                 <div className="mb-6">
                   <div className="flex items-center gap-4">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-2">Деталі інвентаризації #{session.id}</h3>
+                    <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                      {isGroup ? `Інвентаризація МС #${msSession.id} + ГП #${gpSession.id}` : `Деталі інвентаризації #${session.id}`}
+                    </h3>
                     <div className="flex items-center gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
                       {onRefreshSessionBalances && (
-                        <Button size="sm" variant="flat" color="primary" data-btn-tone="primary-blue-flat" className="h-auto px-3 py-1.5 gap-1 min-w-0" isDisabled={!!loadingLoadId || !!loadingDeleteId} startContent={<DynamicIcon name="refresh-cw" className={`w-3 h-3 ${loadingRefreshId !== session.id ? '' : 'animate-spin'}`} />} onPress={async () => { setLoadingRefreshId(session.id); try { const report = await onRefreshSessionBalances!(session.id); setRefreshReportItems(report?.items || []); setRefreshSessionItems(session.items as any[] || []); setRefreshSessionId(session.id); setRefreshInventoryDate(formatDate(session.inventoryDate)); setIsRefreshModalOpen(true); } finally { setLoadingRefreshId(null); } }}>Оновити облікові залишки</Button>
+                        <Button size="sm" variant="flat" color="primary" data-btn-tone="primary-blue-flat" className="h-auto px-3 py-1.5 gap-1 min-w-0" isDisabled={!!loadingLoadId || !!loadingDeleteId} startContent={<DynamicIcon name="refresh-cw" className={`w-3 h-3 ${loadingRefreshId !== entryKey ? '' : 'animate-spin'}`} />} onPress={() => openRefreshModal(sessionsInEntry.map((s) => s.id), mergedItemsForRefresh, headerDateLabel, entryKey, isGroup ? 'multi' : resolveSessionWarehouseScope(session))}>Оновити облікові залишки</Button>
                       )}
 
-                      {session.status !== 'removed' && (isAdmin || canAuthorEditThisSession) && onLoadSession && (
+                      {!isGroup && session.status !== 'removed' && (isAdmin || canAuthorEditThisSession) && onLoadSession && (
                         <Button size="sm" variant="flat" color="primary" data-btn-tone="primary-blue-flat" className="h-auto px-2.5 py-1.5 gap-1 min-w-0" isDisabled={!!loadingDeleteId} startContent={<DynamicIcon name={loadingLoadId !== session.id ? 'pencil' : 'loader-circle'} className={`w-3 h-3 ${loadingLoadId !== session.id ? '' : 'animate-spin'}`} />} onPress={async () => { setLoadingLoadId(session.id); try { await onLoadSession!(session); } finally { setLoadingLoadId(null); } }}>Редагувати</Button>
                       )}
 
@@ -343,75 +323,138 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap"><span>Автор: <b>{namesMap[Number(session.createdBy ?? -1)] ?? 'N/A'}</b></span><span className="border-l border-gray-300 pl-3">Дата створення: <b>{formatDate(session.createdAt)}</b></span><span className="border-l border-gray-300 pl-3">Кількість позицій: <b>{(products.length + materials.length + sets.length)}</b></span>{session.comment && <span className="border-l border-gray-300 pl-3">Коментар: {session.comment}</span>}</div>
+                  <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap">
+                    {sessionsInEntry.map((sess) => (
+                      <span key={sess.id} className="flex items-center gap-3">
+                        <StockBadge variant={resolveSessionWarehouseScope(sess) === 'gp' ? 'gp' : 'ms'} size="9px" />
+                        <span>#{sess.id}: <b>{namesMap[Number(sess.createdBy ?? -1)] ?? 'N/A'}</b></span>
+                        <span className="border-l border-gray-300 pl-3">{formatDate(sess.createdAt)}</span>
+                        {sess.comment && <span className="border-l border-gray-300 pl-3">{sess.comment}</span>}
+                      </span>
+                    ))}
+                  </div>
                 </div>
 
-                {sets.length > 0 && (
-                  <InventoryTableSection
-                    title="Комплекти"
-                    sessionId={session.id}
-                    rows={sortItems(sets, sortColumnProd, sortDirectionProd)}
-                    sortColumn={sortColumnProd}
-                    sortDirection={sortDirectionProd}
-                    onSort={(col) => handleSort(col, false)}
-                    expandedRowKey={expandedRowKey}
-                    onRowClick={handleRowClick}
-                    rowHistoryCache={rowHistoryCache}
-                    rowHistoryLoading={loadingSku}
-                    setCompositionBySku={setCompositionBySku}
-                    summary={{
-                      systemTotal: setSystem, actualSum: setHasActual ? setActualSum : null, hasActual: setHasActual,
-                      devShortfall: setDevShortfall, devSurplus: setDevSurplus,
-                      systemTotalGp: setSystemGp, actualSumGp: setHasActualGp ? setActualSumGp : null, hasActualGp: setHasActualGp,
-                      devShortfallGp: setDevShortfallGp, devSurplusGp: setDevSurplusGp
-                    }}
-                  />
-                )}
+                {sessionsInEntry.map((detailSession) => {
+                  const st = computeInventorySessionStats(detailSession);
+                  const { materials: dMat, sets: dSets, products: dProd } = st;
+                  const wh = resolveSessionWarehouseScope(detailSession);
+                  const sectionTitlePrefix = wh === 'gp' ? 'ГП' : 'МС';
 
-                {products.length > 0 && (
-                  <InventoryTableSection
-                    title="Товари"
-                    sessionId={session.id}
-                    rows={sortItems(products, sortColumnProd, sortDirectionProd)}
-                    sortColumn={sortColumnProd}
-                    sortDirection={sortDirectionProd}
-                    onSort={(col) => handleSort(col, false)}
-                    expandedRowKey={expandedRowKey}
-                    onRowClick={handleRowClick}
-                    rowHistoryCache={rowHistoryCache}
-                    rowHistoryLoading={loadingSku}
-                    setCompositionBySku={setCompositionBySku}
-                    summary={{
-                      systemTotal: productSystem, actualSum: productHasActual ? productActualSum : null, hasActual: productHasActual,
-                      devShortfall: productDevShortfall, devSurplus: productDevSurplus,
-                      systemTotalGp: productSystemGp, actualSumGp: productHasActualGp ? productActualSumGp : null, hasActualGp: productHasActualGp,
-                      devShortfallGp: productDevShortfallGp, devSurplusGp: productDevSurplusGp
-                    }}
-                  />
-                )}
+                  const dSetSystem = dSets.reduce((s, it) => s + (it.systemBalance ?? 0), 0);
+                  const dProductSystem = dProd.reduce((s, it) => s + (it.systemBalance ?? 0), 0);
+                  const dMaterialSystem = dMat.reduce((s, it) => s + (it.systemBalance ?? 0), 0);
+                  const dSetActualSum = dSets.reduce((s, it) => s + (totalPortions(it) ?? 0), 0);
+                  const dProductActualSum = dProd.reduce((s, it) => s + (totalPortions(it) ?? 0), 0);
+                  const dMaterialActualSum = dMat.reduce((s, it) => s + (totalPortions(it) ?? 0), 0);
+                  const dSetSystemGp = dSets.reduce((s, it) => s + (it.systemBalanceGp ?? 0), 0);
+                  const dProductSystemGp = dProd.reduce((s, it) => s + (it.systemBalanceGp ?? 0), 0);
+                  const dMaterialSystemGp = dMat.reduce((s, it) => s + (it.systemBalanceGp ?? 0), 0);
+                  const dSetActualSumGp = dSets.reduce((s, it) => s + (totalPortionsGp(it) ?? 0), 0);
+                  const dProductActualSumGp = dProd.reduce((s, it) => s + (totalPortionsGp(it) ?? 0), 0);
+                  const dMaterialActualSumGp = dMat.reduce((s, it) => s + (totalPortionsGp(it) ?? 0), 0);
 
-                {materials.length > 0 && (
-                  <InventoryTableSection
-                    title="Матеріали"
-                    sessionId={session.id}
-                    rows={sortItems(materials, sortColumnMat, sortDirectionMat)}
-                    sortColumn={sortColumnMat}
-                    sortDirection={sortDirectionMat}
-                    onSort={(col) => handleSort(col, true)}
-                    expandedRowKey={expandedRowKey}
-                    onRowClick={handleRowClick}
-                    rowHistoryCache={rowHistoryCache}
-                    rowHistoryLoading={loadingSku}
-                    setCompositionBySku={setCompositionBySku}
-                    summary={{
-                      systemTotal: materialSystem, actualSum: materialHasActual ? materialActualSum : null, hasActual: materialHasActual,
-                      devShortfall: materialDevShortfall, devSurplus: materialDevSurplus,
-                      systemTotalGp: materialSystemGp, actualSumGp: materialHasActualGp ? materialActualSumGp : null, hasActualGp: materialHasActualGp,
-                      devShortfallGp: materialDevShortfallGp, devSurplusGp: materialDevSurplusGp
-                    }}
-                    isMaterial
-                  />
-                )}
+                  return (
+                    <div key={`detail-${detailSession.id}`} className={isGroup ? 'mb-8 pb-6 border-b border-gray-200 last:border-0' : ''}>
+                      {isGroup && (
+                        <div className="flex items-center justify-between gap-3 mb-3">
+                          <h4 className="text-sm font-semibold text-gray-600 flex items-center gap-2">
+                            <StockBadge variant={wh === 'gp' ? 'gp' : 'ms'} size="10px" />
+                            {sectionTitlePrefix} — сесія #{detailSession.id}
+                          </h4>
+                          {detailSession.status !== 'removed' && (isAdmin || canAuthorEditSession(detailSession)) && onLoadSession && (
+                            <Button
+                              size="sm"
+                              variant="flat"
+                              color="primary"
+                              data-btn-tone="primary-blue-flat"
+                              className="h-auto px-2.5 py-1.5 gap-1 min-w-0"
+                              isDisabled={!!loadingDeleteId}
+                              startContent={<DynamicIcon name={loadingLoadId !== detailSession.id ? 'pencil' : 'loader-circle'} className={`w-3 h-3 ${loadingLoadId !== detailSession.id ? '' : 'animate-spin'}`} />}
+                              onPress={async () => {
+                                setLoadingLoadId(detailSession.id);
+                                try {
+                                  await onLoadSession!(detailSession);
+                                } finally {
+                                  setLoadingLoadId(null);
+                                }
+                              }}
+                            >
+                              Редагувати
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                      {dSets.length > 0 && (
+                        <InventoryTableSection
+                          title={`${sectionTitlePrefix}: Комплекти`}
+                          sessionId={detailSession.id}
+                          inventoryDate={detailSession.inventoryDate}
+                          rows={sortItems(dSets, sortColumnProd, sortDirectionProd)}
+                          sortColumn={sortColumnProd}
+                          sortDirection={sortDirectionProd}
+                          onSort={(col) => handleSort(col, false)}
+                          expandedRowKey={expandedRowKey}
+                          onRowClick={handleRowClick}
+                          rowHistoryCache={rowHistoryCache}
+                          rowHistoryLoading={loadingSku}
+                          setCompositionBySku={setCompositionBySku}
+                          summary={{
+                            systemTotal: dSetSystem, actualSum: st.setHasActual ? dSetActualSum : null, hasActual: st.setHasActual,
+                            devShortfall: st.setDevShortfall, devSurplus: st.setDevSurplus,
+                            systemTotalGp: dSetSystemGp, actualSumGp: st.setHasActualGp ? dSetActualSumGp : null, hasActualGp: st.setHasActualGp,
+                            devShortfallGp: st.setDevShortfallGp, devSurplusGp: st.setDevSurplusGp,
+                          }}
+                        />
+                      )}
+                      {dProd.length > 0 && (
+                        <InventoryTableSection
+                          title={`${sectionTitlePrefix}: Товари`}
+                          sessionId={detailSession.id}
+                          inventoryDate={detailSession.inventoryDate}
+                          rows={sortItems(dProd, sortColumnProd, sortDirectionProd)}
+                          sortColumn={sortColumnProd}
+                          sortDirection={sortDirectionProd}
+                          onSort={(col) => handleSort(col, false)}
+                          expandedRowKey={expandedRowKey}
+                          onRowClick={handleRowClick}
+                          rowHistoryCache={rowHistoryCache}
+                          rowHistoryLoading={loadingSku}
+                          setCompositionBySku={setCompositionBySku}
+                          summary={{
+                            systemTotal: dProductSystem, actualSum: st.productHasActual ? dProductActualSum : null, hasActual: st.productHasActual,
+                            devShortfall: st.productDevShortfall, devSurplus: st.productDevSurplus,
+                            systemTotalGp: dProductSystemGp, actualSumGp: st.productHasActualGp ? dProductActualSumGp : null, hasActualGp: st.productHasActualGp,
+                            devShortfallGp: st.productDevShortfallGp, devSurplusGp: st.productDevSurplusGp,
+                          }}
+                        />
+                      )}
+                      {dMat.length > 0 && (
+                        <InventoryTableSection
+                          title={`${sectionTitlePrefix}: Матеріали`}
+                          sessionId={detailSession.id}
+                          inventoryDate={detailSession.inventoryDate}
+                          rows={sortItems(dMat, sortColumnMat, sortDirectionMat)}
+                          sortColumn={sortColumnMat}
+                          sortDirection={sortDirectionMat}
+                          onSort={(col) => handleSort(col, true)}
+                          expandedRowKey={expandedRowKey}
+                          onRowClick={handleRowClick}
+                          rowHistoryCache={rowHistoryCache}
+                          rowHistoryLoading={loadingSku}
+                          setCompositionBySku={setCompositionBySku}
+                          summary={{
+                            systemTotal: dMaterialSystem, actualSum: st.materialHasActual ? dMaterialActualSum : null, hasActual: st.materialHasActual,
+                            devShortfall: st.materialDevShortfall, devSurplus: st.materialDevSurplus,
+                            systemTotalGp: dMaterialSystemGp, actualSumGp: st.materialHasActualGp ? dMaterialActualSumGp : null, hasActualGp: st.materialHasActualGp,
+                            devShortfallGp: st.materialDevShortfallGp, devSurplusGp: st.materialDevSurplusGp,
+                          }}
+                          isMaterial
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -462,6 +505,7 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
         items={refreshReportItems}
         sessionItems={refreshSessionItems}
         inventoryDate={refreshInventoryDate}
+        warehouseScope={refreshWarehouseScope}
         isApplying={isApplying}
         onApply={handleApplyRefresh}
         onRefresh={onRefresh ? async () => { const maybe: any = onRefresh(); if (maybe && typeof maybe.then === 'function') await maybe; } : undefined}

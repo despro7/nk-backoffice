@@ -1,6 +1,7 @@
 import { Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import type { InventoryProduct } from '../WarehouseInventoryTypes';
+import type { InventoryProduct, InventoryWarehouseScope } from '../WarehouseInventoryTypes';
+import type { InventoryRowKind } from '../inventoryRowScroll';
 import { ProductRow, type ProductRowProps } from './InventoryProductRow';
 
 // ---------------------------------------------------------------------------
@@ -25,6 +26,8 @@ interface InventoryProductListProps {
   onEnterPress?: (id: string) => void;
   onReset: (id: string) => void;
   onRetry: () => void;
+  warehouseScope: InventoryWarehouseScope;
+  rowKind: InventoryRowKind;
 }
 
 export const InventoryProductList = ({
@@ -33,10 +36,12 @@ export const InventoryProductList = ({
   items, loading, error, searchQuery,
   openItemIds, onToggle, onChange, onCheck, onEnterPress, onRetry,
   onReset,
+  warehouseScope,
+  rowKind,
 }: InventoryProductListProps) => (
-  <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+  <div className="bg-white rounded-xl shadow-lg overflow-hidden">
     {/* Header */}
-    <div className={`px-4 py-3 border-b border-gray-100 ${headerColorClass}`}>
+    <div className={`px-4 py-3 rounded-t-xl shadow-inner border-b border-gray-800/5 ${headerColorClass}`}>
       <h3 className={`text-sm font-semibold flex items-center gap-2 ${headerTextClass}`}>
         <DynamicIcon name={icon as any} className="w-4 h-4" />
         {title} ({checkedCount}/{totalCount})
@@ -74,6 +79,8 @@ export const InventoryProductList = ({
           onCheck={onCheck}
           onEnterPress={onEnterPress}
           onReset={onReset}
+          warehouseScope={warehouseScope}
+          rowKind={rowKind}
         />
       ))
     )}

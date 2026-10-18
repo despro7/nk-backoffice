@@ -1,29 +1,35 @@
 import { Tab } from '@heroui/react';
 import PageTabs from '@/components/PageTabs';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { DynamicIcon } from 'lucide-react/dynamic';
 import { useAuth } from '@/contexts/auth-context';
 import { useRolePreview } from '@/contexts/role-preview-context';
 import { ToastService } from '@/services/ToastService';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
+import { ReserveDraftBanner } from '@/components/reserve-draft';
 
 import { useWarehouseInventory } from './useWarehouseInventory';
+import { resolveSessionWarehouseScope } from './inventoryHistoryGroups';
 import { InventoryStartScreen } from './components/InventoryStartScreen';
 import { InventoryProgressBar } from './components/InventoryProgressBar';
 import { InventoryProductList } from './components/InventoryProductList';
 import { InventorySummaryTable } from './components/InventorySummaryTable';
 import { InventoryActionBar } from './components/InventoryActionBar';
-import { InventorySessionMeta } from './components/InventorySessionMeta';
 import { InventoryHistoryTab } from './components/InventoryHistoryTab';
 import InventoryArchiveTab from './components/InventoryArchiveTab';
 import { InventoryCommentModal } from './components/InventoryCommentModal';
+import { InventorySessionDetailPanel } from './components/InventorySessionDetailPanel';
+import { InventorySessionLoadingState } from './components/InventorySessionLoadingState';
 
 // ---------------------------------------------------------------------------
 // WarehouseInventory — головна сторінка інвентаризації малого складу та складу готової продукції (ГП)
 // ---------------------------------------------------------------------------
 
 export default function WarehouseInventory() {
+  const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>();
   const { user } = useAuth();
   const { isAdminView: isAdmin } = useRolePreview();
   const inv = useWarehouseInventory(isAdmin);
@@ -31,15 +37,18 @@ export default function WarehouseInventory() {
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
   const currentUserId = user?.id ? String(user.id) : null;
-  const latestOwnHistorySessionId = currentUserId
-    ? inv.historySessions.find((s) => String(s.createdBy) === currentUserId)?.id ?? null
+  const loadedScope = inv.sessionWarehouse ?? 'small';
+  const latestOwnHistorySessionIdForScope = currentUserId
+    ? inv.historySessions.find(
+        (s) => String(s.createdBy) === currentUserId && resolveSessionWarehouseScope(s) === loadedScope,
+      )?.id ?? null
     : null;
   const canAuthorEditLoadedCompleted = !isAdmin
     && currentUserId !== null
     && (inv.sessionStatus === 'completed' || (inv.sessionStatus === 'revising' && inv.sessionOriginalStatus === 'completed'))
     && inv.sessionId !== null
-    && latestOwnHistorySessionId !== null
-    && String(inv.sessionId) === String(latestOwnHistorySessionId);
+    && latestOwnHistorySessionIdForScope !== null
+    && String(inv.sessionId) === String(latestOwnHistorySessionIdForScope);
   const canEditCompletedSession = isAdmin || canAuthorEditLoadedCompleted;
   const canEditCurrentSession = inv.sessionStatus === 'in_progress' || (inv.sessionStatus === 'completed' && canEditCompletedSession);
   // Treat 'revising' as an editable state similar to 'in_progress'
@@ -50,8 +59,20 @@ export default function WarehouseInventory() {
   // Include deviations from sets
   const totalDeviationsAll = totalDeviations + (inv.deviationSetsCount ?? 0);
 
+  const displaySessionId = inv.sessionId ?? (inv.viewingSession ? Number(inv.viewingSession.id) : null);
+  const pageHeading = displaySessionId != null
+    ? `Інвентаризація №${displaySessionId}`
+    : 'Інвентаризація залишків на складах';
+
+  useEffect(() => {
+    document.title = displaySessionId != null
+      ? `Інвентаризація №${displaySessionId} | NK Backoffice`
+      : 'Інвентаризація залишків | NK Backoffice';
+  }, [displaySessionId]);
+
   const guard = useUnsavedGuard({
-    isDirty: inv.isDirty,
+    // Вихід не блокуємо: зміни вже лежать у локальному резерві і пропонуються при поверненні.
+    isDirty: false,
     onSaveDraft: inv.handleSaveDraft,
   });
 
@@ -94,13 +115,18 @@ export default function WarehouseInventory() {
 
   return (
     <div className="container">
-      <div className="flex flex-col gap-4 pb-12 w-full">
+      <div className="flex flex-col gap-8 pb-12 w-full">
+
+        <h1 className="text-primary font-inter text-2xl lg:text-3xl font-semibold leading-[100%] tracking-[-0.64px] min-h-10 flex items-center px-3 md:px-0">
+          <DynamicIcon name="clipboard-list" className="w-6 h-6 mr-3 shrink-0 hidden lg:block" />
+          {pageHeading}
+        </h1>
 
         {/* Підзаголовок сторінки */}
         <p className="text-sm text-gray-500">
           Підрахунок фактичних залишків малого складу та складу готової продукції (ГП) для виявлення відхилень від облікових даних.
           Створюйте інвентаризацію, перевіряйте позиції та фіксуйте результати окремо для кожного складу.
-          Усі незбережені зміни зберігаються як чернетка, щоб ви могли повернутися пізніше та продовжити роботу.
+          Незбережені правки лишаються в резервній копії на цьому пристрої, тож після виходу або збою можна продовжити з того ж місця. Чернетку на сервері зберігайте окремою дією.
           Завершуйте інвентаризацію, щоб зафіксувати результати та побачити відхилення.
         </p>
 
@@ -121,29 +147,42 @@ export default function WarehouseInventory() {
             {isAdmin && <Tab key="archive" title="Архів" />}
           </PageTabs>
 
-          {inv.activeTab === 'current' && (
-            <InventorySessionMeta
-              sessionStatus={inv.sessionStatus}
-              sessionDate={inv.sessionDate}
-              onSessionDateChange={inv.handleSessionDateChange}
-              isEditable={inv.sessionStatus === 'completed' && canEditCompletedSession}
-            />
-          )}
         </div>
 
         {/* ── Вкладка: Поточна інвентаризація ── */}
-        {inv.activeTab === 'current' && (
+        {inv.activeTab === 'current' && inv.sessionBootstrapLoading && (
+          <InventorySessionLoadingState message={inv.sessionBootstrapMessage ?? 'Завантаження…'} />
+        )}
+
+        {inv.activeTab === 'current' && !inv.sessionBootstrapLoading && (
           <>
             {/* Початковий екран — немає активної сесії */}
-            {inv.sessionStatus === null && (
+            {inv.sessionStatus === null && !inv.viewingSession && (
               <InventoryStartScreen
                 comment={inv.comment}
                 onCommentChange={inv.setComment}
                 onStart={inv.handleStartSession}
+                pendingDrafts={inv.pendingWarehouseDrafts}
               />
             )}
 
-            {/* Активна або завершена сесія */}
+            {inv.viewingSession && inv.sessionStatus === null && (
+              <InventorySessionDetailPanel
+                session={inv.viewingSession}
+                historySessions={inv.historySessions}
+                isAdmin={isAdmin}
+                currentUserId={currentUserId}
+                setCompositionBySku={inv.setCompositionBySku}
+                onEdit={() => inv.handleBeginSessionEdit(inv.viewingSession!)}
+                onDelete={handleAdminDeleteSession}
+                onRefreshSessionBalances={handleRefreshSessionBalances}
+                onHistoryRefresh={inv.loadHistory}
+                onClose={inv.closeSessionDetail}
+                compactHeader={Boolean(urlSessionId)}
+              />
+            )}
+
+            {/* Активна або завершена сесія (режим редагування) */}
             {(inv.sessionStatus === 'in_progress' || inv.sessionStatus === 'completed' || inv.sessionStatus === 'revising') && (
               <>
                 <InventoryProgressBar
@@ -162,14 +201,28 @@ export default function WarehouseInventory() {
                   onSortByChange={inv.setSortBy}
                   sortDirection={inv.sortDirection}
                   onSortDirectionChange={inv.setSortDirection}
+                  sessionStatus={inv.sessionStatus}
+                  sessionWarehouse={inv.sessionWarehouse}
+                  sessionDate={inv.sessionDate}
+                  onSessionDateChange={inv.handleSessionDateChange}
+                  isEditable={inv.sessionStatus === 'completed' && canEditCompletedSession}
                 />
+
+                {inv.reserveOffer && (
+                  <ReserveDraftBanner
+                    savedAt={inv.reserveOffer.savedAt}
+                    placeLabel={inv.reserveOffer.placeLabel}
+                    onContinue={inv.continueReserveDraft}
+                    onDismiss={inv.dismissReserveDraft}
+                  />
+                )}
 
                 {/* Список готових комплектів */}
                 <InventoryProductList
-                  title="Комплекти"
+                  title="Монолітні комплекти"
                   icon="boxes"
-                  headerColorClass="bg-emerald-50"
-                  headerTextClass="text-emerald-900"
+                  headerColorClass="bg-lime-100"
+                  headerTextClass="text-lime-700"
                   checkedCount={inv.checkedSetsCount}
                   totalCount={inv.totalSetsCount}
                   items={inv.filteredSets}
@@ -183,15 +236,17 @@ export default function WarehouseInventory() {
                   onEnterPress={inv.handleEnterPressSet}
                   onRetry={inv.loadSets}
                   onReset={inv.handleResetItemValues}
+                  warehouseScope={inv.sessionWarehouse ?? 'small'}
+                  rowKind="set"
                 />
 
                 {/* Список страв */}
                 {inv.selectedCategory !== 'Коробки' && (
                   <InventoryProductList
-                    title="Товари"
+                    title="Порційні товари"
                     icon="utensils"
-                    headerColorClass="bg-blue-50"
-                    headerTextClass="text-blue-900"
+                    headerColorClass="bg-blue-200/80"
+                    headerTextClass="text-blue-800"
                     checkedCount={inv.checkedCount}
                     totalCount={inv.totalCount}
                     items={inv.filteredProducts}
@@ -205,6 +260,8 @@ export default function WarehouseInventory() {
                     onEnterPress={inv.handleEnterPressProduct}
                     onRetry={inv.loadProducts}
                     onReset={inv.handleResetItemValues}
+                    warehouseScope={inv.sessionWarehouse ?? 'small'}
+                    rowKind="product"
                   />
                 )}
 
@@ -212,8 +269,8 @@ export default function WarehouseInventory() {
                 <InventoryProductList
                   title="Матеріали"
                   icon="box"
-                  headerColorClass="bg-amber-50"
-                  headerTextClass="text-amber-900"
+                  headerColorClass="bg-amber-100"
+                  headerTextClass="text-amber-800"
                   checkedCount={inv.checkedMaterialsCount}
                   totalCount={inv.totalMaterialsCount}
                   items={inv.filteredMaterials}
@@ -227,6 +284,8 @@ export default function WarehouseInventory() {
                   onEnterPress={inv.handleEnterPressMaterial}
                   onRetry={inv.loadMaterials}
                   onReset={inv.handleResetItemValues}
+                  warehouseScope={inv.sessionWarehouse ?? 'small'}
+                  rowKind="material"
                 />
 
                 {/* Підсумкова таблиця */}
@@ -234,6 +293,7 @@ export default function WarehouseInventory() {
                   sets={inv.sets}
                   products={inv.products}
                   materials={inv.materials}
+                  warehouseScope={inv.sessionWarehouse ?? 'small'}
                 />
 
                 {/* Панель дій: для редагованої сесії (in_progress) або для адміна, що редагує completed */}
@@ -248,6 +308,8 @@ export default function WarehouseInventory() {
                     onSaveDraft={inv.handleSaveDraft}
                     onFinish={() => inv.setShowConfirmFinish(true)}
                     isEditingCompleted={(inv.sessionStatus === 'completed' || inv.sessionStatus === 'revising') && canEditCompletedSession}
+                    showCloseWithoutSaving={isRevisingEditable || ((inv.sessionStatus === 'completed' || inv.sessionStatus === 'revising') && canEditCompletedSession)}
+                    onCloseWithoutSaving={() => inv.setShowConfirmCloseWithoutSaving(true)}
                   />
                 )}
               </>
@@ -261,7 +323,7 @@ export default function WarehouseInventory() {
             sessions={inv.historySessions}
             loading={inv.historyLoading}
             onRefresh={inv.loadHistory}
-            onLoadSession={inv.handleAdminLoadSession}
+            onLoadSession={inv.handleBeginSessionEdit}
             onDeleteSession={handleAdminDeleteSession}
             onRefreshSessionBalances={handleRefreshSessionBalances}
             setCompositionBySku={inv.setCompositionBySku}
@@ -272,7 +334,7 @@ export default function WarehouseInventory() {
             sessions={inv.archiveSessions}
             loading={inv.archiveLoading}
             onRefresh={inv.loadArchive}
-            onLoadSession={inv.handleAdminLoadSession}
+            onLoadSession={inv.handleBeginSessionEdit}
             onRestoreSession={inv.handleAdminRestoreSession}
             onDeletePermanently={inv.handleAdminDeletePermanently}
             onRefreshSessionBalances={handleRefreshSessionBalances}
@@ -317,6 +379,20 @@ export default function WarehouseInventory() {
         cancelText="Назад"
         onConfirm={inv.handleReset}
         onCancel={() => inv.setShowConfirmCancel(false)}
+      />
+
+      <ConfirmModal
+        isOpen={inv.showConfirmCloseWithoutSaving}
+        title="Закрити без збереження?"
+        message="Незбережені зміни і локальну резервну копію буде відкинуто. Документ повернеться до статусу «Завершена»."
+        confirmText="Закрити без збереження"
+        cancelText="Назад"
+        confirmColor="danger"
+        onConfirm={async () => {
+          inv.setShowConfirmCloseWithoutSaving(false);
+          await inv.handleCloseView();
+        }}
+        onCancel={() => inv.setShowConfirmCloseWithoutSaving(false)}
       />
 
       {/* Модалка коментаря */}

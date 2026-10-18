@@ -5,10 +5,26 @@ import { formatRelativeDate } from '@/lib/formatUtils';
 import { StockBadge } from '@/components/StockBadge';
 import { ToastService } from '@/services/ToastService';
 import CompactBalance from './CompactBalance';
+import { useProductMovementsDrawer } from '@/features/product-movements/context/ProductMovementsDrawerContext';
+import { formatKyivDateTime, parseKyivDateTime } from '@shared/utils/kyivDateTime';
 import type { ProductHistoryEntry } from '../WarehouseInventoryTypes';
+
+function movementsPeriodAroundInventoryDate(inventoryDate?: string): { startDate: string; endDate: string } | undefined {
+  const center = inventoryDate ? parseKyivDateTime(inventoryDate) : null;
+  const base = center ?? new Date();
+  const start = new Date(base);
+  start.setUTCDate(start.getUTCDate() - 5);
+  const end = new Date(base);
+  end.setUTCDate(end.getUTCDate() + 5);
+  return {
+    startDate: formatKyivDateTime(start).slice(0, 10),
+    endDate: formatKyivDateTime(end).slice(0, 10),
+  };
+}
 
 interface InventoryHistoryRowProps {
   sessionId: string;
+  inventoryDate?: string;
   item: any;
   total: number | null;
   dev: number | null; // deviation (відхилення від обліку)
@@ -158,6 +174,7 @@ function DualStockCell({ left, right }: { left: ReactNode; right: ReactNode }) {
 
 export const InventoryHistoryRow = ({
   sessionId,
+  inventoryDate,
   item,
   total,
   dev,
@@ -170,6 +187,7 @@ export const InventoryHistoryRow = ({
   setCompositionBySku,
   onRowClick,
 }: InventoryHistoryRowProps) => {
+  const { open: openProductMovements } = useProductMovementsDrawer();
   const isRowExpanded = expandedRowKey === rowKey;
   const historyEntries = rowHistoryCache[item.sku];
   const isRowLoading = rowHistoryLoading === item.sku;
@@ -226,6 +244,21 @@ export const InventoryHistoryRow = ({
                     onPress={handleCopyProductRow}
                   >
                     Рядок даних
+                  </DropdownItem>
+                  <DropdownItem
+                    key="movements"
+                    startContent={<DynamicIcon name="arrow-left-right" size={16} />}
+                    onPress={() => {
+                      const period = movementsPeriodAroundInventoryDate(inventoryDate);
+                      openProductMovements({
+                        sku: item.sku,
+                        productName: item.name,
+                        period,
+                        autoGenerate: true,
+                      });
+                    }}
+                  >
+                    Рухи товару
                   </DropdownItem>
                 </DropdownMenu>
               </Dropdown>

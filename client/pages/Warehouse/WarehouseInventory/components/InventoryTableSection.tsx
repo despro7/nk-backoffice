@@ -23,6 +23,7 @@ interface Summary {
 interface Props {
   title: string;
   sessionId: string;
+  inventoryDate?: string;
   rows: Array<{ item: any; total: number | null; dev: number | null; totalGp: number | null; devGp: number | null }>;
   sortColumn: SortColumn;
   sortDirection: SortDirection;
@@ -36,7 +37,7 @@ interface Props {
   isMaterial?: boolean;
 }
 
-const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirection, onSort, expandedRowKey, onRowClick, rowHistoryCache, rowHistoryLoading, setCompositionBySku, summary, isMaterial }: Props) => {
+const InventoryTableSection = ({ title, sessionId, inventoryDate, rows, sortColumn, sortDirection, onSort, expandedRowKey, onRowClick, rowHistoryCache, rowHistoryLoading, setCompositionBySku, summary, isMaterial }: Props) => {
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2 justify-between px-3 py-2 rounded-t-md border-1 border-b-0 border-gray-200 bg-gray-200">
@@ -84,6 +85,7 @@ const InventoryTableSection = ({ title, sessionId, rows, sortColumn, sortDirecti
                 <InventoryHistoryRow
                   key={`${sessionId}-${isMaterial ? 'mat' : 'prod'}-${idx}`}
                   sessionId={sessionId}
+                  inventoryDate={inventoryDate}
                   item={item}
                   total={total}
                   dev={dev}

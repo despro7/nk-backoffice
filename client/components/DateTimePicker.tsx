@@ -1,6 +1,13 @@
+import { useEffect, useRef, useState } from 'react';
 import { Button, DatePicker, Spinner } from '@heroui/react';
 import { I18nProvider } from '@react-aria/i18n';
-import { getLocalTimeZone, now, parseZonedDateTime } from '@internationalized/date';
+import {
+  fromDate,
+  getLocalTimeZone,
+  now,
+  toCalendarDateTime,
+  toZoned,
+} from '@internationalized/date';
 import type { DateValue } from '@internationalized/date';
 
 // ---------------------------------------------------------------------------
@@ -19,9 +26,13 @@ const DEFAULT_PRESETS: PresetTime[] = [
   { label: 'Зараз', hour: null, minute: null },
 ];
 
+const MIN_COMMIT_YEAR = 1000;
+const MAX_COMMIT_YEAR = 9999;
+
 interface WarehouseDateTimePickerProps {
   value: Date;
   onChange: (date: Date) => void;
+  onOpenChange?: (isOpen: boolean) => void;
   label?: string | React.ReactNode;
   labelPlacement?: 'outside-left' | 'outside' | 'inside';
   isDisabled?: boolean;
@@ -32,15 +43,21 @@ interface WarehouseDateTimePickerProps {
   size?: 'sm' | 'md' | 'lg';
 }
 
-// Конвертуємо JS Date в ZonedDateTime для DatePicker
-const toZonedDateTime = (date: Date): DateValue => {
-  const year   = date.getFullYear();
-  const month  = String(date.getMonth() + 1).padStart(2, '0');
-  const day    = String(date.getDate()).padStart(2, '0');
-  const hours  = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  return parseZonedDateTime(`${year}-${month}-${day}T${hours}:${minutes}:00[${getLocalTimeZone()}]`);
+const isValidJsDate = (date: Date): boolean => {
+  if (Number.isNaN(date.getTime())) return false;
+  const year = date.getFullYear();
+  return year >= MIN_COMMIT_YEAR && year <= MAX_COMMIT_YEAR;
 };
+
+const jsDateToZoned = (date: Date): DateValue => fromDate(date, getLocalTimeZone());
+
+const dateValueToZoned = (dateValue: DateValue): DateValue => {
+  if ('timeZone' in dateValue) return dateValue;
+  return toZoned(toCalendarDateTime(dateValue), getLocalTimeZone());
+};
+
+const isCommitReady = (dateValue: DateValue): boolean =>
+  dateValue.year >= MIN_COMMIT_YEAR && dateValue.year <= MAX_COMMIT_YEAR;
 
 // Конвертуємо DateValue назад у JS Date
 const fromDateValue = (dateValue: DateValue): Date => {
@@ -52,6 +69,7 @@ const fromDateValue = (dateValue: DateValue): Date => {
 export const DateTimePicker = ({
   value,
   onChange,
+  onOpenChange,
   label = 'Дата і час',
   labelPlacement = 'outside-left',
   labelStyle = 'text-[13px] text-gray-500 max-w-26 leading-tight text-right pr-1',
@@ -61,16 +79,34 @@ export const DateTimePicker = ({
   isLoading = false,
   presets = DEFAULT_PRESETS,
 }: WarehouseDateTimePickerProps) => {
+  const committedMsRef = useRef(isValidJsDate(value) ? value.getTime() : Date.now());
+  const [pickerValue, setPickerValue] = useState<DateValue>(() =>
+    jsDateToZoned(isValidJsDate(value) ? value : new Date()),
+  );
+
+  useEffect(() => {
+    if (!isValidJsDate(value)) return;
+    if (value.getTime() === committedMsRef.current) return;
+    committedMsRef.current = value.getTime();
+    setPickerValue(jsDateToZoned(value));
+  }, [value]);
+
   const handleChange = (dateValue: DateValue | null) => {
-    if (dateValue) onChange(fromDateValue(dateValue));
+    if (!dateValue) return;
+    setPickerValue(dateValueToZoned(dateValue));
+    if (!isCommitReady(dateValue)) return;
+    const next = fromDateValue(dateValue);
+    committedMsRef.current = next.getTime();
+    onChange(next);
   };
 
   return (
     <I18nProvider locale="uk-UA">
       <DatePicker
         showMonthAndYearPickers
-        value={toZonedDateTime(value)}
+        value={pickerValue}
         onChange={handleChange}
+        onOpenChange={onOpenChange}
         granularity="minute"
         hideTimeZone
         hourCycle={24}
@@ -81,6 +117,7 @@ export const DateTimePicker = ({
         size={size}
         isDisabled={isDisabled}
         maxValue={now(getLocalTimeZone())}
+        popoverProps={{ shouldCloseOnScroll: false }}
         classNames={{
           base: 'w-fit',
           inputWrapper: inputStyle,
@@ -98,10 +135,8 @@ export const DateTimePicker = ({
                 className="h-auto px-2 py-1.5 min-w-0 flex-auto"
                 onPress={() => {
                   if (hour === null) {
-                    // "Зараз" — поточна дата і поточний час
                     onChange(new Date());
                   } else {
-                    // Фіксований час — зберігаємо дату з календаря
                     onChange(new Date(value.getFullYear(), value.getMonth(), value.getDate(), hour, minute ?? 0));
                   }
                 }}

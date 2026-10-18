@@ -22,6 +22,7 @@ interface SortSelectProps<T extends string> {
   sortDirection: SortDirection;
   onSortByChange: (value: T) => void;
   onSortDirectionChange: (value: SortDirection) => void;
+  onOpenChange?: (isOpen: boolean) => void;
   className?: string;
 	classNames?: {
 		trigger?: string;
@@ -36,6 +37,7 @@ export const SortSelect = <T extends string>({
   sortDirection,
   onSortByChange,
   onSortDirectionChange,
+  onOpenChange,
   className = 'flex-1 min-w-[200px]',
 	classNames = {
 		trigger: 'duration-150 rounded-[14px]',
@@ -60,6 +62,7 @@ export const SortSelect = <T extends string>({
       color="default"
       selectedKeys={[`${sortBy}_${sortDirection}`]}
       onSelectionChange={handleChange}
+      onOpenChange={onOpenChange}
       className={className}
       classNames={classNames}
     >

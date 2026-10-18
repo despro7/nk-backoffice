@@ -1,4 +1,11 @@
+import type { InventoryWarehouseScope } from '@shared/types/inventoryWarehouse';
+import {
+  normalizeInventoryItemForScope,
+  shouldKeepInventoryItemForScope,
+} from '@shared/utils/inventorySessionWarehouse';
 import type { InventoryProduct, InventoryStatus } from './WarehouseInventoryTypes';
+
+export { shouldKeepInventoryItemForScope };
 
 // ---------------------------------------------------------------------------
 // Обчислює загальну кількість порцій для продукту
@@ -19,6 +26,28 @@ export const totalPortionsGp = (p: InventoryProduct): number | null => {
   if (p.boxCountGp === null && p.actualCountGp === null) return null;
   return ((p.boxCountGp ?? 0) * p.portionsPerBox) + (p.actualCountGp ?? 0);
 };
+
+/** Переносить legacy-факти з полів МС у поля ГП, якщо сесія ГП збережена в старому форматі. */
+export const normalizeInventoryProductForScope = (
+  item: InventoryProduct,
+  scope: InventoryWarehouseScope,
+): InventoryProduct => normalizeInventoryItemForScope(item, scope);
+
+export const normalizeInventoryItemsForScope = (
+  items: InventoryProduct[],
+  scope: InventoryWarehouseScope,
+): InventoryProduct[] => items.map((item) => normalizeInventoryProductForScope(item, scope));
+
+export const itemHasEnteredCountsForScope = (item: InventoryProduct, scope: InventoryWarehouseScope): boolean => {
+  if (scope === 'gp') return item.actualCountGp !== null || item.boxCountGp !== null;
+  return item.actualCount !== null || item.boxCount !== null;
+};
+
+export const factTotalForWarehouseScope = (item: InventoryProduct, scope: InventoryWarehouseScope): number | null =>
+  scope === 'gp' ? totalPortionsGp(item) : totalPortions(item);
+
+export const systemBalanceForWarehouseScope = (item: InventoryProduct, scope: InventoryWarehouseScope): number =>
+  scope === 'gp' ? (item.systemBalanceGp ?? 0) : (item.systemBalance ?? 0);
 
 // ---------------------------------------------------------------------------
 // Форматує довільну кількість порцій у вигляді "N кор. + M пор.".

@@ -16,17 +16,22 @@ interface InventoryActionBarProps {
   onSaveDraft: () => Promise<void> | void;
   onFinish: () => void;
   isEditingCompleted?: boolean;
+  onCloseWithoutSaving?: () => void;
+  showCloseWithoutSaving?: boolean;
 }
 
 export const InventoryActionBar = ({
   deviationCount, totalCheckedAll, isSavingDraft, comment,
   onCancel, onOpenComment, onSaveDraft, onFinish,
   isEditingCompleted = false,
+  onCloseWithoutSaving,
+  showCloseWithoutSaving = false,
 }: InventoryActionBarProps) => {
 
   return (
     <div className="flex items-center justify-between gap-8 mt-2">
       {/* Ліва частина */}
+      <div className="flex flex-wrap items-center gap-3">
       {!isEditingCompleted && (
         <Button
           variant="flat"
@@ -39,6 +44,19 @@ export const InventoryActionBar = ({
           Скасувати інвентаризацію
         </Button>
       )}
+      {showCloseWithoutSaving && onCloseWithoutSaving && (
+        <Button
+          variant="flat"
+          color="default"
+          className="gap-2"
+          size="lg"
+          onPress={onCloseWithoutSaving}
+          startContent={<DynamicIcon name="log-out" className="w-4 h-4 -ml-1" />}
+        >
+          Закрити без збереження
+        </Button>
+      )}
+      </div>
 
       {/* Права частина */}
       <div className="flex items-center gap-4 ml-auto">

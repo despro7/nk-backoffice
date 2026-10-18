@@ -1,8 +1,12 @@
 import { useState, useMemo } from 'react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { Table, TableHeader, TableColumn, TableBody, TableRow, TableCell } from '@heroui/react';
-import { totalPortions, totalPortionsGp } from '../WarehouseInventoryUtils';
-import type { InventoryProduct } from '../WarehouseInventoryTypes';
+import {
+  factTotalForWarehouseScope,
+  systemBalanceForWarehouseScope,
+  itemHasEnteredCountsForScope,
+} from '../WarehouseInventoryUtils';
+import type { InventoryProduct, InventoryWarehouseScope } from '../WarehouseInventoryTypes';
 
 // ---------------------------------------------------------------------------
 // InventorySummaryTable — підсумкова таблиця відхилень з HeroUI
@@ -19,70 +23,59 @@ interface SummarySectionProps {
   headerColorClass: string;
   items: InventoryProduct[];
   rowKeyPrefix: string;
+  warehouseScope: InventoryWarehouseScope;
 }
 
 /** Окрема таблиця підсумків для одного списку (страви або матеріали) */
-const SummarySection = ({ title, icon, headerColorClass, items, rowKeyPrefix }: SummarySectionProps) => {
+const SummarySection = ({ title, items, rowKeyPrefix, warehouseScope }: SummarySectionProps) => {
   const [sortColumn, setSortColumn] = useState<SortColumn>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('ascending');
 
-  const visibleItems = items.filter((p) => p.checked || totalPortions(p) !== null);
+  const visibleItems = items.filter(
+    (p) => p.checked || itemHasEnteredCountsForScope(p, warehouseScope),
+  );
 
   const sortedItems = useMemo(() => {
-    const mapped = visibleItems.map((item) => ({
-      rowKey: `${rowKeyPrefix}-${item.id}`,
-      item,
-      total: totalPortions(item),
-      dev: totalPortions(item) !== null ? totalPortions(item)! - item.systemBalance : null,
-      totalGp: totalPortionsGp(item),
-      devGp: totalPortionsGp(item) !== null ? totalPortionsGp(item)! - item.systemBalanceGp : null,
-    }));
+    const mapped = visibleItems.map((item) => {
+      const total = factTotalForWarehouseScope(item, warehouseScope);
+      const system = systemBalanceForWarehouseScope(item, warehouseScope);
+      const dev = total !== null ? total - system : null;
+      return { rowKey: `${rowKeyPrefix}-${item.id}`, item, total, dev, system };
+    });
 
     mapped.sort((a, b) => {
       let cmp = 0;
       switch (sortColumn) {
-        case 'sku':          cmp = a.item.sku.localeCompare(b.item.sku); break;
-        case 'name':         cmp = a.item.name.localeCompare(b.item.name); break;
-        case 'systemBalance': cmp = (a.item.systemBalance ?? 0) - (b.item.systemBalance ?? 0); break;
-        case 'actual':       cmp = (a.total ?? 0) - (b.total ?? 0); break;
-        case 'deviation':    cmp = (a.dev ?? 0) - (b.dev ?? 0); break;
+        case 'sku': cmp = a.item.sku.localeCompare(b.item.sku); break;
+        case 'name': cmp = a.item.name.localeCompare(b.item.name); break;
+        case 'systemBalance': cmp = a.system - b.system; break;
+        case 'actual': cmp = (a.total ?? 0) - (b.total ?? 0); break;
+        case 'deviation': cmp = (a.dev ?? 0) - (b.dev ?? 0); break;
       }
       return sortDirection === 'ascending' ? cmp : -cmp;
     });
 
     return mapped;
-  }, [visibleItems, sortColumn, sortDirection, rowKeyPrefix]);
+  }, [visibleItems, sortColumn, sortDirection, rowKeyPrefix, warehouseScope]);
 
-  // Підсумки по рядках
   const totalsRow = useMemo(() => {
     let systemTotal = 0;
     let actualTotal = 0;
     let negDev = 0;
     let posDev = 0;
-    let systemGpTotal = 0;
-    let actualGpTotal = 0;
-    let negDevGp = 0;
-    let posDevGp = 0;
     for (const item of visibleItems) {
-      const actual = totalPortions(item);
-      systemTotal += item.systemBalance;
+      const actual = factTotalForWarehouseScope(item, warehouseScope);
+      const system = systemBalanceForWarehouseScope(item, warehouseScope);
+      systemTotal += system;
       if (actual !== null) {
         actualTotal += actual;
-        const dev = actual - item.systemBalance;
+        const dev = actual - system;
         if (dev < 0) negDev += dev;
         else if (dev > 0) posDev += dev;
       }
-      const actualGp = totalPortionsGp(item);
-      systemGpTotal += item.systemBalanceGp;
-      if (actualGp !== null) {
-        actualGpTotal += actualGp;
-        const devGp = actualGp - item.systemBalanceGp;
-        if (devGp < 0) negDevGp += devGp;
-        else if (devGp > 0) posDevGp += devGp;
-      }
     }
-    return { systemTotal, actualTotal, negDev, posDev, systemGpTotal, actualGpTotal, negDevGp, posDevGp };
-  }, [visibleItems]);
+    return { systemTotal, actualTotal, negDev, posDev };
+  }, [visibleItems, warehouseScope]);
 
   if (visibleItems.length === 0) return null;
 
@@ -102,11 +95,6 @@ const SummarySection = ({ title, icon, headerColorClass, items, rowKeyPrefix }: 
 
   return (
     <div>
-      {/* <h4 className={`inline-flex items-center gap-2 text-sm font-semibold px-3 py-2.5 rounded-md mb-2 ${headerColorClass}`}>
-        <DynamicIcon name={icon} className="w-4 h-4" />
-        {title}
-        <span className="ml-3 font-normal opacity-60 text-xs mt-0.5 mr-0.5">{visibleItems.length} {pluralize(visibleItems.length, 'позиція', 'позиції', 'позицій')}</span>
-      </h4> */}
       <div className="overflow-x-auto">
         <Table
           aria-label={`${title} summary table`}
@@ -128,43 +116,28 @@ const SummarySection = ({ title, icon, headerColorClass, items, rowKeyPrefix }: 
                 {title}<DynamicIcon name={getSortIcon('name')} className="w-4 h-4 text-gray-400" />
               </div>
             </TableColumn>
-            <TableColumn key="systemBalance" align="center" className="cursor-pointer w-[10%]" onClick={() => handleSort('systemBalance')}>
+            <TableColumn key="systemBalance" align="center" className="cursor-pointer w-[12%]" onClick={() => handleSort('systemBalance')}>
               <div className="flex items-center justify-center gap-2">
-                Облік (мал.) <DynamicIcon name={getSortIcon('systemBalance')} className="w-4 h-4 text-gray-400" />
+                Облік <DynamicIcon name={getSortIcon('systemBalance')} className="w-4 h-4 text-gray-400" />
               </div>
             </TableColumn>
-            <TableColumn key="actual" align="center" className="cursor-pointer w-[10%]" onClick={() => handleSort('actual')}>
+            <TableColumn key="actual" align="center" className="cursor-pointer w-[12%]" onClick={() => handleSort('actual')}>
               <div className="flex items-center justify-center gap-2">
-                Факт (мал.) <DynamicIcon name={getSortIcon('actual')} className="w-4 h-4 text-gray-400" />
+                Факт <DynamicIcon name={getSortIcon('actual')} className="w-4 h-4 text-gray-400" />
               </div>
             </TableColumn>
-            <TableColumn key="deviation" align="center" className="cursor-pointer w-[10%]" onClick={() => handleSort('deviation')}>
+            <TableColumn key="deviation" align="center" className="cursor-pointer w-[12%]" onClick={() => handleSort('deviation')}>
               <div className="flex items-center justify-center gap-2">
-                Відх. (мал.) <DynamicIcon name={getSortIcon('deviation')} className="w-4 h-4 text-gray-400" />
-              </div>
-            </TableColumn>
-            <TableColumn key="systemBalanceGp" align="center" className="cursor-pointer w-[10%]" onClick={() => handleSort('systemBalance')}>
-              <div className="flex items-center justify-center gap-2">
-                Облік (ГП) <DynamicIcon name={getSortIcon('systemBalance')} className="w-4 h-4 text-gray-400" />
-              </div>
-            </TableColumn>
-            <TableColumn key="actualGp" align="center" className="cursor-pointer w-[10%]" onClick={() => handleSort('actual')}>
-              <div className="flex items-center justify-center gap-2">
-                Факт (ГП) <DynamicIcon name={getSortIcon('actual')} className="w-4 h-4 text-gray-400" />
-              </div>
-            </TableColumn>
-            <TableColumn key="deviationGp" align="center" className="cursor-pointer w-[10%]" onClick={() => handleSort('deviation')}>
-              <div className="flex items-center justify-center gap-2">
-                Відх. (ГП) <DynamicIcon name={getSortIcon('deviation')} className="w-4 h-4 text-gray-400" />
+                Відхилення <DynamicIcon name={getSortIcon('deviation')} className="w-4 h-4 text-gray-400" />
               </div>
             </TableColumn>
           </TableHeader>
           <TableBody>
-            {sortedItems.map(({ rowKey, item, total, dev, totalGp, devGp }) => (
+            {sortedItems.map(({ rowKey, item, total, dev, system }) => (
               <TableRow key={rowKey}>
                 <TableCell className="text-gray-600 font-mono">{item.sku}</TableCell>
                 <TableCell className="text-gray-700">{item.name}</TableCell>
-                <TableCell className="text-center text-gray-600">{item.systemBalance}</TableCell>
+                <TableCell className="text-center text-gray-600">{system}</TableCell>
                 <TableCell className="text-center font-medium">{total ?? '—'}</TableCell>
                 <TableCell className="text-center">
                   {dev === null ? '—' : (
@@ -173,22 +146,12 @@ const SummarySection = ({ title, icon, headerColorClass, items, rowKeyPrefix }: 
                     </span>
                   )}
                 </TableCell>
-                <TableCell className="text-center text-gray-600">{item.systemBalanceGp}</TableCell>
-                <TableCell className="text-center font-medium">{totalGp ?? '—'}</TableCell>
-                <TableCell className="text-center">
-                  {devGp === null ? '—' : (
-                    <span className={`font-semibold ${devGp === 0 ? 'text-green-600' : devGp < 0 ? 'text-red-500' : 'text-blue-600'}`}>
-                      {devGp > 0 ? '+' : ''}{devGp}
-                    </span>
-                  )}
-                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
 
-        {/* Рядок підсумків — поза HeroUI Table (не підтримує змішані children) */}
-        <div className="grid grid-cols-[108px_1fr_10%_10%_10%_10%_10%_10%] items-center border-t-1 border-gray-200 bg-gray-50 rounded-b-md py-2 text-sm font-semibold mt-0.5">
+        <div className="grid grid-cols-[108px_1fr_12%_12%_12%] items-center border-t-1 border-gray-200 bg-gray-50 rounded-b-md py-2 text-sm font-semibold mt-0.5">
           <span />
           <span className="text-gray-500 text-xs uppercase tracking-wide">Разом</span>
           <span className="text-center text-gray-700">{totalsRow.systemTotal}</span>
@@ -204,19 +167,6 @@ const SummarySection = ({ title, icon, headerColorClass, items, rowKeyPrefix }: 
               </span>
             )}
           </span>
-          <span className="text-center text-gray-700">{totalsRow.systemGpTotal}</span>
-          <span className="text-center text-gray-700">{totalsRow.actualGpTotal}</span>
-          <span className="text-center">
-            {totalsRow.negDevGp === 0 && totalsRow.posDevGp === 0 ? (
-              <span className="text-green-600">0</span>
-            ) : (
-              <span className="inline-flex items-center justify-center gap-1">
-                {totalsRow.negDevGp !== 0 && <span className="text-red-500">{totalsRow.negDevGp}</span>}
-                {totalsRow.negDevGp !== 0 && totalsRow.posDevGp !== 0 && <span className="text-gray-300">/</span>}
-                {totalsRow.posDevGp !== 0 && <span className="text-blue-600">+{totalsRow.posDevGp}</span>}
-              </span>
-            )}
-          </span>
         </div>
       </div>
     </div>
@@ -227,12 +177,13 @@ interface InventorySummaryTableProps {
   products: InventoryProduct[];
   materials: InventoryProduct[];
   sets?: InventoryProduct[];
+  warehouseScope: InventoryWarehouseScope;
 }
 
-export const InventorySummaryTable = ({ products, materials, sets = [] }: InventorySummaryTableProps) => {
-  const hasProducts = products.some((p) => p.checked || totalPortions(p) !== null);
-  const hasMaterials = materials.some((m) => m.checked || totalPortions(m) !== null);
-  const hasSets = Array.isArray(sets) && sets.some((s) => s.checked || totalPortions(s) !== null);
+export const InventorySummaryTable = ({ products, materials, sets = [], warehouseScope }: InventorySummaryTableProps) => {
+  const hasProducts = products.some((p) => p.checked || itemHasEnteredCountsForScope(p, warehouseScope));
+  const hasMaterials = materials.some((m) => m.checked || itemHasEnteredCountsForScope(m, warehouseScope));
+  const hasSets = Array.isArray(sets) && sets.some((s) => s.checked || itemHasEnteredCountsForScope(s, warehouseScope));
 
   if (!hasProducts && !hasMaterials && !hasSets) return null;
 
@@ -249,6 +200,7 @@ export const InventorySummaryTable = ({ products, materials, sets = [] }: Invent
         headerColorClass="bg-blue-50 text-blue-900"
         items={products}
         rowKeyPrefix="product"
+        warehouseScope={warehouseScope}
       />
 
       <SummarySection
@@ -257,6 +209,7 @@ export const InventorySummaryTable = ({ products, materials, sets = [] }: Invent
         headerColorClass="bg-violet-50 text-violet-900"
         items={sets}
         rowKeyPrefix="set"
+        warehouseScope={warehouseScope}
       />
 
       <SummarySection
@@ -265,6 +218,7 @@ export const InventorySummaryTable = ({ products, materials, sets = [] }: Invent
         headerColorClass="bg-amber-50 text-amber-900"
         items={materials}
         rowKeyPrefix="material"
+        warehouseScope={warehouseScope}
       />
     </div>
   );

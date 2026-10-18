@@ -2,6 +2,10 @@
 // Types for WarehouseInventory feature
 // ---------------------------------------------------------------------------
 
+import type { InventoryWarehouseScope } from '@shared/types/inventoryWarehouse';
+
+export type { InventoryWarehouseScope };
+
 export type InventoryStatus = 'draft' | 'in_progress' | 'completed' | 'revising' | 'removed';
 
 export interface InventoryProduct {
@@ -31,7 +35,8 @@ export interface InventorySession {
   inventoryDate: string;
   createdAt: string;
   createdBy: string;
-  
+  /** `small` = малий склад, `gp` = склад готової продукції */
+  warehouse?: InventoryWarehouseScope;
   status: InventoryStatus;
   completedAt: string | null;
   comment: string;

@@ -8,14 +8,18 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 
 export interface StepperInputProps {
   label?: string;
-  value?: number | null; // null = порожнє поле (не заповнено), відображається як 0
-  onChange: (value: number) => void;
+  value?: number | null; // null = порожнє поле (не заповнено)
+  /** Якщо true, null показується порожнім (не як 0). Для інвентаризації — щоб 0 вводили свідомо. */
+  allowEmptyDisplay?: boolean;
+  onChange: (value: number | null) => void;
   onIncrement: () => void;
   onDecrement: () => void;
   forwardRef?: React.RefObject<HTMLInputElement>;
   onEnter?: () => void;
   onBlur?: () => void; // Викликається при втраті фокуса
   disabled?: boolean;
+  /** Лише перегляд (напр. позиція перевірена): ± вимкнені, Enter лишається */
+  locked?: boolean;
   max?: number; // Максимально допустиме значення (для обмеження по залишкам партії)
   size?: 'xs' | 'sm' | 'md' | 'lg'; // Візуальні налаштування розміру
   className?: string;
@@ -31,16 +35,37 @@ export interface StepperInputProps {
  * Кнопки ± дозволяють коригувати значення без клавіатури.
  */
 export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
-  ({ label, value, onChange, onIncrement, onDecrement, onEnter, onBlur, disabled, max, size = 'md', className = '', labelClassName = '', inputClassName = '', buttonClassName = '' }, ref) => {
+  ({
+    label,
+    value,
+    allowEmptyDisplay = false,
+    onChange,
+    onIncrement,
+    onDecrement,
+    onEnter,
+    onBlur,
+    disabled,
+    locked = false,
+    max,
+    size = 'md',
+    className = '',
+    labelClassName = '',
+    inputClassName = '',
+    buttonClassName = '',
+  }, ref) => {
     const inputRef = useRef<HTMLInputElement>(null);
     const [isFocused, setIsFocused] = useState(false);
+    const inputId = useId();
 
-    // null → порожнє поле, відображаємо як 0
-    const displayValue = value ?? 0;
+    const isUnset = value === null;
+    const showEmpty = allowEmptyDisplay && isUnset;
+    const numericValue = value ?? 0;
 
     const resolvedMax = typeof max === 'number' && Number.isFinite(max) && max >= 0 ? max : undefined;
-    const isAtMax = resolvedMax !== undefined && displayValue >= resolvedMax;
-    const isAtMin = displayValue <= 0;
+    const isAtMax = resolvedMax !== undefined && numericValue >= resolvedMax;
+    const isAtMin = !showEmpty && numericValue <= 0;
+
+    const isInteractionBlocked = disabled || locked;
 
     const focusInput = () => {
       if (disabled) return;
@@ -51,24 +76,27 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
     };
 
     const handleIncrement = useCallback(() => {
-      if (disabled || isAtMax) return;
+      if (isInteractionBlocked || isAtMax) return;
       onIncrement();
-    }, [disabled, isAtMax, onIncrement]);
+    }, [isInteractionBlocked, isAtMax, onIncrement]);
 
     const handleDecrement = useCallback(() => {
-      if (disabled || isAtMin) return;
+      if (isInteractionBlocked || isAtMin) return;
       onDecrement();
-    }, [disabled, isAtMin, onDecrement]);
+    }, [isInteractionBlocked, isAtMin, onDecrement]);
 
     useEffect(() => {
-      if (disabled || resolvedMax === undefined) return;
-      if (displayValue > resolvedMax) {
+      if (disabled || resolvedMax === undefined || showEmpty) return;
+      if (numericValue > resolvedMax) {
         onChange(resolvedMax);
       }
-    }, [disabled, resolvedMax, onChange, value]);
+    }, [disabled, resolvedMax, onChange, value, showEmpty, numericValue]);
 
     // Перенаправляємо ref якщо був переданий
     useImperativeHandle(ref, () => inputRef.current!);
+
+    const inputValue = showEmpty ? '' : String(numericValue);
+    const visibleLabel = showEmpty ? '' : numericValue;
 
     return (
       <div className={`flex flex-col items-center ${className ? `${className}` : 'gap-2'}`}>
@@ -77,44 +105,62 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
           {/* Видима область — клік відкриває OSK */}
           <div
             className={`w-full flex items-center justify-center font-medium transition-colors select-none ${
-              size === 'xs' ? 'h-8 text-base rounded-sm border-1' : 
-              size === 'sm' ? 'h-10 text-lg rounded-md border-1' : 
-              size === 'lg' ? 'h-18 text-2xl rounded-lg border-2' : 
+              size === 'xs' ? 'h-8 text-base rounded-sm border-1' :
+              size === 'sm' ? 'h-10 text-lg rounded-md border-1' :
+              size === 'lg' ? 'h-18 text-2xl rounded-lg border-2' :
               'h-12 text-xl rounded-md border-1'
             } ${
               disabled
                 ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
-                : `bg-white text-gray-800 cursor-text ${isFocused ? 'border-blue-500' : 'border-gray-200'}`
+                : locked
+                  ? `bg-gray-100 text-gray-500 cursor-default ${isFocused ? 'border-blue-500' : 'border-gray-200'}`
+                  : `bg-white text-gray-800 cursor-text ${isFocused ? 'border-blue-500' : 'border-gray-200'}`
             } ${inputClassName}`}
             onClick={focusInput}
           >
-            {displayValue}
+            {showEmpty ? (
+              <span className="text-gray-300 font-normal pointer-events-none">0</span>
+            ) : (
+              visibleLabel
+            )}
           </div>
 
           {/* Прихований нативний input — отримує фокус → Windows OSK */}
           <input
             ref={inputRef}
-            id={useId()}
+            id={inputId}
             type="number"
             inputMode="numeric"
-            value={displayValue}
+            value={inputValue}
+            placeholder={allowEmptyDisplay ? '0' : undefined}
             min={0}
             max={resolvedMax}
             disabled={disabled}
+            readOnly={locked}
             onChange={(e) => {
-              if (disabled) return;
-              const v = parseInt(e.target.value, 10);
-              const clamped = isNaN(v) ? 0 : Math.max(0, resolvedMax !== undefined ? Math.min(v, resolvedMax) : v);
+              if (isInteractionBlocked) return;
+              const raw = e.target.value;
+              if (raw === '') {
+                onChange(allowEmptyDisplay ? null : 0);
+                return;
+              }
+              const v = parseInt(raw, 10);
+              if (isNaN(v)) {
+                onChange(allowEmptyDisplay ? null : 0);
+                return;
+              }
+              const clamped = Math.max(0, resolvedMax !== undefined ? Math.min(v, resolvedMax) : v);
               onChange(clamped);
             }}
             onKeyDown={(e) => {
-              if (disabled) return;
-
-              if (e.key === 'Enter' && onEnter) {
+              if (e.key === 'Enter' && onEnter && !locked) {
                 e.preventDefault();
+                e.stopPropagation();
                 onEnter();
                 return;
               }
+
+              if (disabled) return;
 
               if (e.key === '+' || e.key === '=' || e.key === 'ArrowUp') {
                 e.preventDefault();
@@ -140,10 +186,10 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
           <Button
             isIconOnly
             variant="light"
-            isDisabled={disabled}
+            isDisabled={isInteractionBlocked}
             className={`absolute top-1/2 -translate-y-1/2 z-10 bg-gray-100 ${size === 'xs' ? 'rounded-[6px]' : 'rounded-sm'} ${
-              size === 'xs' ? 'h-7 min-w-7 w-7 left-0.5 border-1 border-white' : 
-              size === 'sm' ? 'h-8 min-w-7 w-7 left-1' : 
+              size === 'xs' ? 'h-7 min-w-7 w-7 left-0.5 border-1 border-white' :
+              size === 'sm' ? 'h-8 min-w-7 w-7 left-1' :
               size === 'lg' ? 'h-14 w-10 left-2' :
               'h-10 min-w-8 w-8 left-1'
             } ${buttonClassName}`}
@@ -156,10 +202,10 @@ export const StepperInput = forwardRef<HTMLInputElement, StepperInputProps>(
           <Button
             isIconOnly
             variant="light"
-            isDisabled={disabled || isAtMax}
+            isDisabled={isInteractionBlocked || isAtMax}
             className={`absolute top-1/2 -translate-y-1/2 z-10 bg-gray-100 ${size === 'xs' ? 'rounded-[6px]' : 'rounded-sm'} ${
-              size === 'xs' ? 'h-7 min-w-7 w-7 right-0.5 border-1 border-white' : 
-              size === 'sm' ? 'h-8 min-w-7 w-7 right-1' : 
+              size === 'xs' ? 'h-7 min-w-7 w-7 right-0.5 border-1 border-white' :
+              size === 'sm' ? 'h-8 min-w-7 w-7 right-1' :
               size === 'lg' ? 'h-14 w-10 right-2' :
               'h-10 min-w-8 w-8 right-1'
             } ${buttonClassName}`}

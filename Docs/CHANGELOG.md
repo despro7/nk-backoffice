@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-10-18 — Інвентаризація: МС/ГП окремо + локальний резерв
+
+**Files:** `WarehouseInventory/*`, `client/components/reserve-draft/*`, `shared/types/inventoryWarehouse.ts`, `shared/utils/inventorySessionWarehouse.ts`, `WarehouseController.ts`, `routes.config.tsx`
+
+- Сесії МС і ГП окремо (`warehouse`), URL `/warehouse/inventory/sm|gp/:id`, UI-групування історії, scoped refresh-balances / reconcile / abort-revision.
+- Локальний резерв правок (`useReserveDraft` + `ReserveDraftBanner`): автозапис у `localStorage`, без блокування SaveGuard; пропозиція продовжити після виходу або збою.
+- UX: loader прямого URL, «Закрити без збереження», уніфіковані степпери на активний склад, доробки модалки оновлення залишків.
+
+**Документація:** [`warehouse-inventory.md`](features/warehouse-inventory.md), [`reserve-draft.md`](architecture/reserve-draft.md), [`unsaved-guard.md`](architecture/unsaved-guard.md).
+
+---
+
 ## 2026-10-16 — Movement Mob: nested sheet scroll + заміна партії
 
 **Files:** `bottom-sheet.tsx`, `BatchNumbersAutocomplete.tsx`, `MovementMobEditorPage.tsx`, `MovementProductRow.tsx`, `ReleaseComponentBatchesPanel.tsx`, `ProductDrawer.tsx`, `ProductLabelsTab.tsx`
