@@ -217,9 +217,14 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
         
         <div className="grid grid-cols-3 gap-2 items-center w-64">
           <div className="hidden sm:flex flex-col mr-2">
-            <span className="text-base font-bold pr-0.5 text-gray-800 flex items-center gap-1">
+            <span className={`text-base font-bold pr-0.5 ${scopeSystemBalance < 0 ? 'text-red-500' : 'text-gray-800'} flex items-center gap-1`}>
               {isBalanceRefreshing && <Spinner size="sm" color="default" />}
               {scopeSystemBalance}
+              {scopeSystemBalance < 0 && 
+              <Tooltip content="Увага, нестача в обліку" placement="top" offset={10} showArrow classNames={{ base: 'before:bg-danger before:rounded-[3px] before:z-10 before:shadow-none', content: 'bg-danger border-0 text-white text-xs font-medium' }}>
+                <DynamicIcon name="triangle-alert" className="w-4 h-4 text-red-500 ml-0.5 inline-block" />
+              </Tooltip>
+              }
             </span>
             <span className="text-xs text-gray-400">Облік</span>
           </div>

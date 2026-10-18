@@ -91,7 +91,7 @@ function sortList(
 }
 
 function zeroOpacityClass(value: number | null | undefined): string {
-  return value === 0 || value === null || value === undefined ? 'opacity-30' : '';
+  return value === 0 || value === null || value === undefined ? 'text-gray-300' : '';
 }
 
 /** box/actual для tooltip факту з урахуванням складу (ГП vs МС). */
@@ -159,7 +159,7 @@ function BalanceReportTable({
               <th className="w-22 text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer" onClick={() => onSort('systemBalanceAfter')}>
                 <div className="flex items-center justify-center gap-1">Стало <DynamicIcon name={getSortIcon('systemBalanceAfter')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
-              <th className="w-22 text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer" onClick={() => onSort('balanceDelta')}>
+              <th className="w-22 text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer bg-gray-200/75!" onClick={() => onSort('balanceDelta')}>
                 <div className="flex items-center justify-center gap-1">Різниця <DynamicIcon name={getSortIcon('balanceDelta')} className="w-3 h-3 text-gray-400 inline" /></div>
               </th>
               <th className="w-22 text-center py-2 px-3 font-semibold text-gray-600 cursor-pointer" onClick={() => onSort('factBalance')}>
@@ -194,7 +194,7 @@ function BalanceReportTable({
                       ? <CompactBalance total={afterVal} portionsPerBox={sessionItem.portionsPerBox} />
                       : String(afterVal))}
                   </td>
-                  <td className={`py-2 px-3 text-center font-semibold ${balanceDelta === 0 ? 'text-gray-600 opacity-50' : balanceDelta > 0 ? 'text-blue-600' : 'text-red-500'}`}>
+                  <td className={`py-2 px-3 text-center font-semibold bg-gray-100/75 ${balanceDelta === 0 ? 'text-gray-300' : balanceDelta > 0 ? 'text-blue-600' : 'text-red-500'}`}>
                     {balanceDelta > 0 ? `+${balanceDelta}` : `${balanceDelta}`}
                   </td>
                   <td className={`py-2 px-3 text-center ${fact === null ? 'text-gray-300' : zeroOpacityClass(fact)}`}>
@@ -208,7 +208,7 @@ function BalanceReportTable({
                       )
                       : String(fact))}
                   </td>
-                  <td className={`py-2 px-3 text-center font-semibold ${deltaFact === null || deltaFact === 0 ? 'text-gray-600 opacity-50' : deltaFact > 0 ? 'text-blue-600' : 'text-red-500'}`}>
+                  <td className={`py-2 px-3 text-center font-semibold ${deltaFact === null || deltaFact === 0 ? 'text-gray-300' : deltaFact > 0 ? 'text-blue-600' : 'text-red-500'}`}>
                     {deltaFact === null ? '–' : (deltaFact > 0 ? `+${deltaFact}` : `${deltaFact}`)}
                   </td>
                 </tr>

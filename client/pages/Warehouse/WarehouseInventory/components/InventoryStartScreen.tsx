@@ -43,7 +43,7 @@ export const InventoryStartScreen = ({
             input: 'placeholder:opacity-50',
           }}
         />
-        <h3 className="text-sm font-semibold text-gray-800 mt-2">Виберіть склад щоб розпочати інвентаризацію:</h3>
+        <h3 className="text-sm font-semibold text-gray-800 mt-2">Оберіть склад щоб розпочати/продовжити інвентаризацію:</h3>
         <div className="flex items-center gap-3">
           <Button
             color="success"
