@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
-import { Button, Chip, Pagination, Select, SelectItem } from '@heroui/react';
+import { useState, useRef, useEffect, useMemo, type ReactNode } from 'react';
+import { Button, Chip, Dropdown, DropdownItem, DropdownMenu, DropdownTrigger, Pagination, Select, SelectItem } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { formatDate } from '@/lib/formatUtils';
+import { formatDate, formatDateLong, formatTimeOnly } from '@/lib/formatUtils';
 import { useAuth } from '@/contexts/auth-context';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PERMISSIONS } from '@shared/constants/permissions';
@@ -13,13 +13,87 @@ import { StockBadge } from '@/components/StockBadge';
 import InventoryRefreshReportModal from './InventoryRefreshReportModal';
 import InventoryTableSection from './InventoryTableSection';
 import useUserNames from '@/hooks/useUserNames';
-import { buildInventoryHistoryDisplayEntries, resolveSessionWarehouseScope } from '../inventoryHistoryGroups';
+import { buildInventoryGroupStatusMarks, buildInventoryHistoryDisplayEntries, mergeInventoryGroupItems, resolveSessionWarehouseScope } from '../inventoryHistoryGroups';
 import { computeInventorySessionStats } from '../inventorySessionStats';
 
 const PAGE_SIZE_OPTIONS = [6, 12, 24];
 
 type SortColumn = 'sku' | 'name' | 'systemBalance' | 'actual' | 'deviation' | 'systemBalanceGp' | 'actualGp' | 'deviationGp';
 type SortDirection = 'ascending' | 'descending';
+
+type WarehouseBadgeLabel = 'МС' | 'ГП' | 'МС + ГП';
+
+function WarehouseHistoryBadge({ label }: { label: WarehouseBadgeLabel }) {
+  return (
+    <div className="flex items-center shrink-0">
+      {label === 'МС + ГП' ? <>
+        <StockBadge variant="ms" size="10px" />
+        <span className="text-gray-500 mx-0.5">+</span>
+        <StockBadge variant="gp" size="10px" />
+      </> : <StockBadge variant={label === 'МС' ? 'ms' : 'gp'} size="10px" />}
+    </div>
+  );
+}
+
+interface ScopeActionOption {
+  session: InventorySession;
+  label: string;
+}
+
+function ScopeActionButton({
+  label,
+  startContent,
+  color = 'primary',
+  tone,
+  isDisabled,
+  options,
+  onSelect,
+}: {
+  label: string;
+  startContent: ReactNode;
+  color?: 'primary' | 'danger';
+  tone?: string;
+  isDisabled?: boolean;
+  options: ScopeActionOption[];
+  onSelect: (session: InventorySession) => void;
+}) {
+  return (
+    <Dropdown placement="bottom-start">
+      <DropdownTrigger>
+        <Button
+          size="sm"
+          variant="flat"
+          color={color}
+          data-btn-tone={tone}
+          className="h-auto px-3 py-1.5 gap-1 min-w-0"
+          isDisabled={isDisabled}
+          startContent={startContent}
+          endContent={<DynamicIcon name="chevron-down" className="w-3 h-3 opacity-70" />}
+        >
+          {label}
+        </Button>
+      </DropdownTrigger>
+      <DropdownMenu
+        aria-label={label}
+        items={options}
+        onAction={(key) => {
+          const option = options.find((item) => item.session.id === String(key));
+          if (option) onSelect(option.session);
+        }}
+      >
+        {(option) => (
+          <DropdownItem
+            key={option.session.id}
+            textValue={option.label}
+            startContent={<StockBadge variant={resolveSessionWarehouseScope(option.session) === 'gp' ? 'gp' : 'ms'} size="9px" className="shrink-0 inline-block leading-snug w-6 text-center" />}
+          >
+            {option.label}
+          </DropdownItem>
+        )}
+      </DropdownMenu>
+    </Dropdown>
+  );
+}
 
 interface HistoryTableProps {
   sessions: InventorySession[];
@@ -225,40 +299,47 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
         const session = entry.kind === 'single' ? entry.session : entry.msSession;
         const entryKey = isGroup ? `group-${entry.msSession.id}-${entry.gpSession.id}` : session.id;
 
-        const msStats = computeInventorySessionStats(msSession);
-        const gpStats = isGroup ? computeInventorySessionStats(gpSession) : msStats;
-
+        const sessionsInEntry = isGroup ? [msSession, gpSession] : [session];
+        const detailSession: InventorySession = isGroup
+          ? { ...msSession, items: mergeInventoryGroupItems(msSession, gpSession) }
+          : session;
+        const detailStats = computeInventorySessionStats(detailSession);
         const {
-          materials, sets, products,
           productDevShortfall, productDevSurplus,
           materialDevShortfall, materialDevSurplus,
           setDevShortfall, setDevSurplus,
           productHasActual, materialHasActual, setHasActual,
           productDevShortfallGp, productDevSurplusGp, productHasActualGp,
-        } = {
-          ...msStats,
-          productDevShortfallGp: isGroup ? gpStats.productDevShortfallGp : msStats.productDevShortfallGp,
-          productDevSurplusGp: isGroup ? gpStats.productDevSurplusGp : msStats.productDevSurplusGp,
-          productHasActualGp: isGroup ? gpStats.productHasActualGp : msStats.productHasActualGp,
-        };
+        } = detailStats;
 
         const canAuthorEditThisSession = !isAdmin && canAuthorEditSession(session);
+        const warehouseBadge: WarehouseBadgeLabel = isGroup
+          ? 'МС + ГП'
+          : (resolveSessionWarehouseScope(session) === 'gp' ? 'ГП' : 'МС');
 
-        const headerDateLabel = isGroup
-          ? `${formatDate(msSession.inventoryDate)} – ${formatDate(gpSession.inventoryDate)}`
-          : formatDate(session.inventoryDate);
+        const headerDateLabel = formatDateLong(session.inventoryDate) + ' • ' + formatTimeOnly(session.inventoryDate);
 
-        const sessionsInEntry = isGroup ? [msSession, gpSession] : [session];
-        const mergedItemsForRefresh = sessionsInEntry.flatMap((s) => s.items as any[]);
+        const scopeOptions: ScopeActionOption[] = sessionsInEntry.map((sess) => ({
+          session: sess,
+          label: `${resolveSessionWarehouseScope(sess) === 'gp' ? 'Склад ГП' : 'Малий склад'} · #${sess.id}`,
+        }));
+        const editableOptions = scopeOptions.filter(
+          (option) => option.session.status !== 'removed' && (isAdmin || canAuthorEditSession(option.session)),
+        );
+        const entryBusyDelete = sessionsInEntry.some((sess) => loadingDeleteId === sess.id);
+        const entryBusyEdit = sessionsInEntry.some((sess) => loadingLoadId === sess.id);
 
         return (
           <div key={entryKey} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
             <button className="w-full px-4 pt-3 pb-2.5 flex items-center justify-between bg-neutral-100 transition-colors" onClick={() => setExpandedSessionId(expandedSessionId === entryKey ? null : entryKey)}>
               <div className="flex items-center gap-2 flex-1">
                 <DynamicIcon name="chevron-right" className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${expandedSessionId === entryKey ? 'rotate-90' : ''}`} />
+                <WarehouseHistoryBadge label={warehouseBadge} />
                 <div className="text-left pr-2"><p className="text-sm font-medium text-gray-700 tabular-nums">{headerDateLabel}</p></div>
                 {isGroup ? (
-                  <Chip size="sm" variant="flat" className="bg-default-100">МС + ГП</Chip>
+                  buildInventoryGroupStatusMarks(msSession, gpSession).map((mark) => (
+                    <Chip key={`${entryKey}-${mark.status}`} size="sm" color={statusColor[mark.status]} className={statusClass[mark.status]} variant="flat">{mark.label}</Chip>
+                  ))
                 ) : (
                   <Chip size="sm" color={statusColor[session.status]} className={statusClass[session.status]} variant="flat">{statusLabel[session.status]}</Chip>
                 )}
@@ -301,45 +382,123 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
             <div style={{ maxHeight: expandedSessionId === entryKey ? `${contentHeights[entryKey] || 0}px` : '0', opacity: expandedSessionId === entryKey ? 1 : 0, overflow: 'hidden', transition: 'all 300ms ease-in-out' }} className="bg-gray-50 border-t border-gray-200">
               <div ref={(el) => { if (el) contentRefs.current[entryKey] = el; }} className="p-4">
                 <div className="mb-6">
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-4 justify-between">
                     <h3 className="text-lg font-semibold text-gray-700 mb-2">
-                      {isGroup ? `Інвентаризація МС #${msSession.id} + ГП #${gpSession.id}` : `Деталі інвентаризації #${session.id}`}
+                      {isGroup ? 'Зведена інвентаризація МС + ГП' : `Деталі інвентаризації #${session.id}`}
                     </h3>
                     <div className="flex items-center gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
                       {onRefreshSessionBalances && (
-                        <Button size="sm" variant="flat" color="primary" data-btn-tone="primary-blue-flat" className="h-auto px-3 py-1.5 gap-1 min-w-0" isDisabled={!!loadingLoadId || !!loadingDeleteId} startContent={<DynamicIcon name="refresh-cw" className={`w-3 h-3 ${loadingRefreshId !== entryKey ? '' : 'animate-spin'}`} />} onPress={() => openRefreshModal(sessionsInEntry.map((s) => s.id), mergedItemsForRefresh, headerDateLabel, entryKey, isGroup ? 'multi' : resolveSessionWarehouseScope(session))}>Оновити облікові залишки</Button>
+                        isGroup ? (
+                          <ScopeActionButton
+                            label="Оновити облікові залишки"
+                            tone="primary-blue-flat"
+                            isDisabled={!!loadingLoadId || entryBusyDelete}
+                            startContent={<DynamicIcon name="refresh-cw" className={`w-3 h-3 ${loadingRefreshId !== entryKey ? '' : 'animate-spin'}`} />}
+                            options={scopeOptions}
+                            onSelect={(picked) => openRefreshModal(
+                              [picked.id],
+                              picked.items as any[],
+                              formatDate(picked.inventoryDate),
+                              entryKey,
+                              resolveSessionWarehouseScope(picked),
+                            )}
+                          />
+                        ) : (
+                          <Button size="sm" variant="flat" color="primary" data-btn-tone="primary-blue-flat" className="h-auto px-3 py-1.5 gap-1 min-w-0" isDisabled={!!loadingLoadId || !!loadingDeleteId} startContent={<DynamicIcon name="refresh-cw" className={`w-3 h-3 ${loadingRefreshId !== entryKey ? '' : 'animate-spin'}`} />} onPress={() => openRefreshModal([session.id], session.items as any[], headerDateLabel, entryKey, resolveSessionWarehouseScope(session))}>Оновити облікові залишки</Button>
+                        )
+                      )}
+
+                      {isGroup && editableOptions.length > 0 && onLoadSession && (
+                        <ScopeActionButton
+                          label="Редагувати"
+                          tone="primary-blue-flat"
+                          isDisabled={entryBusyDelete}
+                          startContent={<DynamicIcon name={entryBusyEdit ? 'loader-circle' : 'pencil'} className={`w-3 h-3 ${entryBusyEdit ? 'animate-spin' : ''}`} />}
+                          options={editableOptions}
+                          onSelect={async (picked) => {
+                            setLoadingLoadId(picked.id);
+                            try {
+                              await onLoadSession(picked);
+                            } finally {
+                              setLoadingLoadId(null);
+                            }
+                          }}
+                        />
                       )}
 
                       {!isGroup && session.status !== 'removed' && (isAdmin || canAuthorEditThisSession) && onLoadSession && (
                         <Button size="sm" variant="flat" color="primary" data-btn-tone="primary-blue-flat" className="h-auto px-2.5 py-1.5 gap-1 min-w-0" isDisabled={!!loadingDeleteId} startContent={<DynamicIcon name={loadingLoadId !== session.id ? 'pencil' : 'loader-circle'} className={`w-3 h-3 ${loadingLoadId !== session.id ? '' : 'animate-spin'}`} />} onPress={async () => { setLoadingLoadId(session.id); try { await onLoadSession!(session); } finally { setLoadingLoadId(null); } }}>Редагувати</Button>
                       )}
 
-                      {session.status === 'removed' && isAdmin && onRestoreSession && (
+                      {isGroup && isAdmin && onRestoreSession && scopeOptions.some((option) => option.session.status === 'removed') && (
+                        <ScopeActionButton
+                          label="Відновити"
+                          tone="primary-emerald-flat"
+                          isDisabled={entryBusyDelete}
+                          startContent={<DynamicIcon name={entryBusyEdit ? 'loader-circle' : 'corner-up-left'} className={`w-3 h-3 ${entryBusyEdit ? 'animate-spin' : ''}`} />}
+                          options={scopeOptions.filter((option) => option.session.status === 'removed')}
+                          onSelect={async (picked) => {
+                            setLoadingLoadId(picked.id);
+                            try {
+                              await onRestoreSession(picked.id);
+                            } finally {
+                              setLoadingLoadId(null);
+                            }
+                          }}
+                        />
+                      )}
+
+                      {!isGroup && session.status === 'removed' && isAdmin && onRestoreSession && (
                         <Button size="sm" variant="flat" color="primary" data-btn-tone="primary-emerald-flat" className="h-auto px-3 py-1.5 gap-1 min-w-0" isDisabled={!!loadingDeleteId} startContent={<DynamicIcon name={loadingLoadId !== session.id ? 'corner-up-left' : 'loader-circle'} className={`w-3 h-3 ${loadingLoadId !== session.id ? '' : 'animate-spin'}`} />} onPress={async () => { setLoadingLoadId(session.id); try { await onRestoreSession!(session.id); } finally { setLoadingLoadId(null); } }}>Відновити</Button>
                       )}
 
                       {isAdmin && onDeleteSession && (
-                        <Button size="sm" variant="flat" color="danger" className="h-auto px-3 py-1.5 gap-1 min-w-0" isDisabled={!!loadingLoadId} startContent={<DynamicIcon name={loadingDeleteId !== session.id ? 'trash-2' : 'loader-circle'} className={`w-3 h-3 ${loadingDeleteId !== session.id ? '' : 'animate-spin'}`} />} onPress={async () => { setLoadingDeleteId(session.id); try { await onDeleteSession!(session.id); } finally { setLoadingDeleteId(null); } }}>{session.status === 'removed' ? 'Видалити назавжди' : 'Видалити'}</Button>
+                        isGroup ? (
+                          <ScopeActionButton
+                            label={sessionsInEntry.every((sess) => sess.status === 'removed') ? 'Видалити назавжди' : 'Видалити'}
+                            color="danger"
+                            isDisabled={entryBusyEdit}
+                            startContent={<DynamicIcon name={entryBusyDelete ? 'loader-circle' : 'trash-2'} className={`w-3 h-3 ${entryBusyDelete ? 'animate-spin' : ''}`} />}
+                            options={scopeOptions}
+                            onSelect={async (picked) => {
+                              setLoadingDeleteId(picked.id);
+                              try {
+                                await onDeleteSession(picked.id);
+                              } finally {
+                                setLoadingDeleteId(null);
+                              }
+                            }}
+                          />
+                        ) : (
+                          <Button size="sm" variant="flat" color="danger" className="h-auto px-3 py-1.5 gap-1 min-w-0" isDisabled={!!loadingLoadId} startContent={<DynamicIcon name={loadingDeleteId !== session.id ? 'trash-2' : 'loader-circle'} className={`w-3 h-3 ${loadingDeleteId !== session.id ? '' : 'animate-spin'}`} />} onPress={async () => { setLoadingDeleteId(session.id); try { await onDeleteSession!(session.id); } finally { setLoadingDeleteId(null); } }}>{session.status === 'removed' ? 'Видалити назавжди' : 'Видалити'}</Button>
+                        )
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap">
+                  <div className="flex items-center gap-12 text-[13px] text-gray-500 flex-wrap">
                     {sessionsInEntry.map((sess) => (
-                      <span key={sess.id} className="flex items-center gap-3">
-                        <StockBadge variant={resolveSessionWarehouseScope(sess) === 'gp' ? 'gp' : 'ms'} size="9px" />
-                        <span>#{sess.id}: <b>{namesMap[Number(sess.createdBy ?? -1)] ?? 'N/A'}</b></span>
-                        <span className="border-l border-gray-300 pl-3">{formatDate(sess.createdAt)}</span>
-                        {sess.comment && <span className="border-l border-gray-300 pl-3">{sess.comment}</span>}
+                      <span key={sess.id} className="flex items-center gap-2">
+                        <span className="flex items-center">
+                          <span className="text-gray-500">#{sess.id}</span>
+                          <StockBadge variant={resolveSessionWarehouseScope(sess) === 'gp' ? 'gp' : 'ms'} size="9px" className="shrink-0 mx-1.5" />
+                          {namesMap[Number(sess.createdBy ?? -1)] ?? 'N/A'}
+                        </span>
+                        <span className="flex items-center gap-1 border-l border-gray-300 pl-2">
+                          Час інвентаризації:
+                          <span className="font-semibold">{formatTimeOnly(sess.inventoryDate, true) ?? formatTimeOnly(sess.createdAt, true)}</span>
+                        </span>
+                        {sess.comment && <span className="border-l border-gray-300 pl-3"><b>Коментар:</b> {sess.comment}</span>}
                       </span>
                     ))}
                   </div>
                 </div>
 
-                {sessionsInEntry.map((detailSession) => {
-                  const st = computeInventorySessionStats(detailSession);
+                {(() => {
+                  const st = detailStats;
                   const { materials: dMat, sets: dSets, products: dProd } = st;
-                  const wh = resolveSessionWarehouseScope(detailSession);
-                  const sectionTitlePrefix = wh === 'gp' ? 'ГП' : 'МС';
+                  const sectionTitle = (name: string) => isGroup
+                    ? name
+                    : `${resolveSessionWarehouseScope(session) === 'gp' ? 'ГП' : 'МС'}: ${name}`;
 
                   const dSetSystem = dSets.reduce((s, it) => s + (it.systemBalance ?? 0), 0);
                   const dProductSystem = dProd.reduce((s, it) => s + (it.systemBalance ?? 0), 0);
@@ -355,40 +514,11 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                   const dMaterialActualSumGp = dMat.reduce((s, it) => s + (totalPortionsGp(it) ?? 0), 0);
 
                   return (
-                    <div key={`detail-${detailSession.id}`} className={isGroup ? 'mb-8 pb-6 border-b border-gray-200 last:border-0' : ''}>
-                      {isGroup && (
-                        <div className="flex items-center justify-between gap-3 mb-3">
-                          <h4 className="text-sm font-semibold text-gray-600 flex items-center gap-2">
-                            <StockBadge variant={wh === 'gp' ? 'gp' : 'ms'} size="10px" />
-                            {sectionTitlePrefix} — сесія #{detailSession.id}
-                          </h4>
-                          {detailSession.status !== 'removed' && (isAdmin || canAuthorEditSession(detailSession)) && onLoadSession && (
-                            <Button
-                              size="sm"
-                              variant="flat"
-                              color="primary"
-                              data-btn-tone="primary-blue-flat"
-                              className="h-auto px-2.5 py-1.5 gap-1 min-w-0"
-                              isDisabled={!!loadingDeleteId}
-                              startContent={<DynamicIcon name={loadingLoadId !== detailSession.id ? 'pencil' : 'loader-circle'} className={`w-3 h-3 ${loadingLoadId !== detailSession.id ? '' : 'animate-spin'}`} />}
-                              onPress={async () => {
-                                setLoadingLoadId(detailSession.id);
-                                try {
-                                  await onLoadSession!(detailSession);
-                                } finally {
-                                  setLoadingLoadId(null);
-                                }
-                              }}
-                            >
-                              Редагувати
-                            </Button>
-                          )}
-                        </div>
-                      )}
+                    <>
                       {dSets.length > 0 && (
                         <InventoryTableSection
-                          title={`${sectionTitlePrefix}: Комплекти`}
-                          sessionId={detailSession.id}
+                          title={sectionTitle('Комплекти')}
+                          sessionId={entryKey}
                           inventoryDate={detailSession.inventoryDate}
                           rows={sortItems(dSets, sortColumnProd, sortDirectionProd)}
                           sortColumn={sortColumnProd}
@@ -409,8 +539,8 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                       )}
                       {dProd.length > 0 && (
                         <InventoryTableSection
-                          title={`${sectionTitlePrefix}: Товари`}
-                          sessionId={detailSession.id}
+                          title={sectionTitle('Товари')}
+                          sessionId={entryKey}
                           inventoryDate={detailSession.inventoryDate}
                           rows={sortItems(dProd, sortColumnProd, sortDirectionProd)}
                           sortColumn={sortColumnProd}
@@ -431,8 +561,8 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                       )}
                       {dMat.length > 0 && (
                         <InventoryTableSection
-                          title={`${sectionTitlePrefix}: Матеріали`}
-                          sessionId={detailSession.id}
+                          title={sectionTitle('Матеріали')}
+                          sessionId={entryKey}
                           inventoryDate={detailSession.inventoryDate}
                           rows={sortItems(dMat, sortColumnMat, sortDirectionMat)}
                           sortColumn={sortColumnMat}
@@ -452,9 +582,9 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                           isMaterial
                         />
                       )}
-                    </div>
+                    </>
                   );
-                })}
+                })()}
               </div>
             </div>
           </div>

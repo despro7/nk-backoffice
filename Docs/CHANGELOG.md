@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-10-18 — Інвентаризація: зведена історія МС + ГП
+
+**Files:** `inventoryHistoryGroups.ts`, `InventoryHistoryTable.tsx`, `InventoryTableSection.tsx`, `inventoryHistoryGroups.spec.ts`
+
+- Пара МС+ГП одного дня (≤ 2 год) лишається однією карткою навіть при різному статусі. Чіп: «Редагується - МС» / «Редагується - МС і ГП».
+- Позиції зведені в одну таблицю по SKU. Дії картки обирають конкретний склад.
+- Видалений звіт іде в архів і з історією не париється.
+
+**Документація:** [`warehouse-inventory.md`](features/warehouse-inventory.md).
+
+---
+
 ## 2026-10-18 — Інвентаризація: МС/ГП окремо + локальний резерв
 
 **Files:** `WarehouseInventory/*`, `client/components/reserve-draft/*`, `shared/types/inventoryWarehouse.ts`, `shared/utils/inventorySessionWarehouse.ts`, `WarehouseController.ts`, `routes.config.tsx`
