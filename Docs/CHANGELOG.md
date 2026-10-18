@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-10-19 — Chatwoot Bot: reclaim, аналітика, налаштування UI
+
+**Files:** `ChatwootBotOrchestrator.ts`, `chatwootReclaimDecision.ts`, `ChatwootBotAnalyticsService.ts`, `chatwoot-bot.ts`, `chatwoot-webhooks.ts`, `SettingsChatwootBot.tsx`, `ChatwootBotStatistics.tsx`, `routes.config.tsx`, `shared/types/chatwootBot.ts`, `prisma/schema.prisma`, міграція `20261018120000_chatwoot_bot_analytics_events`, `package.json` (`dev:chatwoot`), `config/cloudflared/README.md`
+
+- **Reclaim:** offline одразу; поза робочими годинами – таймаут мовчання агента (і опція «ще не відповідав»); у робочі години – опційний таймаут. Тексти клієнту, `reclaimContinueWithEcho`. На «Вирішити» – unassign + скидання `bot_human_handover_active` (`resolveCleanupEnabled`). User PAT для agents / inbox schedule / last agent reply.
+- **Аналітика:** таблиця `chatwoot_bot_analytics_events`, ingest з webhook, `GET /api/chatwoot-bot/analytics/overview`, сторінка `/chatwoot-bot/statistics`.
+- **Навігація:** група меню Chatwoot Bot (`/chatwoot-bot/settings`, `/chatwoot-bot/statistics`); redirect з `/settings/chatwoot-bot`.
+- **UI налаштувань:** компактні Outgoing URL + probe, режим `dry_run`/`live`; картка Reclaim у правій колонці над журналом webhook; зрозуміліші групи правил (робочі / неробочі години). Симуляція echo/handover з UI та `POST /simulate` **прибрані**.
+- **Локальний dev:** `npm run dev:chatwoot` (tunnel + app + cloudflared).
+
+**Документація:** [`chatwoot-agent-bot.md`](integrations/chatwoot-agent-bot.md).
+
+---
+
+## 2026-10-19 — Дизайн-система: типографіка в гайді
+
+**Files:** `Docs/guides/design-system.md`
+
+- У тексті гайду довге тире (`—`) замінено на коротке (`–`) для єдиного стилю з UI-доменом.
+
+---
+
 ## 2026-10-18 — Інвентаризація: зведена історія МС + ГП
 
 **Files:** `inventoryHistoryGroups.ts`, `InventoryHistoryTable.tsx`, `InventoryTableSection.tsx`, `inventoryHistoryGroups.spec.ts`

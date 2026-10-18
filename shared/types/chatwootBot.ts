@@ -1,9 +1,12 @@
-/** Chatwoot Agent Bot v0 — settings + webhook event types. */
+/** Chatwoot Agent Bot v0 – settings + webhook event types. */
 
-/** Маркер реалізації handover у health — перевірка, що webhook б’є в актуальний код. */
+/** Маркер реалізації handover у health – перевірка, що webhook б’є в актуальний код. */
 export const CHATWOOT_BOT_HANDOVER_BUILD = 'handover-trace-assign-v7';
 
-/** Імена payload для POST /api/webhooks/chatwoot/simulate (лише dev / адмін). */
+/** Маркер у content для POST probe-outgoing-webhook (без echo в Chatwoot). */
+export const CHATWOOT_WEBHOOK_PROBE_CONTENT_MARKER = '[nk-backoffice webhook probe]';
+
+/** Імена fixture payload для unit-тестів оркестратора (`fixtures/index.ts`). */
 export type ChatwootBotFixtureName = 'echo' | 'handover';
 
 export type ChatwootBotReplyMode = 'live' | 'dry_run';
@@ -32,9 +35,16 @@ export type ChatwootBotSettings = {
   eventLogMaxRecords: number;
   /** Зберігати повний JSON payload у БД (для діагностики). */
   eventLogStoreFullPayload: boolean;
+  /** Debug: писати в журнал private notes агентів. */
+  eventLogPersistPrivate: boolean;
   /**
-   * specific_agent — PATCH assignee_id з handoverAssigneeId;
-   * auto_inbox — лише відкрити діалог і зняти assignee, далі Chatwoot auto assignment (round robin).
+   * Debug: писати в журнал інший «шум» –
+   * not_incoming, unsupported_event:*, sender_not_contact:*.
+   */
+  eventLogPersistOtherNoise: boolean;
+  /**
+   * specific_agent – PATCH assignee_id з handoverAssigneeId;
+   * auto_inbox – лише відкрити діалог і зняти assignee, далі Chatwoot auto assignment (round robin).
    */
   handoverAssignMode: ChatwootHandoverAssignMode;
   /** Chatwoot user id агента для handover (не Agent Bot id). */
@@ -58,6 +68,64 @@ export type ChatwootBotSettings = {
   handoverEmergencyEnabled: boolean;
   handoverEmergencyKeywords: string[];
   handoverMessageEmergency: string;
+  /** Увімкнути reclaim (повернення діалогу боту від людини-assignee). */
+  reclaimEnabled: boolean;
+  /** Reclaim, якщо assignee offline (у т.ч. в робочі години). */
+  reclaimOnAssigneeOffline: boolean;
+  /** Reclaim поза робочими годинами, якщо агент довго не відповідає публічно. */
+  reclaimOnOohAgentSilent: boolean;
+  /** Хвилин мовчання агента в OOH перед reclaim. */
+  reclaimOohSilentMinutes: number;
+  /** В OOH: якщо агент ще жодного разу не відповідав – одразу reclaim. */
+  reclaimOohTreatNoAgentReplyAsSilent: boolean;
+  /** Reclaim у робочі години за таймаутом мовчання (за замовчуванням вимк.). */
+  reclaimInHoursAgentSilentEnabled: boolean;
+  /** Хвилин мовчання агента в робочі години перед reclaim. */
+  reclaimInHoursSilentMinutes: number;
+  /** У робочі години: якщо агент ще не відповідав – вважати таймаут перевищеним. */
+  reclaimInHoursTreatNoAgentReplyAsSilent: boolean;
+  /** Публічне повідомлення при reclaim, коли assignee офлайн. */
+  reclaimMessageOffline: string;
+  /** Публічне повідомлення при reclaim в OOH (не плутати з handover OOH). */
+  reclaimMessageOoh: string;
+  /** Публічне повідомлення при reclaim за таймаутом у робочі години. */
+  reclaimMessageInHours: string;
+  /** Після reclaim обробити поточне повідомлення клієнта (echo/handover). */
+  reclaimContinueWithEcho: boolean;
+  /** На «Вирішити» – unassign + скинути bot_human_handover_active. */
+  resolveCleanupEnabled: boolean;
+};
+
+export type ChatwootBotReclaimReason =
+  | 'reclaim_offline'
+  | 'reclaim_ooh'
+  | 'reclaim_in_hours';
+
+export type ChatwootBotAnalyticsEventKind =
+  | 'customer_message'
+  | 'agent_message'
+  | 'bot_action'
+  | 'resolved'
+  | 'reclaim';
+
+export type ChatwootBotAnalyticsOverview = {
+  from: string;
+  to: string;
+  topQuestions: Array<{ contentNorm: string; contentPreview: string; count: number }>;
+  agentSla: Array<{
+    agentId: number;
+    conversations: number;
+    medianResponseSeconds: number | null;
+    avgResponseSeconds: number | null;
+    noReplyCount: number;
+    reclaimCount: number;
+  }>;
+  totals: {
+    customerMessages: number;
+    agentMessages: number;
+    reclaims: number;
+    resolved: number;
+  };
 };
 
 export type ChatwootBotAgentSummary = {
@@ -92,13 +160,13 @@ export type ChatwootInboxHoursStatus = {
   source: 'chatwoot_inbox' | 'settings_fallback' | 'always_open';
 };
 
-/** PUT body — порожній secret/token не змінює збережене; для очищення — clearWebhookSecret. */
+/** PUT body – порожній secret/token не змінює збережене; для очищення – clearWebhookSecret. */
 export type ChatwootBotSettingsUpdate = Partial<ChatwootBotSettings> & {
   clearWebhookSecret?: boolean;
   clearInboxApiAccessToken?: boolean;
 };
 
-/** GET response — token і secret маскуються. */
+/** GET response – token і secret маскуються. */
 export type ChatwootBotSettingsResponse = Omit<
   ChatwootBotSettings,
   'apiAccessToken' | 'webhookSecret' | 'inboxApiAccessToken'
@@ -228,6 +296,9 @@ export const DEFAULT_CHATWOOT_BOT_EVENT_LOG_MAX_RECORDS = 300;
 /** Обрізання повного payload при збереженні в JSON. */
 export const CHATWOOT_BOT_FULL_PAYLOAD_MAX_BYTES = 65_536;
 
+/** Дефолт хвилин мовчання агента перед reclaim (OOH / in-hours). */
+export const DEFAULT_CHATWOOT_BOT_RECLAIM_OOH_MINUTES = 10;
+
 export const DEFAULT_CHATWOOT_BOT_SETTINGS: ChatwootBotSettings = {
   enabled: false,
   baseUrl: '',
@@ -242,6 +313,8 @@ export const DEFAULT_CHATWOOT_BOT_SETTINGS: ChatwootBotSettings = {
   eventLogRetentionDays: DEFAULT_CHATWOOT_BOT_EVENT_LOG_RETENTION_DAYS,
   eventLogMaxRecords: DEFAULT_CHATWOOT_BOT_EVENT_LOG_MAX_RECORDS,
   eventLogStoreFullPayload: false,
+  eventLogPersistPrivate: false,
+  eventLogPersistOtherNoise: false,
   handoverAssignMode: 'specific_agent',
   handoverAssigneeId: null,
   handoverDefaultInboxId: 1,
@@ -253,11 +326,30 @@ export const DEFAULT_CHATWOOT_BOT_SETTINGS: ChatwootBotSettings = {
   handoverMessageInHours:
     'Зараз підключаю оператора. Зачекайте, будь ласка, кілька хвилин.',
   handoverMessageOutOfHours:
-    'Зараз неробочий час. Можу спробувати допомогти сам — опишіть питання. Або залиште імʼя та телефон, і оператор передзвонить у робочі години. Якщо ситуація критична — напишіть «терміново».',
+    'Зараз неробочий час. Можу спробувати допомогти сам – опишіть питання. Або залиште імʼя та телефон, і оператор передзвонить у робочі години. Якщо ситуація критична – напишіть «терміново».',
   handoverCallbackAckMessage:
-    'Дякуємо! Передаємо контакти оператору — звʼяжемося з вами в робочі години.',
+    'Дякуємо! Передаємо контакти оператору – звʼяжемося з вами в робочі години.',
   handoverEmergencyEnabled: true,
   handoverEmergencyKeywords: [...DEFAULT_CHATWOOT_BOT_EMERGENCY_KEYWORDS],
   handoverMessageEmergency:
     'Розуміємо, що ситуація термінова. Підключаємо оператора незважаючи на неробочий час.',
+  reclaimEnabled: true,
+  reclaimOnAssigneeOffline: true,
+  reclaimOnOohAgentSilent: true,
+  reclaimOohSilentMinutes: DEFAULT_CHATWOOT_BOT_RECLAIM_OOH_MINUTES,
+  reclaimOohTreatNoAgentReplyAsSilent: true,
+  reclaimInHoursAgentSilentEnabled: false,
+  reclaimInHoursSilentMinutes: DEFAULT_CHATWOOT_BOT_RECLAIM_OOH_MINUTES,
+  reclaimInHoursTreatNoAgentReplyAsSilent: true,
+  reclaimMessageOffline:
+    'Оператор зараз недоступний. Я тимчасово допоможу вам – опишіть, будь ласка, ваше питання.',
+  reclaimMessageOoh:
+    'Оператор поки не відповів. Я знову на звʼязку – напишіть, чим можу допомогти.',
+  reclaimMessageInHours:
+    'Оператор ще не відповів. Тимчасово допоможу я – опишіть ваше питання.',
+  reclaimContinueWithEcho: true,
+  resolveCleanupEnabled: true,
 };
+
+/** @deprecated Використовуйте `settings.reclaimOohSilentMinutes`. */
+export const CHATWOOT_BOT_RECLAIM_OOH_MINUTES = DEFAULT_CHATWOOT_BOT_RECLAIM_OOH_MINUTES;

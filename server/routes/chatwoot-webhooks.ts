@@ -1,13 +1,12 @@
 import { timingSafeEqual } from 'crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { authenticateToken, requirePermission } from '../middleware/auth.js';
 import { logServer } from '../lib/utils.js';
 import {
   CHATWOOT_BOT_HANDOVER_BUILD,
   CHATWOOT_WEBHOOK_SECRET_HEADER,
-  type ChatwootBotFixtureName,
   type ChatwootWebhookMessageCreated,
 } from '../../shared/types/chatwootBot.js';
+import { resolveConversationApiId } from '../modules/ChatwootBot/chatwootConversationId.js';
 import { chatwootBotOrchestrator } from '../modules/ChatwootBot/ChatwootBotOrchestrator.js';
 import { chatwootBotEventLogService } from '../modules/ChatwootBot/ChatwootBotEventLogService.js';
 import { chatwootBotSettingsService } from '../modules/ChatwootBot/ChatwootBotSettingsService.js';
@@ -15,11 +14,6 @@ import { getChatwootProcessorStamp } from '../modules/ChatwootBot/chatwootProces
 import { extractWebhookHeadersMeta } from '../modules/ChatwootBot/ChatwootBotWebhookUtils.js';
 
 const router = Router();
-const chatwootAdmin = requirePermission(
-  'settings',
-  'admin',
-  'Змінювати адмінські налаштування',
-);
 
 function secretsEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
@@ -90,6 +84,7 @@ router.get('/health', (_req, res) => {
     success: true,
     message: 'Chatwoot webhook endpoint is healthy',
     handoverBuild: CHATWOOT_BOT_HANDOVER_BUILD,
+    processor: getChatwootProcessorStamp(),
     timestamp: new Date().toLocaleString('uk-UA'),
   });
 });
@@ -103,15 +98,21 @@ router.post('/', verifyWebhookSecret, async (req: Request, res: Response) => {
     const payload = (req.body ?? {}) as ChatwootWebhookMessageCreated;
     const headersMeta = extractWebhookHeadersMeta(req.headers);
     const processor = getChatwootProcessorStamp();
+    const convApiId = resolveConversationApiId(payload);
     logServer(
       `[ChatwootBot] webhook in · ${processor} · event=${payload.event ?? 'n/a'} ` +
-        `conv=${payload.conversation?.id ?? 'n/a'} msg=${payload.id ?? 'n/a'} auth=${headersMeta.detectedScheme}`,
+        `conv=${convApiId ?? 'n/a'} msg=${payload.id ?? 'n/a'} auth=${headersMeta.detectedScheme} ` +
+        `message_type=${String(payload.message_type ?? '∅')}`,
     );
     res.setHeader('X-Chatwoot-Bot-Processor', processor);
     const result = await chatwootBotOrchestrator.processWebhook(payload, {
       source: 'webhook',
       headersMeta,
     });
+    logServer(
+      `[ChatwootBot] webhook done conv=${result.conversationId ?? 'n/a'} ` +
+        `action=${result.action} reason=${result.reason}`,
+    );
     res.status(200).json({
       success: true,
       action: result.action,
@@ -123,69 +124,6 @@ router.post('/', verifyWebhookSecret, async (req: Request, res: Response) => {
     res.status(200).json({
       success: false,
       error: error instanceof Error ? error.message : 'Internal error',
-    });
-  }
-});
-
-/**
- * Доступ до simulate: JWT admin або NODE_ENV=development.
- */
-function allowSimulate(req: Request, res: Response, next: NextFunction): void {
-  if (process.env.NODE_ENV === 'development') {
-    next();
-    return;
-  }
-  void authenticateToken(req, res, () => {
-    if (res.headersSent) return;
-    void chatwootAdmin(req, res, next);
-  });
-}
-
-/**
- * POST /api/webhooks/chatwoot/simulate
- * Body: повний payload або { fixture: 'echo' | 'handover', overrides? }.
- */
-router.post('/simulate', allowSimulate, async (req: Request, res: Response) => {
-  try {
-    const { getChatwootBotFixture } = await import(
-      '../modules/ChatwootBot/fixtures/index.js'
-    );
-
-    const body = req.body ?? {};
-    let payload: ChatwootWebhookMessageCreated;
-
-    if (typeof body.fixture === 'string') {
-      const name = body.fixture as ChatwootBotFixtureName;
-      if (name !== 'echo' && name !== 'handover') {
-        return res.status(400).json({
-          success: false,
-          error: 'fixture must be "echo" or "handover"',
-        });
-      }
-      payload = {
-        ...getChatwootBotFixture(name),
-        ...(body.overrides && typeof body.overrides === 'object' ? body.overrides : {}),
-      };
-    } else if (body.event || body.message_type || body.conversation) {
-      payload = body as ChatwootWebhookMessageCreated;
-    } else {
-      payload = getChatwootBotFixture('echo');
-    }
-
-    const result = await chatwootBotOrchestrator.processWebhook(payload, {
-      source: 'simulate',
-      headersMeta: extractWebhookHeadersMeta(req.headers),
-    });
-
-    res.json({
-      success: true,
-      data: result,
-    });
-  } catch (error) {
-    logServer('[ChatwootBot] simulate error', error);
-    res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Simulate failed',
     });
   }
 });

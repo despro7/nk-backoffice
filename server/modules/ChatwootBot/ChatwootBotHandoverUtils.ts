@@ -58,23 +58,30 @@ export function isHumanHandoverActive(attrs: Record<string, unknown> | undefined
   return isTruthyAttr(attrs[CHATWOOT_BOT_ATTR_HUMAN_HANDOVER_ACTIVE]);
 }
 
-/** Після handover на людину — не echo і не повторний handover. */
-export function isConversationHandledByHuman(
+/** Після handover на людину – не echo і не повторний handover. */
+export function getConversationHumanAssigneeId(
   payload: ChatwootWebhookMessageCreated,
-  customAttrs: Record<string, unknown>,
-): boolean {
-  if (isHumanHandoverActive(customAttrs)) return true;
-
+): number | null {
   const assignee = payload.conversation?.meta?.assignee;
   const assigneeId =
     assignee?.id ??
     (typeof payload.conversation?.assignee_id === 'number'
       ? payload.conversation.assignee_id
       : null);
-  if (assigneeId == null || assigneeId <= 0) return false;
-
+  if (assigneeId == null || assigneeId <= 0) return null;
   const type = String(assignee?.type ?? 'user').toLowerCase();
-  if (type === 'agent_bot' || type === 'bot') return false;
+  if (type === 'agent_bot' || type === 'bot') return null;
+  return assigneeId;
+}
+
+export function isConversationHandledByHuman(
+  payload: ChatwootWebhookMessageCreated,
+  customAttrs: Record<string, unknown>,
+): boolean {
+  if (isHumanHandoverActive(customAttrs)) return true;
+
+  const assigneeId = getConversationHumanAssigneeId(payload);
+  if (assigneeId == null) return false;
 
   const status = String(payload.conversation?.status ?? '').toLowerCase();
   if (status === 'resolved') return false;
@@ -156,15 +163,29 @@ export function isWithinHandoverHours(settings: ChatwootBotSettings, now = new D
   return zoned.minutes >= startMin || zoned.minutes < endMin;
 }
 
-export function shouldPersistEvent(action: ChatwootBotProcessAction, reason: string): boolean {
+export type EventLogPersistOptions = {
+  persistPrivate?: boolean;
+  persistOtherNoise?: boolean;
+};
+
+export function shouldPersistEvent(
+  action: ChatwootBotProcessAction,
+  reason: string,
+  options: EventLogPersistOptions = {},
+): boolean {
   if (action === 'echo' || action === 'handover' || action === 'error') return true;
   if (action === 'ignored' && reason === 'bot_disabled') return true;
+  if (action === 'ignored' && reason === 'webhook_probe') return true;
+  /** За замовчуванням так; оркестратор обмежує до 1×/conv через persist gate. */
+  if (action === 'ignored' && reason === 'human_agent_active') return true;
+  if (action === 'ignored' && reason === 'resolve_cleanup') return true;
   if (action !== 'ignored') return true;
 
-  if (reason.startsWith('unsupported_event:')) return false;
-  if (reason === 'private_message') return false;
-  if (reason === 'not_incoming') return false;
-  if (reason.startsWith('sender_not_contact:')) return false;
-  if (reason === 'human_agent_active') return false;
+  if (reason === 'private_message') return Boolean(options.persistPrivate);
+  if (reason.startsWith('unsupported_event:')) return Boolean(options.persistOtherNoise);
+  if (reason === 'not_incoming') return Boolean(options.persistOtherNoise);
+  if (reason.startsWith('sender_not_contact:')) return Boolean(options.persistOtherNoise);
+  /** duplicate_message тощо – завжди тихо. */
+  if (reason === 'duplicate_message') return false;
   return true;
 }

@@ -3,10 +3,9 @@ import type {
   ChatwootBotConnectionTestResult,
   ChatwootBotEventRecord,
   ChatwootInboxHoursStatus,
-  ChatwootBotProcessResult,
   ChatwootBotSettingsResponse,
   ChatwootBotSettingsUpdate,
-  ChatwootWebhookMessageCreated,
+  ChatwootBotAnalyticsOverview,
 } from '@shared/types/chatwootBot';
 
 async function parseJson<T>(res: Response): Promise<T> {
@@ -16,10 +15,6 @@ async function parseJson<T>(res: Response): Promise<T> {
   }
   return data.data as T;
 }
-
-export type ChatwootBotSimulateInput =
-  | { fixture: 'echo' | 'handover'; overrides?: Partial<ChatwootWebhookMessageCreated> }
-  | ChatwootWebhookMessageCreated;
 
 export const chatwootBotApi = {
   async getSettings(revealSecrets = false): Promise<ChatwootBotSettingsResponse> {
@@ -38,10 +33,29 @@ export const chatwootBotApi = {
     return parseJson(res);
   },
 
+  async probeOutgoingWebhook(): Promise<{
+    postUrl: string;
+    httpStatus: number;
+    ok: boolean;
+    bodyPreview: string;
+    hint: string;
+  }> {
+    const res = await fetch('/api/chatwoot-bot/probe-outgoing-webhook', {
+      method: 'POST',
+      credentials: 'include',
+    });
+    return parseJson(res);
+  },
+
   async getWebhookProcessorHealth(): Promise<{
     localBuild: string;
+    localProcessor?: string | null;
+    localHost?: string | null;
     targetHealthUrl: string | null;
     targetBuild: string | null;
+    targetProcessor?: string | null;
+    targetHost?: string | null;
+    tunnelPointsHere?: boolean;
     mismatch: boolean;
     fetchError?: string | null;
     message: string;
@@ -110,12 +124,27 @@ export const chatwootBotApi = {
     return parseJson(res);
   },
 
-  async simulate(input: ChatwootBotSimulateInput): Promise<ChatwootBotProcessResult> {
-    const res = await fetch('/api/webhooks/chatwoot/simulate', {
+  /** Debug: зняти assignee у Chatwoot + скинути bot_human_handover_active. */
+  async unassignConversation(conversationId: number): Promise<{
+    conversationId: number;
+    unassigned: boolean;
+    humanHandoverAttrCleared: boolean;
+    typingOff: 'ok' | 'fail' | 'skipped';
+  }> {
+    const res = await fetch(`/api/chatwoot-bot/conversations/${conversationId}/unassign`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
+    });
+    return parseJson(res);
+  },
+
+  async getAnalyticsOverview(from?: string, to?: string): Promise<ChatwootBotAnalyticsOverview> {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetch(`/api/chatwoot-bot/analytics/overview${qs}`, {
+      credentials: 'include',
     });
     return parseJson(res);
   },

@@ -78,7 +78,7 @@ export class ChatwootApiClient {
           ok: true,
           message:
             inboxCount != null
-              ? `OK (користувач) — inboxes: ${inboxCount}`
+              ? `OK (користувач) – inboxes: ${inboxCount}`
               : 'OK (користувач)',
           inboxCount,
         };
@@ -93,7 +93,7 @@ export class ChatwootApiClient {
         return {
           ok: true,
           message:
-            'OK (Agent Bot) — токен дійсний. Echo/handover у live; список inboxes для ботів недоступний.',
+            'OK (Agent Bot) – токен дійсний. Echo/handover у live; список inboxes для ботів недоступний.',
         };
       }
 
@@ -124,7 +124,7 @@ export class ChatwootApiClient {
         return {
           ok: true,
           message:
-            inboxCount != null ? `OK — inboxes: ${inboxCount}` : 'OK — зʼєднання з Chatwoot',
+            inboxCount != null ? `OK – inboxes: ${inboxCount}` : 'OK – зʼєднання з Chatwoot',
           inboxCount,
         };
       }
@@ -211,6 +211,38 @@ export class ChatwootApiClient {
     });
   }
 
+  /**
+   * Увімкнути/вимкнути typing indicator у віджеті.
+   * Chatwoot Agent Bot часто вмикає typing сам; якщо бот не відповідає – треба `off`.
+   * @see https://developers.chatwoot.com/api-reference/conversations/toggle-typing-status
+   */
+  async toggleTypingStatus(
+    conversationId: number,
+    typingStatus: 'on' | 'off',
+  ): Promise<unknown> {
+    return fetchChatwoot(this.creds, `/conversations/${conversationId}/toggle_typing_status`, {
+      method: 'POST',
+      body: { typing_status: typingStatus, is_private: false },
+    });
+  }
+
+  /** Best-effort: не кидає – Chatwoot інколи ігнорує off при human assignee. */
+  async toggleTypingStatusBestEffort(
+    conversationId: number,
+    typingStatus: 'on' | 'off',
+  ): Promise<boolean> {
+    try {
+      await this.toggleTypingStatus(conversationId, typingStatus);
+      return true;
+    } catch (err) {
+      logServer(
+        `[ChatwootApiClient] toggleTypingStatus ${typingStatus} failed conv=${conversationId}`,
+        err,
+      );
+      return false;
+    }
+  }
+
   /** @deprecated Використовуйте botHandoffOpen для handover. */
   async toggleStatusOpen(conversationId: number): Promise<unknown> {
     return this.botHandoffOpen(conversationId);
@@ -223,13 +255,18 @@ export class ChatwootApiClient {
     });
   }
 
+  /** Зняти assignee; кидає при помилці API. */
+  async unassignConversationOrThrow(conversationId: number): Promise<void> {
+    await fetchChatwoot(this.creds, `/conversations/${conversationId}/assignments`, {
+      method: 'POST',
+      body: { assignee_id: null },
+    });
+  }
+
   /** Best-effort: зняти assignee (бот / агент), якщо API дозволяє. */
   async unassignConversation(conversationId: number): Promise<void> {
     try {
-      await fetchChatwoot(this.creds, `/conversations/${conversationId}/assignments`, {
-        method: 'POST',
-        body: { assignee_id: null },
-      });
+      await this.unassignConversationOrThrow(conversationId);
     } catch (err) {
       logServer('[ChatwootApiClient] unassignConversation skipped/failed', err);
     }
@@ -299,6 +336,48 @@ export class ChatwootApiClient {
       timezone: raw.timezone?.trim() || 'UTC',
       workingHours: Array.isArray(raw.working_hours) ? raw.working_hours : [],
     };
+  }
+
+  async listConversationMessages(conversationId: number): Promise<
+    Array<{
+      id: number;
+      createdAt: Date;
+      message_type?: string | number;
+      private?: boolean;
+      sender?: { type?: string };
+    }>
+  > {
+    const raw = await fetchChatwoot<
+      | Array<{
+          id: number;
+          created_at?: number;
+          message_type?: string | number;
+          private?: boolean;
+          sender?: { type?: string };
+        }>
+      | {
+          payload?: Array<{
+            id: number;
+            created_at?: number;
+            message_type?: string | number;
+            private?: boolean;
+            sender?: { type?: string };
+          }>;
+        }
+    >(this.creds, `/conversations/${conversationId}/messages`);
+
+    const list = Array.isArray(raw) ? raw : Array.isArray(raw?.payload) ? raw.payload : [];
+    return list
+      .filter((m) => m && Number.isFinite(m.id))
+      .map((m) => ({
+        id: m.id,
+        createdAt: new Date(
+          typeof m.created_at === 'number' ? m.created_at * 1000 : Date.now(),
+        ),
+        message_type: m.message_type,
+        private: m.private,
+        sender: m.sender,
+      }));
   }
 
   async listAgents(): Promise<ChatwootBotAgentSummary[]> {

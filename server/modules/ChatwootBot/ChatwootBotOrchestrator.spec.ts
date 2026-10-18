@@ -5,10 +5,40 @@ import {
 } from '../../../shared/types/chatwootBot.js';
 import { chatwootBotEventLogService } from './ChatwootBotEventLogService.js';
 import { chatwootBotSettingsService } from './ChatwootBotSettingsService.js';
-import { chatwootBotOrchestrator } from './ChatwootBotOrchestrator.js';
+import {
+  chatwootBotOrchestrator,
+  isConversationResolvedStatusEvent,
+  isIncomingContactMessage,
+} from './ChatwootBotOrchestrator.js';
 import { getChatwootBotFixture } from './fixtures/index.js';
 import { chatwootBotInboxHoursService } from './ChatwootBotInboxHoursService.js';
 import { shouldPersistEvent } from './ChatwootBotHandoverUtils.js';
+import { clearHumanAgentActivePersistGateForTests } from './humanAgentActivePersistGate.js';
+vi.mock('./chatwootAgentsAvailabilityCache.js', () => ({
+  isAssigneeOffline: vi.fn(async () => false),
+}));
+
+vi.mock('./chatwootLastAgentReplyCache.js', () => ({
+  minutesSinceLastAgentPublicReply: vi.fn(async () => null),
+}));
+
+vi.mock('./ChatwootBotAnalyticsService.js', () => ({
+  chatwootBotAnalyticsService: {
+    recordBestEffort: vi.fn(),
+    record: vi.fn(async () => undefined),
+  },
+}));
+
+vi.mock('./chatwootHandoverReset.js', () => ({
+  resetHumanHandoverOnConversation: vi.fn(async () => ({
+    unassigned: true,
+    humanHandoverAttrCleared: true,
+    typingOff: 'dry_run',
+  })),
+}));
+
+import { isAssigneeOffline } from './chatwootAgentsAvailabilityCache.js';
+import { minutesSinceLastAgentPublicReply } from './chatwootLastAgentReplyCache.js';
 
 vi.mock('./ChatwootBotEventLogService.js', () => ({
   chatwootBotEventLogService: {
@@ -47,22 +77,68 @@ const alwaysOpenHoursSettings = {
   handoverWorkEnd: '23:59',
 };
 
+describe('isIncomingContactMessage', () => {
+  it('treats Agent Bot payload without message_type as incoming contact', () => {
+    expect(
+      isIncomingContactMessage({
+        event: 'message_created',
+        content: 'Hell',
+        sender: { type: 'contact', id: 9 },
+        conversation: { id: 2, inbox_id: 1 },
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects outgoing when message_type is set', () => {
+    expect(
+      isIncomingContactMessage({
+        event: 'message_created',
+        message_type: 'outgoing',
+        content: 'hi',
+        sender: { type: 'user', id: 1 },
+      }),
+    ).toBe(false);
+  });
+});
+
 describe('shouldPersistEvent', () => {
-  it('skips noisy ignored reasons', () => {
+  it('skips noisy ignored reasons by default', () => {
     expect(shouldPersistEvent('ignored', 'unsupported_event:conversation_updated')).toBe(false);
     expect(shouldPersistEvent('ignored', 'private_message')).toBe(false);
     expect(shouldPersistEvent('ignored', 'not_incoming')).toBe(false);
     expect(shouldPersistEvent('ignored', 'sender_not_contact:agent_bot')).toBe(false);
+    expect(shouldPersistEvent('ignored', 'duplicate_message')).toBe(false);
   });
 
-  it('persists bot_disabled and handover', () => {
+  it('persists noise when debug options enabled', () => {
+    expect(
+      shouldPersistEvent('ignored', 'private_message', { persistPrivate: true }),
+    ).toBe(true);
+    expect(
+      shouldPersistEvent('ignored', 'not_incoming', { persistOtherNoise: true }),
+    ).toBe(true);
+    expect(
+      shouldPersistEvent('ignored', 'unsupported_event:conversation_updated', {
+        persistOtherNoise: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldPersistEvent('ignored', 'duplicate_message', { persistOtherNoise: true }),
+    ).toBe(false);
+  });
+
+  it('persists bot_disabled, human_agent_active and handover', () => {
     expect(shouldPersistEvent('ignored', 'bot_disabled')).toBe(true);
+    expect(shouldPersistEvent('ignored', 'human_agent_active')).toBe(true);
     expect(shouldPersistEvent('handover', 'ooh_offer')).toBe(true);
   });
 });
 
 describe('ChatwootBotOrchestrator dry_run', () => {
   beforeEach(() => {
+    clearHumanAgentActivePersistGateForTests();
+    vi.mocked(isAssigneeOffline).mockResolvedValue(false);
+    vi.mocked(minutesSinceLastAgentPublicReply).mockResolvedValue(null);
     vi.spyOn(chatwootBotSettingsService, 'getSettings').mockResolvedValue(alwaysOpenHoursSettings);
     vi.spyOn(chatwootBotInboxHoursService, 'isWithinBusinessHours').mockResolvedValue({
       inHours: true,
@@ -177,9 +253,113 @@ describe('ChatwootBotOrchestrator dry_run', () => {
         meta: { assignee: { id: 2, type: 'user' } },
       },
     };
+    const first = await chatwootBotOrchestrator.processWebhook(payload, { source: 'simulate' });
+    expect(first.action).toBe('ignored');
+    expect(first.reason).toBe('human_agent_active');
+    expect(first.event.id).not.toBe('skipped');
+    expect(vi.mocked(chatwootBotEventLogService.append)).toHaveBeenCalledTimes(1);
+    expect(String(first.event.details ?? '')).toContain('typing_off=dry_run');
+
+    const second = await chatwootBotOrchestrator.processWebhook(
+      { ...payload, id: (payload.id ?? 0) + 1, content: 'ще раз' },
+      { source: 'simulate' },
+    );
+    expect(second.action).toBe('ignored');
+    expect(second.reason).toBe('human_agent_active');
+    expect(second.event.id).toBe('skipped');
+    expect(vi.mocked(chatwootBotEventLogService.append)).toHaveBeenCalledTimes(1);
+  });
+
+  it('OOH reclaim when agent silent >10m → dry_run reclaim then echo', async () => {
+    vi.mocked(minutesSinceLastAgentPublicReply).mockResolvedValue(15);
+    vi.spyOn(chatwootBotInboxHoursService, 'isWithinBusinessHours').mockResolvedValue({
+      inHours: false,
+      source: 'chatwoot_inbox',
+    });
+    const payload = {
+      ...getChatwootBotFixture('echo'),
+      conversation: {
+        ...getChatwootBotFixture('echo').conversation,
+        id: 42,
+        meta: { assignee: { id: 5, type: 'user' } },
+      },
+    };
+    const result = await chatwootBotOrchestrator.processWebhook(payload, { source: 'simulate' });
+    expect(result.action).toBe('echo');
+    expect(result.reason).toBe('dry_run_echo');
+    const appendCalls = vi.mocked(chatwootBotEventLogService.append).mock.calls;
+    const reclaimCall = appendCalls.find((c) => c[0].reason === 'dry_run_reclaim_ooh');
+    expect(reclaimCall).toBeTruthy();
+  });
+
+  it('offline reclaim → dry_run reclaim_offline then echo', async () => {
+    vi.mocked(isAssigneeOffline).mockResolvedValue(true);
+    const payload = {
+      ...getChatwootBotFixture('echo'),
+      conversation: {
+        ...getChatwootBotFixture('echo').conversation,
+        id: 43,
+        meta: { assignee: { id: 5, type: 'user' } },
+      },
+    };
+    const result = await chatwootBotOrchestrator.processWebhook(payload, { source: 'simulate' });
+    expect(result.action).toBe('echo');
+    const reclaimCall = vi.mocked(chatwootBotEventLogService.append).mock.calls.find(
+      (c) => c[0].reason === 'dry_run_reclaim_offline',
+    );
+    expect(reclaimCall).toBeTruthy();
+  });
+
+  it('skips reclaim when reclaimEnabled is false', async () => {
+    vi.mocked(isAssigneeOffline).mockResolvedValue(true);
+    vi.spyOn(chatwootBotSettingsService, 'getSettings').mockResolvedValue({
+      ...alwaysOpenHoursSettings,
+      reclaimEnabled: false,
+    });
+    const payload = {
+      ...getChatwootBotFixture('echo'),
+      conversation: {
+        ...getChatwootBotFixture('echo').conversation,
+        id: 44,
+        meta: { assignee: { id: 5, type: 'user' } },
+      },
+    };
     const result = await chatwootBotOrchestrator.processWebhook(payload, { source: 'simulate' });
     expect(result.action).toBe('ignored');
     expect(result.reason).toBe('human_agent_active');
+  });
+
+  it('resolve status webhook skipped when resolveCleanupEnabled false', async () => {
+    vi.spyOn(chatwootBotSettingsService, 'getSettings').mockResolvedValue({
+      ...alwaysOpenHoursSettings,
+      resolveCleanupEnabled: false,
+    });
+    const result = await chatwootBotOrchestrator.processWebhook(
+      {
+        event: 'conversation_status_changed',
+        conversation: { id: 99, status: 'resolved', inbox_id: 1 },
+      },
+      { source: 'simulate' },
+    );
+    expect(result.reason).toBe('resolve_cleanup_disabled');
+  });
+
+  it('resolve status webhook → resolve_cleanup', async () => {
+    expect(
+      isConversationResolvedStatusEvent({
+        event: 'conversation_status_changed',
+        conversation: { id: 1, status: 'resolved' },
+      }),
+    ).toBe(true);
+    const result = await chatwootBotOrchestrator.processWebhook(
+      {
+        event: 'conversation_status_changed',
+        conversation: { id: 99, status: 'resolved', inbox_id: 1 },
+      },
+      { source: 'simulate' },
+    );
+    expect(result.action).toBe('ignored');
+    expect(result.reason).toBe('resolve_cleanup');
   });
 
   it('ignores when bot disabled and persists', async () => {

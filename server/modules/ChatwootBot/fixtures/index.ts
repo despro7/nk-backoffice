@@ -64,7 +64,7 @@ const FIXTURES: Record<ChatwootBotFixtureName, ChatwootWebhookMessageCreated> = 
   handover: FIXTURE_HANDOVER,
 };
 
-/** Лише для simulate / тестів. Без readFile — однаково працює в dev і в dist/. */
+/** Лише для unit-тестів оркестратора. Без readFile — однаково працює в dev і в dist/. */
 export function getChatwootBotFixture(name: ChatwootBotFixtureName): ChatwootWebhookMessageCreated {
   return { ...FIXTURES[name] };
 }

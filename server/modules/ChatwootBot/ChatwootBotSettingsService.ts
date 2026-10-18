@@ -88,6 +88,12 @@ function normalizeMessage(raw: unknown, fallback: string): string {
   return trimmed.length > 0 ? trimmed : fallback;
 }
 
+function normalizeReclaimMinutes(raw: unknown, fallback: number): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(1, Math.min(120, Math.floor(n)));
+}
+
 function applyEnvFallback(settings: ChatwootBotSettings): ChatwootBotSettings {
   return {
     ...settings,
@@ -129,6 +135,12 @@ function mergeWithDefaults(raw: Partial<ChatwootBotSettings>): ChatwootBotSettin
     eventLogStoreFullPayload: Boolean(
       raw.eventLogStoreFullPayload ?? DEFAULT_CHATWOOT_BOT_SETTINGS.eventLogStoreFullPayload,
     ),
+    eventLogPersistPrivate: Boolean(
+      raw.eventLogPersistPrivate ?? DEFAULT_CHATWOOT_BOT_SETTINGS.eventLogPersistPrivate,
+    ),
+    eventLogPersistOtherNoise: Boolean(
+      raw.eventLogPersistOtherNoise ?? DEFAULT_CHATWOOT_BOT_SETTINGS.eventLogPersistOtherNoise,
+    ),
     handoverAssignMode: normalizeHandoverAssignMode(raw.handoverAssignMode),
     handoverAssigneeId: normalizeAssigneeId(raw.handoverAssigneeId),
     handoverDefaultInboxId: normalizeDefaultInboxId(
@@ -168,6 +180,51 @@ function mergeWithDefaults(raw: Partial<ChatwootBotSettings>): ChatwootBotSettin
     handoverMessageEmergency: normalizeMessage(
       raw.handoverMessageEmergency,
       DEFAULT_CHATWOOT_BOT_SETTINGS.handoverMessageEmergency,
+    ),
+    reclaimEnabled: Boolean(raw.reclaimEnabled ?? DEFAULT_CHATWOOT_BOT_SETTINGS.reclaimEnabled),
+    reclaimOnAssigneeOffline: Boolean(
+      raw.reclaimOnAssigneeOffline ?? DEFAULT_CHATWOOT_BOT_SETTINGS.reclaimOnAssigneeOffline,
+    ),
+    reclaimOnOohAgentSilent: Boolean(
+      raw.reclaimOnOohAgentSilent ?? DEFAULT_CHATWOOT_BOT_SETTINGS.reclaimOnOohAgentSilent,
+    ),
+    reclaimOohSilentMinutes: normalizeReclaimMinutes(
+      raw.reclaimOohSilentMinutes,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.reclaimOohSilentMinutes,
+    ),
+    reclaimOohTreatNoAgentReplyAsSilent: Boolean(
+      raw.reclaimOohTreatNoAgentReplyAsSilent ??
+        DEFAULT_CHATWOOT_BOT_SETTINGS.reclaimOohTreatNoAgentReplyAsSilent,
+    ),
+    reclaimInHoursAgentSilentEnabled: Boolean(
+      raw.reclaimInHoursAgentSilentEnabled ??
+        DEFAULT_CHATWOOT_BOT_SETTINGS.reclaimInHoursAgentSilentEnabled,
+    ),
+    reclaimInHoursSilentMinutes: normalizeReclaimMinutes(
+      raw.reclaimInHoursSilentMinutes,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.reclaimInHoursSilentMinutes,
+    ),
+    reclaimInHoursTreatNoAgentReplyAsSilent: Boolean(
+      raw.reclaimInHoursTreatNoAgentReplyAsSilent ??
+        DEFAULT_CHATWOOT_BOT_SETTINGS.reclaimInHoursTreatNoAgentReplyAsSilent,
+    ),
+    reclaimMessageOffline: normalizeMessage(
+      raw.reclaimMessageOffline,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.reclaimMessageOffline,
+    ),
+    reclaimMessageOoh: normalizeMessage(
+      raw.reclaimMessageOoh,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.reclaimMessageOoh,
+    ),
+    reclaimMessageInHours: normalizeMessage(
+      raw.reclaimMessageInHours,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.reclaimMessageInHours,
+    ),
+    reclaimContinueWithEcho: Boolean(
+      raw.reclaimContinueWithEcho ?? DEFAULT_CHATWOOT_BOT_SETTINGS.reclaimContinueWithEcho,
+    ),
+    resolveCleanupEnabled: Boolean(
+      raw.resolveCleanupEnabled ?? DEFAULT_CHATWOOT_BOT_SETTINGS.resolveCleanupEnabled,
     ),
   };
   return applyEnvFallback(merged);

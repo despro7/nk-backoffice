@@ -10,3 +10,9 @@ export function getChatwootProcessorStamp(): string {
   }
   return cached;
 }
+
+export function parseProcessorHost(stamp: string | null | undefined): string | null {
+  if (!stamp) return null;
+  const match = stamp.match(/(?:^|;)host=([^;]+)/);
+  return match?.[1]?.trim() || null;
+}

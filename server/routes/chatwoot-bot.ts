@@ -3,9 +3,18 @@ import { authenticateToken, requirePermission } from '../middleware/auth.js';
 import { logServer } from '../lib/utils.js';
 import {
   CHATWOOT_BOT_HANDOVER_BUILD,
+  CHATWOOT_WEBHOOK_PROBE_CONTENT_MARKER,
+  CHATWOOT_WEBHOOK_SECRET_HEADER,
   type ChatwootBotSettingsUpdate,
 } from '../../shared/types/chatwootBot.js';
-import { chatwootWebhookHealthUrlFromOutgoingHint } from '../modules/ChatwootBot/chatwootWebhookHealthUrl.js';
+import {
+  getChatwootProcessorStamp,
+  parseProcessorHost,
+} from '../modules/ChatwootBot/chatwootProcessorStamp.js';
+import {
+  chatwootWebhookHealthUrlFromOutgoingHint,
+  chatwootWebhookPostUrlFromOutgoingHint,
+} from '../modules/ChatwootBot/chatwootWebhookHealthUrl.js';
 import { createChatwootApiClient } from '../modules/ChatwootBot/ChatwootApiClient.js';
 import {
   botMessagingCredentials,
@@ -15,6 +24,10 @@ import {
 import { chatwootBotEventLogService } from '../modules/ChatwootBot/ChatwootBotEventLogService.js';
 import { chatwootBotInboxHoursService } from '../modules/ChatwootBot/ChatwootBotInboxHoursService.js';
 import { chatwootBotSettingsService } from '../modules/ChatwootBot/ChatwootBotSettingsService.js';
+import { releaseHumanAgentActivePersistSlot } from '../modules/ChatwootBot/humanAgentActivePersistGate.js';
+import { resetHumanHandoverOnConversation } from '../modules/ChatwootBot/chatwootHandoverReset.js';
+import { chatwootBotAnalyticsService } from '../modules/ChatwootBot/ChatwootBotAnalyticsService.js';
+import { sanitizeChatwootApiToken } from '../modules/ChatwootBot/chatwootHttp.js';
 
 const router = Router();
 const chatwootAdmin = requirePermission(
@@ -92,22 +105,30 @@ router.get('/webhook-processor-health', async (_req: Request, res: Response) => 
     const settings = await chatwootBotSettingsService.getSettings();
     const targetHealthUrl = chatwootWebhookHealthUrlFromOutgoingHint(settings.outgoingUrlHint);
     const localBuild = CHATWOOT_BOT_HANDOVER_BUILD;
+    const localProcessor = getChatwootProcessorStamp();
+    const localHost = parseProcessorHost(localProcessor);
 
     if (!targetHealthUrl) {
       res.json({
         success: true,
         data: {
           localBuild,
+          localProcessor,
+          localHost,
           targetHealthUrl: null,
           targetBuild: null,
+          targetProcessor: null,
+          targetHost: null,
+          tunnelPointsHere: false,
           mismatch: false,
-          message: 'Заповніть Outgoing URL hint — повний webhook URL з Chatwoot.',
+          message: 'Заповніть Outgoing URL hint – повний webhook URL з Chatwoot.',
         },
       });
       return;
     }
 
     let targetBuild: string | null = null;
+    let targetProcessor: string | null = null;
     let fetchError: string | null = null;
     try {
       const probe = await fetch(targetHealthUrl, {
@@ -117,8 +138,9 @@ router.get('/webhook-processor-health', async (_req: Request, res: Response) => 
       const text = await probe.text();
       if (probe.ok) {
         try {
-          const json = JSON.parse(text) as { handoverBuild?: string };
+          const json = JSON.parse(text) as { handoverBuild?: string; processor?: string };
           targetBuild = json.handoverBuild?.trim() || null;
+          targetProcessor = json.processor?.trim() || null;
         } catch {
           fetchError = 'Health відповів не JSON';
         }
@@ -129,20 +151,43 @@ router.get('/webhook-processor-health', async (_req: Request, res: Response) => 
       fetchError = err instanceof Error ? err.message : String(err);
     }
 
-    const mismatch = targetBuild !== localBuild;
+    const targetHost = parseProcessorHost(targetProcessor);
+    const tunnelPointsHere =
+      localHost != null && targetHost != null && localHost === targetHost;
+    const buildMismatch = targetBuild != null && targetBuild !== localBuild;
+    const hostMismatch = targetHost != null && localHost != null && !tunnelPointsHere;
+    const mismatch = buildMismatch || hostMismatch || Boolean(fetchError);
+
+    const isDevTunnel = settings.outgoingUrlHint.includes('chatwoot-dev.nk-food.shop');
+    let message = 'Outgoing URL веде на цей процес (build і host збігаються).';
+    if (fetchError) {
+      message = isDevTunnel
+        ? `Тунель chatwoot-dev недоступний (${fetchError}). Запустіть: npm run dev:chatwoot`
+        : `Не вдалося перевірити webhook-хост: ${fetchError}`;
+    } else if (hostMismatch) {
+      message = isDevTunnel
+        ? `Chatwoot-dev зараз обслуговує host «${targetHost}», а цей backoffice – «${localHost}». Запустіть npm run dev:chatwoot на Mac і зупиніть cloudflared на VPS для цього тунелю.`
+        : `Webhook-хост (${targetHost}) – не цей сервер (${localHost}).`;
+    } else if (buildMismatch) {
+      message = `Різний build: тут ${localBuild}, на webhook-хості ${targetBuild}. Задеплойте або підніміть локальний тунель.`;
+    } else if (!targetBuild) {
+      message = 'На webhook-хості немає handoverBuild – застарілий деплой.';
+    }
+
     res.json({
       success: true,
       data: {
         localBuild,
+        localProcessor,
+        localHost,
         targetHealthUrl,
         targetBuild,
+        targetProcessor,
+        targetHost,
+        tunnelPointsHere,
         mismatch,
         fetchError,
-        message: mismatch
-          ? targetBuild
-            ? `Chatwoot б’є в інший build (${targetBuild}), ніж цей сервер (${localBuild}). Handover на цільовому хості — стара логіка → HTML 400.`
-            : 'Цільовий webhook-хост без handoverBuild (застарілий деплой). Echo може працювати, handover — ні. Потрібен деплой backoffice.'
-          : 'Webhook-хост і цей сервер на одному build.',
+        message,
       },
     });
   } catch (error) {
@@ -150,6 +195,66 @@ router.get('/webhook-processor-health', async (_req: Request, res: Response) => 
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Health check failed',
+    });
+  }
+});
+
+/**
+ * POST /api/chatwoot-bot/probe-outgoing-webhook
+ * Тестовий POST на Outgoing URL (перевірка тунелю / проксі). Див. термінал: 📦 Webhook raw body.
+ */
+router.post('/probe-outgoing-webhook', async (_req: Request, res: Response) => {
+  try {
+    const settings = await chatwootBotSettingsService.getSettings();
+    const postUrl = chatwootWebhookPostUrlFromOutgoingHint(settings.outgoingUrlHint);
+    if (!postUrl) {
+      res.status(400).json({ success: false, error: 'Заповніть коректний Outgoing URL hint' });
+      return;
+    }
+
+    const payload = {
+      event: 'message_created',
+      id: 899_999,
+      content: CHATWOOT_WEBHOOK_PROBE_CONTENT_MARKER,
+      message_type: 'incoming',
+      private: false,
+      conversation: { id: 1, inbox_id: 1, status: 'pending' },
+      sender: { id: 1, type: 'contact', name: 'Probe' },
+    };
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'User-Agent': 'NK-Backoffice-ChatwootBot-probe/1',
+    };
+    if (settings.webhookSecret.trim()) {
+      headers[CHATWOOT_WEBHOOK_SECRET_HEADER] = settings.webhookSecret.trim();
+    }
+
+    const probe = await fetch(postUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const bodyText = await probe.text().catch(() => '');
+
+    res.json({
+      success: true,
+      data: {
+        postUrl,
+        httpStatus: probe.status,
+        ok: probe.ok,
+        bodyPreview: bodyText.slice(0, 300),
+        hint:
+          'Якщо HTTP 200 – дивіться термінал dev (📦 Webhook raw body). Chatwoot шле на той самий URL, що в Agent Bot → Outgoing URL (не лише hint тут).',
+      },
+    });
+  } catch (error) {
+    logServer('[ChatwootBot] probe-outgoing-webhook failed', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Probe failed',
     });
   }
 });
@@ -212,6 +317,56 @@ router.get('/inbox-schedule', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/chatwoot-bot/conversations/:conversationId/unassign
+ * Debug: зняти assignee + скинути bot_human_handover_active (+ typing off).
+ */
+router.post('/conversations/:conversationId/unassign', async (req: Request, res: Response) => {
+  try {
+    const conversationId = Number(req.params.conversationId);
+    if (!Number.isFinite(conversationId) || conversationId <= 0) {
+      res.status(400).json({ success: false, error: 'Invalid conversationId' });
+      return;
+    }
+
+    const settings = await chatwootBotSettingsService.getSettings();
+    if (!settings.baseUrl.trim()) {
+      res.status(400).json({ success: false, error: 'Base URL не налаштовано' });
+      return;
+    }
+    if (!hasHandoverUserPat(settings) && !sanitizeChatwootApiToken(settings.apiAccessToken)) {
+      res.status(400).json({
+        success: false,
+        error: 'Потрібен User PAT (Inbox API token) або Agent Bot token',
+      });
+      return;
+    }
+
+    const reset = await resetHumanHandoverOnConversation(settings, conversationId, false);
+
+    releaseHumanAgentActivePersistSlot(conversationId);
+    logServer(
+      `[ChatwootBot] debug unassign conv=${conversationId} typing_off=${reset.typingOff}`,
+    );
+
+    res.json({
+      success: true,
+      data: {
+        conversationId,
+        unassigned: reset.unassigned,
+        humanHandoverAttrCleared: reset.humanHandoverAttrCleared,
+        typingOff: reset.typingOff,
+      },
+    });
+  } catch (error) {
+    logServer('[ChatwootBot] debug unassign failed', error);
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unassign failed',
+    });
+  }
+});
+
+/**
  * DELETE /api/chatwoot-bot/recent-events
  */
 router.delete('/recent-events', async (_req: Request, res: Response) => {
@@ -241,6 +396,33 @@ router.get('/recent-events', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to load events',
+    });
+  }
+});
+
+/**
+ * GET /api/chatwoot-bot/analytics/overview?from=&to=
+ */
+router.get('/analytics/overview', async (req: Request, res: Response) => {
+  try {
+    const now = new Date();
+    const defaultFrom = new Date(now);
+    defaultFrom.setDate(defaultFrom.getDate() - 7);
+    const fromRaw = String(req.query.from ?? '').trim();
+    const toRaw = String(req.query.to ?? '').trim();
+    const from = fromRaw ? new Date(fromRaw) : defaultFrom;
+    const to = toRaw ? new Date(toRaw) : now;
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      res.status(400).json({ success: false, error: 'Invalid from/to date' });
+      return;
+    }
+    const overview = await chatwootBotAnalyticsService.getOverview(from, to);
+    res.json({ success: true, data: overview });
+  } catch (error) {
+    logServer('[ChatwootBot] analytics overview failed', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to load analytics',
     });
   }
 });

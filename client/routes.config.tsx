@@ -32,6 +32,7 @@ const SettingsEquipment = lazyPage(() => import('./pages/SettingsEquipment'));
 const SettingsOrders = lazyPage(() => import('./pages/SettingsOrders'));
 const SettingsAdmin = lazyPage(() => import('./pages/SettingsAdmin'));
 const SettingsChatwootBot = lazyPage(() => import('./pages/SettingsChatwootBot'));
+const ChatwootBotStatistics = lazyPage(() => import('./pages/ChatwootBotStatistics'));
 const SettingsStorefront = lazyPage(() => import('./pages/SettingsStorefront'));
 const SettingsUsers = lazyPage(() => import('./pages/Settings/Users'));
 const SettingsDilovod = lazyPage(() => import('./pages/SettingsDilovod'));
@@ -768,15 +769,32 @@ export const appRoutes: AppRoute[] = [
     permission: { name: 'admin' },
   },
   {
-    path: '/settings/chatwoot-bot',
-    component: SettingsChatwootBot,
-    title: 'Chatwoot Agent Bot',
-    pageTitle: 'Chatwoot Agent Bot | NK Backoffice',
-    navLabel: 'Chatwoot Bot',
-    icon: <DynamicIcon name="bot" size={20} className="max-w-full max-h-full" />,
+    path: '/chatwoot-bot/statistics',
+    component: ChatwootBotStatistics,
+    title: 'Статистика Chatwoot Bot',
+    pageTitle: 'Статистика Chatwoot Bot | NK Backoffice',
+    navLabel: 'Статистика',
+    icon: <DynamicIcon name="bar-chart-3" size={16} />,
     inNav: true,
-    parent: 'settings',
-    order: 11,
+    parent: 'chatwoot-bot',
+    order: 0,
+    groupMeta: {
+      label: 'Chatwoot Bot',
+      icon: <DynamicIcon name="bot" size={20} />,
+      order: 9,
+    },
+    permission: { name: 'admin' },
+  },
+  {
+    path: '/chatwoot-bot/settings',
+    component: SettingsChatwootBot,
+    title: 'Налаштування Chatwoot Bot',
+    pageTitle: 'Chatwoot Agent Bot | NK Backoffice',
+    navLabel: 'Налаштування бота',
+    icon: <DynamicIcon name="settings" size={16} />,
+    inNav: true,
+    parent: 'chatwoot-bot',
+    order: 1,
     permission: { name: 'admin' },
   },
   {

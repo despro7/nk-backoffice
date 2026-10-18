@@ -8,7 +8,9 @@ import {
   type ChatwootBotEventRecord,
   type ChatwootBotEventSource,
   type ChatwootBotProcessResult,
+  type ChatwootBotReclaimReason,
   type ChatwootBotSettings,
+  CHATWOOT_WEBHOOK_PROBE_CONTENT_MARKER,
   type ChatwootBotWebhookHeadersMeta,
   type ChatwootWebhookMessageCreated,
 } from '../../../shared/types/chatwootBot.js';
@@ -20,6 +22,7 @@ import {
 import { createChatwootApiClient } from './ChatwootApiClient.js';
 import {
   extractCallbackPhone,
+  getConversationHumanAssigneeId,
   isConversationHandledByHuman,
   isOohCallbackPending,
   isWithinHandoverHours,
@@ -29,14 +32,22 @@ import {
   resolveHandoverAssigneeId,
   shouldPersistEvent,
 } from './ChatwootBotHandoverUtils.js';
+import { chatwootBotAnalyticsService } from './ChatwootBotAnalyticsService.js';
+import { evaluateHumanHandoverReclaim } from './chatwootReclaimDecision.js';
+import { resetHumanHandoverOnConversation } from './chatwootHandoverReset.js';
 import { chatwootBotEventLogService } from './ChatwootBotEventLogService.js';
 import { chatwootBotInboxHoursService } from './ChatwootBotInboxHoursService.js';
 import { chatwootBotSettingsService } from './ChatwootBotSettingsService.js';
+import { sanitizeChatwootApiToken } from './chatwootHttp.js';
 import { resolveConversationApiId } from './chatwootConversationId.js';
 import { assignHumanAgentWithBotFallback } from './chatwootHandoverAssign.js';
 import { ChatwootHandoverTrace } from './chatwootHandoverTrace.js';
 import { getChatwootProcessorStamp } from './chatwootProcessorStamp.js';
 import { runWithConversationLock } from './conversationWebhookQueue.js';
+import {
+  claimHumanAgentActivePersistSlot,
+  releaseHumanAgentActivePersistSlot,
+} from './humanAgentActivePersistGate.js';
 import { isDuplicateWebhookMessage } from './webhookMessageDedup.js';
 
 type ProcessLogContext = {
@@ -46,11 +57,52 @@ type ProcessLogContext = {
   webhookEvent: string | null;
 };
 
+export function isConversationResolvedStatusEvent(
+  payload: ChatwootWebhookMessageCreated,
+): boolean {
+  const event = String(payload.event ?? '').toLowerCase();
+  if (event === 'conversation_resolved') return true;
+  if (event === 'conversation_status_changed') {
+    const status = String(payload.conversation?.status ?? '').toLowerCase();
+    return status === 'resolved';
+  }
+  return false;
+}
+
+export function isAgentPublicOutgoingMessage(payload: ChatwootWebhookMessageCreated): boolean {
+  if (payload.private === true) return false;
+  const senderType = String(payload.sender?.type ?? '').toLowerCase();
+  if (senderType !== 'user') return false;
+  if (isIncomingMessageType(payload.message_type)) return false;
+  const mt = payload.message_type;
+  if (typeof mt === 'number') return mt === 1;
+  if (mt === undefined || mt === null) return false;
+  const normalized = String(mt).toLowerCase();
+  return normalized === 'outgoing' || normalized === '1';
+}
+
 function isIncomingMessageType(messageType: string | number | undefined): boolean {
   if (messageType === undefined || messageType === null) return false;
   if (typeof messageType === 'number') return messageType === 0;
   const normalized = String(messageType).toLowerCase();
   return normalized === 'incoming' || normalized === '0';
+}
+
+/** Agent Bot / частина account webhook не передає message_type – лише contact + text. */
+export function isIncomingContactMessage(payload: ChatwootWebhookMessageCreated): boolean {
+  if (payload.private === true) return false;
+  if (isIncomingMessageType(payload.message_type)) return true;
+
+  const event = payload.event ?? 'message_created';
+  if (event !== 'message_created') return false;
+
+  const senderType = String(payload.sender?.type ?? '').toLowerCase();
+  if (senderType && senderType !== 'contact') return false;
+
+  if (payload.message_type === undefined || payload.message_type === null) {
+    return Boolean(String(payload.content ?? '').trim());
+  }
+  return false;
 }
 
 function previewContent(content: string | null | undefined, max = 120): string {
@@ -181,7 +233,12 @@ export class ChatwootBotOrchestrator {
         logLine?: boolean;
       },
     ): Promise<ChatwootBotProcessResult> => {
-      const persist = partial.persist ?? shouldPersistEvent(partial.action, partial.reason);
+      const persist =
+        partial.persist ??
+        shouldPersistEvent(partial.action, partial.reason, {
+          persistPrivate: settings.eventLogPersistPrivate,
+          persistOtherNoise: settings.eventLogPersistOtherNoise,
+        });
       const eventFields = {
         action: partial.action,
         reason: partial.reason,
@@ -212,7 +269,52 @@ export class ChatwootBotOrchestrator {
       };
     };
 
+    if (content.includes(CHATWOOT_WEBHOOK_PROBE_CONTENT_MARKER)) {
+      logServer(
+        `[ChatwootBot] webhook probe OK conv=${conversationId ?? 'n/a'} (без echo в Chatwoot)`,
+      );
+      return finish({
+        action: 'ignored',
+        reason: 'webhook_probe',
+        details: 'Доставка webhook OK – echo не викликається для probe',
+        persist: true,
+      });
+    }
+
+    if (isConversationResolvedStatusEvent(payload)) {
+      if (!conversationId) {
+        return finish({ action: 'error', reason: 'missing_conversation_id', success: false });
+      }
+      if (!settings.resolveCleanupEnabled) {
+        return finish({
+          action: 'ignored',
+          reason: 'resolve_cleanup_disabled',
+          persist: false,
+          logLine: false,
+        });
+      }
+      const reset = await resetHumanHandoverOnConversation(settings, conversationId, dryRun);
+      releaseHumanAgentActivePersistSlot(conversationId);
+      chatwootBotAnalyticsService.recordBestEffort({
+        kind: 'resolved',
+        conversationId,
+        inboxId:
+          payload.conversation?.inbox_id ??
+          payload.inbox?.id ??
+          settings.handoverDefaultInboxId ??
+          null,
+      });
+      return finish({
+        action: 'ignored',
+        reason: 'resolve_cleanup',
+        details: `unassign=${reset.unassigned}; attr_cleared=${reset.humanHandoverAttrCleared}; typing_off=${reset.typingOff}`,
+      });
+    }
+
     if (!settings.enabled) {
+      logServer(
+        `[ChatwootBot] webhook ignored: bot_disabled conv=${conversationId ?? 'n/a'} msg=${messageId ?? 'n/a'} (увімкніть «Бот увімкнено»)`,
+      );
       return finish({ action: 'ignored', reason: 'bot_disabled' });
     }
 
@@ -220,17 +322,29 @@ export class ChatwootBotOrchestrator {
       return finish({
         action: 'ignored',
         reason: `unsupported_event:${payload.event}`,
-        persist: false,
-        logLine: false,
       });
     }
 
     if (payload.private === true) {
-      return finish({ action: 'ignored', reason: 'private_message', persist: false, logLine: false });
+      return finish({ action: 'ignored', reason: 'private_message' });
     }
 
-    if (!isIncomingMessageType(payload.message_type)) {
-      return finish({ action: 'ignored', reason: 'not_incoming', persist: false, logLine: false });
+    if (!isIncomingContactMessage(payload)) {
+      if (isAgentPublicOutgoingMessage(payload) && conversationId) {
+        chatwootBotAnalyticsService.recordBestEffort({
+          kind: 'agent_message',
+          conversationId,
+          messageId,
+          inboxId:
+            payload.conversation?.inbox_id ??
+            payload.inbox?.id ??
+            settings.handoverDefaultInboxId ??
+            null,
+          agentId: payload.sender?.id ?? null,
+          content,
+        });
+      }
+      return finish({ action: 'ignored', reason: 'not_incoming' });
     }
 
     if (source === 'webhook' && isDuplicateWebhookMessage(messageId)) {
@@ -247,23 +361,11 @@ export class ChatwootBotOrchestrator {
       return finish({
         action: 'ignored',
         reason: `sender_not_contact:${senderType || 'unknown'}`,
-        persist: false,
-        logLine: false,
       });
     }
 
     if (!conversationId) {
       return finish({ action: 'error', reason: 'missing_conversation_id', success: false });
-    }
-
-    const customAttrsEarly = getConversationCustomAttributes(payload);
-    if (isConversationHandledByHuman(payload, customAttrsEarly)) {
-      return finish({
-        action: 'ignored',
-        reason: 'human_agent_active',
-        persist: false,
-        logLine: false,
-      });
     }
 
     const inboxId =
@@ -278,6 +380,64 @@ export class ChatwootBotOrchestrator {
       { skipCache: true },
     );
     const inHours = hoursResult.inHours;
+
+    chatwootBotAnalyticsService.recordBestEffort({
+      kind: 'customer_message',
+      conversationId,
+      messageId,
+      inboxId,
+      content,
+      inHours,
+    });
+
+    const customAttrsEarly = getConversationCustomAttributes(payload);
+    if (isConversationHandledByHuman(payload, customAttrsEarly)) {
+      const reclaimDecision = await evaluateHumanHandoverReclaim(
+        settings,
+        payload,
+        conversationId,
+        inHours,
+      );
+      if (!reclaimDecision.shouldReclaim) {
+        let typingOff: 'ok' | 'fail' | 'skipped' | 'dry_run' = 'skipped';
+        if (dryRun) {
+          typingOff = 'dry_run';
+        } else if (
+          settings.baseUrl.trim() &&
+          sanitizeChatwootApiToken(settings.apiAccessToken)
+        ) {
+          const client = createChatwootApiClient(botMessagingCredentials(settings));
+          const ok = await client.toggleTypingStatusBestEffort(conversationId, 'off');
+          typingOff = ok ? 'ok' : 'fail';
+        }
+
+        const persist = claimHumanAgentActivePersistSlot(conversationId);
+        return finish({
+          action: 'ignored',
+          reason: 'human_agent_active',
+          persist,
+          logLine: true,
+          details: `human assignee; typing_off=${typingOff}${persist ? '' : '; journal=dedup'}`,
+        });
+      }
+
+      const assigneeId = getConversationHumanAssigneeId(payload);
+      const reclaimResult = await this.performHardReclaim(
+        settings,
+        logCtx,
+        conversationId,
+        dryRun,
+        contentPreview,
+        messageId,
+        reclaimDecision.reason,
+        reclaimDecision.publicMessage,
+        assigneeId,
+        inHours,
+      );
+      if (!reclaimResult.continueFlow) {
+        return reclaimResult.result!;
+      }
+    }
     const hoursLog = `hours=${inHours ? 'in' : 'ooh'};source=${hoursResult.source};inbox=${inboxId ?? 'n/a'}`;
     const handoverKw = matchesHandover(content, settings.handoverKeywords);
     const emergency = matchesEmergency(content, settings);
@@ -345,6 +505,109 @@ export class ChatwootBotOrchestrator {
     }
 
     return this.handleEcho(settings, logCtx, conversationId, dryRun, contentPreview, messageId);
+  }
+
+  private async performHardReclaim(
+    settings: ChatwootBotSettings,
+    logCtx: ProcessLogContext,
+    conversationId: number,
+    dryRun: boolean,
+    contentPreview: string,
+    messageId: number | null,
+    reason: ChatwootBotReclaimReason,
+    publicMessage: string,
+    assigneeId: number | null,
+    inHours: boolean,
+  ): Promise<{ continueFlow: boolean; result?: ChatwootBotProcessResult }> {
+    releaseHumanAgentActivePersistSlot(conversationId);
+    chatwootBotAnalyticsService.recordBestEffort({
+      kind: 'reclaim',
+      conversationId,
+      messageId,
+      agentId: assigneeId,
+      inHours,
+      meta: { reason, assigneeId },
+    });
+
+    const continueFlow = settings.reclaimContinueWithEcho;
+
+    if (dryRun) {
+      const event = await persistEvent(logCtx, settings, {
+        action: 'handover',
+        reason: `dry_run_${reason}`,
+        conversationId,
+        messageId,
+        contentPreview,
+        dryRun: true,
+        details: `Would reclaim + public: ${previewContent(publicMessage, 120)}`,
+      });
+      logServer(`[ChatwootBot] reclaim dry_run ${reason} conv=${conversationId}`);
+      return {
+        continueFlow,
+        result: continueFlow
+          ? undefined
+          : {
+              success: true,
+              action: 'handover',
+              reason: `dry_run_${reason}`,
+              conversationId,
+              dryRun: true,
+              event,
+            },
+      };
+    }
+
+    try {
+      const reset = await resetHumanHandoverOnConversation(settings, conversationId, false);
+      const botClient = createChatwootApiClient(botMessagingCredentials(settings));
+      await botClient.createOutgoingMessage(conversationId, publicMessage, false);
+      const event = await persistEvent(logCtx, settings, {
+        action: 'handover',
+        reason,
+        conversationId,
+        messageId,
+        contentPreview,
+        dryRun: false,
+        details: `reclaim; typing_off=${reset.typingOff}; msg=${previewContent(publicMessage, 120)}`,
+      });
+      logServer(`[ChatwootBot] reclaim ${reason} conv=${conversationId}`);
+      return {
+        continueFlow,
+        result: continueFlow
+          ? undefined
+          : {
+              success: true,
+              action: 'handover',
+              reason,
+              conversationId,
+              dryRun: false,
+              event,
+            },
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logServer('[ChatwootBot] reclaim failed', err);
+      const event = await persistEvent(logCtx, settings, {
+        action: 'error',
+        reason: `${reason}_failed`,
+        conversationId,
+        messageId,
+        contentPreview,
+        dryRun: false,
+        details: message,
+      });
+      return {
+        continueFlow: false,
+        result: {
+          success: false,
+          action: 'error',
+          reason: `${reason}_failed`,
+          conversationId,
+          dryRun: false,
+          event,
+        },
+      };
+    }
   }
 
   private async handleEcho(
@@ -653,7 +916,7 @@ export class ChatwootBotOrchestrator {
         try {
           await client.createOutgoingMessage(
             conversationId,
-            'Handover OOH: клієнт просив оператора поза робочими годинами — очікуємо контакти або допомогу бота.',
+            'Handover OOH: клієнт просив оператора поза робочими годинами – очікуємо контакти або допомогу бота.',
             true,
           );
         } catch (noteErr) {

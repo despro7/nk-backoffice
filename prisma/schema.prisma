@@ -1093,3 +1093,23 @@ model ChatwootBotWebhookLog {
   @@index([createdAt])
   @@map("chatwoot_bot_webhook_logs")
 }
+
+/// Аналітика Chatwoot Bot (окремо від debug-журналу webhook).
+model ChatwootBotAnalyticsEvent {
+  id               String   @id @default(uuid()) @db.VarChar(36)
+  kind             String   @db.VarChar(32)
+  conversationId   Int?
+  messageId        Int?
+  inboxId          Int?
+  agentId          Int?
+  contentPreview   String?  @db.VarChar(512)
+  contentNorm      String?  @db.VarChar(512)
+  inHours          Boolean?
+  meta             Json?
+  createdAt        DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([kind, createdAt])
+  @@index([contentNorm])
+  @@map("chatwoot_bot_analytics_events")
+}

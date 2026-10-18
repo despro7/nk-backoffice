@@ -51,6 +51,8 @@ type FormState = {
   eventLogRetentionDays: number;
   eventLogMaxRecords: number;
   eventLogStoreFullPayload: boolean;
+  eventLogPersistPrivate: boolean;
+  eventLogPersistOtherNoise: boolean;
   handoverAssignMode: ChatwootHandoverAssignMode;
   handoverAssigneeId: number | null;
   handoverDefaultInboxId: number | null;
@@ -63,6 +65,19 @@ type FormState = {
   handoverEmergencyEnabled: boolean;
   handoverEmergencyKeywordsText: string;
   handoverMessageEmergency: string;
+  reclaimEnabled: boolean;
+  reclaimOnAssigneeOffline: boolean;
+  reclaimOnOohAgentSilent: boolean;
+  reclaimOohSilentMinutes: number;
+  reclaimOohTreatNoAgentReplyAsSilent: boolean;
+  reclaimInHoursAgentSilentEnabled: boolean;
+  reclaimInHoursSilentMinutes: number;
+  reclaimInHoursTreatNoAgentReplyAsSilent: boolean;
+  reclaimMessageOffline: string;
+  reclaimMessageOoh: string;
+  reclaimMessageInHours: string;
+  reclaimContinueWithEcho: boolean;
+  resolveCleanupEnabled: boolean;
 };
 
 function keywordsToText(keywords: string[]): string {
@@ -76,31 +91,53 @@ function textToKeywords(text: string): string[] {
     .filter(Boolean);
 }
 
+function compressHandoverTrace(traceBody: string): string {
+  const bits: string[] = [];
+  if (traceBody.includes('bot_handoff:ok')) bits.push('handoff✓');
+  else if (traceBody.includes('bot_handoff:start')) bits.push('handoff…');
+  if (/auto_inbox:assignee=#\d+/.test(traceBody)) {
+    bits.push(traceBody.match(/auto_inbox:assignee=#\d+/)?.[0] ?? 'assign✓');
+  } else if (traceBody.includes('auto_inbox:assignee=none') || traceBody.includes('skip:auto_inbox')) {
+    bits.push('assign:none');
+  } else if (traceBody.includes('assign:via_')) {
+    bits.push(traceBody.match(/assign:via_\w+/)?.[0] ?? 'assign✓');
+  }
+  if (traceBody.includes('public_message:ok')) bits.push('msg✓');
+  if (traceBody.includes('private_note:ok')) bits.push('note✓');
+  if (traceBody.includes('custom_attributes:ok')) bits.push('attrs✓');
+  return bits.join(' ');
+}
+
 function formatEventLogDetails(details: string): string {
   const trimmed = details.trim();
-  const keep = (() => {
-    const parts: string[] = [];
-    const processor = trimmed.match(/build=[^;]+;host=[^;]+;pid=\d+/);
-    if (processor) parts.push(processor[0]);
-    const step = trimmed.match(/handover step=[^\s·]+/);
-    if (step) parts.push(step[0]);
-    const trace = trimmed.match(/trace=[^·]+/);
-    if (trace) parts.push(trace[0]);
-    return parts.length > 0 ? `${parts.join(' · ')} · ` : '';
-  })();
 
   if (
     trimmed.includes('<!DOCTYPE') ||
     trimmed.includes('<html') ||
     /HTML\s+\d{3}/i.test(trimmed)
   ) {
+    const step = trimmed.match(/handover step=[^\s·]+/)?.[0];
+    const proc = trimmed.match(/build=[^;]+;host=[^;]+;pid=\d+/)?.[0];
     const title = trimmed.match(/<title>\s*([^<]+)/i)?.[1]?.replace(/\s+/g, ' ').trim();
-    const summary = title
-      ? `HTML ${title}`
-      : trimmed.match(/HTML\s+[^·]+/i)?.[0] ?? 'HTML-відповідь проксі';
-    return `${keep}${summary}`;
+    const summary = title ? `HTML ${title}` : 'HTML-відповідь проксі';
+    return [step, proc, summary].filter(Boolean).join(' · ');
   }
-  const max = 480;
+
+  const stepErr = trimmed.match(/handover step=[^\s·]+/)?.[0];
+  const proc = trimmed.match(/build=[^;]+;host=[^;]+;pid=\d+/)?.[0];
+  const mode = trimmed.match(/mode=\w+/)?.[0];
+  const hours = trimmed.match(/hours=(?:in|ooh)/)?.[0];
+  const assign =
+    trimmed.match(/auto_inbox:(?:#\d+|none)/)?.[0] ??
+    trimmed.match(/manual:[^\s·]+/)?.[0];
+  const traceRaw = trimmed.match(/trace=([^·]+)/)?.[1];
+
+  if (traceRaw || mode || stepErr) {
+    const traceShort = traceRaw ? compressHandoverTrace(traceRaw) : '';
+    return [mode, hours, assign, traceShort, stepErr, proc].filter(Boolean).join(' · ');
+  }
+
+  const max = 220;
   return trimmed.length > max ? `${trimmed.slice(0, max)}…` : trimmed;
 }
 
@@ -122,6 +159,8 @@ function toFormState(data: ChatwootBotSettingsResponse): FormState {
     eventLogRetentionDays: data.eventLogRetentionDays,
     eventLogMaxRecords: data.eventLogMaxRecords,
     eventLogStoreFullPayload: data.eventLogStoreFullPayload,
+    eventLogPersistPrivate: data.eventLogPersistPrivate,
+    eventLogPersistOtherNoise: data.eventLogPersistOtherNoise,
     handoverAssignMode: data.handoverAssignMode,
     handoverAssigneeId: data.handoverAssigneeId,
     handoverDefaultInboxId: data.handoverDefaultInboxId,
@@ -134,6 +173,19 @@ function toFormState(data: ChatwootBotSettingsResponse): FormState {
     handoverEmergencyEnabled: data.handoverEmergencyEnabled,
     handoverEmergencyKeywordsText: keywordsToText(data.handoverEmergencyKeywords),
     handoverMessageEmergency: data.handoverMessageEmergency,
+    reclaimEnabled: data.reclaimEnabled,
+    reclaimOnAssigneeOffline: data.reclaimOnAssigneeOffline,
+    reclaimOnOohAgentSilent: data.reclaimOnOohAgentSilent,
+    reclaimOohSilentMinutes: data.reclaimOohSilentMinutes,
+    reclaimOohTreatNoAgentReplyAsSilent: data.reclaimOohTreatNoAgentReplyAsSilent,
+    reclaimInHoursAgentSilentEnabled: data.reclaimInHoursAgentSilentEnabled,
+    reclaimInHoursSilentMinutes: data.reclaimInHoursSilentMinutes,
+    reclaimInHoursTreatNoAgentReplyAsSilent: data.reclaimInHoursTreatNoAgentReplyAsSilent,
+    reclaimMessageOffline: data.reclaimMessageOffline,
+    reclaimMessageOoh: data.reclaimMessageOoh,
+    reclaimMessageInHours: data.reclaimMessageInHours,
+    reclaimContinueWithEcho: data.reclaimContinueWithEcho,
+    resolveCleanupEnabled: data.resolveCleanupEnabled,
   };
 }
 
@@ -156,11 +208,11 @@ function actionColor(action: ChatwootBotEventRecord['action']): 'success' | 'war
 
 const replyModeRadioCardClassNames: RadioProps['classNames'] = {
   base: cn(
-    'group relative inline-flex max-w-none w-full min-w-[min(100%,280px)] flex-1 flex-row items-center',
-    'justify-start gap-4 m-0 p-4 cursor-pointer select-none tap-highlight-transparent',
-    'border-2 border-default rounded-large',
-    'hover:opacity-70 active:opacity-50',
-    'data-[selected=true]:border-primary',
+    'group relative inline-flex max-w-none w-full min-w-0 flex-1 flex-row items-center',
+    'justify-start gap-2 m-0 px-3 py-2 cursor-pointer select-none tap-highlight-transparent',
+    'border border-default-200 rounded-medium',
+    'hover:bg-default-100 active:opacity-80',
+    'data-[selected=true]:border-primary data-[selected=true]:bg-primary-50/40',
   ),
   wrapper: cn(
     'shrink-0',
@@ -168,9 +220,38 @@ const replyModeRadioCardClassNames: RadioProps['classNames'] = {
     'group-data-[focus-visible=true]:outline-none',
   ),
   labelWrapper: 'flex flex-col gap-0.5 flex-1 min-w-0 ms-0 ml-0',
-  label: 'font-medium text-foreground',
-  description: 'text-small text-foreground-500',
+  label: 'text-sm font-medium text-foreground',
+  description: 'text-xs text-foreground-500',
 };
+
+function FormSwitchField({
+  isSelected,
+  onValueChange,
+  isDisabled,
+  title,
+  description,
+}: {
+  isSelected: boolean;
+  onValueChange: (v: boolean) => void;
+  isDisabled?: boolean;
+  title: string;
+  description?: string;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <Switch
+        classNames={{ base: 'mt-0.5' }}
+        isSelected={isSelected}
+        isDisabled={isDisabled}
+        onValueChange={onValueChange}
+      />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">{title}</p>
+        {description ? <p className="text-xs text-default-500">{description}</p> : null}
+      </div>
+    </div>
+  );
+}
 
 type ReplyModeRadioProps = RadioProps & {
   description?: string;
@@ -222,13 +303,14 @@ const SettingsChatwootBot: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
-  const [isSimulating, setIsSimulating] = useState<'echo' | 'handover' | null>(null);
+  const [isProbingWebhook, setIsProbingWebhook] = useState(false);
   const [events, setEvents] = useState<ChatwootBotEventRecord[]>([]);
   const [agents, setAgents] = useState<ChatwootBotAgentSummary[]>([]);
   const [tokenVisible, setTokenVisible] = useState(false);
   const [secretVisible, setSecretVisible] = useState(false);
   const [isClearingWebhookSecret, setIsClearingWebhookSecret] = useState(false);
   const [isClearingEvents, setIsClearingEvents] = useState(false);
+  const [unassigningConvId, setUnassigningConvId] = useState<number | null>(null);
   const [clearEventsConfirm, setClearEventsConfirm] = useState(false);
   const [inboxTokenVisible, setInboxTokenVisible] = useState(false);
   const [expandedPayloadIds, setExpandedPayloadIds] = useState<Set<string>>(new Set());
@@ -236,8 +318,11 @@ const SettingsChatwootBot: React.FC = () => {
   const [isLoadingInboxHours, setIsLoadingInboxHours] = useState(false);
   const [webhookProcessorHealth, setWebhookProcessorHealth] = useState<{
     localBuild: string;
+    localHost?: string | null;
     targetHealthUrl: string | null;
     targetBuild: string | null;
+    targetHost?: string | null;
+    tunnelPointsHere?: boolean;
     mismatch: boolean;
     message: string;
   } | null>(null);
@@ -333,6 +418,8 @@ const SettingsChatwootBot: React.FC = () => {
         eventLogRetentionDays: Number(form.eventLogRetentionDays),
         eventLogMaxRecords: Number(form.eventLogMaxRecords),
         eventLogStoreFullPayload: form.eventLogStoreFullPayload,
+        eventLogPersistPrivate: form.eventLogPersistPrivate,
+        eventLogPersistOtherNoise: form.eventLogPersistOtherNoise,
         handoverAssignMode: form.handoverAssignMode,
         handoverAssigneeId: form.handoverAssigneeId,
         handoverDefaultInboxId: form.handoverDefaultInboxId,
@@ -343,6 +430,19 @@ const SettingsChatwootBot: React.FC = () => {
         handoverEmergencyEnabled: form.handoverEmergencyEnabled,
         handoverEmergencyKeywords: textToKeywords(form.handoverEmergencyKeywordsText),
         handoverMessageEmergency: form.handoverMessageEmergency,
+        reclaimEnabled: form.reclaimEnabled,
+        reclaimOnAssigneeOffline: form.reclaimOnAssigneeOffline,
+        reclaimOnOohAgentSilent: form.reclaimOnOohAgentSilent,
+        reclaimOohSilentMinutes: Number(form.reclaimOohSilentMinutes),
+        reclaimOohTreatNoAgentReplyAsSilent: form.reclaimOohTreatNoAgentReplyAsSilent,
+        reclaimInHoursAgentSilentEnabled: form.reclaimInHoursAgentSilentEnabled,
+        reclaimInHoursSilentMinutes: Number(form.reclaimInHoursSilentMinutes),
+        reclaimInHoursTreatNoAgentReplyAsSilent: form.reclaimInHoursTreatNoAgentReplyAsSilent,
+        reclaimMessageOffline: form.reclaimMessageOffline,
+        reclaimMessageOoh: form.reclaimMessageOoh,
+        reclaimMessageInHours: form.reclaimMessageInHours,
+        reclaimContinueWithEcho: form.reclaimContinueWithEcho,
+        resolveCleanupEnabled: form.resolveCleanupEnabled,
       });
       setForm(toFormState(saved));
       setTokenVisible(false);
@@ -433,24 +533,23 @@ const SettingsChatwootBot: React.FC = () => {
     }
   };
 
-  const handleSimulate = async (fixture: 'echo' | 'handover') => {
-    setIsSimulating(fixture);
+  const handleUnassignConversation = async (conversationId: number) => {
+    setUnassigningConvId(conversationId);
     try {
-      const result = await chatwootBotApi.simulate({ fixture });
+      const result = await chatwootBotApi.unassignConversation(conversationId);
       ToastService.show({
-        title: `Симуляція: ${result.action}`,
-        description: `${result.reason}${result.dryRun ? ' (dry_run)' : ''}`,
-        color: result.success ? 'success' : 'danger',
+        title: `Знято assignee · conv #${conversationId}`,
+        description: `handover attr cleared · typing_off=${result.typingOff}`,
+        color: 'success',
       });
-      await loadEvents();
     } catch (error) {
       ToastService.show({
-        title: 'Помилка симуляції',
-        description: error instanceof Error ? error.message : 'Simulate failed',
+        title: 'Не вдалося зняти assignee',
+        description: error instanceof Error ? error.message : 'Unassign failed',
         color: 'danger',
       });
     } finally {
-      setIsSimulating(null);
+      setUnassigningConvId(null);
     }
   };
 
@@ -467,7 +566,7 @@ const SettingsChatwootBot: React.FC = () => {
   return (
     <div className="space-y-6">
       <p className="text-sm text-default-500">
-        Echo + handover з робочими годинами, OOH і екстреним викликом. LLM (Jev) — наступна фаза.
+        Echo + handover з робочими годинами, OOH і екстреним викликом. LLM (Jev) – наступна фаза.
       </p>
 
       {webhookProcessorHealth?.mismatch && (
@@ -476,24 +575,49 @@ const SettingsChatwootBot: React.FC = () => {
             <div className="flex gap-2 items-start">
               <DynamicIcon name="triangle-alert" size={20} className="text-danger shrink-0 mt-0.5" />
               <div className="text-sm space-y-2">
-                <p className="font-semibold text-danger-800">Webhook обробляється не цим кодом</p>
+                <p className="font-semibold text-danger-800">Webhook не на цей backoffice</p>
                 <p className="text-danger-900/90">{webhookProcessorHealth.message}</p>
                 <p className="text-xs text-danger-800/80 font-mono">
-                  local={webhookProcessorHealth.localBuild}
-                  {webhookProcessorHealth.targetBuild
-                    ? ` · target=${webhookProcessorHealth.targetBuild}`
-                    : ' · target=(немає handoverBuild — старий прод)'}
-                </p>
-                <p className="text-xs text-default-600">
-                  Симуляція в UI йде на локальний сервер (працює). Повідомлення з Chatwoot йдуть на Outgoing URL —
-                  зараз це дає HTML 400 на handover. Рішення: задеплоїти backoffice з поточним build або тимчасово
-                  вказати в Chatwoot URL тунелю dev (`chatwoot-dev.nk-food.shop`).
+                  local host={webhookProcessorHealth.localHost ?? '?'} build=
+                  {webhookProcessorHealth.localBuild}
+                  {webhookProcessorHealth.targetHost
+                    ? ` · tunnel host=${webhookProcessorHealth.targetHost} build=${webhookProcessorHealth.targetBuild ?? '?'}`
+                    : ''}
                 </p>
               </div>
             </div>
           </CardBody>
         </Card>
       )}
+
+      {!form.enabled && (
+        <Card className="border-2 border-warning-300 bg-warning-50/50">
+          <CardBody className="p-4 text-sm text-warning-900">
+            <strong>Бот вимкнено.</strong> HTTP webhook може долітати, але обробка йде в{' '}
+            <span className="font-mono">bot_disabled</span> – echo/handover не виконуються. Увімкніть
+            перемикач нижче, режим <span className="font-mono">live</span> і натисніть «Зберегти».
+          </CardBody>
+        </Card>
+      )}
+
+      {webhookProcessorHealth &&
+        !webhookProcessorHealth.mismatch &&
+        webhookProcessorHealth.tunnelPointsHere &&
+        form.outgoingUrlHint.includes('chatwoot-dev') && (
+          <Card className="border border-success-200 bg-success-50/50">
+            <CardBody className="p-4 text-sm text-success-900 space-y-1">
+              <p>
+                Health тунелю chatwoot-dev вказує на цей Mac. Перевірте доставку кнопкою «Тест
+                Outgoing URL» – у терміналі має зʼявитись{' '}
+                <span className="font-mono text-xs">📦 Webhook raw body</span>.
+              </p>
+              <p className="text-xs text-success-800/90">
+                У Chatwoot → Agent Bot → <strong>Outgoing URL</strong> має бути той самий рядок, що
+                в hint (backoffice hint сам Chatwoot не змінює).
+              </p>
+            </CardBody>
+          </Card>
+        )}
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <div className="flex flex-col gap-6 min-w-0 pr-1">
@@ -507,79 +631,86 @@ const SettingsChatwootBot: React.FC = () => {
                 <Switch isSelected={form.enabled} onValueChange={(v) => updateField('enabled', v)} />
                 <div>
                   <p className="text-sm font-medium">Бот увімкнено</p>
-                  <p className="text-xs text-default-500">Якщо вимкнено — webhook ігнорує повідомлення</p>
+                  <p className="text-xs text-default-500">
+                    Вимкнено – у журналі <span className="font-mono">bot_disabled</span>, без echo/handover
+                  </p>
                 </div>
               </div>
 
-              <Input
-                label="Base URL Chatwoot"
-                placeholder="https://chat.example.com"
-                value={form.baseUrl}
-                onValueChange={(v) => updateField('baseUrl', v)}
-              />
+              <div className="flex flex-col sm:flex-row gap-4 sm:items-start">
+                <Input
+                  className="min-w-0 flex-1"
+                  label="Base URL Chatwoot"
+                  placeholder="https://chat.example.com"
+                  value={form.baseUrl}
+                  onValueChange={(v) => updateField('baseUrl', v)}
+                />
+                <Input
+                  className="w-full sm:w-28 sm:shrink-0"
+                  type="number"
+                  label="Account ID"
+                  value={String(form.accountId)}
+                  onValueChange={(v) => updateField('accountId', Number(v) || 1)}
+                />
+              </div>
 
-              <Input
-                type="number"
-                label="Account ID"
-                value={String(form.accountId)}
-                onValueChange={(v) => updateField('accountId', Number(v) || 1)}
-              />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Input
+                  label="API Access Token"
+                  type={tokenVisible ? 'text' : 'password'}
+                  placeholder={
+                    form.hasApiAccessToken
+                      ? `Збережено: ${form.apiAccessTokenMasked}`
+                      : 'Вставте api_access_token'
+                  }
+                  value={form.apiAccessToken}
+                  onValueChange={(v) => updateField('apiAccessToken', v)}
+                  description="Токен Agent Bot – для echo/handover і POST assignments (assign конкретного агента через API, не плутати з UI «політики призначення» Business plan)."
+                  endContent={
+                    form.apiAccessToken.trim() ? (
+                      <Tooltip content={tokenVisible ? 'Приховати' : 'Показати'} placement="top">
+                        <Button
+                          size="sm"
+                          variant="light"
+                          isIconOnly
+                          aria-label={tokenVisible ? 'Приховати token' : 'Показати token'}
+                          onPress={() => setTokenVisible((v) => !v)}
+                        >
+                          <DynamicIcon name={tokenVisible ? 'eye-off' : 'eye'} size={16} />
+                        </Button>
+                      </Tooltip>
+                    ) : null
+                  }
+                />
 
-              <Input
-                label="API Access Token"
-                type={tokenVisible ? 'text' : 'password'}
-                placeholder={
-                  form.hasApiAccessToken
-                    ? `Збережено: ${form.apiAccessTokenMasked}`
-                    : 'Вставте api_access_token'
-                }
-                value={form.apiAccessToken}
-                onValueChange={(v) => updateField('apiAccessToken', v)}
-                description="Токен Agent Bot — для echo/handover і POST assignments (assign конкретного агента через API, не плутати з UI «політики призначення» Business plan)."
-                endContent={
-                  form.apiAccessToken.trim() ? (
-                    <Tooltip content={tokenVisible ? 'Приховати' : 'Показати'} placement="top">
-                      <Button
-                        size="sm"
-                        variant="light"
-                        isIconOnly
-                        aria-label={tokenVisible ? 'Приховати token' : 'Показати token'}
-                        onPress={() => setTokenVisible((v) => !v)}
-                      >
-                        <DynamicIcon name={tokenVisible ? 'eye-off' : 'eye'} size={16} />
-                      </Button>
-                    </Tooltip>
-                  ) : null
-                }
-              />
-
-              <Input
-                label="Inbox API token (User PAT, опційно)"
-                type={inboxTokenVisible ? 'text' : 'password'}
-                placeholder={
-                  form.hasInboxApiAccessToken
-                    ? `Збережено: ${form.inboxApiAccessTokenMasked}`
-                    : 'Personal Access Token з профілю Chatwoot'
-                }
-                value={form.inboxApiAccessToken}
-                onValueChange={(v) => updateField('inboxApiAccessToken', v)}
-                description="Handover: спочатку Agent Bot token (bot_handoff + assign). PAT — fallback для assign на старих Chatwoot, список агентів і години inbox."
-                endContent={
-                  form.inboxApiAccessToken.trim() ? (
-                    <Tooltip content={inboxTokenVisible ? 'Приховати' : 'Показати'} placement="top">
-                      <Button
-                        size="sm"
-                        variant="light"
-                        isIconOnly
-                        aria-label={inboxTokenVisible ? 'Приховати inbox token' : 'Показати inbox token'}
-                        onPress={() => setInboxTokenVisible((v) => !v)}
-                      >
-                        <DynamicIcon name={inboxTokenVisible ? 'eye-off' : 'eye'} size={16} />
-                      </Button>
-                    </Tooltip>
-                  ) : null
-                }
-              />
+                <Input
+                  label="Inbox API token (User PAT, опційно)"
+                  type={inboxTokenVisible ? 'text' : 'password'}
+                  placeholder={
+                    form.hasInboxApiAccessToken
+                      ? `Збережено: ${form.inboxApiAccessTokenMasked}`
+                      : 'Personal Access Token з профілю Chatwoot'
+                  }
+                  value={form.inboxApiAccessToken}
+                  onValueChange={(v) => updateField('inboxApiAccessToken', v)}
+                  description="Handover: спочатку Agent Bot token (bot_handoff + assign). PAT – fallback для assign на старих Chatwoot, список агентів і години inbox."
+                  endContent={
+                    form.inboxApiAccessToken.trim() ? (
+                      <Tooltip content={inboxTokenVisible ? 'Приховати' : 'Показати'} placement="top">
+                        <Button
+                          size="sm"
+                          variant="light"
+                          isIconOnly
+                          aria-label={inboxTokenVisible ? 'Приховати inbox token' : 'Показати inbox token'}
+                          onPress={() => setInboxTokenVisible((v) => !v)}
+                        >
+                          <DynamicIcon name={inboxTokenVisible ? 'eye-off' : 'eye'} size={16} />
+                        </Button>
+                      </Tooltip>
+                    ) : null
+                  }
+                />
+              </div>
 
               <Input
                 label="Webhook Secret"
@@ -587,11 +718,11 @@ const SettingsChatwootBot: React.FC = () => {
                 placeholder={
                   form.hasWebhookSecret
                     ? `Збережено: ${form.webhookSecretMasked}`
-                    : 'Порожньо — без plain header (рекомендовано до HMAC)'
+                    : 'Порожньо – без plain header (рекомендовано до HMAC)'
                 }
                 value={form.webhookSecret}
                 onValueChange={(v) => updateField('webhookSecret', v)}
-                description="Новий secret — введіть і «Зберегти». Порожнє поле не змінює збережене; іконка справа очищає його."
+                description="Новий secret – введіть і «Зберегти». Порожнє поле не змінює збережене; іконка справа очищає його."
                 endContent={
                   form.hasWebhookSecret && !form.webhookSecret.trim() ? (
                     <Tooltip content="Очистити збережений Webhook Secret" placement="top">
@@ -624,27 +755,73 @@ const SettingsChatwootBot: React.FC = () => {
                   ) : null
                 }
               />
-
-              <Input
-                label="Outgoing URL hint"
-                value={form.outgoingUrlHint}
-                onValueChange={(v) => updateField('outgoingUrlHint', v)}
-                description="Підказка для Agent Bot у Chatwoot (не викликається кодом)"
-              />
+              <div className="rounded-medium border border-default-200 p-3 flex flex-col gap-2">
+                <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
+                  <Input
+                    className="min-w-0 flex-1"
+                    label="Outgoing URL hint"
+                    value={form.outgoingUrlHint}
+                    onValueChange={(v) => updateField('outgoingUrlHint', v)}
+                  />
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    className="shrink-0 w-full sm:w-auto"
+                    isDisabled={!form.outgoingUrlHint.trim()}
+                    isLoading={isProbingWebhook}
+                    onPress={() => {
+                      void (async () => {
+                        setIsProbingWebhook(true);
+                        try {
+                          const r = await chatwootBotApi.probeOutgoingWebhook();
+                          ToastService.show({
+                            title: r.ok ? 'Probe OK' : `Probe HTTP ${r.httpStatus}`,
+                            description: `${r.postUrl} – ${r.bodyPreview.slice(0, 80)}`,
+                            color: r.ok ? 'success' : 'warning',
+                          });
+                          void loadEvents();
+                        } catch (e) {
+                          ToastService.show({
+                            title: 'Probe не вдався',
+                            description: e instanceof Error ? e.message : String(e),
+                            color: 'danger',
+                          });
+                        } finally {
+                          setIsProbingWebhook(false);
+                        }
+                      })();
+                    }}
+                    startContent={
+                      !isProbingWebhook ? (
+                        <DynamicIcon name="radar" size={16} />
+                      ) : undefined
+                    }
+                  >
+                    Тест Outgoing URL
+                  </Button>
+                </div>
+                <p className="text-xs text-default-500">
+                  {form.outgoingUrlHint.includes('chatwoot-dev')
+                    ? 'Скопіюйте в Chatwoot Agent Bot → Outgoing URL. Локально: npm run dev:chatwoot.'
+                    : 'Повний Outgoing URL – той самий, що в Chatwoot Agent Bot (для health/probe).'}
+                </p>
+              </div>
 
               <RadioGroup
                 label="Режим відповіді"
+                size="sm"
                 orientation="horizontal"
                 value={form.replyMode}
                 onValueChange={(v) => updateField('replyMode', v as ChatwootBotReplyMode)}
                 classNames={{
-                  wrapper: 'flex flex-row flex-wrap gap-3 w-full data-[orientation=horizontal]:flex-row',
+                  base: 'gap-2',
+                  wrapper: 'flex flex-row flex-wrap gap-2 w-full',
                 }}
               >
-                <ReplyModeRadio value="dry_run" description="Лише лог, без відправки в Chatwoot">
+                <ReplyModeRadio value="dry_run" description="Лише журнал">
                   dry_run
                 </ReplyModeRadio>
-                <ReplyModeRadio value="live" description="POST у Chatwoot API">
+                <ReplyModeRadio value="live" description="POST у Chatwoot">
                   live
                 </ReplyModeRadio>
               </RadioGroup>
@@ -654,7 +831,8 @@ const SettingsChatwootBot: React.FC = () => {
                 Зберегти
               </Button>
               <Button
-                variant="bordered"
+                variant="flat"
+                color="warning"
                 isDisabled={isTesting}
                 onPress={() => void handleTest()}
                 startContent={
@@ -700,43 +878,10 @@ const SettingsChatwootBot: React.FC = () => {
                 </div>
               )}
             </CardBody>
-            <CardFooter className="gap-2 flex-wrap items-center p-4">
+            <CardFooter className="p-4">
               <Button color="primary" isLoading={isSaving} onPress={() => void handleSave()}>
                 Зберегти
               </Button>
-              <Button
-                variant="flat"
-                color="success"
-                isDisabled={isSimulating !== null}
-                onPress={() => void handleSimulate('echo')}
-                startContent={
-                  <DynamicIcon
-                    name={isSimulating === 'echo' ? 'loader-2' : 'play'}
-                    className={isSimulating === 'echo' ? 'animate-spin' : ''}
-                    size={16}
-                  />
-                }
-              >
-                Симулювати echo
-              </Button>
-              <Button
-                variant="flat"
-                color="warning"
-                isDisabled={isSimulating !== null}
-                onPress={() => void handleSimulate('handover')}
-                startContent={
-                  <DynamicIcon
-                    name={isSimulating === 'handover' ? 'loader-2' : 'user-round'}
-                    className={isSimulating === 'handover' ? 'animate-spin' : ''}
-                    size={16}
-                  />
-                }
-              >
-                Симулювати handover
-              </Button>
-              <p className="text-xs text-default-400 w-full">
-                Для симуляції увімкніть бота й збережіть. Режим dry_run лише логує (без POST у Chatwoot).
-              </p>
             </CardFooter>
           </Card>
 
@@ -746,85 +891,92 @@ const SettingsChatwootBot: React.FC = () => {
               <h2 className="text-lg font-semibold">Handover і робочі години</h2>
             </CardHeader>
             <CardBody className="gap-4 p-4">
-              <Select
-                label="Призначення при handover"
-                selectedKeys={[form.handoverAssignMode]}
-                onSelectionChange={(keys) => {
-                  const key = Array.from(keys)[0];
-                  if (key === 'auto_inbox' || key === 'specific_agent') {
-                    updateField('handoverAssignMode', key);
-                  }
-                }}
-                description="Після bot_handoff (open) Chatwoot сам призначає агента, якщо в inbox увімкнено automatic assignment / Assignment V2."
-              >
-                <SelectItem key="auto_inbox" textValue="Автоматично">
-                  Автоматично (Chatwoot inbox assignment)
-                </SelectItem>
-                <SelectItem key="specific_agent" textValue="Конкретний агент">
-                  Конкретний агент
-                </SelectItem>
-              </Select>
-              <Select
-                label="Агент для виклику (робочі години / екстрений)"
-                placeholder="Оберіть агента або введіть ID нижче"
-                isDisabled={form.handoverAssignMode === 'auto_inbox'}
-                selectedKeys={
-                  form.handoverAssigneeId != null ? [String(form.handoverAssigneeId)] : []
-                }
-                onSelectionChange={(keys) => {
-                  const key = Array.from(keys)[0];
-                  updateField('handoverAssigneeId', key ? Number(key) : null);
-                }}
-                description="ID користувача-агента в Chatwoot (не Agent Bot). Список — через User PAT у полі «Inbox API token»."
-              >
-                {agents.map((a) => (
-                  <SelectItem key={String(a.id)} textValue={a.name}>
-                    {a.name} (#{a.id})
-                  </SelectItem>
-                ))}
-              </Select>
-              <Input
-                type="number"
-                label="Агент ID (вручну)"
-                placeholder="напр. 2"
-                isDisabled={form.handoverAssignMode === 'auto_inbox'}
-                value={form.handoverAssigneeId != null ? String(form.handoverAssigneeId) : ''}
-                onValueChange={(v) =>
-                  updateField('handoverAssigneeId', v.trim() ? Number(v) || null : null)
-                }
-              />
-              <Input
-                type="number"
-                label="Inbox ID (fallback / симуляція)"
-                description="Робочі години беруться з Chatwoot → Inbox → Робочий час. У webhook використовується inbox_id з conversation; це поле — якщо його немає."
-                value={form.handoverDefaultInboxId != null ? String(form.handoverDefaultInboxId) : ''}
-                onValueChange={(v) =>
-                  updateField('handoverDefaultInboxId', v.trim() ? Number(v) || null : null)
-                }
-              />
-              <div className="flex flex-wrap items-center gap-2">
-                {inboxHours ? (
-                  <Chip
-                    size="sm"
-                    variant="flat"
-                    color={inboxHours.inHours ? 'success' : 'warning'}
-                  >
-                    Зараз: {inboxHours.inHours ? 'робочі години' : 'поза годинами'} ·{' '}
-                    {inboxHours.schedule.name} ({inboxHours.source})
-                  </Chip>
-                ) : (
-                  <span className="text-xs text-default-500">
-                    Не вдалося зчитати години inbox — перевірте User PAT.
-                  </span>
-                )}
-                <Button
-                  size="sm"
-                  variant="flat"
-                  isLoading={isLoadingInboxHours}
-                  onPress={() => void loadInboxHours(form.handoverDefaultInboxId)}
+              <div className="flex flex-col sm:flex-row gap-4 sm:items-start">
+                <Select
+                  label="Призначення при handover"
+                  selectedKeys={[form.handoverAssignMode]}
+                  onSelectionChange={(keys) => {
+                    const key = Array.from(keys)[0];
+                    if (key === 'auto_inbox' || key === 'specific_agent') {
+                      updateField('handoverAssignMode', key);
+                    }
+                  }}
+                  description="Після bot_handoff (open) Chatwoot сам призначає агента, якщо в inbox увімкнено automatic assignment / Assignment V2."
                 >
-                  Оновити з Chatwoot
-                </Button>
+                  <SelectItem key="auto_inbox" textValue="Автоматично">
+                    Автоматично (Chatwoot inbox assignment)
+                  </SelectItem>
+                  <SelectItem key="specific_agent" textValue="Конкретний агент">
+                    Конкретний агент
+                  </SelectItem>
+                </Select>
+                <Select
+                  label="Агент для виклику"
+                  placeholder="Оберіть агента або введіть ID нижче"
+                  isDisabled={form.handoverAssignMode === 'auto_inbox'}
+                  selectedKeys={
+                    form.handoverAssigneeId != null ? [String(form.handoverAssigneeId)] : []
+                  }
+                  onSelectionChange={(keys) => {
+                    const key = Array.from(keys)[0];
+                    updateField('handoverAssigneeId', key ? Number(key) : null);
+                  }}
+                  description="ID користувача-агента в Chatwoot (не Agent Bot). Список – через User PAT у полі «Inbox API token»."
+                >
+                  {agents.map((a) => (
+                    <SelectItem key={String(a.id)} textValue={a.name}>
+                      {a.name} (#{a.id})
+                    </SelectItem>
+                  ))}
+                </Select>
+                <Input
+                  type="number"
+                  label="Агент ID (вручну)"
+                  placeholder="напр. 2"
+                  className="w-full sm:w-40 sm:shrink-0"
+                  isDisabled={form.handoverAssignMode === 'auto_inbox'}
+                  value={form.handoverAssigneeId != null ? String(form.handoverAssigneeId) : ''}
+                  onValueChange={(v) =>
+                    updateField('handoverAssigneeId', v.trim() ? Number(v) || null : null)
+                  }
+                />
+              </div>
+              <div className="flex flex-col sm:flex-row gap-4 sm:items-start">
+                <Input
+                  type="number"
+                  label="Inbox ID (fallback / симуляція)"
+                  description="Робочі години беруться з Chatwoot → Inbox → Робочий час. У webhook використовується inbox_id з conversation; це поле – якщо його немає."
+                  className="min-w-0 flex-1"
+                  value={form.handoverDefaultInboxId != null ? String(form.handoverDefaultInboxId) : ''}
+                  onValueChange={(v) =>
+                    updateField('handoverDefaultInboxId', v.trim() ? Number(v) || null : null)
+                  }
+                />
+                <div className="flex flex-col items-start gap-2 min-w-0">
+                  {inboxHours ? (
+                    <Chip
+                      size="sm"
+                      variant="flat"
+                      color={inboxHours.inHours ? 'success' : 'warning'}
+                    >
+                      Зараз: {inboxHours.inHours ? 'робочі години' : 'поза годинами'} ·{' '}
+                      {inboxHours.schedule.name} ({inboxHours.source})
+                    </Chip>
+                  ) : (
+                    <span className="text-xs text-default-500">
+                      Не вдалося зчитати години inbox – перевірте User PAT.
+                    </span>
+                  )}
+                  <Button
+                    size="sm"
+                    color="primary"
+                    data-btn-tone="primary-blue-flat"
+                    isLoading={isLoadingInboxHours}
+                    onPress={() => void loadInboxHours(form.handoverDefaultInboxId)}
+                  >
+                    Оновити з Chatwoot
+                  </Button>
+                </div>
               </div>
               <Textarea
                 label="Повідомлення клієнту (робочі години, виклик оператора)"
@@ -833,7 +985,7 @@ const SettingsChatwootBot: React.FC = () => {
                 onValueChange={(v) => updateField('handoverMessageInHours', v)}
               />
               <Textarea
-                label="Повідомлення клієнту (поза годинами — бот лишається)"
+                label="Повідомлення клієнту (поза годинами – бот лишається)"
                 minRows={3}
                 value={form.handoverMessageOutOfHours}
                 onValueChange={(v) => updateField('handoverMessageOutOfHours', v)}
@@ -851,7 +1003,7 @@ const SettingsChatwootBot: React.FC = () => {
                 />
                 <div>
                   <p className="text-sm font-medium">Екстрений виклик поза годинами</p>
-                  <p className="text-xs text-default-500">Keywords зараз; пізніше — класифікація Jev</p>
+                  <p className="text-xs text-default-500">Keywords зараз; пізніше – класифікація Jev</p>
                 </div>
               </div>
               <Input
@@ -875,6 +1027,134 @@ const SettingsChatwootBot: React.FC = () => {
         </div>
 
         <div className="flex flex-col gap-6 min-w-0 max-h-full min-h-0 pr-1">
+          <Card>
+            <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
+              <DynamicIcon name="rotate-ccw" size={20} className="text-default-600" />
+              <h2 className="text-lg font-semibold">Reclaim (повернення діалогу боту)</h2>
+            </CardHeader>
+            <CardBody className="gap-4 p-4">
+              <p className="text-xs text-default-500">
+                Якщо діалог уже у людини-оператора, бот може знову відповідати клієнту за правилами нижче.
+                Для перевірки «офлайн» і таймаутів мовчання потрібен User PAT (поле Inbox API token).
+              </p>
+              <FormSwitchField
+                isSelected={form.reclaimEnabled}
+                onValueChange={(v) => updateField('reclaimEnabled', v)}
+                title="Увімкнути reclaim"
+                description="Якщо вимкнено – бот лише ігнорує повідомлення, поки діалог у оператора."
+              />
+              <FormSwitchField
+                isSelected={form.resolveCleanupEnabled}
+                onValueChange={(v) => updateField('resolveCleanupEnabled', v)}
+                title="Скидати «замок» при «Вирішити»"
+                description="Зняти оператора з діалогу й дозволити боту після reopen (без публічного повідомлення)."
+              />
+              <Divider />
+              <p className="text-sm font-semibold text-default-800">Завжди (і в робочі, і поза годинами)</p>
+              <FormSwitchField
+                isSelected={form.reclaimOnAssigneeOffline}
+                isDisabled={!form.reclaimEnabled}
+                onValueChange={(v) => updateField('reclaimOnAssigneeOffline', v)}
+                title="Оператор офлайн у Chatwoot"
+                description="Бот відповідає замість оператора, якщо призначений агент не в мережі."
+              />
+              <Textarea
+                label="Текст клієнту (оператор офлайн)"
+                minRows={2}
+                isDisabled={!form.reclaimEnabled}
+                value={form.reclaimMessageOffline}
+                onValueChange={(v) => updateField('reclaimMessageOffline', v)}
+              />
+              <Divider />
+              <p className="text-sm font-semibold text-default-800">Поза робочими годинами</p>
+              <FormSwitchField
+                isSelected={form.reclaimOnOohAgentSilent}
+                isDisabled={!form.reclaimEnabled}
+                onValueChange={(v) => updateField('reclaimOnOohAgentSilent', v)}
+                title="Якщо оператор довго мовчить"
+                description="Повернути діалог боту, коли з останньої публічної відповіді оператора минуло N хвилин."
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Input
+                  type="number"
+                  label="Хвилин мовчання (поза годинами)"
+                  isDisabled={!form.reclaimEnabled || !form.reclaimOnOohAgentSilent}
+                  value={String(form.reclaimOohSilentMinutes)}
+                  onValueChange={(v) =>
+                    updateField('reclaimOohSilentMinutes', Number(v) || 10)
+                  }
+                />
+                <FormSwitchField
+                  isSelected={form.reclaimOohTreatNoAgentReplyAsSilent}
+                  isDisabled={!form.reclaimEnabled || !form.reclaimOnOohAgentSilent}
+                  onValueChange={(v) => updateField('reclaimOohTreatNoAgentReplyAsSilent', v)}
+                  title="Одразу, якщо оператор ще не відповідав"
+                  description="Вважати «мовчання» з моменту передачі діалогу людині."
+                />
+              </div>
+              <Textarea
+                label="Текст клієнту (поза годинами, після мовчання)"
+                minRows={2}
+                isDisabled={!form.reclaimEnabled}
+                value={form.reclaimMessageOoh}
+                onValueChange={(v) => updateField('reclaimMessageOoh', v)}
+              />
+              <Divider />
+              <p className="text-sm font-semibold text-default-800">У робочі години</p>
+              <FormSwitchField
+                isSelected={form.reclaimInHoursAgentSilentEnabled}
+                isDisabled={!form.reclaimEnabled}
+                onValueChange={(v) => updateField('reclaimInHoursAgentSilentEnabled', v)}
+                title="Reclaim за таймаутом мовчання (опційно)"
+                description="За замовчуванням вимкнено: у робочі години бот не перехоплює діалог лише через мовчання."
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Input
+                  type="number"
+                  label="Хвилин мовчання (у робочі години)"
+                  isDisabled={
+                    !form.reclaimEnabled || !form.reclaimInHoursAgentSilentEnabled
+                  }
+                  value={String(form.reclaimInHoursSilentMinutes)}
+                  onValueChange={(v) =>
+                    updateField('reclaimInHoursSilentMinutes', Number(v) || 10)
+                  }
+                />
+                <FormSwitchField
+                  isSelected={form.reclaimInHoursTreatNoAgentReplyAsSilent}
+                  isDisabled={
+                    !form.reclaimEnabled || !form.reclaimInHoursAgentSilentEnabled
+                  }
+                  onValueChange={(v) =>
+                    updateField('reclaimInHoursTreatNoAgentReplyAsSilent', v)
+                  }
+                  title="Одразу, якщо оператор ще не відповідав"
+                  description="Те саме правило, що й поза годинами, але лише в робочий час."
+                />
+              </div>
+              <Textarea
+                label="Текст клієнту (робочі години, після мовчання)"
+                minRows={2}
+                isDisabled={!form.reclaimEnabled}
+                value={form.reclaimMessageInHours}
+                onValueChange={(v) => updateField('reclaimMessageInHours', v)}
+              />
+              <Divider />
+              <FormSwitchField
+                isSelected={form.reclaimContinueWithEcho}
+                isDisabled={!form.reclaimEnabled}
+                onValueChange={(v) => updateField('reclaimContinueWithEcho', v)}
+                title="Після reclaim відповісти на це ж повідомлення"
+                description="Echo або handover на поточний webhook (інакше – лише текст reclaim)."
+              />
+            </CardBody>
+            <CardFooter className="p-4">
+              <Button color="primary" isLoading={isSaving} onPress={() => void handleSave()}>
+                Зберегти
+              </Button>
+            </CardFooter>
+          </Card>
+
           <Card className="shrink-0">
             <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
               <DynamicIcon name="database" size={20} className="text-default-600" />
@@ -897,16 +1177,42 @@ const SettingsChatwootBot: React.FC = () => {
                   onValueChange={(v) => updateField('eventLogMaxRecords', Number(v) || 300)}
                 />
               </div>
-              <div className="flex items-center gap-3">
-                <Switch
-                  isSelected={form.eventLogStoreFullPayload}
-                  onValueChange={(v) => updateField('eventLogStoreFullPayload', v)}
-                />
-                <div>
-                  <p className="text-sm font-medium">Повний JSON payload</p>
-                  <p className="text-xs text-default-500">
-                    Увімкніть на час діагностики; збільшує розмір БД (обрізання ~64 KB).
-                  </p>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-3">
+                  <Switch
+                    isSelected={form.eventLogStoreFullPayload}
+                    onValueChange={(v) => updateField('eventLogStoreFullPayload', v)}
+                  />
+                  <div>
+                    <p className="text-sm font-medium">Повний JSON payload</p>
+                    <p className="text-xs text-default-500">
+                      Увімкніть на час діагностики; збільшує розмір БД (обрізання ~64 KB).
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Switch
+                    isSelected={form.eventLogPersistPrivate}
+                    onValueChange={(v) => updateField('eventLogPersistPrivate', v)}
+                  />
+                  <div>
+                    <p className="text-sm font-medium">Логувати private notes</p>
+                    <p className="text-xs text-default-500">
+                      Debug: внутрішні нотатки агентів (`private_message`) у «Останні події».
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Switch
+                    isSelected={form.eventLogPersistOtherNoise}
+                    onValueChange={(v) => updateField('eventLogPersistOtherNoise', v)}
+                  />
+                  <div>
+                    <p className="text-sm font-medium">Логувати інший шум webhook</p>
+                    <p className="text-xs text-default-500">
+                      Debug: outgoing, unsupported_event, sender_not_contact (не duplicate).
+                    </p>
+                  </div>
                 </div>
               </div>
             </CardBody>
@@ -953,7 +1259,7 @@ const SettingsChatwootBot: React.FC = () => {
               </div>
             </CardHeader>
             <CardBody className="flex flex-col flex-1 min-h-0 max-h-full p-0">
-              <div className="overflow-hidden relative h-full">
+              <div className="overflow-hidden relative h-full min-h-96">
                 <div className="pointer-events-none absolute bottom-0 left-0 right-4 h-12 z-10 bg-white [mask-image:linear-gradient(to_top,black_20%,transparent_100%)] [-webkit-mask-image:linear-gradient(to_top,black_20%,transparent_100%)]"/>
                 
                 <div className="absolute inset-0 overflow-y-auto p-4">
@@ -976,10 +1282,37 @@ const SettingsChatwootBot: React.FC = () => {
                               {new Date(ev.at).toLocaleString('uk-UA')}
                             </span>
                           </div>
-                          <p className="mt-1 text-default-700">
-                            {ev.reason}
-                            {ev.conversationId != null ? ` · conv #${ev.conversationId}` : ''}
-                          </p>
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <p className="text-default-700">
+                              {ev.reason}
+                              {ev.conversationId != null ? ` · conv #${ev.conversationId}` : ''}
+                            </p>
+                            {ev.reason === 'human_agent_active' && ev.conversationId != null && (
+                              <Button
+                                size="sm"
+                                variant="flat"
+                                color="warning"
+                                className="h-7 min-w-0 px-2 text-xs"
+                                isDisabled={unassigningConvId != null}
+                                onPress={() => void handleUnassignConversation(ev.conversationId!)}
+                                startContent={
+                                  <DynamicIcon
+                                    name={
+                                      unassigningConvId === ev.conversationId
+                                        ? 'loader-2'
+                                        : 'user-round-x'
+                                    }
+                                    className={
+                                      unassigningConvId === ev.conversationId ? 'animate-spin' : ''
+                                    }
+                                    size={14}
+                                  />
+                                }
+                              >
+                                Зняти assignee
+                              </Button>
+                            )}
+                          </div>
                           {ev.contentPreview && (
                             <p className="text-xs text-default-500 mt-0.5">«{ev.contentPreview}»</p>
                           )}
@@ -990,9 +1323,13 @@ const SettingsChatwootBot: React.FC = () => {
                           )}
                           {ev.headersMeta && (
                             <p className="text-xs text-default-400 mt-0.5 font-mono">
-                              auth: {ev.headersMeta.detectedScheme}
-                              {ev.webhookEvent ? ` · event: ${ev.webhookEvent}` : ''}
-                              {ev.source === 'webhook' ? ' · webhook' : ' · simulate'}
+                              {[
+                                ev.headersMeta.detectedScheme,
+                                ev.webhookEvent,
+                                ev.source === 'webhook' ? 'webhook' : 'simulate',
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')}
                             </p>
                           )}
                           {ev.payloadJson != null && (
@@ -1028,7 +1365,7 @@ const SettingsChatwootBot: React.FC = () => {
               </div>
               <Divider className="shrink-0" />
               <p className="text-xs text-default-400 shrink-0 p-4">
-                Зберігається в БД (TTL і ліміт записів — у блоці «Журнал webhook»). Показує схему auth у
+                Зберігається в БД (TTL і ліміт записів – у блоці «Журнал webhook»). Показує схему auth у
                 заголовках без значень secret/signature.
               </p>
             </CardBody>

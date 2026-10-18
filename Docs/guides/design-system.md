@@ -1,20 +1,20 @@
-# Дизайн-система nova-field — гайд для розробки та агента
+# Дизайн-система nova-field – гайд для розробки та агента
 
 Жива вітрина: **`/settings/design`** (`client/pages/DesignSystem.tsx`).
 
 ## Модульні Cursor rules (scope)
 
-Правила в `.cursor/rules/` підключаються **за контекстом файлів** (globs) і **за описом** (agent подтягує модуль, коли тема релевантна — напр. таблиці без drawer):
+Правила в `.cursor/rules/` підключаються **за контекстом файлів** (globs) і **за описом** (agent подтягує модуль, коли тема релевантна – напр. таблиці без drawer):
 
 | Модуль | Файл rule | Коли |
 |--------|-----------|------|
-| **Hub** | `design-system-hub.mdc` | Будь-який `client/**` — кольори, типографіка, карта файлів |
+| **Hub** | `design-system-hub.mdc` | Будь-який `client/**` – кольори, типографіка, карта файлів |
 | **Таблиці** | `design-system-tables.mdc` | `*Table*.tsx`, HR Employees list |
 | **Drawer** | `design-system-drawer.mdc` | `*Drawer*`, `productDrawer/**` |
 | **Кнопки** | `design-system-buttons.mdc` | `buttonStyles.ts`, `global.css`, вітрина, CatalogToolbar |
 | **Chips** | `design-system-chips.mdc` | `SpecChip`, `hrUi`, hue maps |
 
-Цей документ — **повна карта файлів, процедури, JSX-еталони і чеклист**. Rule-модулі — оперативний шар для агента; деталі нижче.
+Цей документ – **повна карта файлів, процедури, JSX-еталони і чеклист**. Rule-модулі – оперативний шар для агента; деталі нижче.
 
 ---
 
@@ -27,7 +27,7 @@
 | **Глобальні override кнопок** (padding, text color, opt-in tones) | `client/global.css` → `@layer components` | Див. коментарі біля `data-btn-tone`, `bg-secondary/20`, тощо |
 | **className-токени кнопок** (`BTN_*`) | `client/lib/buttonStyles.ts` | Експорт констант; id для copy: `design:btn-*` |
 | **Вітрина патернів** (таблиці, chips, drawer, кнопки 3×3) | `client/components/DesignSystemPatterns.tsx` | `ETALON_BUTTON_PATTERNS`, `ButtonShowcase`, `ButtonPatternGrid` |
-| **Вітрина токенів** (палітри, spacing, shadows) | `client/components/DesignSystemDemo.tsx` | Кольори дублюються вручну — оновити при зміні `@theme` |
+| **Вітрина токенів** (палітри, spacing, shadows) | `client/components/DesignSystemDemo.tsx` | Кольори дублюються вручну – оновити при зміні `@theme` |
 | **Сторінка вітрини** | `client/pages/DesignSystem.tsx` | Layout; Patterns зверху, Demo (токени) знизу |
 | **Маршрут** | `client/routes.config.tsx` | `/settings/design` |
 | **Chips, hue maps** | `client/components/SpecChip.tsx`, `client/pages/Hr/hrUi.tsx` | `specColorPalette` |
@@ -38,29 +38,29 @@
 
 ## Алгоритм для агента
 
-1. Відкрити `/settings/design` (або прочитати `DesignSystemPatterns.tsx`) — знайти відповідну секцію.
+1. Відкрити `/settings/design` (або прочитати `DesignSystemPatterns.tsx`) – знайти відповідну секцію.
 2. Визначити тип зміни за таблицею нижче → відредагувати **мінімальний набір файлів**.
 3. Якщо зміна **глобальна** (усі кнопки / усі Chip) → `global.css` + `hero.ts`.
 4. Якщо зміна **лише вітрина** → `DesignSystemPatterns.tsx`.
 5. Якщо новий **className-токен** → `buttonStyles.ts` + запис у `ETALON_BUTTON_PATTERNS` + вітрина.
-6. Після зміни токенів/патернів — оновити вітрину й перевірити lints на змінених файлах.
+6. Після зміни токенів/патернів – оновити вітрину й перевірити lints на змінених файлах.
 
 ---
 
-## Кнопки — детально
+## Кнопки – детально
 
 ### Де що живе
 
 ```
-client/lib/buttonStyles.ts     — BTN_PRIMARY_BLUE, BTN_GLOW_*, BTN_VIVID_*
-client/global.css @theme       — --color-*, --shadow-button-*
-client/global.css @layer components — глобальні override HeroUI Button
-client/hero.ts                 — success/warning/primary scales для HeroUI
+client/lib/buttonStyles.ts     – BTN_PRIMARY_BLUE, BTN_GLOW_*, BTN_VIVID_*
+client/global.css @theme       – --color-*, --shadow-button-*
+client/global.css @layer components – глобальні override HeroUI Button
+client/hero.ts                 – success/warning/primary scales для HeroUI
 client/components/DesignSystemPatterns.tsx
-  ├── ETALON_BUTTON_PATTERNS   — 16 etalon-карток (конфіг, не JSX вручну)
-  ├── ButtonPatternGrid        — сітка 3×3: lg/md/sm × plain / icon / shadow
-  ├── buildButtonSnippet()     — JSX для clipboard при кліку на кнопку
-  └── ButtonShowcase           — copy у header → design:btn-{id}
+  ├── ETALON_BUTTON_PATTERNS   – 16 etalon-карток (конфіг, не JSX вручну)
+  ├── ButtonPatternGrid        – сітка 3×3: lg/md/sm × plain / icon / shadow
+  ├── buildButtonSnippet()     – JSX для clipboard при кліку на кнопку
+  └── ButtonShowcase           – copy у header → design:btn-{id}
 ```
 
 ### Вітрина 3×3 (etalon)
@@ -69,9 +69,9 @@ client/components/DesignSystemPatterns.tsx
 
 | Ряд | Зміст |
 |-----|--------|
-| 1 | lg · md · sm — без іконок |
-| 2 | lg · md · sm — `startContent` + іконка `plus` |
-| 3 | lg · md · sm — іконка + shadow-клас |
+| 1 | lg · md · sm – без іконок |
+| 2 | lg · md · sm – `startContent` + іконка `plus` |
+| 3 | lg · md · sm – іконка + shadow-клас |
 
 - Підпис на всіх demo-кнопках: **«Дія»**.
 - **Клік на кнопку** → однорядковий JSX у clipboard (`buildButtonSnippet`).
@@ -81,16 +81,16 @@ client/components/DesignSystemPatterns.tsx
 
 1. Додати об'єкт у `ETALON_BUTTON_PATTERNS` у `DesignSystemPatterns.tsx`:
    - `id`, `label`, `hint`, `snippet`, `pattern` (`ButtonPatternConfig`).
-2. Якщо потрібен новий `BTN_*` — додати в `buttonStyles.ts` і імпорт у `DesignSystemPatterns.tsx`.
-3. Якщо потрібен shadow — `shadow-button-*` з `@theme` у `global.css` або `BTN_GLOW_*`.
-4. Якщо потрібен глобальний колір тексту / padding — `@layer components` у `global.css`.
+2. Якщо потрібен новий `BTN_*` – додати в `buttonStyles.ts` і імпорт у `DesignSystemPatterns.tsx`.
+3. Якщо потрібен shadow – `shadow-button-*` з `@theme` у `global.css` або `BTN_GLOW_*`.
+4. Якщо потрібен глобальний колір тексту / padding – `@layer components` у `global.css`.
 
 ### Доменні / інтерактивні (без 3×3)
 
 Залишати `children` у `ButtonShowcase` без `pattern`:
 
 - `btn-loading-icon`, `btn-row-actions`, `btn-products-gradient`, `btn-action-bubble`
-- Секція **anti-patterns** — окремий блок, не чіпати без запиту.
+- Секція **anti-patterns** – окремий блок, не чіпати без запиту.
 
 ### Глобальні override кнопок (поточний стан)
 
@@ -102,7 +102,7 @@ client/components/DesignSystemPatterns.tsx
 | `button.bg-warning.text-warning-foreground` | `text-white` (warning solid) |
 | `button.min-w-16/20/24` (не icon-only) | `px-4`, `gap-1.5` |
 
-**Не робити** global override для `color="primary" variant="flat"` — конфліктує з кастомними className.
+**Не робити** global override для `color="primary" variant="flat"` – конфліктує з кастомними className.
 
 ### Shadow на 3-му рядку (мапінг)
 
@@ -123,7 +123,7 @@ client/components/DesignSystemPatterns.tsx
 | Новий колір у Tailwind | `client/global.css` → `@theme` → `--color-*` |
 | HeroUI semantic (success, warning…) | `global.css` `@theme` **і** `client/hero.ts` `themes.light/dark.colors` |
 | Тіні кнопок | `global.css` → `--shadow-button-*` |
-| Палітра на вітрині «Токени» | `DesignSystemDemo.tsx` (об'єкт `colors` — вручну) |
+| Палітра на вітрині «Токени» | `DesignSystemDemo.tsx` (об'єкт `colors` – вручну) |
 
 Primary = **neutral grey** `#374151`, не Tailwind blue. Повна шкала `primary-50…900` у `global.css` і `hero.ts`.
 
@@ -142,7 +142,7 @@ Primary = **neutral grey** `#374151`, не Tailwind blue. Повна шкала 
 
 ## Copy id для агента
 
-Формат: `design:btn-{id}` — відповідає `id` у `ButtonShowcase` / `ETALON_BUTTON_PATTERNS`.
+Формат: `design:btn-{id}` – відповідає `id` у `ButtonShowcase` / `ETALON_BUTTON_PATTERNS`.
 
 Приклади: `design:btn-primary-solid`, `design:btn-row-actions`, `design:btn-anti-loading`.
 
@@ -151,7 +151,7 @@ Primary = **neutral grey** `#374151`, не Tailwind blue. Повна шкала 
 ## Чеклист після змін
 
 - [ ] Вітрина `/settings/design` відображає зміни
-- [ ] Якщо змінено `@theme` — перевірити `hero.ts` (і навпаки)
-- [ ] Якщо новий `BTN_*` — коментар у `buttonStyles.ts` + запис у `ETALON_BUTTON_PATTERNS` (за потреби)
+- [ ] Якщо змінено `@theme` – перевірити `hero.ts` (і навпаки)
+- [ ] Якщо новий `BTN_*` – коментар у `buttonStyles.ts` + запис у `ETALON_BUTTON_PATTERNS` (за потреби)
 - [ ] `ReadLints` / `tsc` на змінених файлах
-- [ ] `Docs/CHANGELOG.md` — **лише за явним запитом** користувача
+- [ ] `Docs/CHANGELOG.md` – **лише за явним запитом** користувача
