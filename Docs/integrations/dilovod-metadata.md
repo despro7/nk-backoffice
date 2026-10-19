@@ -217,7 +217,7 @@ await api.makeRequest({
 
 Відображення в списку Dilovod: `id.pr` = `code`. Ручні партії в UI можуть мати `name.uk` у JSON експорту, але `getObject` / `request` у цій базі поля `name`/`number` не повертають.
 
-Створення партій у backoffice: `DilovodGoodPartsService` — `resolveGoodPartWritableFields()` + `buildGoodPartCreateHeader()` (додає `name`/`number` лише якщо зʼявляться в метаданих). Утиліти: `formatGoodPartCodeForDilovod`, `formatGoodPartNumberForDilovod`, `formatBatchExpirationForDilovod` (`shared/utils/kitBatchName.ts`).
+Створення партій у backoffice: `DilovodGoodPartsService` — `resolveGoodPartWritableFields()` + `buildGoodPartCreateHeader()` (опційно `name.uk` = `code`; **`number` не передаємо** — інакше Dilovod показує «number / code»). Утиліти: `formatGoodPartCodeForDilovod`, `formatBatchExpirationForDilovod` (`shared/utils/kitBatchName.ts`).
 
 | Ситуація | Джерело людської назви |
 |---|---|

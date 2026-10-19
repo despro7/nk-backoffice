@@ -43,19 +43,19 @@ describe('buildGoodPartCreateHeader', () => {
     expect(header.expiration).toBe('2027-10-03 00:00:00');
   });
 
-  it('додає name і number, якщо поля є в live-метаданих Dilovod', () => {
+  it('додає name з тим самим code (з префіксом K), number не передає', () => {
     const header = buildGoodPartCreateHeader({
       owner: '1119000000001234',
-      batchName: 'K61003',
+      batchName: 'K-61003',
       productionDate: '2026-10-03 12:00:00',
       expiration: '2027-10-03',
       writableFields: new Set(['code', 'owner', 'date', 'expiration', 'name', 'number']),
     });
 
     expect(header).toMatchObject({
-      code: 'K61003',
-      name: { uk: 'K61003', ru: '' },
-      number: '61003',
+      code: 'K-61003',
+      name: { uk: 'K-61003', ru: '' },
     });
+    expect(header).not.toHaveProperty('number');
   });
 });

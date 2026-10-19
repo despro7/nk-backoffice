@@ -1,6 +1,6 @@
 /**
  * Створення партій у Dilovod (`catalogs.goodParts`).
- * Поля payload збираються з live-метаданих: у NK Food API доступні лише code/owner/date/expiration.
+ * Поля payload збираються з live-метаданих; number навмисно не передаємо (ламає відображення «code / number» у Dilovod).
  */
 
 import { DilovodApiClient } from './DilovodApiClient.js';
@@ -11,7 +11,6 @@ import { isUsableDilovodBatchId } from '../../../shared/utils/dilovodBatchId.js'
 import {
   formatBatchExpirationForDilovod,
   formatGoodPartCodeForDilovod,
-  formatGoodPartNumberForDilovod,
 } from '../../../shared/utils/kitBatchName.js';
 
 export type CreateGoodPartInput = {
@@ -79,10 +78,6 @@ export function buildGoodPartCreateHeader(input: {
   const writable = input.writableFields;
   if (writable?.has('name')) {
     header.name = { uk: code, ru: '' };
-  }
-  if (writable?.has('number')) {
-    const number = formatGoodPartNumberForDilovod(batchName);
-    if (number) header.number = number;
   }
 
   return header;
