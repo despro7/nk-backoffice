@@ -1,9 +1,7 @@
 import {
-  createContext,
   lazy,
   Suspense,
   useCallback,
-  useContext,
   useMemo,
   useState,
   type ReactNode,
@@ -11,16 +9,10 @@ import {
 import type { ProductMovementsDrawerPlacement, ProductMovementsOpenParams } from '../types';
 import { filtersFromOpenParams } from '../productMovementsUtils';
 import type { ProductMovementsFilterState } from '../types';
+import { ProductMovementsDrawerContext } from './productMovementsDrawerContext.shared';
 
-/** Lazy: context-модуль не тягне drawer eager-ом (менше ризик broken context після HMR). */
+/** Lazy: Provider не тягне drawer eager-ом. */
 const ProductMovementsDrawer = lazy(() => import('../components/ProductMovementsDrawer'));
-
-interface ProductMovementsDrawerContextValue {
-  open: (params: ProductMovementsOpenParams) => void;
-  close: () => void;
-}
-
-const ProductMovementsDrawerContext = createContext<ProductMovementsDrawerContextValue | null>(null);
 
 const DEFAULT_PLACEMENT: ProductMovementsDrawerPlacement = 'right';
 const DEFAULT_NON_DISMISSABLE = false;
@@ -63,10 +55,4 @@ export function ProductMovementsDrawerProvider({ children }: { children: ReactNo
   );
 }
 
-export function useProductMovementsDrawer(): ProductMovementsDrawerContextValue {
-  const ctx = useContext(ProductMovementsDrawerContext);
-  if (!ctx) {
-    throw new Error('useProductMovementsDrawer must be used within ProductMovementsDrawerProvider');
-  }
-  return ctx;
-}
+export { useProductMovementsDrawer } from './productMovementsDrawerContext.shared';

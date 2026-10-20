@@ -250,8 +250,12 @@ export class WarehouseService {
     const { status, warehouse, page = 1, limit = 20, from, to } = params;
 
     const where: any = {};
-    if (status) where.status = status;
-    else where.status = { not: 'deleted' };
+    if (status) {
+      const parts = status.split(',').map((s) => s.trim()).filter(Boolean);
+      where.status = parts.length > 1 ? { in: parts } : parts[0];
+    } else {
+      where.status = { not: 'deleted' };
+    }
     if (warehouse) {
       where.OR = [
         { sourceWarehouse: warehouse },

@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-10-20 — Склад: Переміщення v2, швидка історія, пошук товарів
+
+**Files:** `WarehouseMovementV2/`, `movementV2HistoryList.ts`, `MovementV2HistorySync.ts`, `WarehouseController.ts`, `MovementHistoryService.ts`, `WarehouseProductSearch.tsx`, `useWarehouseProductSearch.ts`, `WarehouseProductBatchesPanel.tsx`, `warehouse-document-edit/`, `HistoryAccordionItem.tsx`, `historyNormalize.ts`, `ProductsCatalogService.listWarehouseSearchIndex`, `shared/types/warehouseProductSearch.ts`, `routes.config.tsx`, drawer HMR shared contexts, refactor `WarehouseMovement/` (editor + send flow)
+
+- **Сторінка** `/warehouse/movement-v2`: реєстр з партіями, summary з бейджами складів, відправка goodMoving, редагування через drawer Dilovod.
+- **Історія:** список з MySQL + lazy Dilovod details (як surplus); фільтр дат; UI рядка — номер документу, короткі бейджі ГП→МС; коректний підрахунок одиниць (`totalPortions`).
+- **Пошук:** індекс GP + batch search; архів за папкою «Архів – …»; залишки snapshot для всіх результатів сторінки; UX listbox/refresh/clear.
+- **H1:** прибрано `hasOwnTitle` — заголовок з Layout.
+
+**Документація:** [`warehouse-movement-v2.md`](features/warehouse-movement-v2.md), [`warehouse-movement-history-fast-list.md`](features/warehouse-movement-history-fast-list.md).
+
+---
+
 ## 2026-10-19 — Chatwoot Bot: reclaim, аналітика, налаштування UI
 
 **Files:** `ChatwootBotOrchestrator.ts`, `chatwootReclaimDecision.ts`, `ChatwootBotAnalyticsService.ts`, `chatwoot-bot.ts`, `chatwoot-webhooks.ts`, `SettingsChatwootBot.tsx`, `ChatwootBotStatistics.tsx`, `routes.config.tsx`, `shared/types/chatwootBot.ts`, `prisma/schema.prisma`, міграція `20261018120000_chatwoot_bot_analytics_events`, `package.json` (`dev:chatwoot`), `config/cloudflared/README.md`

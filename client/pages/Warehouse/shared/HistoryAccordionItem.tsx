@@ -6,8 +6,11 @@ import { PERMISSIONS } from '@shared/constants/permissions';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { formatDate, formatRelativeDate, truncateText, pluralize } from '@/lib';
 import { HistoryItemsTable } from './HistoryItemsTable';
-import { normalizeSetsArray } from './historyNormalize';
+import { normalizeSetsArray, sumHistoryItemsQuantity } from './historyNormalize';
+import { recordNeedsHistoryDetailsEnrich } from './lazyEnrichHistoryPage';
 import { getFirmDisplayName, getStorageDisplayName } from '@shared/utils/directoryUtils';
+import { MovementMobDirectionBadges } from '@/pages/Warehouse/WarehouseMovementMob/components/MovementMobStatusStepper';
+import { resolveShortStorageBadge } from '@/pages/Warehouse/WarehouseMovementMob/WarehouseMovementMobUtils';
 import { useDilovodSettings } from '@/hooks/useDilovodSettings';
 import useUserNames from '@/hooks/useUserNames';
 import { WarehouseReleaseAuditAccordion } from '@/pages/Warehouse/WarehouseReleaseSets/components/WarehouseReleaseAuditAccordion';
@@ -30,7 +33,7 @@ interface HistoryAccordionItemProps {
   onRetryRelease?: (record: any) => Promise<void>;
   canEditRecord?: (record: any) => boolean;
   auditRefreshKey?: number;
-  recordType?: 'return' | 'writeOff' | 'surplus' | 'releaseSet';
+  recordType?: 'return' | 'writeOff' | 'surplus' | 'releaseSet' | 'movement';
   detailsLoading?: Record<string, boolean>;
 }
 
@@ -102,9 +105,7 @@ export const HistoryAccordionItem = ({
     if (!expandedRecordId || !onLoadRecord) return;
     const record = records.find((r) => String(r.id) === expandedRecordId);
     if (!record) return;
-    const parsed = safeParseItems(record.items);
-    const normalizedCount = Array.isArray(record.itemsNormalized) ? record.itemsNormalized.length : 0;
-    if (parsed.length === 0 && normalizedCount === 0) {
+    if (recordNeedsHistoryDetailsEnrich(record)) {
       void onLoadRecord(record);
     }
   }, [expandedRecordId, records, onLoadRecord]);
@@ -157,6 +158,7 @@ export const HistoryAccordionItem = ({
 		writeOff: 	{ label: 'Списання', dateField: 'writeOffDate' },
     surplus: { label: 'Оприбуткування', dateField: 'surplusDate' },
     releaseSet: { label: 'Випуск', genitive: 'випуску', dateField: 'operDate', secondaryDateField: 'createdAt' },
+    movement: { label: 'Переміщення', genitive: 'переміщення', dateField: 'movementDate', secondaryDateField: 'createdAt' },
 	};
 
   const RELEASE_OPERATION_CONFIG: Record<string, { label: string; icon: string }> = {
@@ -165,6 +167,7 @@ export const HistoryAccordionItem = ({
   };
 
 	const isReleaseSetRecord = recordType === 'releaseSet';
+	const isMovementRecord = recordType === 'movement';
 
 	// утиліта для отримання конфігурації по типу запису, з дефолтами
 	function getRecordTypeConfig(type?: string) {
@@ -185,7 +188,10 @@ export const HistoryAccordionItem = ({
 				const cfg = getRecordTypeConfig(recordType); // recordType передається в компонент, напр. 'writeOff'
         const recordName = `${cfg.label} №${record.id}`;
         const operationType = String(record.operationType ?? '').toLowerCase();
-        const operationCfg = RELEASE_OPERATION_CONFIG[operationType];
+        const operationCfg = RELEASE_OPERATION_CONFIG[operationType]
+          ?? (isMovementRecord ? { label: 'Переміщення', icon: 'arrow-left-right' } : undefined);
+        const movementFromId = record.sourceWarehouse ?? record.source_warehouse;
+        const movementToId = record.destinationWarehouse ?? record.destination_warehouse;
 	        const items = (Array.isArray(record.itemsNormalized) && record.itemsNormalized.length > 0)
 	          ? record.itemsNormalized
 	          : safeParseItems(record.items);
@@ -196,7 +202,7 @@ export const HistoryAccordionItem = ({
           setSku: record.setSku ?? record.set_sku,
           items,
         });
-        const totalQuantity = items.reduce((sum, item) => sum + Number(item.quantity ?? item.qty ?? 0), 0);
+        const totalQuantity = sumHistoryItemsQuantity(items);
         const isExpanded = expandedRecordId === String(record.id);
 				const reason = record.reason || record.writeOffReason || record.surplusReason || record.write_off_reason;
         
@@ -204,11 +210,22 @@ export const HistoryAccordionItem = ({
         const uniqueSetTypes = recordType === 'releaseSet' ? setsForCount.length : 0;
         const totalSets = recordType === 'releaseSet' ? setsForCount.reduce((sum: number, set: any) => sum + (Number(set.setQty ?? 0)), 0) : 0;
         // Primary should be the creation timestamp; if operation date differs, show it as secondary
-        const primaryDateValue = record.createdAt || record.created_at || (isReleaseSetRecord ? (record.operDate || record.oper_date) : null);
-        const secondaryDateValue = isReleaseSetRecord ? (record.operDate || record.oper_date || null) : null;
-        const shouldShowSecondaryDate = isReleaseSetRecord && secondaryDateValue && formatDate(primaryDateValue) !== formatDate(secondaryDateValue);
+        const primaryDateValue = record.createdAt || record.created_at
+          || (isReleaseSetRecord ? (record.operDate || record.oper_date) : null)
+          || (isMovementRecord ? (record.movementDate || record.movement_date) : null);
+        const secondaryDateValue = isReleaseSetRecord
+          ? (record.operDate || record.oper_date || null)
+          : isMovementRecord
+            ? (record.movementDate || record.movement_date || null)
+            : null;
+        const shouldShowSecondaryDate = (isReleaseSetRecord || isMovementRecord)
+          && secondaryDateValue
+          && formatDate(primaryDateValue) !== formatDate(secondaryDateValue);
         const recordEditable = Boolean(showEdit && onEditRecord && (!canEditRecord || canEditRecord(record)));
         const operationDocNumber = record.internalDocNumber || record.internal_doc_number || null;
+        const movementDocLabel = isMovementRecord
+          ? (operationDocNumber || record.docNumber || record.doc_number || null)
+          : null;
         const releaseStatus = String(record.status ?? '').toLowerCase();
         const sendFailed = releaseStatus === 'send_failed';
         const sendError = normalizeReleaseSendError(record.sendError);
@@ -236,16 +253,30 @@ export const HistoryAccordionItem = ({
                   className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`}
                 />
 								<div className="flex items-center gap-4">
-                  {operationCfg && (
-                    <span className={`p-2 rounded-full ${operationCfg && operationType === 'kit' ? 'text-blue-500 bg-blue-100' : 'text-red-500 bg-red-100'}`}>
+                  {operationCfg && !isMovementRecord && (
+                    <span className={`p-2 rounded-full ${
+                      operationType === 'kit'
+                        ? 'text-blue-500 bg-blue-100'
+                        : 'text-red-500 bg-red-100'
+                    }`}>
                       <DynamicIcon name={operationCfg.icon as any} size={16} strokeWidth={1.5} />
                     </span>
                   )}
-									<div className="flex flex-col">
-                    <span className="text-sm font-medium text-gray-700 tabular-nums">{operationCfg ? operationCfg?.label : recordName}</span>
+									<div className="flex flex-col min-w-28">
+                    <span className="text-sm font-medium text-gray-700 tabular-nums">
+                      {isMovementRecord
+                        ? (movementDocLabel ?? '—')
+                        : (operationCfg ? operationCfg.label : recordName)}
+                    </span>
 										<span className="text-xs text-gray-400">{formatRelativeDate(record[cfg.dateField || 'createdAt'], { maxRelativeDays: 1 })}</span>
 									</div>
-									<div className="flex gap-2">
+									<div className="flex gap-2 flex-wrap">
+                    {isMovementRecord && (
+                      <MovementMobDirectionBadges
+                        sourceBadge={resolveShortStorageBadge(movementFromId)}
+                        destBadge={resolveShortStorageBadge(movementToId)}
+                      />
+                    )}
                     {reason && (
                       <Chip size="sm" color="default" variant="flat" className="bg-gray-200 text-gray-700">{reason}</Chip>
                     )}
@@ -397,7 +428,20 @@ export const HistoryAccordionItem = ({
                   <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap">
                     <span>Автор: <b>{namesMap[Number(record.createdBy ?? record.created_by ?? -1)] ?? record.createdBy ?? record.created_by ?? '—'}</b></span>
                     <span className="border-l border-gray-300 pl-3">Фірма: <b>{(getFirmDisplayName(record.firmId, undefined, directories) || 'Не визначено')}</b></span>
-                    <span className="border-l border-gray-300 pl-3">Склад: <b>{(getStorageDisplayName(record.storageId || record.payload?.storage, record.storageName, directories) || '—')}</b></span>
+                    {isMovementRecord ? (
+                      <>
+                        <span className="border-l border-gray-300 pl-3">
+                          Зі складу: <b>{getStorageDisplayName(movementFromId, undefined, directories) ?? '—'}</b>
+                        </span>
+                        <span className="border-l border-gray-300 pl-3">
+                          На склад: <b>{getStorageDisplayName(movementToId, undefined, directories) ?? '—'}</b>
+                        </span>
+                      </>
+                    ) : (
+                      <span className="border-l border-gray-300 pl-3">
+                        Склад: <b>{(getStorageDisplayName(record.storageId || record.payload?.storage, record.storageName, directories) || '—')}</b>
+                      </span>
+                    )}
                     <span className="border-l border-gray-300 pl-3">
                       Дата створення: <b>{formatDate(primaryDateValue)}</b>
                     </span>

@@ -1,3 +1,5 @@
+import { resolveHistoryItemQuantity, safeParseItems } from './historyNormalize';
+
 const DEFAULT_CONCURRENCY = 2;
 
 export type HistoryRecordRef = {
@@ -6,19 +8,21 @@ export type HistoryRecordRef = {
   itemsNormalized?: unknown;
 };
 
+function parsedItemsHaveQuantity(raw: unknown): boolean {
+  const arr = safeParseItems(raw);
+  if (arr.length === 0) return false;
+  return arr.some((row) => resolveHistoryItemQuantity(row) > 0);
+}
+
+function normalizedItemsHaveQuantity(normalized: unknown): boolean {
+  if (!Array.isArray(normalized) || normalized.length === 0) return false;
+  return normalized.some((row) => Number((row as { qty?: number }).qty ?? 0) > 0);
+}
+
 export function recordNeedsHistoryDetailsEnrich(record: HistoryRecordRef): boolean {
-  const raw = record.items;
-  if (Array.isArray(raw) && raw.length > 0) return false;
-  if (typeof raw === 'string' && raw.trim() && raw !== '[]') {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return false;
-    } catch {
-      // treat as missing
-    }
-  }
-  const normalized = record.itemsNormalized;
-  return !(Array.isArray(normalized) && normalized.length > 0);
+  if (normalizedItemsHaveQuantity(record.itemsNormalized)) return false;
+  if (parsedItemsHaveQuantity(record.items)) return false;
+  return true;
 }
 
 /**

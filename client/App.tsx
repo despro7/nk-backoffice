@@ -11,6 +11,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ProductMovementsDrawerProvider } from '@/features/product-movements/context/ProductMovementsDrawerContext';
+import { WarehouseDocumentEditDrawerProvider } from '@/features/warehouse-document-edit/context/WarehouseDocumentEditDrawerContext';
 import { useAuth, useEquipmentFromAuth } from "./contexts/auth-context";
 import { DilovodDirectoriesProvider } from './contexts/DilovodDirectoriesContext';
 import { useDilovodDirectories } from './contexts/DilovodDirectoriesContext';
@@ -209,9 +210,10 @@ export default function App() {
       <BrowserRouter>
         <DilovodDirectoriesProvider>
           <AuthProvider>
-            <ProductMovementsDrawerProvider>
-            <DebugProvider>
             <RolePreviewProvider>
+            <DebugProvider>
+            <WarehouseDocumentEditDrawerProvider>
+            <ProductMovementsDrawerProvider>
             <ServerStatusProvider>
               <AppInitializer>
                 <ScrollToTop />
@@ -220,9 +222,10 @@ export default function App() {
                   </ErrorBoundary>
                 </AppInitializer>
               </ServerStatusProvider>
-            </RolePreviewProvider>
-            </DebugProvider>
             </ProductMovementsDrawerProvider>
+            </WarehouseDocumentEditDrawerProvider>
+            </DebugProvider>
+            </RolePreviewProvider>
           </AuthProvider>
         </DilovodDirectoriesProvider>
       </BrowserRouter>

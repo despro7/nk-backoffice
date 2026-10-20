@@ -5,6 +5,7 @@ import { lazyPage, type LazyPageComponent } from './lib/lazyPage';
 const Dashboard = lazyPage(() => import('./pages/Dashboard'));
 const Orders = lazyPage(() => import('./pages/Orders'));
 const WarehouseMovement = lazyPage(() => import('./pages/Warehouse/WarehouseMovement'));
+const WarehouseMovementV2 = lazyPage(() => import('./pages/Warehouse/WarehouseMovementV2'));
 const WarehouseBatches = lazyPage(() => import('./pages/Warehouse/WarehouseBatches'));
 const WarehouseMovementMob = lazyPage(() => import('./pages/Warehouse/WarehouseMovementMob'));
 const MovementMobDocumentPage = lazyPage(() => import('./pages/Warehouse/WarehouseMovementMob/MovementMobDocumentPage'));
@@ -231,7 +232,7 @@ export const appRoutes: AppRoute[] = [
     component: WarehouseMovement,
     title: 'Переміщення між складами',
     pageTitle: 'Переміщення між складами | NK Backoffice',
-    navLabel: 'Переміщення між складами',
+    navLabel: 'Переміщення',
     icon: <DynamicIcon name="combine" size={16} />,
     inNav: true,
     order: 1,
@@ -241,7 +242,21 @@ export const appRoutes: AppRoute[] = [
       icon: <DynamicIcon name="warehouse" size={20} />,
       order: 3,
     },
-    permission: { name: 'movement' },
+    permission: { name: 'movement', label: 'Переміщення v1' },
+    navBadge: { label: 'v1', color: 'secondary' },
+  },
+  {
+    path: '/warehouse/movement-v2',
+    component: WarehouseMovementV2,
+    title: 'Переміщення між складами',
+    pageTitle: 'Переміщення | NK Backoffice',
+    navLabel: 'Переміщення',
+    icon: <DynamicIcon name="combine" size={16} />,
+    inNav: true,
+    order: 1.5,
+    parent: 'warehouse',
+    permission: { name: 'movementV2', label: 'Переміщення v2' },
+    navBadge: { label: 'v2', color: 'success' },
   },
   {
     path: '/warehouse/inventory/:warehousePrefix/:sessionId',

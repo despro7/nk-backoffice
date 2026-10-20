@@ -28,7 +28,7 @@ export const MovementHistoryTable = ({
   onEditMovement
 }: MovementHistoryTableProps) => {
   const { hasPermission } = useRoleAccess();
-  const isAdmin = hasPermission(PERMISSIONS.ACTION_WAREHOUSE_HISTORY_DELETE);
+  const canEditMovement = hasPermission(PERMISSIONS.ACTION_WAREHOUSE_MOVEMENT_EDIT);
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [contentHeights, setContentHeights] = useState<Record<string, number>>({});
   const contentRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -216,7 +216,7 @@ export const MovementHistoryTable = ({
                           </Button>
                         )}
                         {/* Кнопка редагування (тільки для адміна) */}
-                        {isAdmin && (
+                        {canEditMovement && (
                           <Button
                             variant="light"
                             size="sm"

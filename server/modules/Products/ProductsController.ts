@@ -125,6 +125,18 @@ router.get('/folder/:id/children', ...authOnly, async (req, res) => {
   }
 });
 
+// GET /api/catalog/warehouse-search-index — preload GP для складського пошуку
+router.get('/warehouse-search-index', ...authOnly, async (req, res) => {
+  try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const data = await productsCatalogService.listWarehouseSearchIndex();
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'GET /warehouse-search-index');
+  }
+});
+
 // GET /api/catalog/search?q=&underFolderId=&underFolderName=
 router.get('/search', ...authOnly, async (req, res) => {
   try {

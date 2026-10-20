@@ -206,6 +206,7 @@ export const PERMISSION_SEEDS: Array<{ key: PermissionKey; seed: SeedGrant }> = 
   { key: pageKey(DEFAULT_PAGE_GROUP, 'testSerialCom'), seed: min(ROLES.STOREKEEPER) },
 
   { key: pageKey('warehouse', 'movement'), seed: min(ROLES.STOREKEEPER) },
+  { key: pageKey('warehouse', 'movementV2'), seed: min(ROLES.STOREKEEPER) },
   { key: pageKey('warehouse', 'movementMob'), seed: min(ROLES.STOREKEEPER) },
   { key: pageKey('warehouse', 'batches'), seed: min(ROLES.STOREKEEPER) },
   { key: pageKey('warehouse', 'inventory'), seed: min(ROLES.STOREKEEPER) },
@@ -305,6 +306,7 @@ export const PERMISSIONS = {
   PAGE_PRODUCT_SETS: pageKey(DEFAULT_PAGE_GROUP, 'productSets'),
   PAGE_TEST_SERIAL_COM: pageKey(DEFAULT_PAGE_GROUP, 'testSerialCom'),
   PAGE_WAREHOUSE_MOVEMENT: pageKey('warehouse', 'movement'),
+  PAGE_WAREHOUSE_MOVEMENT_V2: pageKey('warehouse', 'movementV2'),
   PAGE_WAREHOUSE_MOVEMENT_MOB: pageKey('warehouse', 'movementMob'),
   PAGE_WAREHOUSE_BATCHES: pageKey('warehouse', 'batches'),
   PAGE_WAREHOUSE_INVENTORY: pageKey('warehouse', 'inventory'),

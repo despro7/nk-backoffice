@@ -1,6 +1,8 @@
-# Кешування деталей та фільтри в Історії переміщень
+# Кешування деталей та фільтри в Історії переміщень (v1)
 
-## Загальна схема
+> **Переміщення v2** (`/warehouse/movement-v2`) використовує швидкий патерн як surplus — див. [warehouse-movement-history-fast-list.md](./warehouse-movement-history-fast-list.md).
+
+## Загальна схема (legacy `GET /api/warehouse/history`)
 
 ```
 GET /history  →  Діловод (список)  →  persist нових в БД  →  збагатити details з БД  →  клієнт

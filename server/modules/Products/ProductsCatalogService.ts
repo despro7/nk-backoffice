@@ -2558,6 +2558,79 @@ export class ProductsCatalogService {
       created: true,
     };
   }
+
+  /** Компактний індекс товарів GP для клієнтського пошуку на складі. */
+  async listWarehouseSearchIndex(): Promise<
+    Array<{
+      sku: string;
+      name: string;
+      catalogGoodId: string;
+      parentName: string | null;
+      barcodes: string[];
+      portionsPerBox: number;
+      isOutdated: boolean;
+      doNotPublish: boolean;
+      delMark: boolean;
+      updatedAt: string;
+    }>
+  > {
+    const parentIds = await this.resolveFolderSubtreeIds({
+      underFolderId: CATALOG_FINISHED_PRODUCTS_FOLDER_ID,
+    });
+    if (parentIds.length === 0) return [];
+
+    const rows = await prisma.catalogGood.findMany({
+      where: {
+        id: { not: CATALOG_TRASH_ID },
+        isGroup: false,
+        parentId: { in: parentIds },
+        sku: { not: null },
+      },
+      select: {
+        id: true,
+        sku: true,
+        name: true,
+        delMark: true,
+        doNotPublish: true,
+        updatedAt: true,
+        unitRatio: true,
+        packageRatio: true,
+        parentId: true,
+        barcodes: { select: { code: true } },
+      },
+    });
+
+    const parentIdsUnique = [
+      ...new Set(rows.map((row) => row.parentId).filter((id): id is string => Boolean(id))),
+    ];
+    const parents = parentIdsUnique.length > 0
+      ? await prisma.catalogGood.findMany({
+        where: { id: { in: parentIdsUnique } },
+        select: { id: true, name: true },
+      })
+      : [];
+    const parentNameById = new Map(parents.map((parent) => [parent.id, parent.name]));
+
+    return rows
+      .filter((row) => String(row.sku || '').trim())
+      .map((row) => {
+        const portionsPerBox = Number(row.unitRatio ?? row.packageRatio ?? 1);
+        const parentName = row.parentId ? parentNameById.get(row.parentId) ?? null : null;
+        const inArchiveFolder = Boolean(parentName && isArchiveFolderName(parentName));
+        return {
+          sku: String(row.sku).trim(),
+          name: row.name,
+          catalogGoodId: row.id,
+          parentName,
+          barcodes: [...new Set(row.barcodes.map((b) => String(b.code || '').trim()).filter(Boolean))],
+          portionsPerBox: Number.isFinite(portionsPerBox) && portionsPerBox > 0 ? portionsPerBox : 1,
+          isOutdated: row.delMark || inArchiveFolder,
+          doNotPublish: row.doNotPublish,
+          delMark: row.delMark,
+          updatedAt: row.updatedAt.toISOString(),
+        };
+      });
+  }
 }
 
 export const productsCatalogService = new ProductsCatalogService();

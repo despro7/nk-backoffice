@@ -19,6 +19,11 @@ import {
   sumQuantityForSku,
 } from '../../services/orderShipmentMetricsService.js';
 import { safeParseItems } from './historyNormalize.js';
+import {
+  listMovementHistory,
+  parseMovementHistoryListQuery,
+} from './movementV2HistoryList.js';
+import { movementV2HistorySyncService } from './MovementV2HistorySync.js';
 import type { WarehouseProductByBarcodeResponse } from '../../../shared/types/warehouse.js';
 import { warehouseBatchesService } from './WarehouseBatchesService.js';
 import { productsCatalogService } from '../Products/ProductsCatalogService.js';
@@ -217,13 +222,84 @@ async function enrichBatchNamesFromCatalog(batches: BatchNumbersRow[]): Promise<
 // ПЕРЕМІЩЕННЯ ТОВАРІВ
 // ============================================================================
 
+// GET /api/warehouse/search-by-batch?q= — пошук SKU за номером партії / ШК партії
+router.get('/search-by-batch', authenticateToken, async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (!q) {
+      return res.json({ success: true, items: [] });
+    }
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+    const rows = await prisma.catalogGoodBarcode.findMany({
+      where: {
+        good: { isGroup: false },
+        OR: [
+          { goodPartName: { contains: q } },
+          { code: { contains: q } },
+          { goodPart: { contains: q } },
+        ],
+      },
+      take: limit,
+      include: {
+        good: {
+          select: {
+            id: true,
+            sku: true,
+            name: true,
+            delMark: true,
+            doNotPublish: true,
+            updatedAt: true,
+            parentId: true,
+          },
+        },
+      },
+    });
+
+    const parentIds = [
+      ...new Set(rows.map((row) => row.good?.parentId).filter((id): id is string => Boolean(id))),
+    ];
+    const parents = parentIds.length > 0
+      ? await prisma.catalogGood.findMany({
+        where: { id: { in: parentIds } },
+        select: { id: true, name: true },
+      })
+      : [];
+    const parentNameById = new Map(parents.map((parent) => [parent.id, parent.name]));
+
+    const items = rows
+      .filter((row) => row.good?.sku)
+      .map((row) => ({
+        sku: String(row.good!.sku),
+        name: row.good!.name,
+        catalogGoodId: row.good!.id,
+        parentName: row.good!.parentId ? parentNameById.get(row.good!.parentId) ?? null : null,
+        matchType: 'batch' as const,
+        batchId: row.goodPart || null,
+        batchLabel: row.goodPartName || row.goodPart || null,
+        barcode: row.code,
+        isOutdated: row.good!.delMark,
+        doNotPublish: row.good!.doNotPublish,
+        updatedAt: row.good!.updatedAt.toISOString(),
+      }));
+
+    res.json({ success: true, items });
+  } catch (error) {
+    console.error('🚨 [Warehouse] search-by-batch:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
 // Отримати всі документи про переміщення
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const { status, warehouse, page, limit, from, to } = req.query;
 
+    const statusParam = typeof status === 'string' && status.includes(',')
+      ? status.split(',').map((s) => s.trim()).filter(Boolean).join(',')
+      : (status as string | undefined);
+
     const result = await WarehouseService.getMovements({
-      status: status as string | undefined,
+      status: statusParam,
       warehouse: warehouse as string | undefined,
       page: page ? Number(page) : 1,
       limit: limit ? Number(limit) : 20,
@@ -1048,7 +1124,51 @@ router.get('/product-by-barcode', authenticateToken, async (req, res) => {
   }
 });
 
-// Отримати історію переміщень з Діловода
+// GET /api/warehouse/movements/history — швидкий список з БД + опційний sync шапок Dilovod (як surplus)
+router.get('/movements/history', authenticateToken, async (req, res) => {
+  try {
+    const listQuery = parseMovementHistoryListQuery(req);
+    const shouldSync = String(req.query.sync ?? '') === 'true';
+    const forceFullList = String(req.query.forceFullList ?? '') === 'true';
+    if (shouldSync && listQuery.status === 'active') {
+      try {
+        await movementV2HistorySyncService.sync({
+          listQuery,
+          forceFullList,
+          fromDate: listQuery.from,
+          toDate: listQuery.to,
+        });
+      } catch (syncErr) {
+        console.warn('[Warehouse] movements/history sync failed:', syncErr);
+      }
+    }
+    const result = await listMovementHistory(listQuery);
+    res.json({ success: true, data: result.rows, pagination: result.pagination });
+  } catch (error) {
+    console.error('[Warehouse] movements/history error:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+router.get('/movements/history/:id/details', authenticateToken, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid id' });
+    }
+    const force = req.query.force === 'true';
+    const details = await movementV2HistorySyncService.loadDetails(id, { force });
+    res.json({ success: true, data: details });
+  } catch (error) {
+    console.error('[Warehouse] movements/history details error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Internal server error',
+    });
+  }
+});
+
+// Отримати історію переміщень з Діловода (v1 — повний відповідь для старого UI)
 router.get('/history', authenticateToken, async (req, res) => {
   try {
     console.log('🏪 [Warehouse] GET /history - запит історії переміщень...');
@@ -1084,10 +1204,11 @@ function hasValidSkus(items: Array<{ sku: string; productName: string }>): boole
 
 // GET /api/warehouse/movements/:id - отримати деталі переміщення за ID
 // ?force=true — примусово оновити з Dilovod (ігнорувати кешовані items в БД)
+// ?forEdit=true — те саме, що force (повний header + tpGoods для форми редагування)
 router.get('/details/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const force = req.query.force === 'true';
+    const force = req.query.force === 'true' || req.query.forEdit === 'true';
 
     if (!id) {
       return res.status(400).json({ error: 'Movement ID is required' });

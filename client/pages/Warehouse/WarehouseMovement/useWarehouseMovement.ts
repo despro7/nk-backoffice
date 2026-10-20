@@ -118,7 +118,14 @@ export interface UseWarehouseMovementReturn {
   deleteDraft: (id: number) => Promise<any>;
 }
 
-export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
+export type WarehouseMovementInitMode = 'page' | 'embedded';
+
+export interface UseWarehouseMovementOptions {
+  initMode?: WarehouseMovementInitMode;
+}
+
+export const useWarehouseMovement = (options?: UseWarehouseMovementOptions): UseWarehouseMovementReturn => {
+  const initMode = options?.initMode ?? 'page';
   const api = useApi();
 
   // Реф для поточної обраної дати документа — використовується в getProductsForMovement
@@ -213,7 +220,7 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
   const [storageTo, setStorageTo] = useState<string>(warehouseConfigRef.current?.storageTo || DEFAULT_STORAGE_TO);
 
   // Флаг завантаження даних при ініціалізації
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(initMode === 'page');
 
   const products$ = useMovementProducts(getProductsForMovement);
   const draft$ = useMovementDraftState(createMovement, updateDraft, warehouseConfigRef, { storage, storageTo });
@@ -297,6 +304,11 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
   // ─── Ініціалізація при монтуванні ────────────────────────────────────
 
   useEffect(() => {
+    if (initMode === 'embedded') {
+      initPhaseRef.current = false;
+      return;
+    }
+
     const initData = async () => {
       try {
         // Якщо юзер раніше скасував — показуємо StartScreen, товари не завантажуємо
@@ -392,7 +404,7 @@ export const useWarehouseMovement = (): UseWarehouseMovementReturn => {
 
     initData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initMode]);
 
   // Оновлюємо sourceStock/destStock при зміні напряму переміщення (синхронно з MovementDirectionSelector).
   // Пропускаємо перший запуск та програмну зміну складу під час initData —

@@ -14,6 +14,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import type { ProductMovementsGroup, ProductMovementsQueryResponse } from '../types';
 import { formatGroupDisplayLabel, formatQty } from '../productMovementsUtils';
 import { resolveDocumentIconClass, resolveDocumentIconName } from '../productMovementsDocumentIcon';
+import { useWarehouseDocumentEditDrawer } from '@/features/warehouse-document-edit/context/WarehouseDocumentEditDrawerContext';
 
 interface ProductMovementsTableProps {
   result: ProductMovementsQueryResponse | null;
@@ -84,6 +85,7 @@ function OldBatchesAccordion({ groups }: { groups: ProductMovementsGroup[] }) {
 }
 
 function GroupBlock({ group, compact = false }: { group: ProductMovementsGroup; compact?: boolean }) {
+  const { open: openDocumentEdit } = useWarehouseDocumentEditDrawer();
   const groupTitle = formatGroupDisplayLabel(group.label);
 
   const tableRows: TableRowItem[] = [
@@ -167,7 +169,22 @@ function GroupBlock({ group, compact = false }: { group: ProductMovementsGroup; 
                       {iconName ? (
                         <DynamicIcon name={iconName as any} size={15} className={`shrink-0 ${iconClass}`} />
                       ) : null}
-                      <span>{line.documentLabel}</span>
+                      {!isSummary && line.kind === 'line' && line.documentId ? (
+                        <button
+                          type="button"
+                          className="text-left text-primary hover:underline focus:outline-none focus-visible:underline"
+                          onClick={() => {
+                            openDocumentEdit({
+                              dilovodDocumentId: line.documentId!,
+                              documentLabel: line.documentLabel,
+                            });
+                          }}
+                        >
+                          {line.documentLabel}
+                        </button>
+                      ) : (
+                        <span>{line.documentLabel}</span>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell className="text-center font-mono">

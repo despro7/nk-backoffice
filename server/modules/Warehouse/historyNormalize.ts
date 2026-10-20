@@ -69,10 +69,39 @@ function withAllocationBatches(component: any, allocations: any[]): any {
 }
 
 // Normalize a single item to canonical shape
+export function resolveHistoryItemQuantity(it: any): number {
+  const totalPortions = Number(it?.totalPortions);
+  if (Number.isFinite(totalPortions) && totalPortions > 0) return totalPortions;
+
+  const direct = Number(it?.quantity ?? it?.qty ?? 0);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+
+  const portionQty = Number(it?.portionQuantity ?? 0);
+  const boxes = Number(it?.boxQuantity ?? 0);
+  const ppb = Number(it?.portionsPerBox ?? it?.portions_per_box ?? 0);
+  if (boxes > 0 && ppb > 0) return boxes * ppb + portionQty;
+  if (portionQty > 0) return portionQty;
+
+  const dilovodQty = parseFloat(String(it?.qty ?? ''));
+  if (Number.isFinite(dilovodQty) && dilovodQty > 0) return dilovodQty;
+
+  return 0;
+}
+
+export function sumHistoryItemsQuantity(items: unknown[]): number {
+  if (!Array.isArray(items)) return 0;
+  return items.reduce<number>((sum, item) => {
+    if (item && typeof item === 'object' && 'qty' in item && (item as HistoryItemNormalized).qty != null) {
+      return sum + (Number((item as HistoryItemNormalized).qty) || 0);
+    }
+    return sum + resolveHistoryItemQuantity(item);
+  }, 0);
+}
+
 export function normalizeItem(it: any): HistoryItemNormalized {
   const sku = String(it?.sku ?? it?.id ?? it?.set_sku ?? '') || '';
   const name = it?.name ?? it?.productName ?? it?.title ?? null;
-  const qty = Number(it?.quantity ?? it?.qty ?? it?.portionQuantity ?? it?.totalPortions ?? 0) || 0;
+  const qty = resolveHistoryItemQuantity(it);
   const { batch, batches, batchId } = readHistoryBatch(it);
   const price = (it?.price !== undefined && it?.price !== null) ? Number(it.price) : null;
   const productId = it?.productId ?? null;

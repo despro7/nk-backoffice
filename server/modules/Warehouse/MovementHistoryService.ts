@@ -302,102 +302,149 @@ export class MovementHistoryService {
     return details as GoodMovingDocumentDetails;
   }
 
+  private static normalizeHeaderDocument(
+    doc: any,
+    direction: 'main-to-small' | 'small-to-main',
+  ): GoodMovingDocument {
+    return {
+      id: doc.id,
+      number: doc.number,
+      date: doc.date,
+      remark: doc.remark,
+      storage: doc.storage,
+      storageTo: doc.storageTo,
+      firm: doc.firm,
+      author: doc.author,
+      id__pr: doc.id__pr,
+      number__pr: doc.number__pr,
+      date__pr: doc.date__pr,
+      storage__pr: doc.storage__pr,
+      storageTo__pr: doc.storageTo__pr,
+      firm__pr: doc.firm__pr,
+      author__pr: doc.author__pr,
+      direction,
+    };
+  }
+
+  private static normalizeHeaderRows(resp: unknown): any[] {
+    if (Array.isArray(resp)) return resp;
+    if (resp == null || typeof resp !== 'object') return [];
+    const obj = resp as Record<string, unknown>;
+    if (Array.isArray(obj.data)) return obj.data;
+    if (Array.isArray(obj.rows)) return obj.rows;
+    if (Array.isArray(obj.result)) return obj.result;
+    if (Object.keys(obj).length === 0) return [];
+    return [resp];
+  }
+
+  private static readonly GOOD_MOVING_HEADER_FIELDS = {
+    id: 'id',
+    number: 'number',
+    parent: 'parent',
+    date: 'date',
+    remark: 'remark',
+    storage: 'storage',
+    storageTo: 'storageTo',
+    firm: 'firm',
+    author: 'author',
+  };
+
+  static async fetchHeaderDocumentsFromDilovod(
+    params: GetMovementHistoryParams,
+  ): Promise<{ documents: GoodMovingDocument[]; fromDate: string }> {
+    const storageSettings = await MovementHistoryService.getStorageSettings();
+    const fromDate = params.fromDate || (await MovementHistoryService.getDefaultFromDate());
+    const storageId = params.storageId || storageSettings.mainStorageId;
+    const storageToId = params.storageToId || storageSettings.smallStorageId;
+    const { toDate } = params;
+
+    const dilovodClient = MovementHistoryService.getDilovodClient();
+    await dilovodClient.ensureReady();
+    const apiKey = dilovodClient.getApiKey();
+    if (!apiKey) {
+      throw new Error('Dilovod API Key не налаштовано');
+    }
+
+    const [responseMainToSmall, responseSmallToMain] = await Promise.all([
+      dilovodClient.makeRequest(MovementHistoryService.buildDilovodRequest(
+        apiKey, storageId, storageToId, fromDate, toDate,
+      )),
+      dilovodClient.makeRequest(MovementHistoryService.buildDilovodRequest(
+        apiKey, storageToId, storageId, fromDate, toDate,
+      )),
+    ]);
+
+    const documents: GoodMovingDocument[] = [
+      ...MovementHistoryService.normalizeHeaderRows(responseMainToSmall)
+        .map((doc) => MovementHistoryService.normalizeHeaderDocument(doc, 'main-to-small')),
+      ...MovementHistoryService.normalizeHeaderRows(responseSmallToMain)
+        .map((doc) => MovementHistoryService.normalizeHeaderDocument(doc, 'small-to-main')),
+    ];
+
+    return { documents, fromDate };
+  }
+
+  static async syncHeadersFromDilovod(params: GetMovementHistoryParams): Promise<number> {
+    const { documents, fromDate } = await MovementHistoryService.fetchHeaderDocumentsFromDilovod(params);
+    await MovementHistoryService.persistDocumentsToDB(documents, fromDate);
+    return documents.length;
+  }
+
+  static async syncHeadersByDilovodIds(docIds: string[]): Promise<number> {
+    const uniqueIds = [...new Set(docIds.map((id) => String(id).trim()).filter(Boolean))];
+    if (uniqueIds.length === 0) return 0;
+
+    const dilovodClient = MovementHistoryService.getDilovodClient();
+    await dilovodClient.ensureReady();
+    const apiKey = dilovodClient.getApiKey();
+    if (!apiKey) {
+      throw new Error('Dilovod API Key не налаштовано');
+    }
+
+    const CHUNK = 40;
+    const documents: GoodMovingDocument[] = [];
+    const seen = new Set<string>();
+
+    for (let i = 0; i < uniqueIds.length; i += CHUNK) {
+      const chunk = uniqueIds.slice(i, i + CHUNK);
+      const resp = await dilovodClient.makeRequest({
+        version: '0.25',
+        key: apiKey,
+        action: 'request',
+        params: {
+          from: 'documents.goodMoving',
+          fields: MovementHistoryService.GOOD_MOVING_HEADER_FIELDS,
+          filters: [{ alias: 'id', operator: 'IN', value: chunk }],
+        },
+      });
+
+      for (const row of MovementHistoryService.normalizeHeaderRows(resp)) {
+        const id = String(row?.id ?? '').trim();
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        documents.push(MovementHistoryService.normalizeHeaderDocument(row, 'main-to-small'));
+      }
+    }
+
+    await MovementHistoryService.persistDocumentsToDB(documents);
+    return documents.length;
+  }
+
   /**
-   * Отримує історію переміщень з Діловода
+   * Отримує історію переміщень з Діловода (v1 — повертає документи клієнту)
    */
   static async getMovementHistory(params: GetMovementHistoryParams): Promise<MovementHistoryResponse> {
     try {
-      // Отримуємо налаштування складів
       const storageSettings = await MovementHistoryService.getStorageSettings();
       const fromDate = params.fromDate || (await MovementHistoryService.getDefaultFromDate());
-
-      // Використовуємо передані параметри або налаштування
       const storageId = params.storageId || storageSettings.mainStorageId;
       const storageToId = params.storageToId || storageSettings.smallStorageId;
       const { toDate } = params;
 
-      // Отримуємо API Key для запиту
-      const dilovodClient = MovementHistoryService.getDilovodClient();
-      // Чекаємо, доки клієнт завантажить конфігурацію з БД (race condition при холодному старті)
-      await dilovodClient.ensureReady();
-      const apiKey = dilovodClient.getApiKey();
-
-      if (!apiKey) {
-        throw new Error('Dilovod API Key не налаштовано');
-      }
-
-      console.log(`📦 [MovementHistoryService] Параметри запиту:`);
-      console.log(`   Склад (з): ${storageId}`);
-      console.log(`   Склад (в): ${storageToId}`);
-      console.log(`   Дата від: ${fromDate}${toDate ? ` по: ${toDate}` : ''}`);
-
-      // Будуємо запити до Діловода для обох напрямків
-      const requestMainToSmall = MovementHistoryService.buildDilovodRequest(
-        apiKey,
-        storageId,
-        storageToId,
-        fromDate,
-        toDate,
-      );
-
-      const requestSmallToMain = MovementHistoryService.buildDilovodRequest(
-        apiKey,
-        storageToId,
-        storageId,
-        fromDate,
-        toDate,
-      );
-
-      // Виконуємо запити до Діловода
-      const [responseMainToSmall, responseSmallToMain] = await Promise.all([
-        dilovodClient.makeRequest(requestMainToSmall),
-        dilovodClient.makeRequest(requestSmallToMain),
-      ]);
-
-      // Обробляємо відповіді
-      const responseArrayMainToSmall = Array.isArray(responseMainToSmall)
-        ? responseMainToSmall
-        : responseMainToSmall?.tableParts?.tpGoods
-          ? [responseMainToSmall]
-          : [];
-
-      const responseArraySmallToMain = Array.isArray(responseSmallToMain)
-        ? responseSmallToMain
-        : responseSmallToMain?.tableParts?.tpGoods
-          ? [responseSmallToMain]
-          : [];
-
-      console.log(`📦 [MovementHistoryService] Отримано ${responseArrayMainToSmall.length} документів (main→small), ${responseArraySmallToMain.length} документів (small→main)`);
-
-      // Функція для нормалізації документа з напрямком
-      const normalizeDocument = (doc: any, direction: 'main-to-small' | 'small-to-main'): GoodMovingDocument => ({
-        id: doc.id,
-        number: doc.number,
-        date: doc.date,
-        remark: doc.remark,
-        storage: doc.storage,
-        storageTo: doc.storageTo,
-        firm: doc.firm,
-        author: doc.author,
-        id__pr: doc.id__pr,
-        number__pr: doc.number__pr,
-        date__pr: doc.date__pr,
-        storage__pr: doc.storage__pr,
-        storageTo__pr: doc.storageTo__pr,
-        firm__pr: doc.firm__pr,
-        author__pr: doc.author__pr,
-        direction,
-      });
-
-      // Об'єднуємо документи з обох напрямків
-      const documents: GoodMovingDocument[] = [
-        ...responseArrayMainToSmall.map(doc => normalizeDocument(doc, 'main-to-small')),
-        ...responseArraySmallToMain.map(doc => normalizeDocument(doc, 'small-to-main'))
-      ];
-
-      // Зберігаємо/оновлюємо документи в БД з фільтрацієми за датою
-      // Нові документи додаються, існуючі оновлюються метаданими (без items)
+      const { documents } = await MovementHistoryService.fetchHeaderDocumentsFromDilovod(params);
       await MovementHistoryService.persistDocumentsToDB(documents, fromDate);
+
+      console.log(`📦 [MovementHistoryService] Синхронізовано ${documents.length} шапок goodMoving`);
 
       // Збагачуємо документи деталями (items) з локальної БД — одним запитом для всіх.
       // Це дозволяє одразу показувати статистику (кількість товарів, порції) з кешу БД,

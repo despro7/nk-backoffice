@@ -127,13 +127,13 @@ export function WriteOffItemRow({
             max={maxAllowed}
             size="sm"
             className="w-28"
-            labelClassName="text-xs font-medium self-start"
+            labelClassName="text-xs font-medium self-start mb-1"
           />
         );
       })()}
 
-      <div className="w-100">
-					<div className="text-xs font-medium text-gray-500 mb-2">Партія</div>
+      <div className="w-50">
+					<div className="text-xs font-medium text-gray-500 mb-1">Партія</div>
 					{batchControl}
 					{showProdOrderWarning && (
 						<p className="mt-1.5 text-xs text-amber-700 leading-snug">{PRODUCTION_ORDER_BATCH_WARNING}</p>
