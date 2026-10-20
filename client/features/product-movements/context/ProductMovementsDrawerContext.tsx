@@ -55,4 +55,7 @@ export function ProductMovementsDrawerProvider({ children }: { children: ReactNo
   );
 }
 
-export { useProductMovementsDrawer } from './productMovementsDrawerContext.shared';
+export {
+  useProductMovementsDrawer,
+  useProductMovementsDrawerOptional,
+} from './productMovementsDrawerContext.shared';

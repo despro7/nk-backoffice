@@ -9,24 +9,32 @@ export interface ProductMovementsDrawerContextValue {
 /** Окремий модуль — один createContext на сесію; Provider не дублює контекст після HMR. */
 export const ProductMovementsDrawerContext = createContext<ProductMovementsDrawerContextValue | null>(null);
 
-const DEV_NOOP: ProductMovementsDrawerContextValue = {
+let missingProviderWarned = false;
+
+function warnMissingProvider(): void {
+  if (missingProviderWarned) return;
+  missingProviderWarned = true;
+  console.warn(
+    '[ProductMovementsDrawer] Provider недоступний (HMR або дубль контексту в chunk). «Рухи партії» не відкриються — перезавантажте сторінку.',
+  );
+}
+
+const MISSING_PROVIDER_NOOP: ProductMovementsDrawerContextValue = {
   open: () => {
-    if (import.meta.env.DEV) {
-      console.warn(
-        '[ProductMovementsDrawer] Контекст недоступний (часто після HMR). Перезавантажте сторінку, якщо «Рухи партії» не відкриваються.',
-      );
-    }
+    warnMissingProvider();
   },
   close: () => {},
 };
 
+/** null — якщо Provider не в дереві або інший екземпляр createContext у lazy-chunk. */
+export function useProductMovementsDrawerOptional(): ProductMovementsDrawerContextValue | null {
+  return useContext(ProductMovementsDrawerContext);
+}
+
 export function useProductMovementsDrawer(): ProductMovementsDrawerContextValue {
-  const ctx = useContext(ProductMovementsDrawerContext);
+  const ctx = useProductMovementsDrawerOptional();
   if (!ctx) {
-    if (import.meta.env.DEV) {
-      return DEV_NOOP;
-    }
-    throw new Error('useProductMovementsDrawer must be used within ProductMovementsDrawerProvider');
+    return MISSING_PROVIDER_NOOP;
   }
   return ctx;
 }

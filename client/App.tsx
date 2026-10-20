@@ -11,6 +11,8 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ProductMovementsDrawerProvider } from '@/features/product-movements/context/ProductMovementsDrawerContext';
+/** Один екземпляр createContext у entry-chunk (lazy warehouse не дублює контекст на prod). */
+import '@/features/product-movements/context/productMovementsDrawerContext.shared';
 import { WarehouseDocumentEditDrawerProvider } from '@/features/warehouse-document-edit/context/WarehouseDocumentEditDrawerContext';
 import { useAuth, useEquipmentFromAuth } from "./contexts/auth-context";
 import { DilovodDirectoriesProvider } from './contexts/DilovodDirectoriesContext';

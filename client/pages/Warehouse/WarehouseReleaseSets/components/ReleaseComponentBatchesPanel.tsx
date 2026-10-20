@@ -15,7 +15,7 @@ import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { BatchNumbersAutocomplete } from '../../WarehouseMovement/components/BatchNumbersAutocomplete';
 import { useBatchNumbers, type BatchNumber } from '../../WarehouseMovement/hooks/useBatchNumbers';
 import { ToastService } from '@/services/ToastService';
-import { useProductMovementsDrawer } from '@/features/product-movements/context/ProductMovementsDrawerContext';
+import { useProductMovementsDrawerOptional } from '@/features/product-movements/context/productMovementsDrawerContext.shared';
 import type { ReleaseComponentAllocation, ReleaseComponentBatch } from '@shared/types/warehouseRelease';
 import type { ReleaseSetsOperationKey } from '../useReleaseSets';
 import { breakdownStockPortions } from '../../WarehouseMovementMob/WarehouseMovementMobUtils';
@@ -75,7 +75,11 @@ function ReleaseBatchMovementsButton({
   batchLabel: string;
   storageId?: string | null;
 }) {
-  const { open } = useProductMovementsDrawer();
+  const movementsDrawer = useProductMovementsDrawerOptional();
+  if (!movementsDrawer) {
+    return null;
+  }
+  const { open } = movementsDrawer;
   return (
     <Button
       size="sm"
