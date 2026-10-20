@@ -3,7 +3,7 @@ import { Button } from '@heroui/react';
 import ResizableAppDrawer from '@/components/drawer/ResizableAppDrawer';
 import type { WarehouseDocumentEditOpenParams } from '../types';
 import { resolveWarehouseDocumentKind } from '../resolveWarehouseDocumentKind';
-import MovementDilovodEditDrawerContent from './MovementDilovodEditDrawerContent';
+import MovementV2DilovodEditDrawer from './MovementV2DilovodEditDrawer';
 
 const WIDTH_STORAGE_KEY = 'warehouse-document-edit-drawer-width-v1';
 const DEFAULT_WIDTH = 920;
@@ -28,25 +28,22 @@ export default function WarehouseDocumentEditDrawer({
 
   const title = params?.documentLabel?.trim() || 'Документ';
 
-  const body = (() => {
-    if (!params) return null;
-    switch (kind) {
-      case 'goodMoving':
-        return (
-          <MovementDilovodEditDrawerContent
-            key={params.dilovodDocumentId}
-            dilovodDocumentId={params.dilovodDocumentId}
-            onClose={onClose}
-          />
-        );
-      default:
-        return (
-          <p className="text-sm text-default-500">
-            Редагування цього типу документа ще не підключено. Тип: {kind}.
-          </p>
-        );
-    }
-  })();
+  if (kind === 'goodMoving' && params) {
+    return (
+      <MovementV2DilovodEditDrawer
+        isOpen={isOpen}
+        title={title}
+        dilovodDocumentId={params.dilovodDocumentId}
+        onClose={onClose}
+      />
+    );
+  }
+
+  const body = params ? (
+    <p className="text-sm text-default-500">
+      Редагування цього типу документа ще не підключено. Тип: {kind}.
+    </p>
+  ) : null;
 
   return (
     <ResizableAppDrawer

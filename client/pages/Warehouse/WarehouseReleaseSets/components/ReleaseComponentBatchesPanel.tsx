@@ -52,6 +52,10 @@ interface Props {
   /** false — лише блоки товарів без обгортки Card (вкладений реєстр). */
   wrapInCard?: boolean;
   onRemoveComponent?: (sku: string) => void;
+  /** Z-index для вкладеного drawer вибору партії (коли панель у ResizableAppDrawer). */
+  overlayZClassName?: string;
+  /** false — не блокувати scroll body (вкладений drawer). */
+  batchPickerShouldBlockScroll?: boolean;
 }
 
 function formatPortionQty(value: number): string {
@@ -283,6 +287,8 @@ export default function ReleaseComponentBatchesPanel({
   freeQuantityMode = false,
   wrapInCard = true,
   onRemoveComponent,
+  overlayZClassName,
+  batchPickerShouldBlockScroll = true,
 }: Props) {
   const { batches, loading, fetchBatches } = useBatchNumbers();
   const [activeSku, setActiveSku] = useState<string | null>(null);
@@ -807,13 +813,15 @@ export default function ReleaseComponentBatchesPanel({
             );
             const hasAlternativeBatches = hasUnselectedWarehouseBatches(skuBatches, availableSkuBatches);
             const canSwapSingleBatch = !correctionMode
-              && isComplete
+              && hasAlternativeBatches
               && skuBatches.length === 1
-              && hasAlternativeBatches;
+              && (freeQuantityMode || isComplete);
             const canSwapBatchInRow = !correctionMode
-              && isComplete
+              && hasAlternativeBatches
               && skuBatches.length > 1
-              && hasAlternativeBatches;
+              && (freeQuantityMode || isComplete);
+            const canAddAnotherBatch = availableSkuBatches.length > 0 && hasAlternativeBatches;
+            const showFillAllForSku = availableSkuBatches.length > 1;
 
             return (
               <div key={component.sku} className="overflow-hidden rounded-md border border-gray-200">
@@ -932,7 +940,11 @@ export default function ReleaseComponentBatchesPanel({
                         && Number.isFinite(batchStock)
                         && batchStock > 0
                         && currentQuantity < batchStock;
-                      const canSetBatchMax = canSetBatchMaxUnkit || canSetBatchMaxStock;
+                      const canSetBatchMaxFree = freeQuantityMode
+                        && Number.isFinite(batchStock)
+                        && batchStock > 0
+                        && currentQuantity < batchStock;
+                      const canSetBatchMax = canSetBatchMaxUnkit || canSetBatchMaxStock || canSetBatchMaxFree;
 
                       const barcodeLabel = String(batch.barcode ?? '').trim();
                       const accountingStock = getAccountingBatchStock(
@@ -1001,7 +1013,9 @@ export default function ReleaseComponentBatchesPanel({
                               onClick={() => handleQuantityChange(
                                 component.sku,
                                 index,
-                                canSetBatchMaxUnkit ? remainingForBatch : batchStock,
+                                canSetBatchMaxUnkit
+                                  ? remainingForBatch
+                                  : batchStock,
                                 maxQuantity,
                               )}
                             >
@@ -1063,7 +1077,10 @@ export default function ReleaseComponentBatchesPanel({
                       data-btn-tone="primary-blue-flat"
                       className="px-3 min-w-12 gap-1 data-[disabled=true]:opacity-50"
                       startContent={<DynamicIcon name="plus" className="h-4 w-4" />}
-                      isDisabled={!correctionMode && !freeQuantityMode && isComplete}
+                      isDisabled={
+                        !canAddAnotherBatch
+                        || (!correctionMode && !freeQuantityMode && isComplete)
+                      }
                       onPress={() => openDrawer(component.sku, -1)}
                     >
                       Додати партію
@@ -1079,7 +1096,7 @@ export default function ReleaseComponentBatchesPanel({
                         Замінити партію
                       </Button>
                     ) : null}
-                    {showBulkFillActions && (
+                    {showBulkFillActions && showFillAllForSku && (
                       <Button
                         size="sm"
                         color="success"
@@ -1091,7 +1108,7 @@ export default function ReleaseComponentBatchesPanel({
                         Додати всі партії
                       </Button>
                     )}
-                    {showPerSkuFillAll && (
+                    {showPerSkuFillAll && showFillAllForSku && (
                       <Button
                         size="sm"
                         color="success"
@@ -1170,6 +1187,8 @@ export default function ReleaseComponentBatchesPanel({
           );
         }}
         inputRef={inputRef}
+        overlayZClassName={overlayZClassName}
+        shouldBlockScroll={batchPickerShouldBlockScroll}
       />
 
       <ConfirmModal
@@ -1181,6 +1200,7 @@ export default function ReleaseComponentBatchesPanel({
         confirmColor="danger"
         onConfirm={handleDeleteBatch}
         onCancel={() => setDeleteConfirm(null)}
+        overlayZClassName={overlayZClassName}
       />
 
       <ConfirmModal
@@ -1194,6 +1214,7 @@ export default function ReleaseComponentBatchesPanel({
         confirmColor="danger"
         onConfirm={handleRemoveComponentConfirm}
         onCancel={() => setRemoveComponentConfirm(null)}
+        overlayZClassName={overlayZClassName}
       />
     </>
   );

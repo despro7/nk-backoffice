@@ -19,6 +19,8 @@ interface Props {
   portionsPerBox?: number | null;
   stockAtStorage?: number | null;
   onPortionsPerBoxResolved?: (value: number) => void;
+  overlayZClassName?: string;
+  batchPickerShouldBlockScroll?: boolean;
 }
 
 export default function WarehouseProductBatchesPanel({
@@ -34,6 +36,8 @@ export default function WarehouseProductBatchesPanel({
   portionsPerBox,
   stockAtStorage,
   onPortionsPerBoxResolved,
+  overlayZClassName,
+  batchPickerShouldBlockScroll,
 }: Props) {
   const [resolvedPortionsPerBox, setResolvedPortionsPerBox] = useState(
     portionsPerBox != null && portionsPerBox > 0 ? portionsPerBox : 1,
@@ -130,6 +134,8 @@ export default function WarehouseProductBatchesPanel({
         wrapInCard={false}
         operationKey="goodUnKit"
         onRemoveComponent={onRemove ? () => onRemove() : undefined}
+        overlayZClassName={overlayZClassName}
+        batchPickerShouldBlockScroll={batchPickerShouldBlockScroll}
       />
     </div>
   );

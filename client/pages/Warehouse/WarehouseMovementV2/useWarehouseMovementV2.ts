@@ -7,7 +7,9 @@ import type { MovementDraft } from '../WarehouseMovement/WarehouseMovementTypes'
 import { serializeMovementItems } from '../WarehouseMovement/WarehouseMovementUtils';
 import { buildEffectiveNotes, formatLocalDateTime } from '../WarehouseMovement/hooks/useMovementDraftState';
 import type { CreateWarehouseMovementRequest } from '@/types/warehouse';
-import { linesToSummaryItems } from './movementV2Adapters';
+import { linesFromGoodMovingDetails, linesToSummaryItems } from './movementV2Adapters';
+import { fetchGoodMovingDetailsForEdit } from '@/features/warehouse-document-edit/api/fetchGoodMovingDetailsForEdit';
+import { goodMovingDocumentFromDetails } from '@/features/warehouse-document-edit/utils/goodMovingDocumentFromDetails';
 import { lazyEnrichHistoryPage } from '@/pages/Warehouse/shared/lazyEnrichHistoryPage';
 import type { MovementV2HistoryPagination, MovementV2Line } from './types';
 
@@ -159,6 +161,8 @@ export default function useWarehouseMovementV2() {
           items,
           movementDate: movementDateTime.toISOString(),
           notes: buildEffectiveNotes(notes, true),
+          ...(savedDraft?.dilovodDocId ? { dilovodDocId: savedDraft.dilovodDocId } : {}),
+          ...(savedDraft?.docNumber ? { docNumber: String(savedDraft.docNumber) } : {}),
         });
       }
 
@@ -265,6 +269,43 @@ export default function useWarehouseMovementV2() {
     }
   }, [fetchHistoryPage, historyPagination.page, historyPagination.limit, loadHistoryRecordDetails]);
 
+  const loadFromDilovodDocument = useCallback(async (dilovodDocumentId: string) => {
+    const details = await fetchGoodMovingDetailsForEdit(dilovodDocumentId);
+    const doc = goodMovingDocumentFromDetails(dilovodDocumentId, details);
+
+    if (doc.storage) setStorage(doc.storage);
+    if (doc.storageTo) setStorageTo(doc.storageTo);
+    if (doc.date) {
+      const parsed = new Date(doc.date.replace(' ', 'T'));
+      if (!Number.isNaN(parsed.getTime())) setMovementDateTime(parsed);
+    }
+
+    const remark = doc.remark
+      ? doc.remark.replace(/(?:\s*\|\s*)?(?:Додано|Оновлено) з Backoffice.*$/, '').trim()
+      : '';
+    setNotes(remark);
+
+    const nextLines = linesFromGoodMovingDetails(details);
+    setLines(nextLines);
+
+    const draft: MovementDraft = {
+      id: 0,
+      internalDocNumber: doc.number || '0',
+      docNumber: doc.number || undefined,
+      dilovodDocId: dilovodDocumentId,
+      status: 'draft',
+      sourceWarehouse: doc.storage || storage,
+      destinationWarehouse: doc.storageTo || storageTo,
+      items: [],
+      draftCreatedAt: new Date().toISOString(),
+      movementDate: formatLocalDateTime(
+        doc.date ? new Date(doc.date.replace(' ', 'T')) : movementDateTime,
+      ),
+    };
+    setSavedDraft(draft);
+    lastSavedSnapshotRef.current = JSON.stringify(nextLines.map((l) => l.sku));
+  }, [movementDateTime, storage, storageTo]);
+
   const loadArchive = useCallback(async (
     page = archivePagination.page,
     limit = archivePagination.limit,
@@ -312,5 +353,6 @@ export default function useWarehouseMovementV2() {
     archiveLoading,
     archivePagination,
     loadArchive,
+    loadFromDilovodDocument,
   };
 }

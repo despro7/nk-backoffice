@@ -10,6 +10,7 @@ interface Props {
   sourceStorageId: string;
   destStorageId: string;
   emptyMessage?: string;
+  compactSpacing?: boolean;
 }
 
 export default function MovementSummaryPanel({
@@ -17,6 +18,7 @@ export default function MovementSummaryPanel({
   sourceStorageId,
   destStorageId,
   emptyMessage = 'Немає позицій для переміщення',
+  compactSpacing = false,
 }: Props) {
   if (items.length === 0) return null;
 
@@ -35,22 +37,27 @@ export default function MovementSummaryPanel({
   const destBadge = resolveShortStorageBadge(destStorageId);
 
   return (
-    <>
-      <h3 className="text-lg font-medium mb-2 flex flex-wrap items-center gap-2">
+    <div className={compactSpacing ? 'mb-6 space-y-1' : 'mb-6'}>
+      <h3
+        className={`font-medium flex flex-wrap items-center gap-2 mb-2 ${
+          compactSpacing ? 'text-base' : 'text-lg'
+        }`}
+      >
         <span>Сумарно до переміщення</span>
         <MovementMobDirectionBadges sourceBadge={sourceBadge} destBadge={destBadge} />
         <span>– {totalQty} шт.</span>
       </h3>
-      <Card className="rounded-lg bg-white p-1 mb-6" shadow="sm">
+      <Card className="rounded-lg bg-white p-0 overflow-hidden" shadow="sm">
         {rows.length === 0 ? (
           <div className="text-sm text-gray-500 p-3">{emptyMessage}</div>
         ) : (
           <HistoryItemsTable
             items={rows}
             footerTotals={{ qty: totalQty }}
+            className="px-1.5 pb-2.5 pt-0.5"
           />
         )}
       </Card>
-    </>
+    </div>
   );
 }

@@ -2,21 +2,13 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { Tab } from '@heroui/react';
 import type { DateRange } from '@react-types/datepicker';
 import PageTabs from '@/components/PageTabs';
-import { ConfirmModal } from '@/components/modals/ConfirmModal';
-import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
-import { useDebug } from '@/contexts/debug-context';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
-import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
-import ActionsBar from '../WarehouseReleaseSets/components/ActionsBar';
-import MovementDirectionDetails from './components/MovementDirectionDetails';
-import MovementRegisterPanel from './components/MovementRegisterPanel';
-import MovementSummaryPanel from './components/MovementSummaryPanel';
+import MovementV2EditorPanel from './components/MovementV2EditorPanel';
 import MovementV2HistoryTab from './components/MovementV2HistoryTab';
 import MovementV2HistoryFilterBar from './components/MovementV2HistoryFilterBar';
 import useWarehouseMovementV2 from './useWarehouseMovementV2';
 import { useMovementV2SendFlow } from './hooks/useMovementV2SendFlow';
 import { useWarehouseDocumentEditDrawer } from '@/features/warehouse-document-edit/context/WarehouseDocumentEditDrawerContext';
-import { getStorageDisplayName } from '@shared/utils/directoryUtils';
 import {
   getDefaultMovementV2HistoryDateRange,
   movementV2HistoryRangeToIso,
@@ -28,9 +20,7 @@ import { createStandardDatePresets } from '@/lib/dateReportingUtils';
 type PageTab = 'main' | 'history' | 'archive';
 
 export default function WarehouseMovementV2Page() {
-  const { isDebugMode } = useDebug();
   const { isAdmin } = useRoleAccess();
-  const dirsCtx = useDilovodDirectories();
   const mov = useWarehouseMovementV2();
   const { open: openDocumentEdit } = useWarehouseDocumentEditDrawer();
 
@@ -57,20 +47,6 @@ export default function WarehouseMovementV2Page() {
       mov.clearAll();
     },
   });
-
-  const movementStorages = useMemo(() => {
-    const src = Array.isArray(dirsCtx.directories?.storages) ? dirsCtx.directories!.storages : [];
-    return src.map((s: { id: string; name?: string; code?: string }) => ({
-      id: String(s.id),
-      code: s.code ?? '',
-      name: s.name ?? '',
-    }));
-  }, [dirsCtx.directories]);
-
-  const sourceStorageName = useMemo(
-    () => getStorageDisplayName(mov.storage, undefined, dirsCtx.directories) ?? mov.storage,
-    [mov.storage, dirsCtx.directories],
-  );
 
   const historyRangeIso = useMemo(
     () => movementV2HistoryRangeToIso(historyDateRange),
@@ -160,44 +136,12 @@ export default function WarehouseMovementV2Page() {
       </div>
 
       {pageTab === 'main' && (
-        <>
-          <MovementDirectionDetails
-            storages={movementStorages}
-            storage={mov.storage}
-            storageTo={mov.storageTo}
-            onStorageChange={mov.setStorage}
-            onStorageToChange={mov.setStorageTo}
-            movementDateTime={mov.movementDateTime}
-            onMovementDateTimeChange={mov.setMovementDateTime}
-          />
-
-          <MovementRegisterPanel
-            lines={mov.lines}
-            storageId={mov.storage}
-            storageName={sourceStorageName}
-            movementDateTime={mov.movementDateTime}
-            onAdd={(hit) => void mov.addProductFromSearch(hit)}
-            onBatchesChange={mov.updateLineBatches}
-            onPortionsPerBoxChange={mov.updateLinePortionsPerBox}
-            onRemoveLine={mov.removeLine}
-          />
-
-          <MovementSummaryPanel
-            items={mov.summaryItems}
-            sourceStorageId={mov.storage}
-            destStorageId={mov.storageTo}
-          />
-
-          <ActionsBar
-            onPreview={isDebugMode && isAdmin() ? () => void sendFlow.handleShowPayload() : undefined}
-            onSend={() => void sendFlow.sendAndFinalize()}
-            onCancel={mov.lines.length > 0 ? () => setShowClearConfirm(true) : undefined}
-            sendLabel="Створити переміщення"
-            sendLoading={sendFlow.isSendingToDilovod || mov.isSaving}
-            sendDisabled={mov.summaryItems.length === 0 || sendFlow.isSendingToDilovod || mov.isSaving}
-            previewDisabled={mov.summaryItems.length === 0}
-          />
-        </>
+        <MovementV2EditorPanel
+          mov={mov}
+          sendFlow={sendFlow}
+          showClearConfirm={showClearConfirm}
+          onShowClearConfirm={setShowClearConfirm}
+        />
       )}
 
       {pageTab === 'history' && (
@@ -235,27 +179,6 @@ export default function WarehouseMovementV2Page() {
         />
       )}
 
-      <ConfirmModal
-        isOpen={showClearConfirm}
-        title="Очистити реєстр?"
-        message="Усі позиції та незбережені зміни будуть видалені з форми."
-        confirmText="Очистити"
-        cancelText="Скасувати"
-        confirmColor="danger"
-        onConfirm={() => {
-          mov.clearAll();
-          setShowClearConfirm(false);
-        }}
-        onCancel={() => setShowClearConfirm(false)}
-      />
-
-      <PayloadPreviewModal
-        isOpen={sendFlow.showPayloadPreview}
-        onClose={() => sendFlow.setShowPayloadPreview(false)}
-        payload={sendFlow.payloadPreview}
-        title="Перегляд Payload переміщення (goodMoving)"
-        isLoading={sendFlow.isLoadingPayload}
-      />
     </div>
   );
 }

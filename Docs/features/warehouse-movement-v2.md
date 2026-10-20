@@ -42,11 +42,37 @@
 - Напрям — `MovementMobDirectionBadges` (ГП → МС), не повні назви складів у chip.
 - Кількість одиниць — `sumHistoryItemsQuantity` / `resolveHistoryItemQuantity` (`totalPortions` пріоритетніше за `portionQuantity`) — `historyNormalize.ts` (client + server).
 
-Редагування документа Dilovod: drawer `WarehouseDocumentEditDrawer` (`features/warehouse-document-edit`).
+Редагування документа Dilovod: drawer `WarehouseDocumentEditDrawer` — UI **v2**, не v1 `MovementEditorView`.
+
+### Drawer редагування goodMoving
+
+| Аспект | Реалізація |
+|--------|------------|
+| Компонент | `MovementV2DilovodEditDrawer` — власний `ResizableAppDrawer` (`stackLevel={1}`) |
+| Форма | `MovementV2EditorPanel` + `useWarehouseMovementV2.loadFromDilovodDocument` / `movementV2Adapters.linesFromGoodMovingDetails` |
+| Завантаження | `GET /api/warehouse/details/:id?forEdit=true` (Dilovod-first) |
+| Footer | **Скасувати** → `onClose` (без збереження); **Зберегти та відправити** → `useMovementV2SendFlow` |
+| UX drawer | Без «Параметри переміщення»; компактний summary; дії лише в footer |
+| Права | `ACTION_WAREHOUSE_MOVEMENT_EDIT` |
+
+Точки входу: `ProductMovementsTable`, історія v1/v2 (`openDocumentEdit`).
+
+### Вкладені drawer і z-index
+
+`drawerStacking.ts`: рівень 0 — `z-[50]` / backdrop `z-[45]`; рівень 1 — document edit. Picker партії: `drawerChildOverlayClassName(parent)` + `overlayZClassName` через `WarehouseProductBatchesPanel`.
+
+### Партії в реєстрі (freeQuantityMode)
+
+| Дія | Умова |
+|-----|--------|
+| **max** | Залишок партії > обраної кількості |
+| **Замінити партію** | Є інші партії на складі |
+| **Додати партію** | Disabled, якщо немає невибраних доступних |
+| **Додати всі партії** | Лише при `availableSkuBatches.length > 1` |
 
 ## Drawer / HMR
 
-Кontext split для стабільності Vite HMR (pattern `.shared.ts` + dev noop):
+Context split для стабільності Vite HMR (pattern `.shared.ts` + dev noop):
 
 - `ProductMovementsDrawerContext`
 - `WarehouseDocumentEditDrawerContext`
@@ -57,7 +83,8 @@ Resizable drawer: `ResizableAppDrawer`, `useResizableDrawerWidth`, `drawerStacki
 
 | Область | Шлях |
 |---------|------|
-| Сторінка | `client/pages/Warehouse/WarehouseMovementV2/` |
+| Сторінка | `client/pages/Warehouse/WarehouseMovementV2/` (`MovementV2EditorPanel` — спільна форма сторінки та drawer) |
+| Drawer edit | `client/features/warehouse-document-edit/` (`MovementV2DilovodEditDrawer.tsx`) |
 | Пошук | `client/components/warehouse/` |
 | Історія API | `server/modules/Warehouse/movementV2HistoryList.ts`, `MovementV2HistorySync.ts` |
 | Індекс каталогу | `ProductsCatalogService.listWarehouseSearchIndex()` |

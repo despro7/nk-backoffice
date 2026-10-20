@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-10-20 — Склад: drawer редагування goodMoving на UI v2
+
+**Files:** `MovementV2DilovodEditDrawer.tsx`, `MovementV2EditorPanel.tsx`, `WarehouseDocumentEditDrawer.tsx`, `drawerStacking.ts`, `WarehouseProductBatchesPanel.tsx`, `ReleaseComponentBatchesPanel.tsx`, `useWarehouseMovementV2.ts`, `movementV2Adapters.ts`, `warehouse-movement-v2.md`
+
+- **Drawer Dilovod:** форма переміщення v2 поверх «Рухів партії»; footer зі скасуванням (закрити без збереження) та збереженням; прибрано v1 `MovementDilovodEditDrawerContent`.
+- **Stacking:** явний z-index для drawer рівня 0; picker партій і модалки — `drawerChildOverlayClassName`.
+- **Партії:** max і заміна в `freeQuantityMode`; «Додати партію» / «Додати всі партії» з обмеженнями за кількістю доступних партій.
+
+**Документація:** [`warehouse-movement-v2.md`](features/warehouse-movement-v2.md).
+
+---
+
 ## 2026-10-20 — Склад: Переміщення v2, швидка історія, пошук товарів
 
 **Files:** `WarehouseMovementV2/`, `movementV2HistoryList.ts`, `MovementV2HistorySync.ts`, `WarehouseController.ts`, `MovementHistoryService.ts`, `WarehouseProductSearch.tsx`, `useWarehouseProductSearch.ts`, `WarehouseProductBatchesPanel.tsx`, `warehouse-document-edit/`, `HistoryAccordionItem.tsx`, `historyNormalize.ts`, `ProductsCatalogService.listWarehouseSearchIndex`, `shared/types/warehouseProductSearch.ts`, `routes.config.tsx`, drawer HMR shared contexts, refactor `WarehouseMovement/` (editor + send flow)

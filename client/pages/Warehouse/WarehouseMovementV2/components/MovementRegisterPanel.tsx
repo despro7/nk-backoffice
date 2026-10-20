@@ -15,6 +15,9 @@ interface Props {
   onBatchesChange: (lineId: string, batches: ReleaseComponentBatch[]) => void;
   onPortionsPerBoxChange?: (lineId: string, portionsPerBox: number) => void;
   onRemoveLine: (lineId: string) => void;
+  overlayZClassName?: string;
+  batchPickerShouldBlockScroll?: boolean;
+  compactSpacing?: boolean;
 }
 
 export default function MovementRegisterPanel({
@@ -26,6 +29,9 @@ export default function MovementRegisterPanel({
   onBatchesChange,
   onPortionsPerBoxChange,
   onRemoveLine,
+  overlayZClassName,
+  batchPickerShouldBlockScroll,
+  compactSpacing = false,
 }: Props) {
   const excludeSkus = lines.map((line) => line.sku);
   const [showArchivedProducts, setShowArchivedProducts] = useState(false);
@@ -34,7 +40,7 @@ export default function MovementRegisterPanel({
     <div className="mb-6">
       <div className="text-base font-semibold text-gray-700 mt-1 mb-2">Реєстр на переміщення</div>
 
-      <Card className="rounded-xl bg-white p-4" shadow="sm" classNames={{ base: 'overflow-visible' }}>
+      <Card className={`rounded-xl bg-white ${compactSpacing ? 'p-2' : 'p-4'}`} shadow="sm" classNames={{ base: 'overflow-visible' }}>
         <div className="flex flex-col gap-4">
           {lines.map((line) => (
             <WarehouseProductBatchesPanel
@@ -54,6 +60,8 @@ export default function MovementRegisterPanel({
                   ? (value) => onPortionsPerBoxChange(line.id, value)
                   : undefined
               }
+              overlayZClassName={overlayZClassName}
+              batchPickerShouldBlockScroll={batchPickerShouldBlockScroll}
             />
           ))}
 
