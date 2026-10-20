@@ -6,6 +6,7 @@ import { DilovodApiClient } from '../../services/dilovod/DilovodApiClient.js';
 import { dilovodCacheService, type CacheType } from '../../services/dilovod/DilovodCacheService.js';
 import { translateDilovodError } from '../../services/dilovod/DilovodUtils.js';
 import { logServer } from '../../lib/utils.js';
+import { DILOVOD_GOOD_PRINT_NAME_CLEARED } from '../../../shared/types/catalog.js';
 import {
   CATALOG_DEFAULT_MAIN_UNIT_ID,
   DilovodCatalogGoodRow,
@@ -116,11 +117,18 @@ export class ProductsDilovodGateway {
 
   async saveObject(params: DilovodSaveGoodParams): Promise<DilovodSaveResult> {
     await this.api.ensureReady();
+    const paramsToSend: DilovodSaveGoodParams = {
+      ...params,
+      header: {
+        ...params.header,
+        printName: DILOVOD_GOOD_PRINT_NAME_CLEARED,
+      },
+    };
     const resp = await this.api.makeRequest<any>({
       version: '0.25',
       key: this.api.getApiKey(),
       action: 'saveObject',
-      params,
+      params: paramsToSend,
     });
     if (resp?.error) {
       throw formatDilovodGatewayError('saveObject', resp.error);
@@ -851,7 +859,7 @@ export class ProductsDilovodGateway {
       weight: toNumberOrNull(header.weight),
       specQty: parseHeaderSpecQty(header),
       accPolicyId,
-      printName: extractUkName(header.printName) || (header.printName != null ? String(header.printName) : null),
+      printName: null,
       // Dilovod description = multilang { uk, ru }; String(obj) давав "[object Object]"
       description: extractUkName(header.description) || null,
       components,
@@ -871,7 +879,7 @@ export class ProductsDilovodGateway {
       weight: toNumberOrNull(r.weight),
       specQty: toNumberOrNull(r.specQty ?? r.qty),
       accPolicyId: r.accPolicy != null && String(r.accPolicy) ? String(r.accPolicy) : null,
-      printName: r.printName != null ? extractUkName(r.printName) || String(r.printName) : null,
+      printName: null,
       description: r.description != null ? String(r.description) : null,
     };
   }

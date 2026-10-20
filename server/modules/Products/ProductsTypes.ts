@@ -51,7 +51,7 @@ export interface DilovodGoodHeaderPayload {
   /** Dilovod `specQty` — «Розрахунок на N шт.» специфікації */
   specQty?: number | string;
   accPolicy?: string;
-  printName?: string | { uk: string; ru: string };
+  printName?: string;
   description?: string | { uk: string; ru: string };
   [key: string]: unknown;
 }

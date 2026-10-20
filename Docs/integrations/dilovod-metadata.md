@@ -176,6 +176,20 @@ await api.makeRequest({
 
 > **Не плутати** з `catalogs.employees` («Працівники») — це кадровий довідник для полів на кшталт `manager` у документах, не системні користувачі API/автори.
 
+## `catalogs.goods.printName`
+
+Перевірка: `GET /api/dilovod/metadata/catalogs.goods?refresh=1` → `data.object.reqs.printName`.
+
+| Аспект | Значення |
+|---|---|
+| Presentation | «Найменування для друку первинних та податкових документів» |
+| `valueType` | `varchar`, length 1000 — **plain string**, не `{ uk, ru }` |
+| `required` | `true` у metadata (порожній рядок `''` приймається) |
+
+**Backoffice (Products 2.0):** поле не використовуємо (дублює `name`). Усі `saveObject` для товарів через `ProductsDilovodGateway` встановлюють `printName: ''`. Не плутати з multilang `name` / `description`.
+
+Див. також: [`products-catalog-2.0.md`](../features/products-catalog-2.0.md) → «printName (не використовуємо)».
+
 ## `catalogs.goodParts` — партія товару
 
 Офіційний шаблон `saveObject`: [API Dilovod — saveObject](https://help.dilovod.ua/uk/article/api-dilovod-1gwt3m0/#1-saveobject-zberezhennya-danih-okremogo-obyektu).

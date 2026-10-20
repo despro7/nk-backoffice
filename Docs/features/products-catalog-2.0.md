@@ -39,7 +39,7 @@
 | `catalog_good_images`     | Локальні зображення товару                                               |
 
 
-Ключові поля `catalog_goods`: `parentId`, `isGroup`, `delMark`, `name` (uk only), `sku` (= Dilovod `productNum`), `mainUnitId`, `packageRatio`, `weight`, `accPolicyId`, `printName`, `description` / `fullDescription`, **`sortOrder`**, **`unitRatio`**, **`stockBalanceByStock`**, **`archivedAt`**, `syncedAt`.
+Ключові поля `catalog_goods`: `parentId`, `isGroup`, `delMark`, `name` (uk only), `sku` (= Dilovod `productNum`), `mainUnitId`, `packageRatio`, `weight`, `accPolicyId`, `printName` (legacy, завжди `null` — див. нижче), `description` / `fullDescription`, **`sortOrder`**, **`unitRatio`**, **`stockBalanceByStock`**, **`archivedAt`**, `syncedAt`.
 
 Локальні ops-поля (не SoT Dilovod для порядку / порцій / залишків-дзеркала):
 
@@ -161,6 +161,18 @@ Dilovod повертає `description: { uk, ru }`. Раніше `String(obj)` �
 - Read (`mapObjectToLocal`): `extractUkName(header.description)`.
 - Write (create/update): `header.description = { uk: html, ru: html }`.
 - UI: TipTap (`DescriptionEditor`) — bold / italic / lists / link; зберігається HTML у полі uk.
+
+### `printName` (не використовуємо)
+
+У metadata `catalogs.goods` поле **`printName`** — `varchar(1000)`, не multilang. Раніше backoffice помилково відправляв `{ uk, ru }` → `saveObject`: `cant set value of header.printName`.
+
+Політика (2026-10-20):
+
+- **Dilovod SoT:** `ProductsDilovodGateway.saveObject` завжди пише `printName: ''` (`DILOVOD_GOOD_PRINT_NAME_CLEARED`).
+- **Локальне дзеркало:** create/update/sync не зберігають значення (`printName: null`); колонка лишається для сумісності / пошуку старих рядків.
+- **UI:** окреме поле «Назва для друку» прибрано з drawer; лейбли та split title — лише з `name`.
+
+Деталі metadata: [`dilovod-metadata.md`](../integrations/dilovod-metadata.md) → `catalogs.goods.printName`.
 
 ### BOM (`catalog_good_components`)
 
@@ -335,7 +347,7 @@ client/pages/Products/
   - Секція не рендериться, якщо список порожній / loading / error; клік по рядку відкриває батьківську картку у стеку drawer.
 - `unitRatio` — поле лише для Admin (продукція).
 - Одиниці / типи цін / валюти — Select з `GET /dictionaries`.
-- Опис — `DescriptionEditor` (не name/printName).
+- Опис — `DescriptionEditor` (не name).
 - ШК: генерація EAN-13 (`/barcode/next`) + вибір партії (reuse Movement `BatchNumbersAutocomplete`); див. секцію «Штрихкоди» вище.
 - Unsaved: snapshot form + BOM + prices + barcodes + images + objectKind/parentId → `getDrawerDirtyFields` → `isDirty` → `useUnsavedGuard` + `UnsavedChangesModal` при закритті Drawer / навігації / beforeunload.
 - **Dirty-маркери:** `FieldDirtyMarker` (жовта дискетка) на змінених полях і заголовках вкладок (Основні, BOM, ціни, штрихкоди, опис і зображення). Lazy hydration вкладки «Опис і зображення» не затирає dirty інших вкладок (`mergeStorefrontFieldsIntoDrawerBaseline`); TipTap editor чекає `onInitialSettled` перед фіксацією baseline.

@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-10-20 — Товари: Dilovod `printName` (varchar, очищення)
+
+**Files:** `ProductsDilovodGateway.ts`, `ProductsCatalogService.ts`, `ProductsTypes.ts`, `shared/types/catalog.ts`, `ProductDrawer.tsx`, `RequisitesSection.tsx`, `products-catalog-2.0.md`, `dilovod-metadata.md`
+
+- **Fix:** `saveObject` для `catalogs.goods` більше не відправляє multilang `{ uk, ru }` у `printName` (metadata — `varchar`); помилка `cant set value of header.printName` зникала після збереження з заповненим полем.
+- **Політика:** у Dilovod завжди `printName: ''`; локально `null`; sync не підтягує значення; UI «Назва для друку» прибрано.
+
+**Документація:** [`products-catalog-2.0.md`](features/products-catalog-2.0.md), [`dilovod-metadata.md`](integrations/dilovod-metadata.md).
+
+---
+
 ## 2026-10-20 — Склад: drawer редагування goodMoving на UI v2
 
 **Files:** `MovementV2DilovodEditDrawer.tsx`, `MovementV2EditorPanel.tsx`, `WarehouseDocumentEditDrawer.tsx`, `drawerStacking.ts`, `WarehouseProductBatchesPanel.tsx`, `ReleaseComponentBatchesPanel.tsx`, `useWarehouseMovementV2.ts`, `movementV2Adapters.ts`, `warehouse-movement-v2.md`

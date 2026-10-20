@@ -64,7 +64,7 @@ import {
 const BRANCH_REFRESH_MAX_NODES = 2000;
 const BRANCH_REFRESH_MAX_DEPTH = 20;
 
-/** Dilovod multilang string для description / printName. */
+/** Dilovod multilang string для description. */
 function toMultilang(value: string | null | undefined): { uk: string; ru: string } | undefined {
   const s = String(value || '').trim();
   if (!s) return undefined;
@@ -1248,7 +1248,6 @@ export class ProductsCatalogService {
         const specQty = Number(input.specQty);
         header.specQty = Number.isFinite(specQty) && specQty > 0 ? specQty : 1;
       }
-      if (input.printName) header.printName = { uk: input.printName, ru: input.printName };
       const descriptionMl = toMultilang(input.description);
       if (descriptionMl) header.description = descriptionMl;
 
@@ -1350,7 +1349,7 @@ export class ProductsCatalogService {
             ? 1
             : null,
       accPolicyId,
-      printName: input.printName ?? null,
+      printName: null,
       description: input.description ?? null,
       fullDescription: input.fullDescription ?? null,
       unitRatio: input.unitRatio ?? 1,
@@ -1500,7 +1499,6 @@ export class ProductsCatalogService {
       specQtyRaw != null && Number.isFinite(Number(specQtyRaw)) && Number(specQtyRaw) > 0
         ? Number(specQtyRaw)
         : 1;
-    const printName = input.printName !== undefined ? input.printName : existing.printName;
     const description = input.description !== undefined ? input.description : existing.description;
     const fullDescription =
       input.fullDescription !== undefined ? input.fullDescription : existing.fullDescription;
@@ -1509,7 +1507,6 @@ export class ProductsCatalogService {
     if (packageRatio != null) header.packageRatio = packageRatio;
     if (weight != null) header.weight = weight;
     if (!isGroup && accPolicyId === CATALOG_ACC_POLICY_GOOD) header.specQty = specQty;
-    if (printName) header.printName = { uk: printName, ru: printName };
     const descriptionMl = toMultilang(description);
     if (descriptionMl) header.description = descriptionMl;
     else if (description === '' || description === null) header.description = { uk: '', ru: '' };
@@ -1698,7 +1695,7 @@ export class ProductsCatalogService {
       weight: weight ?? null,
       specQty: accPolicyId === CATALOG_ACC_POLICY_GOOD ? specQty : existing.specQty ?? null,
       accPolicyId,
-      printName: printName ?? null,
+      printName: null,
       description: description ?? null,
       fullDescription: fullDescription ?? null,
       unitRatio: unitRatio ?? 1,
@@ -2053,8 +2050,6 @@ export class ProductsCatalogService {
           detail.specQty != null && Number(detail.specQty) > 0 ? Number(detail.specQty) : 1;
         header.specQty = specQty;
       }
-      if (detail.printName) header.printName = { uk: detail.printName, ru: detail.printName };
-
       await productsDilovodGateway.saveObject({ header });
       updatedIds.push(id);
       updated++;

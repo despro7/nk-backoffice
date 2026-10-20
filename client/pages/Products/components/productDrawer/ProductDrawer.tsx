@@ -224,7 +224,6 @@ export function ProductDrawer({
   const [cardTab, setCardTab] = useState<CardTabKey>('main');
   const [stagingSessionId, setStagingSessionId] = useState<string | null>(null);
   const [images, setImages] = useState<CatalogGoodImageDto[]>([]);
-  const [showPrintName, setShowPrintName] = useState(false);
   /** Запамʼятовує політику вкладки «Інший обʼєкт» між перемиканнями табів */
   const [otherAccPolicyId, setOtherAccPolicyId] = useState<string>('');
   const [skuGenerating, setSkuGenerating] = useState(false);
@@ -589,7 +588,7 @@ export function ProductDrawer({
         specQty: detail.specQty != null && Number(detail.specQty) > 0 ? String(detail.specQty) : '1',
         weight: detail.weight != null ? formatWeightKg(Number(detail.weight), 3) : '',
         unitRatio: detail.unitRatio != null ? String(detail.unitRatio) : '1',
-        printName: detail.printName || '',
+        printName: '',
         description: detail.description === '[object Object]' ? '' : detail.description || '',
         fullDescription: detail.fullDescription || '',
         doNotPublish: detail.doNotPublish ?? false,
@@ -622,7 +621,6 @@ export function ProductDrawer({
         );
         if (firstOther) setOtherAccPolicyId(firstOther.id);
       }
-      setShowPrintName(Boolean(detail.printName?.trim()));
       const nextComponents = detail.components.map((c) => {
         const nested = Number(c.componentNestedPortionCount);
         return {
@@ -677,7 +675,6 @@ export function ProductDrawer({
         nextForm.accPolicyId = otherId;
         if (firstOther && !otherAccPolicyId) setOtherAccPolicyId(firstOther.id);
       }
-      setShowPrintName(false);
       setForm(nextForm);
       setComponents([]);
       setPrices([]);
@@ -810,7 +807,7 @@ export function ProductDrawer({
       specQty,
       weight,
       unitRatio: isFolder ? undefined : unitRatio,
-      printName: form.printName.trim() || null,
+      printName: null,
       description: form.description.trim() || null,
       fullDescription: isFolder ? null : form.fullDescription.trim() || null,
       accPolicyId,
@@ -1367,7 +1364,6 @@ export function ProductDrawer({
                       isOther={isOther}
                       showMainUnit={isGood || isKit || isOther}
                       units={units}
-                      showPrintName={showPrintName}
                       nameHasWeight={nameHasWeight}
                       skuGenerating={skuGenerating}
                       saving={fieldsLocked}
@@ -1380,7 +1376,6 @@ export function ProductDrawer({
                         if (typeof arg === 'function') setForm(arg);
                         else setForm((f) => ({ ...f, ...arg }));
                       }}
-                      onShowPrintNameToggle={() => setShowPrintName((v) => !v)}
                       onObjectKindChange={handleObjectKindChange}
                       onOtherAccPolicyChange={(id) => {
                         setOtherAccPolicyId(id);

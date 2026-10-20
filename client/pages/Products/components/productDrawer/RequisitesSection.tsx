@@ -27,7 +27,6 @@ interface RequisitesSectionProps {
   /** Од. виміру в рядку реквізитів (продукція, набори, інший обʼєкт) */
   showMainUnit: boolean;
   units: CatalogDictItemDto[];
-  showPrintName: boolean;
   nameHasWeight: boolean;
   skuGenerating: boolean;
   saving?: boolean;
@@ -37,7 +36,6 @@ interface RequisitesSectionProps {
   selectedFolderId: string;
   onFolderChange: (id: string) => void;
   onFormChange: (patch: Partial<DrawerForm> | ((prev: DrawerForm) => DrawerForm)) => void;
-  onShowPrintNameToggle: () => void;
   onObjectKindChange: (key: DrawerObjectKind) => void;
   onOtherAccPolicyChange: (id: string) => void;
   onGenerateSku: () => void;
@@ -52,7 +50,6 @@ export function RequisitesSection({
   isOther,
   showMainUnit,
   units,
-  showPrintName,
   nameHasWeight,
   skuGenerating,
   saving,
@@ -62,7 +59,6 @@ export function RequisitesSection({
   selectedFolderId,
   onFolderChange,
   onFormChange,
-  onShowPrintNameToggle,
   onObjectKindChange,
   onOtherAccPolicyChange,
   onGenerateSku,
@@ -112,39 +108,6 @@ export function RequisitesSection({
         value={form.name}
         onValueChange={(v) => patchForm({ name: formatCatalogName(v) })}
         onBlur={() => onFormChange((f) => ({ ...f, name: formatCatalogName(f.name).trim() }))}
-        endContent={
-          <Tooltip
-            content="Додати назву для друку"
-            color="secondary"
-            placement="top-end"
-            showArrow={true}
-            delay={200}
-            classNames={{ base: 'before:rounded-[3px] before:z-[10]', content: 'rounded-sm' }}
-          >
-            <Button
-              isIconOnly
-              size="sm"
-              variant="light"
-              color="default"
-              aria-label="Назва для друку"
-              className={
-                showPrintName
-                  ? 'shadow-inner-sm ' +
-                    (form.printName.length > 3
-                      ? 'text-blue-600/75 bg-blue-600/10'
-                      : 'text-default-500 bg-default-200/75')
-                  : 'text-default-500 hover:text-default-600'
-              }
-              onPress={onShowPrintNameToggle}
-            >
-              {showPrintName ? (
-                <DynamicIcon name="printer-check" size={16} />
-              ) : (
-                <DynamicIcon name="printer" size={16} />
-              )}
-            </Button>
-          </Tooltip>
-        }
         isRequired
         classNames={{
           description: nameHasWeight ? 'text-warning-700' : undefined,
@@ -155,13 +118,6 @@ export function RequisitesSection({
             : undefined
         }
       />
-      {showPrintName && (
-        <Input
-          label={fieldLabel('Назва для друку', dirtyFields?.has('printName'))}
-          value={form.printName}
-          onValueChange={(v) => patchForm({ printName: v })}
-        />
-      )}
 
       <div
         className={`grid grid-cols-2 gap-3 ${isOther ? 'md:grid-cols-5' : 'md:grid-cols-3'}`}
