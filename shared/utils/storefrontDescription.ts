@@ -396,6 +396,119 @@ export function normalizeWcTypographyInStorefrontDoc(
   return changed ? { ...doc, content } : doc;
 }
 
+function stripHtmlForBlockCompare(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\u00a0/g, ' ');
+}
+
+/** Чи два HTML/тексти блоку дають однаковий зміст на вітрині (plain vs markup). */
+export function storefrontBlockHtmlEquivalent(a: string, b: string): boolean {
+  const left = normalizeStorefrontBlockHtml(a.trim());
+  const right = normalizeStorefrontBlockHtml(b.trim());
+  if (!left && !right) return true;
+  if (left === right) return true;
+
+  const asRenderedHtml = (raw: string) => normalizeStorefrontBlockHtml(toHtmlBlock(raw));
+  const renderedLeft = asRenderedHtml(left);
+  const renderedRight = asRenderedHtml(right);
+  if (renderedLeft === renderedRight) return true;
+
+  const plain = (raw: string) =>
+    normalizeWcTypography(stripHtmlForBlockCompare(asRenderedHtml(raw)))
+      .replace(/\s+/g, ' ')
+      .trim();
+  return plain(left) === plain(right);
+}
+
+/** Якщо override дублює template — повертає null (канонічний стан BO). */
+export function coalesceStorefrontBlockOverrideContent(
+  attrs: StorefrontBlockNodeAttrs,
+): StorefrontBlockNodeAttrs {
+  const override = attrs.overrideContent?.trim();
+  if (!override) {
+    return { ...attrs, overrideContent: null };
+  }
+  if (storefrontBlockHtmlEquivalent(override, attrs.template)) {
+    return { ...attrs, overrideContent: null };
+  }
+  return attrs;
+}
+
+const EMPTY_STOREFRONT_BOUND_VALUES: StorefrontBoundBlockValues = buildStorefrontBoundValues({
+  ingredientsJson: [],
+  nutrition: null,
+  netLabel: '',
+  mainProductLabel: '',
+  grossLabel: '',
+  storageTemplate: '',
+  heatingTemplate: '',
+  saltTemplate: '',
+});
+
+function paragraphPlainForCompare(node: StorefrontDescriptionNode): string {
+  if (node.type !== 'paragraph') return '';
+  const text = (node.content || [])
+    .filter((child): child is StorefrontDescriptionInlineNode => child.type === 'text' && 'text' in child)
+    .map((child) => String(child.text ?? ''))
+    .join('');
+  return normalizeWcTypography(text).replace(/\s+/g, ' ').trim();
+}
+
+/** Порівняння вузлів doc без урахування зайвого overrideContent та дрібниць серіалізації. */
+export function storefrontDescriptionNodesSemanticallyEqual(
+  a: StorefrontDescriptionNode,
+  b: StorefrontDescriptionNode,
+): boolean {
+  if (a.type !== b.type) return false;
+
+  if (a.type === 'storefrontBlock') {
+    const attrsA = getBlockNodeAttrs(a);
+    const attrsB = getBlockNodeAttrs(b);
+    if (!attrsA || !attrsB) return JSON.stringify(a) === JSON.stringify(b);
+
+    const coalescedA = coalesceStorefrontBlockOverrideContent(attrsA);
+    const coalescedB = coalesceStorefrontBlockOverrideContent(attrsB);
+
+    if (
+      coalescedA.blockId !== coalescedB.blockId ||
+      coalescedA.resolver !== coalescedB.resolver ||
+      coalescedA.manualExclude !== coalescedB.manualExclude ||
+      coalescedA.manualInclude !== coalescedB.manualInclude
+    ) {
+      return false;
+    }
+
+    if (
+      normalizeStorefrontBlockHtml(coalescedA.template) !==
+      normalizeStorefrontBlockHtml(coalescedB.template)
+    ) {
+      return false;
+    }
+
+    const overrideA = coalescedA.overrideContent?.trim() || null;
+    const overrideB = coalescedB.overrideContent?.trim() || null;
+    if (overrideA === overrideB) return true;
+    if (!overrideA || !overrideB) {
+      const withOverride = overrideA ?? overrideB!;
+      const template = normalizeStorefrontBlockHtml(coalescedA.template);
+      if (storefrontBlockHtmlEquivalent(withOverride, template)) return true;
+    }
+
+    const htmlA = resolveStorefrontBlockPreviewHtml(coalescedA, EMPTY_STOREFRONT_BOUND_VALUES);
+    const htmlB = resolveStorefrontBlockPreviewHtml(coalescedB, EMPTY_STOREFRONT_BOUND_VALUES);
+    return storefrontBlockHtmlEquivalent(htmlA, htmlB);
+  }
+
+  if (a.type === 'paragraph') {
+    return paragraphPlainForCompare(a) === paragraphPlainForCompare(b);
+  }
+
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 /** Strip TipTap trailing empty paragraphs from block HTML before save/preview. */
 export function normalizeStorefrontBlockHtml(html: string): string {
   let result = unwrapListItemParagraphs(html.trim());
@@ -427,18 +540,26 @@ export function normalizeStorefrontDescriptionDoc(
   const content = (doc.content || []).map((node) => {
     const attrs = getBlockNodeAttrs(node);
     if (!attrs) return node;
-    const overrideContent =
-      attrs.overrideContent != null
-        ? normalizeStorefrontBlockHtml(attrs.overrideContent)
-        : null;
-    const template = normalizeStorefrontBlockHtml(attrs.template);
-    if (overrideContent === attrs.overrideContent && template === attrs.template) return node;
+    let nextAttrs = coalesceStorefrontBlockOverrideContent({
+      ...attrs,
+      overrideContent:
+        attrs.overrideContent != null
+          ? normalizeStorefrontBlockHtml(attrs.overrideContent)
+          : null,
+      template: normalizeStorefrontBlockHtml(attrs.template),
+    });
+    if (
+      nextAttrs.overrideContent === attrs.overrideContent &&
+      nextAttrs.template === attrs.template
+    ) {
+      return node;
+    }
     return {
       ...node,
       attrs: {
         ...node.attrs,
-        template,
-        overrideContent: overrideContent || null,
+        template: nextAttrs.template,
+        overrideContent: nextAttrs.overrideContent || null,
       },
     };
   });

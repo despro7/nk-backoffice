@@ -8,13 +8,18 @@ import { isRebatchSku } from '../../../shared/types/warehouseRelease.js';
 import {
   CATALOG_ACC_POLICY_GOOD,
   CATALOG_ACC_POLICY_KIT,
+  CATALOG_DEFAULT_CURRENCY_ID,
   CATALOG_DEFAULT_MAIN_UNIT_ID,
+  CATALOG_PRICE_TYPE_REGULAR_ID,
+  CATALOG_PRICE_TYPE_RETAIL_ID,
   CATALOG_FINISHED_PRODUCTS_FOLDER_ID,
   CATALOG_INVENTORY_SETS_FOLDER_ID,
   CATALOG_MATERIALS_FOLDER_ID,
   CATALOG_TRASH_ID,
   CatalogCreateGoodInput,
   CatalogDictionariesDto,
+  CatalogDilovodPreviewResult,
+  CatalogDilovodPullApplyField,
   CatalogGoodDetailDto,
   CatalogGoodDto,
   CatalogGoodImageDto,
@@ -33,7 +38,12 @@ import { getMissingRequiredCatalogFields } from '../../../shared/utils/catalogRe
 import { computeKitPortionCountsByGoodId } from './computeKitPortionCountsByGoodId.js';
 import { productsDilovodGateway } from './ProductsDilovodGateway.js';
 import { productsLocalSync } from './ProductsLocalSync.js';
-import { catalogMediaService } from './CatalogMediaService.js';
+import { catalogGoodImagePublicUrl, catalogMediaService } from './CatalogMediaService.js';
+import {
+  buildDilovodFieldSnapshot,
+  diffDilovodSnapshots,
+  emptyDilovodPreview,
+} from './catalogDilovodPreview.js';
 import { catalogArchiveMediaService } from './CatalogArchiveMediaService.js';
 import { wooCommerceSyncService } from '../Storefront/WooCommerceSyncService.js';
 import { compareSku, pickLatestSku } from './skuUtils.js';
@@ -151,7 +161,8 @@ function mapGoodDto(
     mainProductWeight?: number | null;
     wooProductId?: number | null;
     wooLastSyncedAt?: Date | null;
-    _count?: { components?: number };
+    _count?: { components?: number; images?: number };
+    images?: Array<{ fileName: string }>;
     prices?: Array<{ priceType: string; price: number }>;
   },
   parentName: string | null = null
@@ -191,12 +202,25 @@ function mapGoodDto(
       prices: row.prices,
     }),
     ...mapStorefrontFieldsToDto(row),
+    imageCount: row.isGroup ? 0 : row._count?.images ?? 0,
+    primaryImageUrl:
+      !row.isGroup && row.images?.[0]?.fileName
+        ? catalogGoodImagePublicUrl(row.id, row.images[0].fileName)
+        : null,
+    imagePreviewUrls: !row.isGroup
+      ? (row.images ?? []).map((img) => catalogGoodImagePublicUrl(row.id, img.fileName))
+      : null,
   };
 }
 
 const catalogListInclude = {
-  _count: { select: { components: true as const } },
+  _count: { select: { components: true as const, images: true as const } },
   prices: { select: { priceType: true, price: true } },
+  images: {
+    take: 24,
+    orderBy: [{ isPrimary: 'desc' as const }, { sortOrder: 'asc' as const }],
+    select: { fileName: true },
+  },
 };
 
 export class ProductsCatalogService {
@@ -914,6 +938,15 @@ export class ProductsCatalogService {
     const targetAccPolicyId =
       scope === 'kits' ? CATALOG_ACC_POLICY_KIT : CATALOG_ACC_POLICY_GOOD;
 
+    const finishedProductsFolderIds =
+      scope === 'kits'
+        ? new Set(
+            await this.resolveFolderSubtreeIds({
+              underFolderId: CATALOG_FINISHED_PRODUCTS_FOLDER_ID,
+            })
+          )
+        : null;
+
     const rows = await prisma.catalogGoodComponent.findMany({
       where: { componentGoodId: goodId },
       select: {
@@ -958,6 +991,13 @@ export class ProductsCatalogService {
         continue;
       }
 
+      if (
+        finishedProductsFolderIds &&
+        (!parent.parentId || !finishedProductsFolderIds.has(parent.parentId))
+      ) {
+        continue;
+      }
+
       const unitId = row.unitId ?? null;
       const existing = grouped.get(parent.id);
       if (!existing) {
@@ -990,6 +1030,178 @@ export class ProductsCatalogService {
         rowCount: item.rowCount,
       }))
       .sort((a, b) => a.parentName.localeCompare(b.parentName, 'uk'));
+  }
+
+  async previewGoodFromDilovod(id: string): Promise<CatalogDilovodPreviewResult> {
+    const local = await prisma.catalogGood.findUnique({
+      where: { id },
+      include: {
+        prices: { select: { priceType: true, price: true } },
+        _count: { select: { components: true, barcodes: true } },
+      },
+    });
+    if (!local) {
+      throw new Error('Товар не знайдено');
+    }
+    if (local.isGroup) {
+      throw new Error('Групи не синхронізуються з Діловодом через preview');
+    }
+
+    const localSnap = buildDilovodFieldSnapshot({
+      name: local.name,
+      sku: local.sku,
+      description: local.description,
+      weight: local.weight,
+      packageRatio: local.packageRatio,
+      prices: local.prices,
+      bomRowCount: local._count.components,
+      barcodeCount: local._count.barcodes,
+    });
+
+    try {
+      const obj = await productsDilovodGateway.getObject(id);
+      const mapped = productsDilovodGateway.mapObjectToLocal(obj);
+      const prices = await productsDilovodGateway.fetchPricesForGoods([id]);
+      const barcodes = await productsDilovodGateway.fetchBarcodesForGoods([id]);
+      const activeBarcodes = barcodes.filter((b) => b.activity);
+
+      const proposedSnap = buildDilovodFieldSnapshot({
+        name: mapped.name,
+        sku: mapped.sku,
+        description: mapped.description,
+        weight: mapped.weight,
+        packageRatio: mapped.packageRatio,
+        prices: prices.map((p) => ({ priceType: p.priceType, price: p.price })),
+        bomRowCount: mapped.components?.length ?? 0,
+        barcodeCount: activeBarcodes.length,
+      });
+
+      return {
+        goodId: id,
+        remoteAvailable: true,
+        remoteError: null,
+        local: localSnap,
+        proposed: proposedSnap,
+        conflicts: diffDilovodSnapshots(localSnap, proposedSnap),
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logServer(`[ProductsCatalogService] dilovod preview for ${id} failed`, err);
+      return {
+        ...emptyDilovodPreview(id, message),
+        local: localSnap,
+      };
+    }
+  }
+
+  async applyDilovodPull(
+    id: string,
+    input: { applyAll?: boolean; fields?: CatalogDilovodPullApplyField[] },
+  ): Promise<{ appliedFields: string[] }> {
+    if (input.applyAll) {
+      await this.syncGoodFromDilovodLive(id);
+      return { appliedFields: ['applyAll'] };
+    }
+
+    const fields = input.fields ?? [];
+    if (fields.length === 0) {
+      throw new Error('Не обрано полів для застосування з Діловода');
+    }
+
+    const preview = await this.previewGoodFromDilovod(id);
+    if (!preview.remoteAvailable) {
+      throw new Error(preview.remoteError || 'Діловод недоступний');
+    }
+
+    const patch: Record<string, unknown> = {};
+    const appliedFields: string[] = [];
+
+    for (const field of fields) {
+      switch (field) {
+        case 'name':
+          if (preview.proposed.name) {
+            patch.name = preview.proposed.name;
+            appliedFields.push('name');
+          }
+          break;
+        case 'weight': {
+          const w = preview.proposed.weight
+            ? Number.parseFloat(preview.proposed.weight.replace(',', '.'))
+            : null;
+          if (w != null && Number.isFinite(w)) {
+            patch.weight = w;
+            appliedFields.push('weight');
+          }
+          break;
+        }
+        case 'regularPrice': {
+          const raw = preview.proposed.regularPrice;
+          if (raw) {
+            const price = Number.parseFloat(raw.replace(',', '.'));
+            if (Number.isFinite(price) && price >= 0) {
+              await this.upsertStorefrontPricesFromPull(id, price);
+              appliedFields.push('regularPrice');
+            }
+          }
+          break;
+        }
+        default: {
+          const _exhaustive: never = field;
+          void _exhaustive;
+        }
+      }
+    }
+
+    if (Object.keys(patch).length > 0) {
+      await prisma.catalogGood.update({
+        where: { id },
+        data: patch,
+      });
+    }
+
+    if (appliedFields.length === 0) {
+      throw new Error('Не вдалося застосувати жодного поля з Діловода');
+    }
+
+    await this.syncCatalogOpsFieldsToProducts(id);
+    return { appliedFields };
+  }
+
+  private async upsertStorefrontPricesFromPull(goodId: string, price: number): Promise<void> {
+    const now = new Date();
+    const storefrontPriceTypes = [CATALOG_PRICE_TYPE_RETAIL_ID, CATALOG_PRICE_TYPE_REGULAR_ID];
+    const existingPrices = await prisma.catalogGoodPrice.findMany({
+      where: { goodId, priceType: { in: storefrontPriceTypes } },
+      select: { priceType: true, currency: true },
+    });
+    const currencyByType = new Map(
+      existingPrices.map((row) => [row.priceType, row.currency || CATALOG_DEFAULT_CURRENCY_ID]),
+    );
+
+    for (const priceType of storefrontPriceTypes) {
+      const currency = currencyByType.get(priceType) || CATALOG_DEFAULT_CURRENCY_ID;
+      await productsDilovodGateway.savePrice({
+        goodId,
+        priceType,
+        price,
+        currency,
+      });
+      await prisma.catalogGoodPrice.upsert({
+        where: { goodId_priceType: { goodId, priceType } },
+        create: {
+          goodId,
+          priceType,
+          price,
+          currency,
+          syncedAt: now,
+        },
+        update: {
+          price,
+          currency,
+          syncedAt: now,
+        },
+      });
+    }
   }
 
   private async syncGoodFromDilovodLive(id: string): Promise<void> {

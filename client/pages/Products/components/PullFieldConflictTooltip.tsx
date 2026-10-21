@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { catalogPlainTextForCompare } from '@shared/utils/catalogHtmlCompare';
 
 export function formatPullConflictValue(value: string | null | undefined, max = 120): string {
   if (!value?.trim()) return '—';
-  const normalized = value.replace(/\s+/g, ' ').trim();
+  const plain = catalogPlainTextForCompare(value) || value;
+  const normalized = plain.replace(/\s+/g, ' ').trim();
   if (normalized.length <= max) return normalized;
   return `${normalized.slice(0, max)}…`;
 }
@@ -13,12 +15,14 @@ interface PullFieldConflictTooltipProps {
   fieldLabel: string;
   localValue: string | null;
   remoteValue: string | null;
+  dilovodValue?: string | null;
 }
 
 function PullConflictTooltipContent({
   fieldLabel,
   localValue,
   remoteValue,
+  dilovodValue,
 }: PullFieldConflictTooltipProps) {
   return (
     <div className="max-w-xs space-y-2 text-xs">
@@ -28,6 +32,14 @@ function PullConflictTooltipContent({
         <span className="break-words text-default-700">{formatPullConflictValue(localValue)}</span>
         <span className="font-medium text-default-400">WC</span>
         <span className="break-words text-primary-700">{formatPullConflictValue(remoteValue)}</span>
+        {dilovodValue != null ? (
+          <>
+            <span className="font-medium text-default-400">ERP</span>
+            <span className="break-words text-primary-700">
+              {formatPullConflictValue(dilovodValue)}
+            </span>
+          </>
+        ) : null}
       </div>
     </div>
   );
@@ -37,6 +49,7 @@ export function PullFieldConflictTooltip({
   fieldLabel,
   localValue,
   remoteValue,
+  dilovodValue,
 }: PullFieldConflictTooltipProps) {
   const [open, setOpen] = useState(false);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -71,7 +84,7 @@ export function PullFieldConflictTooltip({
       <PopoverTrigger>
         <button
           type="button"
-          className="inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center rounded text-warning-600 hover:bg-warning-50"
+          className="inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center rounded text-warning-600 hover:bg-warning-600/25"
           aria-label={`Конфлікт ${fieldLabel}`}
           onMouseEnter={openNow}
           onMouseLeave={scheduleClose}
@@ -94,6 +107,7 @@ export function PullFieldConflictTooltip({
           fieldLabel={fieldLabel}
           localValue={localValue}
           remoteValue={remoteValue}
+          dilovodValue={dilovodValue}
         />
       </PopoverContent>
     </Popover>

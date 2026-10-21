@@ -15,6 +15,9 @@ vi.mock('../../lib/utils.js', () => ({
     catalogGoodImage: {
       count: vi.fn(),
     },
+    settingsBase: {
+      findUnique: vi.fn().mockResolvedValue({ value: 'https://backoffice.example.com' }),
+    },
   },
   logServer: vi.fn(),
 }));
@@ -49,6 +52,11 @@ vi.mock('../Products/ProductsDilovodGateway.js', () => ({
     savePrice: vi.fn().mockResolvedValue(undefined),
     saveObject: vi.fn().mockResolvedValue({ id: 'good-1' }),
   },
+}));
+
+vi.mock('../Products/catalogFinishedProductsFolder.js', () => ({
+  isCatalogGoodInFinishedProductsBranch: vi.fn().mockResolvedValue(true),
+  getFinishedProductsFolderIds: vi.fn(),
 }));
 
 vi.mock('./WooCommerceApiClient.js', () => ({
@@ -100,6 +108,7 @@ vi.mock('./WooCommerceCategoryService.js', async (importOriginal) => {
 
 import { prisma } from '../../lib/utils.js';
 import { productsDilovodGateway } from '../Products/ProductsDilovodGateway.js';
+import { isCatalogGoodInFinishedProductsBranch } from '../Products/catalogFinishedProductsFolder.js';
 import { WooCommerceSyncService } from './WooCommerceSyncService.js';
 
 describe('WooCommerceSyncService', () => {
@@ -107,6 +116,38 @@ describe('WooCommerceSyncService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(prisma.catalogGoodImage.count).mockResolvedValue(0);
+    vi.mocked(isCatalogGoodInFinishedProductsBranch).mockResolvedValue(true);
+  });
+
+  it('pullPreview skips WooCommerce compare outside finished products branch', async () => {
+    vi.mocked(isCatalogGoodInFinishedProductsBranch).mockResolvedValue(false);
+    vi.mocked(prisma.catalogGood.findUnique).mockResolvedValue({
+      id: 'good-1',
+      parentId: 'raw-materials-group',
+      sku: 'SKU-1',
+      name: 'Сировина',
+      isGroup: false,
+      accPolicyId: null,
+      wooProductId: null,
+      fullDescription: null,
+      description: null,
+      weight: null,
+      doNotPublish: false,
+      storefrontDescriptionDoc: null,
+      productIngredientsJson: null,
+      productNutritionJson: null,
+      storefrontPresetId: null,
+      images: [],
+      prices: [],
+    } as never);
+
+    const { createWooCommerceClient } = await import('./WooCommerceApiClient.js');
+    const preview = await service.pullPreview('good-1');
+
+    expect(preview.wcCompareEnabled).toBe(false);
+    expect(preview.conflicts).toEqual([]);
+    expect(createWooCommerceClient).not.toHaveBeenCalled();
   });
 
   it('pullPreview detects conflicts when local fullDescription exists', async () => {
@@ -134,7 +175,7 @@ describe('WooCommerceSyncService', () => {
     expect(preview.wooProductId).toBe(77);
     expect(preview.conflicts.some((c) => c.field === 'name')).toBe(true);
     expect(preview.proposed.name).toBe('Test');
-    expect(preview.conflicts.some((c) => c.field === 'fullDescription')).toBe(true);
+    expect(preview.conflicts.some((c) => c.field === 'fullDescription')).toBe(false);
     expect(preview.proposed.fullDescription).toContain('Склад');
     expect(preview.local.weight).toBe(0.2);
     expect(preview.local.regularPrice).toBe('85');

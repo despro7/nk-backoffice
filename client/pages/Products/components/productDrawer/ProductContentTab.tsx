@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
   Accordion,
   AccordionItem,
@@ -57,6 +57,7 @@ interface ProductContentTabProps {
   units: Array<{ id: string; name: string; code?: string | null }>;
   onImagesChange: (images: CatalogGoodImageDto[]) => void;
   overlayZClassName?: string;
+  lightboxAppendToRef?: RefObject<HTMLElement | null>;
   dirtyFields?: Set<DrawerDirtyFieldKey>;
   onHydrationComplete?: () => void;
 }
@@ -77,6 +78,7 @@ export function ProductContentTab({
   units,
   onImagesChange,
   overlayZClassName,
+  lightboxAppendToRef,
   dirtyFields,
   onHydrationComplete,
 }: ProductContentTabProps) {
@@ -412,6 +414,7 @@ export function ProductContentTab({
           images={images}
           isDisabled={fieldsLocked}
           overlayZClassName={overlayZClassName}
+          lightboxAppendToRef={lightboxAppendToRef}
           onImagesChange={onImagesChange}
         />
       </div>

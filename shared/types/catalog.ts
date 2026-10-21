@@ -131,6 +131,12 @@ export interface CatalogGoodDto {
   kitPortionCount?: number | null;
   /** Обовʼязкові поля, яких бракує (продукція / набір). */
   missingRequired?: CatalogMissingRequired;
+  /** Локальні зображення каталогу (не Dilovod); 0 для груп */
+  imageCount?: number;
+  /** Головне зображення для tooltip у списку */
+  primaryImageUrl?: string | null;
+  /** Усі URL прев’ю для popover у списку (відсортовано: primary, sortOrder) */
+  imagePreviewUrls?: string[] | null;
 }
 
 export interface CatalogTreeNodeDto {
@@ -345,6 +351,38 @@ export interface CatalogReorderInput {
 
 export interface CatalogBulkIdsInput {
   ids: string[];
+}
+
+export interface CatalogFieldConflict {
+  field: string;
+  localValue: string | null;
+  remoteValue: string | null;
+}
+
+export interface CatalogDilovodFieldSnapshot {
+  name: string | null;
+  sku: string | null;
+  description: string | null;
+  weight: string | null;
+  regularPrice: string | null;
+  packageRatio: string | null;
+  bomRowCount: string | null;
+  barcodeCount: string | null;
+}
+
+export interface CatalogDilovodPreviewResult {
+  goodId: string;
+  remoteAvailable: boolean;
+  remoteError?: string | null;
+  local: CatalogDilovodFieldSnapshot;
+  proposed: CatalogDilovodFieldSnapshot;
+  conflicts: CatalogFieldConflict[];
+}
+
+export type CatalogDilovodPullApplyField = 'name' | 'weight' | 'regularPrice';
+
+export interface CatalogDilovodPullApplyInput {
+  fields: CatalogDilovodPullApplyField[];
 }
 
 export interface CatalogRefreshInput {

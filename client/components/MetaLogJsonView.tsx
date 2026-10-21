@@ -7,15 +7,33 @@ import {
   useState,
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
+  type UIEventHandler,
 } from 'react';
-import JsonView, { ValueQuote } from '@uiw/react-json-view';
-import { lightTheme } from '@uiw/react-json-view/light';
+import JsonView, { ValueQuote, type ShouldExpandNodeInitially } from '@uiw/react-json-view';
 import { nordTheme } from '@uiw/react-json-view/nord';
+import { InlineDiffText } from './InlineDiffText';
+import { contentBlockIndexFromKeys } from '@shared/utils/storefrontDocJsonKeys';
 
-type MetaLogJsonViewProps = {
+export type MetaLogJsonViewProps = {
   value: unknown;
   className?: string;
   collapsed?: number | boolean;
+  /** Зовнішній scroll-контейнер (напр. синхронний скролінг). */
+  scrollContainerRef?: RefObject<HTMLDivElement | null>;
+  onScrollContainerScroll?: UIEventHandler<HTMLDivElement>;
+  /** Керований пошук (один toolbar на два panes). */
+  searchQuery?: string;
+  onSearchQueryChange?: (value: string) => void;
+  hideSearchControls?: boolean;
+  /** Підсвітити `content[i]` у TipTap doc. */
+  highlightContentIndexes?: ReadonlySet<number>;
+  shouldExpandNodeInitially?: ShouldExpandNodeInitially<object>;
+  /** Порівняння string-полів з іншим JSON (шлях = keys.join('.')). */
+  peerStringByPath?: Map<string, string>;
+  inlineDiffSide?: 'local' | 'remote';
+  /** JSON без власного scroll — прокрутка батьківського контейнера (side-by-side diff). */
+  embedInParentScroll?: boolean;
 };
 
 type CollapseMode = boolean | number;
@@ -31,12 +49,13 @@ type JsonRenderContext = {
   type?: 'type' | 'value';
   value?: unknown;
   keyName?: string | number;
+  keys?: (number | string)[];
 };
 
 const SEARCH_HIT_CLASS = 'meta-log-search-hit bg-yellow-200 text-inherit rounded-sm px-0.5';
 const SEARCH_HIT_ACTIVE_CLASS = 'meta-log-search-hit bg-orange-300 ring-1 ring-orange-500 text-inherit rounded-sm px-0.5';
 
-function normalizeJsonValue(value: unknown): unknown {
+export function normalizeJsonValue(value: unknown): unknown {
   if (value == null) return null;
 
   if (typeof value === 'string') {
@@ -159,18 +178,40 @@ function createHighlightedValueRenderer(searchQuery: string) {
   };
 }
 
-function createHighlightedStringRenderer(searchQuery: string) {
+function createStringRenderer(
+  searchQuery: string,
+  peerStringByPath: Map<string, string> | undefined,
+  inlineDiffSide: 'local' | 'remote' | undefined,
+  highlightContentIndexes: ReadonlySet<number> | undefined,
+) {
   return (props: JsonRenderProps, context: JsonRenderContext) => {
-    if (context.type !== 'value' || !searchQuery.trim()) return undefined;
+    if (context.type !== 'value') return undefined;
 
-    const text = String(props.children ?? context.value ?? '');
-    if (!textMatchesQuery(text, searchQuery)) return undefined;
+    const text = String(context.value ?? props.children ?? '');
+    const keys = context.keys ?? [];
+    const path = keys.join('.');
+    const blockIdx = contentBlockIndexFromKeys(keys);
+    const peer = peerStringByPath?.get(path);
+    const useInlineDiff = Boolean(inlineDiffSide && peer != null && peer !== text);
+    const showSearch = Boolean(searchQuery.trim() && textMatchesQuery(text, searchQuery));
+
+    if (!useInlineDiff && !showSearch) return undefined;
+
+    const body = useInlineDiff ? (
+      <InlineDiffText
+        local={inlineDiffSide === 'local' ? text : peer!}
+        remote={inlineDiffSide === 'remote' ? text : peer!}
+        side={inlineDiffSide!}
+      />
+    ) : (
+      highlightMatch(text, searchQuery)
+    );
 
     return (
       <Fragment>
         <ValueQuote />
         <span {...props} className={[props.className, 'w-rjv-value'].filter(Boolean).join(' ')}>
-          {highlightMatch(text, searchQuery)}
+          {body}
         </span>
         <ValueQuote />
       </Fragment>
@@ -212,7 +253,7 @@ type SearchControlsProps = {
   onCollapseAll?: () => void;
 };
 
-function SearchControls({
+export function MetaLogSearchControls({
   searchQuery,
   onSearchQueryChange,
   onSearchKeyDown,
@@ -260,26 +301,80 @@ function SearchControls({
   );
 }
 
+function diffBlockIndexFromKeys(keys: (number | string)[]): number | null {
+  return contentBlockIndexFromKeys(keys);
+}
+
+function createDiffContentRowRenderer(highlightContentIndexes: ReadonlySet<number> | undefined) {
+  return (props: JsonRenderProps, context: JsonRenderContext) => {
+    if (!highlightContentIndexes?.size) return undefined;
+    const idx = diffBlockIndexFromKeys(context.keys ?? []);
+    if (idx == null || !highlightContentIndexes.has(idx)) return undefined;
+    if ((context.keys ?? []).length !== 2) return undefined;
+
+    return (
+      <div
+        {...props}
+        data-storefront-diff-index={idx}
+        className={[props.className, 'rounded-sm bg-amber-400/20 ring-1 ring-inset ring-amber-500/45'].filter(Boolean).join(' ')}
+      >
+        {props.children}
+      </div>
+    );
+  };
+}
+
+function createDiffBlockAnchorKeyRenderer(highlightContentIndexes: ReadonlySet<number> | undefined) {
+  return (props: JsonRenderProps, context: JsonRenderContext) => {
+    if (!highlightContentIndexes?.size) return undefined;
+    const keys = context.keys ?? [];
+    if (keys.length !== 2 || keys[0] !== 'content') return undefined;
+    const idx = contentBlockIndexFromKeys(keys);
+    if (idx == null || !highlightContentIndexes.has(idx)) return undefined;
+
+    return (
+      <span {...props} data-storefront-diff-index={idx}>
+        {props.children}
+      </span>
+    );
+  };
+}
+
 export default function MetaLogJsonView({
   value,
   className = '',
   collapsed = false,
+  scrollContainerRef: scrollContainerRefProp,
+  onScrollContainerScroll,
+  searchQuery: controlledSearchQuery,
+  onSearchQueryChange,
+  hideSearchControls = false,
+  highlightContentIndexes,
+  shouldExpandNodeInitially,
+  peerStringByPath,
+  inlineDiffSide,
+  embedInParentScroll = false,
 }: MetaLogJsonViewProps) {
   const normalized = normalizeJsonValue(value);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const internalScrollRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = scrollContainerRefProp ?? internalScrollRef;
   const [collapseMode, setCollapseMode] = useState<CollapseMode>(collapsed);
   const [viewKey, setViewKey] = useState(0);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [internalSearchQuery, setInternalSearchQuery] = useState('');
+  const searchQuery = controlledSearchQuery ?? internalSearchQuery;
+  const setSearchQuery = onSearchQueryChange ?? setInternalSearchQuery;
   const [activeMatchIndex, setActiveMatchIndex] = useState(-1);
   const hadSearchRef = useRef(false);
 
   useEffect(() => {
     setCollapseMode(collapsed);
     setViewKey((key) => key + 1);
-    setSearchQuery('');
+    if (controlledSearchQuery === undefined) {
+      setInternalSearchQuery('');
+    }
     setActiveMatchIndex(-1);
     hadSearchRef.current = false;
-  }, [value, collapsed]);
+  }, [value, collapsed, controlledSearchQuery]);
 
   useEffect(() => {
     const hasSearch = Boolean(searchQuery.trim());
@@ -306,13 +401,22 @@ export default function MetaLogJsonView({
     () => createHighlightedValueRenderer(searchQuery),
     [searchQuery],
   );
-  const highlightedStringRenderer = useMemo(
-    () => createHighlightedStringRenderer(searchQuery),
-    [searchQuery],
+  const stringRenderer = useMemo(
+    () =>
+      createStringRenderer(searchQuery, peerStringByPath, inlineDiffSide, highlightContentIndexes),
+    [searchQuery, peerStringByPath, inlineDiffSide, highlightContentIndexes],
   );
   const highlightedKeyRenderer = useMemo(
     () => createHighlightedKeyRenderer(searchQuery),
     [searchQuery],
+  );
+  const diffRowRenderer = useMemo(
+    () => createDiffContentRowRenderer(highlightContentIndexes),
+    [highlightContentIndexes],
+  );
+  const diffAnchorKeyRenderer = useMemo(
+    () => createDiffBlockAnchorKeyRenderer(highlightContentIndexes),
+    [highlightContentIndexes],
   );
 
   const applyActiveMatchStyles = useCallback((index: number) => {
@@ -381,15 +485,18 @@ export default function MetaLogJsonView({
 
     return (
       <div className={`flex flex-col min-h-0 ${className}`}>
-        <SearchControls
-          searchQuery={searchQuery}
-          onSearchQueryChange={setSearchQuery}
-          onSearchKeyDown={handleSearchKeyDown}
-          matchCount={matchCount}
-          activeMatchIndex={activeMatchIndex}
-        />
+        {!hideSearchControls ? (
+          <MetaLogSearchControls
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            onSearchKeyDown={handleSearchKeyDown}
+            matchCount={matchCount}
+            activeMatchIndex={activeMatchIndex}
+          />
+        ) : null}
         <div
           ref={scrollContainerRef}
+          onScroll={onScrollContainerScroll}
           className="overflow-auto rounded border border-gray-200 bg-white p-2 min-h-0 flex-1"
         >
           <pre className="text-xs whitespace-pre-wrap break-words">
@@ -400,43 +507,78 @@ export default function MetaLogJsonView({
     );
   }
 
+  const jsonViewTree = (
+    <JsonView
+      key={viewKey}
+      value={normalized as object}
+      style={nordTheme}
+      collapsed={shouldExpandNodeInitially ? false : collapseMode}
+      shouldExpandNodeInitially={shouldExpandNodeInitially}
+      displayObjectSize={false}
+      displayDataTypes={false}
+      shortenTextAfterLength={searchQuery.trim() || peerStringByPath ? 0 : 100}
+    >
+      <JsonView.Row render={diffRowRenderer} />
+      <JsonView.KeyName
+        render={(props, context) => {
+          const anchored = diffAnchorKeyRenderer(props, context);
+          if (anchored) return anchored;
+          return highlightedKeyRenderer(props, context);
+        }}
+      />
+      <JsonView.String render={stringRenderer} />
+      <JsonView.Int render={highlightedValueRenderer} />
+      <JsonView.Float render={highlightedValueRenderer} />
+      <JsonView.Bigint render={highlightedValueRenderer} />
+      <JsonView.True render={highlightedValueRenderer} />
+      <JsonView.False render={highlightedValueRenderer} />
+      <JsonView.Null render={highlightedValueRenderer} />
+      <JsonView.Undefined render={highlightedValueRenderer} />
+      <JsonView.Date render={highlightedValueRenderer} />
+    </JsonView>
+  );
+
+  if (embedInParentScroll) {
+    return (
+      <div className={className}>
+        {!hideSearchControls ? (
+          <MetaLogSearchControls
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            onSearchKeyDown={handleSearchKeyDown}
+            matchCount={matchCount}
+            activeMatchIndex={activeMatchIndex}
+            showCollapseControls={!shouldExpandNodeInitially}
+            onExpandAll={() => applyCollapseMode(false)}
+            onCollapseAll={() => applyCollapseMode(1)}
+          />
+        ) : null}
+        <div className="min-w-0 text-left">{jsonViewTree}</div>
+      </div>
+    );
+  }
+
   return (
     <div className={`flex flex-col min-h-0 ${className}`}>
-      <SearchControls
-        searchQuery={searchQuery}
-        onSearchQueryChange={setSearchQuery}
-        onSearchKeyDown={handleSearchKeyDown}
-        matchCount={matchCount}
-        activeMatchIndex={activeMatchIndex}
-        showCollapseControls
-        onExpandAll={() => applyCollapseMode(false)}
-        onCollapseAll={() => applyCollapseMode(1)}
-      />
+      {!hideSearchControls ? (
+        <MetaLogSearchControls
+          searchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
+          onSearchKeyDown={handleSearchKeyDown}
+          matchCount={matchCount}
+          activeMatchIndex={activeMatchIndex}
+          showCollapseControls={!shouldExpandNodeInitially}
+          onExpandAll={() => applyCollapseMode(false)}
+          onCollapseAll={() => applyCollapseMode(1)}
+        />
+      ) : null}
 
       <div
         ref={scrollContainerRef}
+        onScroll={onScrollContainerScroll}
         className="overflow-auto rounded border border-gray-800 bg-[#2e3440] p-2 min-h-0 flex-1"
       >
-        <JsonView
-          key={viewKey}
-          value={normalized as object}
-          style={nordTheme}
-          collapsed={collapseMode}
-          displayObjectSize={false}
-          displayDataTypes={false}
-          shortenTextAfterLength={searchQuery.trim() ? 0 : 100}
-        >
-          <JsonView.KeyName render={highlightedKeyRenderer} />
-          <JsonView.String render={highlightedStringRenderer} />
-          <JsonView.Int render={highlightedValueRenderer} />
-          <JsonView.Float render={highlightedValueRenderer} />
-          <JsonView.Bigint render={highlightedValueRenderer} />
-          <JsonView.True render={highlightedValueRenderer} />
-          <JsonView.False render={highlightedValueRenderer} />
-          <JsonView.Null render={highlightedValueRenderer} />
-          <JsonView.Undefined render={highlightedValueRenderer} />
-          <JsonView.Date render={highlightedValueRenderer} />
-        </JsonView>
+        {jsonViewTree}
       </div>
     </div>
   );

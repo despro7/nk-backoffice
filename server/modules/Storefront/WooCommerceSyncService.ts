@@ -43,6 +43,15 @@ import {
   parseWcDescription,
   summarizeWcProduct,
 } from '../../../shared/utils/storefrontDescriptionParser.js';
+import { storefrontDescriptionDocsSemanticallyEqual } from '../../../shared/utils/storefrontDescriptionDocDiff.js';
+import { catalogHtmlEquivalent } from '../../../shared/utils/catalogHtmlCompare.js';
+import { resolveStorefrontProductUrl } from '../../../shared/utils/storefrontProductUrl.js';
+import { catalogGoodImagePublicUrl } from '../Products/CatalogMediaService.js';
+import { computeKitPortionCountsByGoodId } from '../Products/computeKitPortionCountsByGoodId.js';
+import {
+  buildCatalogImagePublicUrl,
+  resolveCatalogMediaPublicBaseUrl,
+} from './catalogMediaPublicUrl.js';
 import { storefrontDescriptionBuilder } from './StorefrontDescriptionBuilder.js';
 import { storefrontService } from './StorefrontService.js';
 import { createWooCommerceClient, type WooCommerceApiClient } from './WooCommerceApiClient.js';
@@ -52,6 +61,7 @@ import {
   wooCommerceCategoryService,
 } from './WooCommerceCategoryService.js';
 import { wooCommerceMediaService } from './WooCommerceMediaService.js';
+import { isCatalogGoodInFinishedProductsBranch } from '../Products/catalogFinishedProductsFolder.js';
 
 function boolFieldConflict(
   field: string,
@@ -77,17 +87,48 @@ function fieldConflict(
   return { field, localValue: localStr, remoteValue: remoteStr };
 }
 
+function htmlFieldConflict(
+  field: string,
+  local: string | null | undefined,
+  remote: string | null | undefined,
+): { field: string; localValue: string | null; remoteValue: string | null } | null {
+  const sanitizedLocal = sanitizeCatalogDescription(local);
+  if (isEffectivelyEmptyHtml(sanitizedLocal) && isEffectivelyEmptyHtml(remote)) return null;
+  if (!remote?.trim() && isEffectivelyEmptyHtml(sanitizedLocal)) return null;
+  if (catalogHtmlEquivalent(sanitizedLocal, remote)) return null;
+  return {
+    field,
+    localValue: sanitizedLocal?.trim() || null,
+    remoteValue: remote?.trim() || null,
+  };
+}
+
 function descriptionFieldConflict(
   local: string | null | undefined,
   remote: string | null | undefined,
 ): { field: string; localValue: string | null; remoteValue: string | null } | null {
   const sanitizedLocal = sanitizeCatalogDescription(local);
   if (isEffectivelyEmptyHtml(sanitizedLocal)) return null;
-  if (!remote?.trim()) return null;
-  const localStr = String(sanitizedLocal).trim();
-  const remoteStr = remote.trim();
+  return htmlFieldConflict('description', sanitizedLocal, remote);
+}
+
+function storefrontDescriptionDocFieldConflict(
+  local: string | null | undefined,
+  remote: string | null | undefined,
+): { field: string; localValue: string | null; remoteValue: string | null } | null {
+  const localStr = local?.trim() || null;
+  const remoteStr = remote?.trim() || null;
+  if (!localStr && !remoteStr) return null;
+  if (!localStr || !remoteStr) {
+    return fieldConflict('storefrontDescriptionDoc', localStr, remoteStr);
+  }
   if (localStr === remoteStr) return null;
-  return { field: 'description', localValue: localStr, remoteValue: remoteStr };
+  if (storefrontDescriptionDocsSemanticallyEqual(localStr, remoteStr)) return null;
+  return {
+    field: 'storefrontDescriptionDoc',
+    localValue: localStr,
+    remoteValue: remoteStr,
+  };
 }
 
 function priceFieldConflict(
@@ -351,16 +392,34 @@ export class WooCommerceSyncService {
     return { summary, raw: product };
   }
 
-  async pullPreview(goodId: string): Promise<WooPullPreviewResult> {
-    const good = await prisma.catalogGood.findUnique({
+  private async fetchGoodForPullPreview(goodId: string) {
+    return prisma.catalogGood.findUnique({
       where: { id: goodId },
       include: {
         prices: true,
-        images: { select: { id: true } },
+        images: {
+          orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+          take: 24,
+          select: { id: true, fileName: true },
+        },
+        components: {
+          orderBy: { rowNum: 'asc' },
+          take: 1,
+          select: { componentGoodId: true },
+        },
       },
     });
+  }
+
+  async pullPreview(goodId: string): Promise<WooPullPreviewResult> {
+    const good = await this.fetchGoodForPullPreview(goodId);
     if (!good || good.isGroup) throw new Error('Товар не знайдено');
     if (!good.sku) throw new Error('SKU відсутній');
+
+    const wcCompareEnabled = await isCatalogGoodInFinishedProductsBranch(good.parentId);
+    if (!wcCompareEnabled) {
+      return this.buildPullPreviewWithoutWooCompare(good);
+    }
 
     const creds = await storefrontService.getWooCredentialsConfigured();
     const client = createWooCommerceClient(creds);
@@ -386,22 +445,46 @@ export class WooCommerceSyncService {
     const proposedDoNotPublish = resolveDoNotPublishFromWcStatus(product.status);
     const proposedShortDescription = resolveProposedShortDescription(product, parsed.storefrontDescriptionDoc);
     const proposedImageCount = product.images?.length ?? 0;
-    const localImageCount = good.images.length;
+    const localImageCount = await prisma.catalogGoodImage.count({ where: { goodId: good.id } });
+    const mainComponentId = good.components?.[0]?.componentGoodId;
+    const mainComponent =
+      mainComponentId != null
+        ? await prisma.catalogGood.findUnique({
+            where: { id: mainComponentId },
+            select: { weight: true },
+          })
+        : null;
+    const kitPortionMap =
+      good.accPolicyId === CATALOG_ACC_POLICY_KIT
+        ? await computeKitPortionCountsByGoodId([good.id])
+        : new Map<string, number>();
+    let mediaPublicBase = '';
+    try {
+      mediaPublicBase = await resolveCatalogMediaPublicBaseUrl();
+    } catch {
+      mediaPublicBase = '';
+    }
+    const localImagePreviewUrls = good.images.map((img) =>
+      mediaPublicBase
+        ? buildCatalogImagePublicUrl(mediaPublicBase, good.id, img.fileName)
+        : catalogGoodImagePublicUrl(good.id, img.fileName),
+    );
+    const wooImagePreviewUrls = (product.images ?? [])
+      .map((img) => img.src?.trim())
+      .filter((src): src is string => Boolean(src));
     const groupName = await resolveParentGroupName(good.parentId);
     const wcCategoryName = resolveWcPrimaryCategoryName(product);
 
     const conflicts = [
       fieldConflict('name', good.name, product.name),
-      fieldConflict('fullDescription', good.fullDescription, product.description),
-      descriptionFieldConflict(sanitizeCatalogDescription(good.description), proposedShortDescription),
+      descriptionFieldConflict(good.description, proposedShortDescription),
       fieldConflict('weight', good.weight, proposedWeight),
       priceFieldConflict(localRegularPrice, resolveWooRegularPrice(product)),
       boolFieldConflict('doNotPublish', good.doNotPublish, proposedDoNotPublish),
       localImageCount > 0 && proposedImageCount > 0
         ? fieldConflict('images', localImageCount, proposedImageCount)
         : null,
-      fieldConflict(
-        'storefrontDescriptionDoc',
+      storefrontDescriptionDocFieldConflict(
         good.storefrontDescriptionDoc,
         stringifyStorefrontDescriptionDoc(parsed.storefrontDescriptionDoc),
       ),
@@ -418,14 +501,20 @@ export class WooCommerceSyncService {
       categoryFieldConflict(groupName, wcCategoryName),
     ].filter(Boolean) as WooPullPreviewResult['conflicts'];
 
+    const storefrontUrl = resolveStorefrontProductUrl(settings.wooCommerce?.siteUrl, product);
+
     return {
       goodId: good.id,
       sku: good.sku,
+      isKit: good.accPolicyId === CATALOG_ACC_POLICY_KIT,
+      wcCompareEnabled: true,
       wooProductId: product.id,
+      storefrontUrl,
       wcRaw: product,
       local: {
         name: good.name?.trim() || null,
         description: good.description,
+        fullDescription: good.fullDescription ?? null,
         weight: good.weight,
         regularPrice: localRegularPrice,
         doNotPublish: good.doNotPublish,
@@ -434,6 +523,10 @@ export class WooCommerceSyncService {
         storefrontDescriptionDoc: good.storefrontDescriptionDoc,
         productIngredientsJson: good.productIngredientsJson,
         productNutritionJson: good.productNutritionJson,
+        packageRatio: good.packageRatio,
+        specQty: good.specQty ?? null,
+        mainComponentWeight: mainComponent?.weight ?? null,
+        kitPortionCount: kitPortionMap.get(good.id) ?? null,
       },
       proposed: {
         name: product.name?.trim() || null,
@@ -448,6 +541,88 @@ export class WooCommerceSyncService {
         parsed,
       },
       conflicts,
+      localImagePreviewUrls,
+      wooImagePreviewUrls,
+    };
+  }
+
+  private async buildPullPreviewWithoutWooCompare(
+    good: Awaited<ReturnType<WooCommerceSyncService['fetchGoodForPullPreview']>>,
+  ): Promise<WooPullPreviewResult> {
+    const localRegularPrice = resolveStorefrontRegularPrice(good.prices);
+    const localImageCount = good.images.length;
+    const mainComponentId = good.components?.[0]?.componentGoodId;
+    const mainComponent =
+      mainComponentId != null
+        ? await prisma.catalogGood.findUnique({
+            where: { id: mainComponentId },
+            select: { weight: true },
+          })
+        : null;
+    const kitPortionMap =
+      good.accPolicyId === CATALOG_ACC_POLICY_KIT
+        ? await computeKitPortionCountsByGoodId([good.id])
+        : new Map<string, number>();
+    let mediaPublicBase = '';
+    try {
+      mediaPublicBase = await resolveCatalogMediaPublicBaseUrl();
+    } catch {
+      mediaPublicBase = '';
+    }
+    const localImagePreviewUrls = good.images.map((img) =>
+      mediaPublicBase
+        ? buildCatalogImagePublicUrl(mediaPublicBase, good.id, img.fileName)
+        : catalogGoodImagePublicUrl(good.id, img.fileName),
+    );
+    const groupName = await resolveParentGroupName(good.parentId);
+
+    return {
+      goodId: good.id,
+      sku: good.sku,
+      isKit: good.accPolicyId === CATALOG_ACC_POLICY_KIT,
+      wcCompareEnabled: false,
+      wooProductId: good.wooProductId ?? 0,
+      storefrontUrl: null,
+      wcRaw: {} as WooCommerceProduct,
+      local: {
+        name: good.name?.trim() || null,
+        description: good.description,
+        fullDescription: good.fullDescription ?? null,
+        weight: good.weight,
+        regularPrice: localRegularPrice,
+        doNotPublish: good.doNotPublish,
+        imageCount: localImageCount,
+        groupName,
+        storefrontDescriptionDoc: good.storefrontDescriptionDoc,
+        productIngredientsJson: good.productIngredientsJson,
+        productNutritionJson: good.productNutritionJson,
+        packageRatio: good.packageRatio,
+        specQty: good.specQty ?? null,
+        mainComponentWeight: mainComponent?.weight ?? null,
+        kitPortionCount: kitPortionMap.get(good.id) ?? null,
+      },
+      proposed: {
+        name: null,
+        fullDescription: null,
+        shortDescription: null,
+        weight: null,
+        regularPrice: null,
+        doNotPublish: false,
+        imageCount: 0,
+        categoryName: null,
+        meta: {},
+        parsed: {
+          storefrontDescriptionDoc: { type: 'doc', content: [] },
+          marketingText: null,
+          productIngredientsJson: [],
+          productNutritionJson: null,
+          parseWarnings: [],
+          unparsedHtmlChunks: [],
+        },
+      },
+      conflicts: [],
+      localImagePreviewUrls,
+      wooImagePreviewUrls: [],
     };
   }
 
@@ -469,6 +644,14 @@ export class WooCommerceSyncService {
   async pullApply(input: WooPullApplyInput): Promise<WooPullApplyResult> {
     await storefrontService.getWooCredentialsInternal();
     const preview = await this.pullPreview(input.goodId);
+    if (preview.wcCompareEnabled === false) {
+      return {
+        goodId: input.goodId,
+        wooProductId: preview.wooProductId,
+        wooLastSyncedAt: new Date(0).toISOString(),
+        appliedFields: [],
+      };
+    }
     const appliedFields: string[] = [];
     const patch: Record<string, unknown> = {};
     let appliedShortDescription: string | null = null;
@@ -477,10 +660,14 @@ export class WooCommerceSyncService {
       patch.name = preview.proposed.name;
       appliedFields.push('name');
     }
-    if (input.apply.fullDescription) {
-      patch.fullDescription = preview.proposed.fullDescription
-        ? normalizeWcTypographyInHtml(preview.proposed.fullDescription)
-        : preview.proposed.fullDescription;
+    const localFullEmpty = isEffectivelyEmptyHtml(
+      sanitizeCatalogDescription(preview.local.fullDescription),
+    );
+    const shouldApplyFullDescription =
+      input.apply.fullDescription ||
+      (localFullEmpty && Boolean(preview.proposed.fullDescription?.trim()));
+    if (shouldApplyFullDescription && preview.proposed.fullDescription?.trim()) {
+      patch.fullDescription = normalizeWcTypographyInHtml(preview.proposed.fullDescription);
       appliedFields.push('fullDescription');
     }
     if (input.apply.doNotPublish) {
@@ -776,6 +963,7 @@ export class WooCommerceSyncService {
           sku: good.sku,
           name: good.name?.trim() || good.sku,
           wcStatus: 'found' as const,
+          storefrontUrl: preview.storefrontUrl ?? null,
           conflicts: bulkConflicts,
           proposed: {
             name: preview.proposed.name,

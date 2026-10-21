@@ -13,8 +13,19 @@ const port = process.env.PORT || 3001;
 
 const distPath = path.join(__dirname, "../client");
 
-// Статические файлы
-app.use(express.static(distPath));
+// Статические файлы: хешовані assets – назавжди, index.html – ніколи не кешувати
+app.use("/assets", express.static(path.join(distPath, "assets"), {
+  immutable: true,
+  maxAge: "1y",
+  fallthrough: false,
+}));
+app.use(express.static(distPath, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith(".html") || filePath.endsWith("version.json")) {
+      res.setHeader("Cache-Control", "no-store");
+    }
+  },
+}));
 
 // SPA fallback
 app.get("*", (req, res) => {
@@ -22,6 +33,7 @@ app.get("*", (req, res) => {
     return res.status(404).json({ error: "API endpoint not found" });
   }
 
+  res.setHeader("Cache-Control", "no-store");
   res.sendFile(path.join(distPath, "index.html"));
 });
 

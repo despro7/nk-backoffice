@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  Alert,
   Button,
   ButtonGroup,
   Divider,
@@ -58,10 +60,15 @@ import {
 } from '../../ProductsTypes';
 import { ProductLabelsTab } from './ProductLabelsTab';
 import { ProductContentTab } from './ProductContentTab';
+import { CatalogOpenSyncModal } from './CatalogOpenSyncModal';
 import { StorefrontPullConfirmModal } from './StorefrontPullConfirmModal';
+import { OpenStorefrontProductLink } from '../OpenStorefrontProductLink';
+import { shouldDismissOverlayWhilePhotoSwipeOpen } from '@/lib/photoswipeOverlay';
+import { catalogApi } from '../../catalogApi';
 import { StorefrontPushRetryModal } from './StorefrontPushRetryModal';
 import { storefrontApi, STOREFRONT_SETTINGS_UPDATED_EVENT } from '@/services/StorefrontService';
 import type { WooInspectResult } from '@shared/types/storefront';
+import { resolveStorefrontProductUrl } from '@shared/utils/storefrontProductUrl';
 import { StockBadge } from '@/components/StockBadge';
 import {
   areRequiredCatalogPricesFilled,
@@ -111,6 +118,7 @@ import {
   sortDictByName,
 } from './productDrawerUtils';
 import { prepareStorefrontDescriptionDocForForm } from '@shared/utils/storefrontDescription';
+import { isInFinishedProductsBranch } from '../../ProductsUtils';
 import { BarcodesSection } from './BarcodesSection';
 import { BomSection, newBomRowFromSearch } from './BomSection';
 import { PricesSection } from './PricesSection';
@@ -247,6 +255,9 @@ export function ProductDrawer({
   const [renamingComponentGoodId, setRenamingComponentGoodId] = useState<string | null>(null);
   const [techCardOpen, setTechCardOpen] = useState(false);
   const [pullModalOpen, setPullModalOpen] = useState(false);
+  const [openSyncModalOpen, setOpenSyncModalOpen] = useState(false);
+  const [catalogSyncConflictsPending, setCatalogSyncConflictsPending] = useState(false);
+  const openSyncCheckedGoodIdRef = useRef<string | null>(null);
   const [inspectModalOpen, setInspectModalOpen] = useState(false);
   const [inspectData, setInspectData] = useState<WooInspectResult | null>(null);
   const [inspectError, setInspectError] = useState<string | null>(null);
@@ -263,6 +274,7 @@ export function ProductDrawer({
   const baselineRef = useRef<string>('');
   const storefrontBaselineRef = useRef<string>('');
   const contentHydratedRef = useRef(false);
+  const drawerOverlayHostRef = useRef<HTMLDivElement>(null);
   const formRef = useRef(form);
   const componentsRef = useRef(components);
   const pricesRef = useRef(prices);
@@ -295,7 +307,7 @@ export function ProductDrawer({
 
   const nestedQuery = useQuery({
     queryKey: ['catalog', 'good', nestedGoodId],
-    queryFn: () => fetchCatalogGoodDetail(nestedGoodId!),
+    queryFn: () => fetchCatalogGoodDetail(nestedGoodId!, { livePull: false }),
     enabled: Boolean(nestedGoodId),
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -554,6 +566,9 @@ export function ProductDrawer({
       setNestedGoodId(null);
       cardTabScopeRef.current = null;
       contentHydratedRef.current = false;
+      openSyncCheckedGoodIdRef.current = null;
+      setOpenSyncModalOpen(false);
+      setCatalogSyncConflictsPending(false);
       return;
     }
     // Поки live-pull/кеш не віддав detail — не гідратимо як «створення».
@@ -710,6 +725,127 @@ export function ProductDrawer({
     void baselineVersion;
     return snapshotState(form, components, prices, barcodes, images, objectKind, drawerParentId) !== baselineRef.current;
   }, [open, readOnly, form, components, prices, barcodes, images, objectKind, drawerParentId, baselineVersion, isEdit, detail]);
+
+  const [storefrontSiteUrl, setStorefrontSiteUrl] = useState<string | null>(null);
+
+  const storefrontProductUrl = useMemo(() => {
+    if (!detail?.wooProductId) return null;
+    return resolveStorefrontProductUrl(storefrontSiteUrl, { id: detail.wooProductId });
+  }, [detail?.wooProductId, storefrontSiteUrl]);
+
+  useEffect(() => {
+    if (!open || !wooIntegrationEnabled) return;
+    void storefrontApi.getSettings().then((settings) => {
+      setStorefrontSiteUrl(settings.wooCommerce?.siteUrl?.trim() || null);
+    });
+  }, [open, wooIntegrationEnabled]);
+
+  const refreshCatalogSyncBanner = useCallback(
+    (goodId: string) => {
+      void Promise.all([
+        catalogApi.fetchDilovodPreview(goodId).catch(() => null),
+        canPullStorefront
+          ? storefrontApi.pullPreview(goodId).catch(() => null)
+          : Promise.resolve(null),
+      ]).then(([dilovod, woo]) => {
+        const dilovodConflicts = dilovod?.conflicts?.length ?? 0;
+        const wooConflicts =
+          woo && woo.wcCompareEnabled !== false ? woo.conflicts.length : 0;
+        setCatalogSyncConflictsPending(dilovodConflicts > 0 || wooConflicts > 0);
+      });
+    },
+    [canPullStorefront],
+  );
+
+  useEffect(() => {
+    if (!open || !isEdit || !detail?.id || detail.isGroup || !detail.sku) return;
+    if (openSyncCheckedGoodIdRef.current === detail.id) return;
+    openSyncCheckedGoodIdRef.current = detail.id;
+
+    const timer = window.setTimeout(() => {
+      refreshCatalogSyncBanner(detail.id);
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [open, isEdit, detail?.id, detail?.isGroup, detail?.sku, refreshCatalogSyncBanner]);
+
+  const handleSaveRef = useRef<
+    ((opts?: { closeAfter?: boolean; pushStorefrontAfter?: boolean }) => Promise<void>) | null
+  >(null);
+
+  const handleStorefrontPullApplied = useCallback((): Promise<void> => {
+    if (!detail?.id) return Promise.resolve();
+    return fetchCatalogGoodDetail(detail.id, { livePull: false }).then(async (fresh) => {
+      queryClient.setQueryData(['catalog', 'good', detail.id], fresh);
+      const nextImages = fresh.images || [];
+      setImages(nextImages);
+
+      const nextForm = {
+        ...formRef.current,
+        name: fresh.name?.trim() || formRef.current.name,
+        fullDescription: fresh.fullDescription || '',
+        description:
+          fresh.description === '[object Object]' ? '' : fresh.description || '',
+        weight:
+          fresh.weight != null
+            ? formatWeightKg(Number(fresh.weight), 3)
+            : formRef.current.weight,
+        doNotPublish: fresh.doNotPublish ?? formRef.current.doNotPublish,
+        storefrontDescriptionDoc: prepareStorefrontDescriptionDocForForm(
+          fresh.storefrontDescriptionDoc
+            ? JSON.stringify(fresh.storefrontDescriptionDoc)
+            : formRef.current.storefrontDescriptionDoc,
+        ),
+        productIngredientsJson:
+          fresh.productIngredientsJson ?? formRef.current.productIngredientsJson,
+        productNutritionJson:
+          fresh.productNutritionJson || formRef.current.productNutritionJson,
+      };
+      const nextPrices = mergePulledPrices(pricesRef.current, fresh.prices);
+
+      flushSync(() => {
+        setForm(nextForm);
+        setPrices(nextPrices);
+      });
+
+      contentHydratedRef.current = true;
+      commitBaseline(
+        nextForm,
+        componentsRef.current,
+        nextPrices,
+        barcodesRef.current,
+        nextImages,
+        objectKind,
+        detail.parentId,
+      );
+
+      if (!readOnly && isEdit && !isFolder) {
+        try {
+          await handleSaveRef.current?.();
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          ToastService.show({
+            title: 'Не вдалося зберегти в Ділovod',
+            description: message,
+            color: 'danger',
+            icon: 'alert-circle',
+          });
+        }
+      }
+
+      refreshCatalogSyncBanner(detail.id);
+    });
+  }, [
+    detail?.id,
+    detail?.parentId,
+    queryClient,
+    objectKind,
+    commitBaseline,
+    refreshCatalogSyncBanner,
+    readOnly,
+    isEdit,
+    isFolder,
+  ]);
 
   const handleStorefrontInspect = useCallback(async () => {
     if (!detail?.sku) return;
@@ -952,6 +1088,8 @@ export function ProductDrawer({
       wooIntegrationEnabled,
     ],
   );
+
+  handleSaveRef.current = handleSave;
 
   /** Debug: показати payload, який піде на create/update */
   const handleShowPayload = useCallback(() => {
@@ -1261,6 +1399,9 @@ export function ProductDrawer({
         onClose={requestClose}
         size="4xl"
         placement={window.innerWidth < 768 ? 'bottom' : 'right'}
+        shouldCloseOnInteractOutside={(element) =>
+          shouldDismissOverlayWhilePhotoSwipeOpen(element)
+        }
         classNames={{
           wrapper: NESTED_DRAWER_Z[Math.min(stackLevel, NESTED_DRAWER_Z.length - 1)] || undefined,
           backdrop: [
@@ -1288,14 +1429,23 @@ export function ProductDrawer({
             {!detailLoading && (
               <>
               <div className="flex flex-col gap-1">
-                <span className="truncate pr-6">
-                  {title}
-                  {form.name.trim() ? (<span className="font-normal text-default-500"> – {form.name.trim()}</span>) : null}
+                <span className="flex min-w-0 items-center gap-1 truncate pr-6">
+                  <span className="truncate">
+                    {title}
+                    {form.name.trim() ? (
+                      <span className="font-normal text-default-500"> – {form.name.trim()}</span>
+                    ) : null}
+                  </span>
+                  {storefrontProductUrl ? (
+                    <OpenStorefrontProductLink url={storefrontProductUrl} label={null} tooltip="Відкрити товар на сайті" />
+                  ) : null}
                 </span>
                 <div className="flex items-center gap-2 text-xs font-normal text-default-400">
                   <span className="font-semibold">Група: <span className="font-normal">{isEdit ? (detail?.parentName || 'Немає') : createParentName}</span></span>
                   <Divider orientation="vertical" className="hidden md:block" />
-                  <span className="font-semibold hidden md:block">SKU: <span className="font-normal">{detail?.sku || 'відсутній'}</span></span>
+                  <span className="font-semibold hidden md:inline">
+                    SKU: <span className="font-normal">{detail?.sku || 'відсутній'}</span>
+                  </span>
                   {detail?.stock ? (
                     <>
                       <Divider orientation="vertical" />
@@ -1321,6 +1471,39 @@ export function ProductDrawer({
                   )}
                 </div>
               </div>
+              {catalogSyncConflictsPending && isEdit && !isFolder && detail?.sku ? (
+                <Alert
+                  color="warning"
+                  variant="flat"
+                  classNames={{
+                    base: 'py-2 border-1 border-warning-500/30 rounded-md p-2',
+                    iconWrapper: 'shadow-none border-none relative before:content-[" "] before:bg-warning-700/20 before:absolute before:inset-0 before:rounded-full before:animate-blink before:blur-[1px]',
+                  }}
+                >
+                  <div className="flex w-full flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold">
+                        Дані товару відрізняються від Dilovod
+                        {detail?.parentId &&
+                        isInFinishedProductsBranch(detail.parentId, treeItems || {})
+                          ? ' або WooCommerce'
+                          : ''}
+                      </p>
+                      <p className="text-xs font-normal">Перегляньте поля та оберіть джерело для кожного.</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      color="warning"
+                      variant="solid"
+                      className="shrink-0 text-sm font-medium mr-1"
+                      startContent={<DynamicIcon name="file-check-2" size={16} />}
+                      onPress={() => setOpenSyncModalOpen(true)}
+                    >
+                      Узгодити
+                    </Button>
+                  </div>
+                </Alert>
+              ) : null}
               <Tabs
                 size="md"
                 fullWidth={true}
@@ -1346,7 +1529,12 @@ export function ProductDrawer({
               </>
             )}
           </DrawerHeader>
-          <DrawerBody className={`gap-6 pt-5 pb-0 ${!detailLoading && 'shadow-inner'}`}>
+          <DrawerBody className={`relative gap-6 pt-5 pb-0 ${!detailLoading && 'shadow-inner'}`}>
+            <div
+              ref={drawerOverlayHostRef}
+              className="pointer-events-none fixed inset-0 z-[100001] [&_.pswp]:pointer-events-auto"
+              aria-hidden
+            />
             {isEdit && detailLoading ? (
               <div className="flex justify-center h-full py-10">
                 <Spinner label="Завантаження картки…" />
@@ -1452,6 +1640,8 @@ export function ProductDrawer({
                         <Divider className="bg-default-200/60" />
                         <BarcodesSection
                           barcodes={barcodes}
+                          sku={form.sku.trim() || detail?.sku || null}
+                          productName={form.name.trim() || detail?.name || null}
                           saving={fieldsLocked}
                           barcodeGeneratingIdx={barcodeGeneratingIdx}
                           dirty={drawerDirtyFields.has('barcodes')}
@@ -1499,6 +1689,7 @@ export function ProductDrawer({
                     units={units}
                     onImagesChange={setImages}
                     overlayZClassName={overlayZ}
+                    lightboxAppendToRef={drawerOverlayHostRef}
                     dirtyFields={drawerDirtyFields}
                     onHydrationComplete={handleContentHydrationComplete}
                   />
@@ -1521,7 +1712,8 @@ export function ProductDrawer({
                 (isEdit && !isFolder && detail?.sku && onLegacyUpdate) ||
                 (canPullStorefront && isEdit && !isFolder && detail?.sku) ||
                 (canPushStorefront && isEdit && !isFolder && detail?.sku) ||
-                (isAdmin && isEdit && detail)) && (
+                (isAdmin && isEdit && detail) ||
+                Boolean(storefrontProductUrl)) && (
                 <div className="mr-auto">
                   <Dropdown placement="top-start">
                     <DropdownTrigger>
@@ -1554,6 +1746,11 @@ export function ProductDrawer({
                             break;
                           case 'storefrontPush':
                             setPushConfirmOpen(true);
+                            break;
+                          case 'openStorefront':
+                            if (storefrontProductUrl) {
+                              window.open(storefrontProductUrl, '_blank', 'noopener,noreferrer');
+                            }
                             break;
                           default:
                             break;
@@ -1594,6 +1791,17 @@ export function ProductDrawer({
                         }
                       >
                         Оновити legacy cache
+                      </DropdownItem>
+                      <DropdownItem
+                        key="openStorefront"
+                        className={
+                          storefrontProductUrl
+                            ? 'text-default-700 data-[hover=true]:bg-default-100'
+                            : 'hidden'
+                        }
+                        startContent={<DynamicIcon name="external-link" size={16} className="shrink-0" />}
+                      >
+                        Відкрити товар на сайті
                       </DropdownItem>
                       <DropdownItem
                         key="storefrontInspect"
@@ -1799,50 +2007,18 @@ export function ProductDrawer({
         localName={form.name}
         localFullDescription={form.fullDescription}
         localShortDescription={form.description}
-        onApplied={() => {
-          if (!detail?.id) return;
-          void fetchCatalogGoodDetail(detail.id, { livePull: false }).then((fresh) => {
-            queryClient.setQueryData(['catalog', 'good', detail.id], fresh);
-            setImages(fresh.images || []);
-            setForm((f) => {
-              const nextForm = {
-                ...f,
-                name: fresh.name?.trim() || f.name,
-                fullDescription: fresh.fullDescription || '',
-                description:
-                  fresh.description === '[object Object]' ? '' : fresh.description || '',
-                weight:
-                  fresh.weight != null
-                    ? formatWeightKg(Number(fresh.weight), 3)
-                    : f.weight,
-                doNotPublish: fresh.doNotPublish ?? f.doNotPublish,
-                storefrontDescriptionDoc: prepareStorefrontDescriptionDocForForm(
-                  fresh.storefrontDescriptionDoc
-                    ? JSON.stringify(fresh.storefrontDescriptionDoc)
-                    : f.storefrontDescriptionDoc,
-                ),
-                productIngredientsJson: fresh.productIngredientsJson ?? f.productIngredientsJson,
-                productNutritionJson: fresh.productNutritionJson || f.productNutritionJson,
-              };
-              setPrices((currentPrices) => {
-                const nextPrices = mergePulledPrices(currentPrices, fresh.prices);
-                contentHydratedRef.current = true;
-                commitBaseline(
-                  nextForm,
-                  components,
-                  nextPrices,
-                  barcodes,
-                  fresh.images || [],
-                  objectKind,
-                  detail.parentId,
-                );
-                return nextPrices;
-              });
-              return nextForm;
-            });
-          });
-        }}
+        onApplied={handleStorefrontPullApplied}
         onClose={() => setPullModalOpen(false)}
+      />
+      <CatalogOpenSyncModal
+        isOpen={openSyncModalOpen}
+        goodId={detail?.id ?? null}
+        sku={detail?.sku ?? null}
+        localName={form.name}
+        localFullDescription={form.fullDescription}
+        localShortDescription={form.description}
+        onApplied={handleStorefrontPullApplied}
+        onClose={() => setOpenSyncModalOpen(false)}
       />
       <Modal
         isOpen={inspectModalOpen}
@@ -1855,7 +2031,16 @@ export function ProductDrawer({
         }}
       >
         <ModalContent>
-          <ModalHeader>Inspect WC — {detail?.sku || ''}</ModalHeader>
+          <ModalHeader className="flex flex-wrap items-center gap-2">
+            <span>Inspect WC — {detail?.sku || ''}</span>
+            {inspectData?.raw
+              ? (
+                <OpenStorefrontProductLink
+                  url={resolveStorefrontProductUrl(storefrontSiteUrl, inspectData.raw)}
+                />
+              )
+              : null}
+          </ModalHeader>
           <ModalBody className="gap-4">
             {inspectLoading ? (
               <div className="flex items-center gap-2">
@@ -1898,7 +2083,19 @@ export function ProductDrawer({
       <ConfirmModal
         isOpen={pushConfirmOpen}
         title="Синхронізувати з сайтом?"
-        message="Назва, опис, meta та статус публікації будуть відправлені на WooCommerce. Переконайтесь, що дані коректні."
+        message={
+          storefrontProductUrl
+            ? (
+              <span className="flex flex-col gap-2">
+                <span>
+                  Назва, опис, meta та статус публікації будуть відправлені на WooCommerce. Переконайтесь,
+                  що дані коректні.
+                </span>
+                <OpenStorefrontProductLink url={storefrontProductUrl} />
+              </span>
+            )
+            : 'Назва, опис, meta та статус публікації будуть відправлені на WooCommerce. Переконайтесь, що дані коректні.'
+        }
         confirmText="Синхронізувати"
         confirmColor="primary"
         confirmLoading={pushLoading}

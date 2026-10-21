@@ -39,8 +39,12 @@ function extFromMime(mime: string, originalName: string): string {
   }
 }
 
-function publicUrl(goodId: string, fileName: string): string {
+export function catalogGoodImagePublicUrl(goodId: string, fileName: string): string {
   return `/uploads/catalog/${encodeURIComponent(goodId)}/${encodeURIComponent(fileName)}`;
+}
+
+function publicUrl(goodId: string, fileName: string): string {
+  return catalogGoodImagePublicUrl(goodId, fileName);
 }
 
 function toDto(row: {

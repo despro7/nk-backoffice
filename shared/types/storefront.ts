@@ -234,6 +234,8 @@ export interface WooCommerceProductCategory {
 
 export interface WooCommerceProduct {
   id: number;
+  /** Canonical product URL from WooCommerce REST */
+  permalink?: string;
   name: string;
   sku: string;
   description: string;
@@ -294,6 +296,8 @@ export interface WooPullConflict {
 export interface WooPullLocalSnapshot {
   name: string | null;
   description: string | null;
+  /** Legacy повний HTML (лише для one-time seed з WC) */
+  fullDescription?: string | null;
   weight: number | null;
   regularPrice: string | null;
   doNotPublish: boolean;
@@ -303,12 +307,22 @@ export interface WooPullLocalSnapshot {
   storefrontDescriptionDoc: string | null;
   productIngredientsJson: string | null;
   productNutritionJson: string | null;
+  packageRatio?: number | null;
+  specQty?: number | null;
+  /** Вага першого компонента BOM, кг (основний продукт у наборі) */
+  mainComponentWeight?: number | null;
+  kitPortionCount?: number | null;
 }
 
 export interface WooPullPreviewResult {
   goodId: string;
   sku: string;
+  isKit?: boolean;
+  /** false — товар не в «Готова продукція», порівняння/apply з WC вимкнено */
+  wcCompareEnabled?: boolean;
   wooProductId: number;
+  /** Public product page on storefront */
+  storefrontUrl?: string | null;
   wcRaw: WooCommerceProduct;
   local: WooPullLocalSnapshot;
   proposed: {
@@ -325,6 +339,10 @@ export interface WooPullPreviewResult {
     parsed: StorefrontPullParseResult;
   };
   conflicts: WooPullConflict[];
+  /** До 5 URL для preview зображень Backoffice */
+  localImagePreviewUrls?: string[];
+  /** До 5 URL з WooCommerce (src) */
+  wooImagePreviewUrls?: string[];
 }
 
 /** Flags for pull-apply (single and bulk) */
@@ -371,6 +389,8 @@ export interface WooPullBulkPreviewItem {
   sku: string;
   name: string;
   wcStatus: WooPullBulkWcStatus;
+  /** Public product page when found on WC */
+  storefrontUrl?: string | null;
   conflicts: WooPullConflict[];
   proposed: {
     name: string | null;

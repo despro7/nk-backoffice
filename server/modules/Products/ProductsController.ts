@@ -277,6 +277,60 @@ router.get('/goods/:id/used-in', ...authOnly, async (req, res) => {
   }
 });
 
+// GET /api/catalog/goods/:id/dilovod-preview
+router.get('/goods/:id/dilovod-preview', ...authOnly, async (req, res) => {
+  try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const goodId = req.params.id;
+    const current = await prisma.catalogGood.findUnique({
+      where: { id: goodId },
+      select: { id: true, isGroup: true, parentId: true },
+    });
+    if (!current) {
+      res.status(404).json({ success: false, error: 'Товар не знайдено' });
+      return;
+    }
+    const index = await loadCatalogAclIndex();
+    const folderId = current.isGroup ? current.id : current.parentId;
+    if (!assertFolderView(res, perms, folderId, index.parentById)) return;
+
+    const data = await productsCatalogService.previewGoodFromDilovod(goodId);
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'GET /goods/:id/dilovod-preview');
+  }
+});
+
+// POST /api/catalog/goods/:id/dilovod-apply
+router.post('/goods/:id/dilovod-apply', ...authOnly, async (req, res) => {
+  try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const goodId = req.params.id;
+    const current = await prisma.catalogGood.findUnique({
+      where: { id: goodId },
+      select: { id: true, isGroup: true, parentId: true },
+    });
+    if (!current) {
+      res.status(404).json({ success: false, error: 'Товар не знайдено' });
+      return;
+    }
+    const index = await loadCatalogAclIndex();
+    const folderId = current.isGroup ? current.id : current.parentId;
+    if (!assertFolderEdit(res, perms, folderId, index.parentById)) return;
+
+    const body = req.body || {};
+    const data = await productsCatalogService.applyDilovodPull(goodId, {
+      applyAll: body.applyAll === true,
+      fields: Array.isArray(body.fields) ? body.fields : undefined,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'POST /goods/:id/dilovod-apply');
+  }
+});
+
 // GET /api/catalog/goods/:id
 router.get('/goods/:id', ...authOnly, async (req, res) => {
   try {

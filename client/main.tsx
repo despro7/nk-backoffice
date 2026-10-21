@@ -1,6 +1,9 @@
 import { createRoot } from "react-dom/client";
 import setupLocatorUI from "@locator/runtime";
 import App from "./App";
+import { installStaleChunkRecovery } from "./lib/staleChunkRecovery";
+
+installStaleChunkRecovery();
 
 createRoot(document.getElementById("root")!).render(<App />);
 

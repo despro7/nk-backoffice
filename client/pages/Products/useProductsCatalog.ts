@@ -74,9 +74,10 @@ export function useProductsCatalog() {
 
   const detailQuery = useQuery({
     queryKey: ['catalog', 'good', editingId],
-    queryFn: () => catalogFetch<CatalogGoodDetailDto>(`/api/catalog/goods/${editingId}`),
+    queryFn: () =>
+      catalogFetch<CatalogGoodDetailDto>(`/api/catalog/goods/${editingId}?livePull=false`),
     enabled: Boolean(editingId) && drawerMode === 'edit',
-    // Live-pull на сервері лише при відкритті картки — без фонового refetch
+    staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
@@ -556,8 +557,8 @@ export function useProductsCatalog() {
       accPolicies: [],
     },
     detail: detailQuery.data || null,
-    // isFetching: і перше відкриття, і повторне (кеш є, але live-pull ще йде)
-    detailLoading: detailQuery.isFetching,
+    /** Спinner лише до першої відповіді; кешована картка відкривається одразу */
+    detailLoading: detailQuery.isPending && !detailQuery.data,
     openCreate,
     openEdit,
     closeDrawer,

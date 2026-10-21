@@ -16,6 +16,7 @@ import {
   type SortDescriptor,
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { CatalogImagePreviewPopover } from './CatalogImagePreviewPopover';
 import { NumberInput } from '@/components/NumberInput';
 import { getStatusTextColor } from '@/lib/formatUtils';
 import { formatNumberInput, parseNumberInput } from '@/lib/numberInput';
@@ -27,6 +28,9 @@ import {
 } from '@shared/utils/specColorPalette';
 import { StockBadge } from '@/components/StockBadge';
 import { ToastService } from '@/services/ToastService';
+import { storefrontApi } from '@/services/StorefrontService';
+import { catalogImageThumbUrl } from '@shared/utils/catalogImageThumbUrl';
+import { resolveCatalogMediaAbsoluteUrl } from '@shared/utils/resolveCatalogMediaAbsoluteUrl';
 import { formatDateOnly } from '@/lib/formatUtils';
 import type { CatalogGoodDto, CatalogMissingRequired, CatalogTreeItemData } from '../ProductsTypes';
 import { CATALOG_ROOT_ID } from '../ProductsTypes';
@@ -120,6 +124,7 @@ type ColumnKey =
   | 'stockGp'
   | 'stockMs'
   | 'inOrders'
+  | 'images'
   | 'actions';
 
 function rangeIds(ids: string[], from: number, to: number): string[] {
@@ -484,6 +489,60 @@ function parseCatalogDragIds(dataTransfer: DataTransfer): string[] {
   }
 }
 
+function absoluteCatalogImageUrl(url: string, mediaPublicBaseUrl: string): string {
+  const resolved = resolveCatalogMediaAbsoluteUrl(mediaPublicBaseUrl, url);
+  if (/^https?:\/\//i.test(resolved)) return resolved;
+  if (resolved.startsWith('/')) return `${window.location.origin}${resolved}`;
+  return resolved;
+}
+
+function catalogRowImageUrls(row: CatalogGoodDto, mediaPublicBaseUrl: string): string[] {
+  const raw =
+    row.imagePreviewUrls && row.imagePreviewUrls.length > 0
+      ? row.imagePreviewUrls
+      : row.primaryImageUrl
+        ? [row.primaryImageUrl]
+        : [];
+  return raw.map((u) => absoluteCatalogImageUrl(u, mediaPublicBaseUrl));
+}
+
+function CatalogRowNameTooltip({
+  name,
+  imageUrl,
+}: {
+  name: string;
+  imageUrl: string | null;
+}) {
+  const content =
+    imageUrl != null ? (
+      <div className="flex flex-col gap-1">
+        <img
+          src={catalogImageThumbUrl(imageUrl)}
+          className="max-h-36 w-full rounded-t-sm bg-default-100 object-cover aspect-square"
+        />
+        <span className="text-xs text-default-300 leading-snug px-1 w-full text-center">{name}</span>
+      </div>
+    ) : (
+      <span className="px-1">{name}</span>
+    );
+
+  return (
+    <Tooltip
+      content={content}
+      placement={imageUrl != null ? 'left' : 'top'}
+      color="secondary"
+      delay={500}
+      showArrow
+      classNames={{
+        base: 'before:bg-gray-700 before:rounded-[2px]',
+        content: 'bg-gray-700 border-0 text-white text-xs p-1',
+      }}
+    >
+      <span className="max-w-[240px] truncate select-none">{name}</span>
+    </Tooltip>
+  );
+}
+
 function copySkuToClipboard(sku: string): void {
   void navigator.clipboard.writeText(sku).then(() => {
     ToastService.show({
@@ -498,6 +557,40 @@ function copySkuToClipboard(sku: string): void {
       timeout: 3000,
     });
   });
+}
+
+function CatalogRowImageCell({
+  row,
+  mediaPublicBaseUrl,
+}: {
+  row: CatalogGoodDto;
+  mediaPublicBaseUrl: string;
+}) {
+  if (row.isGroup) {
+    return <span className="text-default-300">—</span>;
+  }
+  const count = row.imageCount ?? 0;
+  const previewUrls = catalogRowImageUrls(row, mediaPublicBaseUrl);
+  const inner = (
+    <span className="inline-flex items-center justify-center gap-0.5 tabular-nums pointer-events-none">
+      <DynamicIcon
+        name="image"
+        size={14}
+        className={count > 0 ? 'text-default-500' : 'text-default-300'}
+      />
+      {count > 0 ? <span className="text-xs pt-0.5 text-default-600">{count}</span> : null}
+    </span>
+  );
+
+  if (count === 0 || previewUrls.length === 0) {
+    return inner;
+  }
+
+  return (
+    <CatalogImagePreviewPopover urls={previewUrls} label={`${count} зображ.`}>
+      {inner}
+    </CatalogImagePreviewPopover>
+  );
 }
 
 function SkuCopyCell({ sku }: { sku: string | null }) {
@@ -560,6 +653,18 @@ export function CatalogTable({
   const selectedSet = new Set(selectedIds);
   const allIds = visibleRows.map((r) => r.id);
   const allSelected = allIds.length > 0 && allIds.every((id) => selectedSet.has(id));
+
+  const [mediaPublicBaseUrl, setMediaPublicBaseUrl] = useState('');
+  useEffect(() => {
+    void storefrontApi
+      .getSettings()
+      .then((settings) => {
+        setMediaPublicBaseUrl(settings.wooCommerce?.mediaPublicBaseUrl?.trim() || '');
+      })
+      .catch(() => {
+        setMediaPublicBaseUrl('');
+      });
+  }, []);
 
   const [internalSort, setInternalSort] = useState<SortDescriptor>({
     column: 'sortOrder',
@@ -656,10 +761,15 @@ export function CatalogTable({
     if (isSearchMode) {
       cols.push({ key: 'category', label: 'Категорія', sortable: true });
     }
-    cols.push(
-      { key: 'sku', label: 'SKU', sortable: true },
-      { key: 'type', label: 'Тип' },
-    );
+    cols.push({ key: 'sku', label: 'SKU', sortable: true });
+    if (hasGoods) {
+      cols.push({
+        key: 'images',
+        label: 'Зобр.',
+        width: 44,
+      });
+    }
+    cols.push({ key: 'type', label: 'Тип' });
     if (hasGoods) {
       cols.push({ key: 'weight', label: 'Вага, кг', sortable: true });
     }
@@ -1351,9 +1461,18 @@ export function CatalogTable({
                   className="text-default-500 shrink-0"
                 />
               </span>
-              <Tooltip content={row.name} placement="top" color="secondary" delay={500} showArrow={true} classNames={{ base: 'before:bg-gray-700 before:rounded-[2px]', content: 'bg-gray-700 border-0 text-white text-xs' }}>
+              {!row.isGroup ? (
+                <CatalogRowNameTooltip
+                  name={row.name}
+                  imageUrl={
+                    row.primaryImageUrl
+                      ? absoluteCatalogImageUrl(row.primaryImageUrl, mediaPublicBaseUrl)
+                      : null
+                  }
+                />
+              ) : (
                 <span className="max-w-[240px] truncate select-none">{row.name}</span>
-              </Tooltip>
+              )}
               <CatalogRowNameBadges row={row} treeItems={treeItems} />
             </button>
             <MissingRequiredHint labels={catalogMissingNameLabels(resolveMissingRequired(row))} />
@@ -1544,6 +1663,8 @@ export function CatalogTable({
           </div>
         );
       }
+      case 'images':
+        return <CatalogRowImageCell row={row} mediaPublicBaseUrl={mediaPublicBaseUrl} />;
       case 'actions':
         return (
           <button

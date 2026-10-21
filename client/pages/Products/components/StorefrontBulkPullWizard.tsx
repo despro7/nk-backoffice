@@ -30,6 +30,7 @@ import {
   StorefrontSyncReportModal,
 } from './StorefrontSyncReportModal';
 import { PullFieldConflictTooltip } from './PullFieldConflictTooltip';
+import { OpenStorefrontProductLink } from './OpenStorefrontProductLink';
 
 const BULK_PULL_LOAD_CONCURRENCY = 4;
 
@@ -340,8 +341,15 @@ export function StorefrontBulkPullWizard({
                     return (
                       <tr key={row.preview.goodId} className="border-t border-default-100">
                         <td className="px-2 py-2">
-                          <p className="font-medium">{row.preview.name}</p>
-                          <p className="font-mono text-default-500">{row.preview.sku}</p>
+                          <div className="flex items-start gap-1">
+                            <div className="min-w-0 flex-1">
+                              <p className="font-medium">{row.preview.name}</p>
+                              <p className="font-mono text-default-500">{row.preview.sku}</p>
+                            </div>
+                            {row.preview.storefrontUrl ? (
+                              <OpenStorefrontProductLink url={row.preview.storefrontUrl} label="" />
+                            ) : null}
+                          </div>
                           {row.preview.wcStatus === 'not_found' ? (
                             <Chip size="sm" color="warning" variant="flat" className="mt-1">Немає на WC</Chip>
                           ) : null}

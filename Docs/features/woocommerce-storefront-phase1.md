@@ -348,8 +348,8 @@ Pull парсить WC HTML/meta через `storefrontDescriptionParser` → `s
 | POST | `/dry-run-push` | `action.storefront.manage` | payload без HTTP у WC |
 | POST | `/woo/test-connection` | `action.storefront.manage` | перевірка credentials |
 | POST | `/woo/inspect` | `action.storefront.pull` | summary WC product за SKU |
-| POST | `/woo/pull-preview` | `action.storefront.pull` | порівняння local vs WC |
-| POST | `/woo/pull-apply` | `action.storefront.pull` | застосувати вибрані поля |
+| POST | `/woo/pull-preview` | `action.storefront.pull` | порівняння local vs WC; поза гілкою «Готова продукція» — stub (`wcCompareEnabled: false`, без WC API) |
+| POST | `/woo/pull-apply` | `action.storefront.pull` | застосувати вибрані поля; no-op для WC, якщо `wcCompareEnabled === false` |
 | POST | `/woo/pull-bulk-preview` | `action.storefront.pull` | bulk preview + конфлікти |
 | POST | `/woo/pull-bulk-apply` | `action.storefront.pull` | bulk apply (матриця полів) |
 | POST | `/woo/push-preview` | `action.storefront.push` | preview push |
@@ -396,6 +396,21 @@ Status `draft`: `doNotPublish` або товар у папці «Архів – 
 | meta-gross-weight | Маса брутто | `_nk_gross_weight` |
 
 Окремо при **push комплектів** (не з реєстру metaKeys): `_total_quantity_portions` — повна кількість порцій (рекурсивно через вкладені набори).
+
+---
+
+## Pull preview: гілка «Готова продукція» vs Dilovod
+
+| Джерело | Область застосування |
+| --- | --- |
+| **Dilovod ↔ BO** | Усі товари з SKU (`GET /api/catalog/goods/:id/dilovod-preview`, `dilovod-apply`) |
+| **WC ↔ BO** | Лише товари, чий `parentId` у піддереві `CATALOG_FINISHED_PRODUCTS_FOLDER_ID` (`server/modules/Products/catalogFinishedProductsFolder.ts`) |
+
+У відповіді `WooPullPreviewResult` поле **`wcCompareEnabled`**: `false` — UI tri-source таблиці показує WC як «—», apply/push WC пропускається; Dilovod-колонка лишається активною.
+
+Конфлікт **`storefrontDescriptionDoc`**: семантичне порівняння JSON (не байт-в-байт), злиття override/plain HTML для `_nk_storage` — `storefrontDescriptionDocFieldConflict` у `WooCommerceSyncService`, утиліти в `shared/utils/storefrontDescription.ts` / `storefrontDescriptionDocDiff.ts`.
+
+Картка товару: `StorefrontPullConfirmModal` + `ProductPullTriSourceTable`; відкриття з банера — `CatalogOpenSyncModal`.
 
 ---
 

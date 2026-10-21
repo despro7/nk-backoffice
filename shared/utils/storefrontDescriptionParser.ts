@@ -15,6 +15,7 @@ import {
   normalizeStorefrontBlockHtml,
   normalizeWcTypography,
   normalizeWcTypographyInHtml,
+  normalizeStorefrontDescriptionDoc,
   normalizeWcTypographyInStorefrontDoc,
 } from './storefrontDescription.js';
 
@@ -360,7 +361,9 @@ export function parseWcDescription(input: ParseWcDescriptionInput): StorefrontPu
     unparsed.push(html.slice(0, 500));
   }
 
-  const storefrontDescriptionDoc = normalizeWcTypographyInStorefrontDoc(doc);
+  const storefrontDescriptionDoc = normalizeStorefrontDescriptionDoc(
+    normalizeWcTypographyInStorefrontDoc(doc),
+  );
 
   return {
     storefrontDescriptionDoc,

@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDraggable } from '@heroui/use-draggable';
+import { useDebug } from '@/contexts/debug-context';
 import {
   Accordion,
   AccordionItem,
   Button,
-  Checkbox,
   Chip,
   Modal,
+  Tab,
+  Tabs,
   ModalBody,
   ModalContent,
   ModalFooter,
@@ -16,9 +18,23 @@ import {
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import MetaLogJsonView from '@/components/MetaLogJsonView';
+import { catalogApi } from '../../catalogApi';
+import { OpenStorefrontProductLink } from '../OpenStorefrontProductLink';
 import { storefrontApi } from '@/services/StorefrontService';
+import type { CatalogDilovodPreviewResult, CatalogDilovodPullApplyField } from '@shared/types/catalog';
 import type { WooPullApplyInput, WooPullPreviewResult } from '@shared/types/storefront';
 import { isEffectivelyEmptyHtml } from '@shared/utils/storefrontDescriptionParser';
+import {
+  buildProductPullTriRows,
+  filterProductPullTriRows,
+  type ProductPullTriFieldView,
+  type ProductPullSource,
+  type ProductPullTriRow,
+  type ProductPullTriRowId,
+  ProductPullTriSourceTable,
+  shouldPushTriSyncChoicesToWoo,
+} from './ProductPullTriSourceTable';
+import { resolveCatalogMediaAbsoluteUrls } from '@shared/utils/resolveCatalogMediaAbsoluteUrl';
 
 export interface StorefrontPullApplyFlags {
   name: boolean;
@@ -43,99 +59,9 @@ interface StorefrontPullConfirmModalProps {
   localName: string;
   localFullDescription: string;
   localShortDescription: string;
-  onApplied: () => void;
+  onApplied: () => void | Promise<void>;
   onClose: () => void;
 }
-
-type PullFieldKey = keyof StorefrontPullApplyFlags;
-
-type ComparisonRow = {
-  key?: PullFieldKey;
-  label: string;
-  local: string;
-  remote: string;
-  conflict?: boolean;
-  willApply?: boolean;
-};
-
-const PULL_FIELD_OPTIONS: Array<{
-  key: PullFieldKey;
-  label: string;
-  hint: string;
-  conflictField?: string;
-}> = [
-  {
-    key: 'name',
-    label: 'Назва товару',
-    hint: 'name з WooCommerce',
-    conflictField: 'name',
-  },
-  {
-    key: 'fullDescription',
-    label: 'Legacy опис',
-    hint: 'Повний HTML з WooCommerce',
-    conflictField: 'fullDescription',
-  },
-  {
-    key: 'shortDescription',
-    label: 'Короткий опис',
-    hint: 'short_description з WC',
-    conflictField: 'description',
-  },
-  {
-    key: 'storefrontDescriptionDoc',
-    label: 'Storefront doc',
-    hint: 'Блоки опису після парсингу',
-    conflictField: 'storefrontDescriptionDoc',
-  },
-  {
-    key: 'productIngredientsJson',
-    label: 'Склад (tags)',
-    hint: 'Теги інгредієнтів',
-    conflictField: 'productIngredientsJson',
-  },
-  {
-    key: 'productNutritionJson',
-    label: 'КБЖВ',
-    hint: 'Нутрієнти з meta / HTML',
-    conflictField: 'productNutritionJson',
-  },
-  {
-    key: 'weight',
-    label: 'Вага',
-    hint: 'Вага товару, кг',
-    conflictField: 'weight',
-  },
-  {
-    key: 'regularPrice',
-    label: 'Ціна',
-    hint: 'Роздріб і Звичайна',
-    conflictField: 'regularPrice',
-  },
-  {
-    key: 'doNotPublish',
-    label: 'Не публікувати',
-    hint: 'draft/publish статус WC',
-    conflictField: 'doNotPublish',
-  },
-  {
-    key: 'category',
-    label: 'Категорія',
-    hint: 'Оновити категорію на WC за групою в BO',
-    conflictField: 'category',
-  },
-  {
-    key: 'images',
-    label: 'Зображення',
-    hint: 'Імпорт з WooCommerce',
-    conflictField: 'images',
-  },
-  {
-    key: 'wooProductId',
-    label: 'wooProductId',
-    hint: 'Звʼязок з товаром WC',
-  },
-];
 
 function isEmpty(value: string | null | undefined): boolean {
   return isEffectivelyEmptyHtml(value);
@@ -143,16 +69,6 @@ function isEmpty(value: string | null | undefined): boolean {
 
 function hasConflict(preview: WooPullPreviewResult, field: string): boolean {
   return preview.conflicts.some((c) => c.field === field);
-}
-
-function conflictValue(
-  preview: WooPullPreviewResult,
-  field: string,
-  side: 'local' | 'remote',
-): string | null {
-  const row = preview.conflicts.find((c) => c.field === field);
-  if (!row) return null;
-  return side === 'local' ? row.localValue : row.remoteValue;
 }
 
 function countLocalIngredients(raw: string | null | undefined): number {
@@ -163,6 +79,64 @@ function countLocalIngredients(raw: string | null | undefined): number {
   } catch {
     return 0;
   }
+}
+
+function buildDefaultTriSources(
+  rows: ProductPullTriRow[],
+  wooFlags: StorefrontPullApplyFlags,
+): Record<string, ProductPullSource> {
+  const wooByRow: Partial<Record<ProductPullTriRowId, boolean>> = {
+    name: wooFlags.name,
+    shortDescription: wooFlags.shortDescription,
+    weight: wooFlags.weight,
+    regularPrice: wooFlags.regularPrice,
+    storefrontDescriptionDoc: wooFlags.storefrontDescriptionDoc,
+    productIngredientsJson: wooFlags.productIngredientsJson,
+    productNutritionJson: wooFlags.productNutritionJson,
+    doNotPublish: wooFlags.doNotPublish,
+    category: wooFlags.category,
+    images: wooFlags.images,
+  };
+  const out: Record<string, ProductPullSource> = {};
+  for (const row of rows) {
+    if (!row.hasConflict) {
+      out[row.id] = 'local';
+      continue;
+    }
+    out[row.id] = wooByRow[row.id] ? 'woo' : 'local';
+  }
+  return out;
+}
+
+function wooFlagsFromTriSources(
+  sourceByRowId: Record<string, ProductPullSource>,
+): StorefrontPullApplyFlags {
+  const pick = (id: ProductPullTriRowId) => sourceByRowId[id] === 'woo';
+  return {
+    name: pick('name'),
+    fullDescription: false,
+    shortDescription: pick('shortDescription'),
+    storefrontDescriptionDoc: pick('storefrontDescriptionDoc'),
+    productIngredientsJson: pick('productIngredientsJson'),
+    productNutritionJson: pick('productNutritionJson'),
+    weight: pick('weight'),
+    regularPrice: pick('regularPrice'),
+    doNotPublish: pick('doNotPublish'),
+    category: pick('category'),
+    images: pick('images'),
+    replaceImages: false,
+    wooProductId: false,
+  };
+}
+
+function dilovodFieldsFromTriSources(
+  sourceByRowId: Record<string, ProductPullSource>,
+): CatalogDilovodPullApplyField[] {
+  const fields: CatalogDilovodPullApplyField[] = [];
+  if (sourceByRowId.name === 'dilovod') fields.push('name');
+  if (sourceByRowId.weight === 'dilovod') fields.push('weight');
+  if (sourceByRowId.regularPrice === 'dilovod') fields.push('regularPrice');
+  return fields;
 }
 
 function defaultFlags(
@@ -193,18 +167,6 @@ function defaultFlags(
   };
 }
 
-function truncateValue(value: string | null | undefined, max = 72): string {
-  if (!value) return '—';
-  const normalized = value.replace(/\s+/g, ' ').trim();
-  if (normalized.length <= max) return normalized;
-  return `${normalized.slice(0, max)}…`;
-}
-
-function formatPreviewValue(value: string | number | null | undefined): string {
-  if (value == null || value === '') return '—';
-  return String(value);
-}
-
 function countParsedUniqueFields(parsed: WooPullPreviewResult['proposed']['parsed']): number {
   let count = 0;
   if (parsed.marketingText?.trim()) count += 1;
@@ -224,214 +186,6 @@ function buildParsedUniquePreview(parsed: WooPullPreviewResult['proposed']['pars
   };
 }
 
-function countChars(value: string): string {
-  if (!value.trim()) return 'порожньо';
-  return `${value.length} симв.`;
-}
-
-function formatParsedUniqueSummary(parsed: WooPullPreviewResult['proposed']['parsed']): string {
-  const count = countParsedUniqueFields(parsed);
-  if (count === 0) return 'немає унікальних даних';
-  return `${count} унік. ${count === 1 ? 'поле' : count < 5 ? 'поля' : 'полів'}`;
-}
-
-function buildAllImportRows(
-  preview: WooPullPreviewResult,
-  localName: string,
-  localFullDescription: string,
-  localShortDescription: string,
-  flags: StorefrontPullApplyFlags,
-): ComparisonRow[] {
-  const ingredients = preview.proposed.parsed.productIngredientsJson;
-
-  return [
-    {
-      key: 'name',
-      label: 'Назва товару',
-      local: truncateValue(localName, 80),
-      remote: truncateValue(preview.proposed.name, 80),
-      conflict: hasConflict(preview, 'name'),
-      willApply: flags.name,
-    },
-    {
-      key: 'fullDescription',
-      label: 'Legacy опис',
-      local: countChars(localFullDescription),
-      remote: countChars(preview.proposed.fullDescription || ''),
-      conflict: hasConflict(preview, 'fullDescription'),
-      willApply: flags.fullDescription,
-    },
-    {
-      key: 'shortDescription',
-      label: 'Короткий опис',
-      local: truncateValue(localShortDescription, 80),
-      remote: truncateValue(preview.proposed.shortDescription, 80),
-      conflict: hasConflict(preview, 'description'),
-      willApply: flags.shortDescription,
-    },
-    {
-      key: 'storefrontDescriptionDoc',
-      label: 'Storefront doc',
-      local: truncateValue(preview.local.storefrontDescriptionDoc, 80),
-      remote: hasConflict(preview, 'storefrontDescriptionDoc')
-        ? truncateValue(conflictValue(preview, 'storefrontDescriptionDoc', 'remote'), 80)
-        : formatParsedUniqueSummary(preview.proposed.parsed),
-      conflict: hasConflict(preview, 'storefrontDescriptionDoc'),
-      willApply: flags.storefrontDescriptionDoc,
-    },
-    {
-      key: 'productIngredientsJson',
-      label: 'Склад (tags)',
-      local: truncateValue(preview.local.productIngredientsJson, 80),
-      remote: hasConflict(preview, 'productIngredientsJson')
-        ? truncateValue(conflictValue(preview, 'productIngredientsJson', 'remote'), 80)
-        : ingredients.length > 0
-          ? `${ingredients.length} тегів`
-          : '—',
-      conflict: hasConflict(preview, 'productIngredientsJson'),
-      willApply: flags.productIngredientsJson,
-    },
-    {
-      key: 'productNutritionJson',
-      label: 'КБЖВ',
-      local: truncateValue(preview.local.productNutritionJson, 80),
-      remote: hasConflict(preview, 'productNutritionJson')
-        ? truncateValue(conflictValue(preview, 'productNutritionJson', 'remote'), 80)
-        : preview.proposed.parsed.productNutritionJson
-          ? 'є дані'
-          : '—',
-      conflict: hasConflict(preview, 'productNutritionJson'),
-      willApply: flags.productNutritionJson,
-    },
-    {
-      key: 'weight',
-      label: 'Вага, кг',
-      local: formatPreviewValue(preview.local.weight),
-      remote: formatPreviewValue(preview.proposed.weight),
-      conflict: hasConflict(preview, 'weight'),
-      willApply: flags.weight,
-    },
-    {
-      key: 'regularPrice',
-      label: 'Ціна',
-      local: formatPreviewValue(preview.local.regularPrice),
-      remote: formatPreviewValue(preview.proposed.regularPrice),
-      conflict: hasConflict(preview, 'regularPrice'),
-      willApply: flags.regularPrice,
-    },
-    {
-      key: 'doNotPublish',
-      label: 'Не публікувати',
-      local: preview.local.doNotPublish ? 'так' : 'ні',
-      remote: preview.proposed.doNotPublish ? 'так (draft)' : 'ні (publish)',
-      conflict: hasConflict(preview, 'doNotPublish'),
-      willApply: flags.doNotPublish,
-    },
-    {
-      key: 'category',
-      label: 'Категорія (група BO → WC)',
-      local: truncateValue(preview.local.groupName, 80),
-      remote: truncateValue(preview.proposed.categoryName, 80),
-      conflict: hasConflict(preview, 'category'),
-      willApply: flags.category,
-    },
-    {
-      key: 'images',
-      label: 'Зображення',
-      local: preview.local.imageCount > 0 ? `${preview.local.imageCount} шт.` : '—',
-      remote: preview.proposed.imageCount > 0 ? `${preview.proposed.imageCount} шт.` : '—',
-      conflict: hasConflict(preview, 'images'),
-      willApply: flags.images,
-    },
-    {
-      key: 'wooProductId',
-      label: 'wooProductId',
-      local: '—',
-      remote: String(preview.wooProductId),
-      willApply: flags.wooProductId,
-    },
-  ];
-}
-
-const COMPARISON_TABLE_GRID = {
-  summary: 'grid grid-cols-1 sm:grid-cols-[1fr_1fr] gap-x-3 gap-y-2',
-  full: 'grid grid-cols-1 sm:grid-cols-[8.5rem_1fr_1fr_8.5rem] gap-x-3 gap-y-2',
-} as const;
-
-function ComparisonTable({
-  rows,
-  showApplyStatus = false,
-  embedded = false,
-}: {
-  rows: ComparisonRow[];
-  showApplyStatus?: boolean;
-  embedded?: boolean;
-}) {
-  const gridClass = showApplyStatus ? COMPARISON_TABLE_GRID.full : COMPARISON_TABLE_GRID.summary;
-
-  return (
-    <section className={embedded ? undefined : 'rounded-md border border-default-200 overflow-y-auto scrollbar-thin-transparent'}>
-      <div className="bg-default-100 px-4 py-2 mt-2.5 text-xs rounded-sm font-semibold uppercase tracking-wide text-default-500">
-        <div className={gridClass}>
-          <span>Поле</span>
-          {showApplyStatus ? (
-            <>
-              <span>Локально</span>
-              <span>WooCommerce</span>
-              <span className="hidden sm:block text-center">Застосувати</span>
-            </>
-          ) : (
-            <span className="grid grid-cols-2 gap-3">
-              <span>Локально</span>
-              <span>WooCommerce</span>
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="divide-y divide-default-100">
-        {rows.map((row) => (
-          <div key={row.label} className={`${gridClass} px-4 py-3 text-sm`}>
-            <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-              <p className="font-medium text-default-700 break-words">{row.label}</p>
-              {row.conflict && (
-                <Chip size="sm" color="warning" variant="flat">
-                  конфлікт
-                </Chip>
-              )}
-            </div>
-            {showApplyStatus ? (
-              <>
-                <span className="min-w-0 rounded-md bg-default-50 px-2 py-1.5 text-xs text-default-600 break-words">
-                  {row.local}
-                </span>
-                <span className="min-w-0 rounded-md bg-primary-50 px-2 py-1.5 text-xs text-primary-800 break-words">
-                  {row.remote}
-                </span>
-                <div className="flex items-center justify-center">
-                  {row.willApply != null ? (
-                    <Chip size="sm" color={row.willApply ? 'success' : 'default'} variant="flat">
-                      {row.willApply ? 'так' : 'ні'}
-                    </Chip>
-                  ) : (
-                    <span className="text-xs text-default-400">—</span>
-                  )}
-                </div>
-              </>
-            ) : (
-              <div className="grid grid-cols-2 gap-3 text-xs text-default-600">
-                <span className="min-w-0 rounded-md bg-default-50 px-2 py-1.5 break-words">{row.local}</span>
-                <span className="min-w-0 rounded-md bg-primary-50 px-2 py-1.5 text-primary-800 break-words">
-                  {row.remote}
-                </span>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 export function StorefrontPullConfirmModal({
   isOpen,
   goodId,
@@ -446,16 +200,13 @@ export function StorefrontPullConfirmModal({
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<WooPullPreviewResult | null>(null);
-  const [allFieldsOpen, setAllFieldsOpen] = useState(false);
+  const [dilovodPreview, setDilovodPreview] = useState<CatalogDilovodPreviewResult | null>(null);
+  const [sourceByRowId, setSourceByRowId] = useState<Record<string, ProductPullSource>>({});
   const modalTargetRef = useRef<HTMLElement>(null);
-  const allFieldsModalTargetRef = useRef<HTMLElement>(null);
+  const { isDebugMode } = useDebug();
   const { moveProps } = useDraggable({
     targetRef: modalTargetRef,
     isDisabled: !isOpen,
-  });
-  const { moveProps: allFieldsMoveProps } = useDraggable({
-    targetRef: allFieldsModalTargetRef,
-    isDisabled: !allFieldsOpen,
   });
   const [flags, setFlags] = useState<StorefrontPullApplyFlags>({
     name: false,
@@ -474,6 +225,8 @@ export function StorefrontPullConfirmModal({
   });
   const [ingredientsConfirmOpen, setIngredientsConfirmOpen] = useState(false);
   const [imagesConfirmOpen, setImagesConfirmOpen] = useState(false);
+  const [fieldView, setFieldView] = useState<ProductPullTriFieldView>('differences');
+  const [mediaPublicBaseUrl, setMediaPublicBaseUrl] = useState<string>('');
 
   useEffect(() => {
     if (isOpen) return;
@@ -483,75 +236,144 @@ export function StorefrontPullConfirmModal({
   }, [isOpen]);
 
   useEffect(() => {
-    if (allFieldsOpen) return;
-    if (allFieldsModalTargetRef.current) {
-      allFieldsModalTargetRef.current.style.transform = '';
-    }
-  }, [allFieldsOpen]);
+    if (!isOpen) return;
+    void storefrontApi.getSettings().then((settings) => {
+      setMediaPublicBaseUrl(settings.wooCommerce.mediaPublicBaseUrl?.trim() || '');
+    });
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen || !goodId) return;
+    setFieldView('differences');
     setLoading(true);
     setError(null);
     setPreview(null);
-    setAllFieldsOpen(false);
-    void storefrontApi
-      .pullPreview(goodId)
-      .then((data) => {
-        setPreview(data);
-        setFlags(defaultFlags(data, localName, localFullDescription, localShortDescription));
+    setDilovodPreview(null);
+    setSourceByRowId({});
+    void Promise.all([
+      storefrontApi.pullPreview(goodId),
+      catalogApi.fetchDilovodPreview(goodId).catch(() => null),
+    ])
+      .then(([wooData, dilovodData]) => {
+        setPreview(wooData);
+        setDilovodPreview(dilovodData);
+        const triRowsBuilt = buildProductPullTriRows(
+          wooData,
+          dilovodData,
+          localName,
+          localFullDescription,
+          localShortDescription,
+        );
+        const wooFlags = defaultFlags(
+          wooData,
+          localName,
+          localFullDescription,
+          localShortDescription,
+        );
+        setFlags(wooFlags);
+        setSourceByRowId(buildDefaultTriSources(triRowsBuilt, wooFlags));
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false));
   }, [isOpen, goodId, localName, localFullDescription, localShortDescription]);
 
-  const hasChecked = useMemo(
-    () => PULL_FIELD_OPTIONS.some((field) => flags[field.key]),
-    [flags],
-  );
-
-  const selectedCount = useMemo(
-    () => PULL_FIELD_OPTIONS.filter((field) => flags[field.key]).length,
-    [flags],
-  );
-
-  const allImportRows = useMemo(
+  const triRowsAll = useMemo(
     () =>
       preview
-        ? buildAllImportRows(preview, localName, localFullDescription, localShortDescription, flags)
+        ? buildProductPullTriRows(
+            preview,
+            dilovodPreview,
+            localName,
+            localFullDescription,
+            localShortDescription,
+          )
         : [],
-    [preview, localName, localFullDescription, localShortDescription, flags],
+    [preview, dilovodPreview, localName, localFullDescription, localShortDescription],
   );
 
-  const summaryRows = useMemo(
-    () => allImportRows.filter((row) =>
-      ['Назва товару', 'Legacy опис', 'Короткий опис', 'Ціна', 'Вага, кг'].includes(row.label),
-    ),
-    [allImportRows],
+  const triRows = useMemo(
+    () =>
+      filterProductPullTriRows(triRowsAll, {
+        isKit: Boolean(preview?.isKit),
+        fieldView,
+      }),
+    [triRowsAll, preview?.isKit, fieldView],
   );
 
-  const buildApplyPayload = (): WooPullApplyInput['apply'] => ({
-    name: flags.name,
-    fullDescription: flags.fullDescription,
-    shortDescription: flags.shortDescription,
-    storefrontDescriptionDoc: flags.storefrontDescriptionDoc,
-    productIngredientsJson: flags.productIngredientsJson,
-    productNutritionJson: flags.productNutritionJson,
-    weight: flags.weight,
-    regularPrice: flags.regularPrice,
-    doNotPublish: flags.doNotPublish,
-    images: flags.images,
-    replaceImages: flags.replaceImages,
-    wooProductId: flags.wooProductId,
-  });
+  const localImagePreviewUrls = useMemo(
+    () =>
+      resolveCatalogMediaAbsoluteUrls(
+        mediaPublicBaseUrl,
+        preview?.localImagePreviewUrls ?? [],
+      ),
+    [mediaPublicBaseUrl, preview?.localImagePreviewUrls],
+  );
+
+  const hasApplySelection = useMemo(() => {
+    const hasRemoteSelection = triRowsAll.some(
+      (row) => (sourceByRowId[row.id] ?? 'local') !== 'local',
+    );
+    const needsLegacyFullSeed =
+      preview?.wcCompareEnabled !== false &&
+      isEmpty(localFullDescription) &&
+      Boolean(preview?.proposed.fullDescription?.trim());
+    return hasRemoteSelection || needsLegacyFullSeed;
+  }, [
+    triRowsAll,
+    sourceByRowId,
+    localFullDescription,
+    preview?.proposed.fullDescription,
+    preview?.wcCompareEnabled,
+  ]);
+
+  const selectedCount = useMemo(
+    () => triRowsAll.filter((row) => (sourceByRowId[row.id] ?? 'local') !== 'local').length,
+    [triRowsAll, sourceByRowId],
+  );
 
   const runApply = async () => {
     if (!goodId) return;
     setApplying(true);
     setError(null);
     try {
-      await storefrontApi.pullApply({ goodId, apply: buildApplyPayload() });
-      onApplied();
+      const wooApply = wooFlagsFromTriSources(sourceByRowId);
+      wooApply.replaceImages = flags.replaceImages;
+      const dilovodFields = dilovodFieldsFromTriSources(sourceByRowId);
+
+      if (dilovodFields.length > 0) {
+        await catalogApi.applyDilovodPull(goodId, { fields: dilovodFields });
+      }
+
+      const hasWooApply = Object.entries(wooApply).some(
+        ([key, value]) => key !== 'replaceImages' && value === true,
+      );
+      const needsLegacyFullSeed =
+        isEmpty(localFullDescription) && Boolean(preview?.proposed.fullDescription?.trim());
+
+      if (preview.wcCompareEnabled !== false) {
+        if (hasWooApply) {
+          wooApply.wooProductId = true;
+          await storefrontApi.pullApply({ goodId, apply: wooApply });
+        } else if (needsLegacyFullSeed) {
+          await storefrontApi.pullApply({ goodId, apply: { fullDescription: true } });
+        }
+      }
+
+      const pushBoToWoo =
+        preview &&
+        preview.wcCompareEnabled !== false &&
+        shouldPushTriSyncChoicesToWoo(
+          triRowsAll,
+          sourceByRowId,
+          preview.conflicts.map((c) => c.field),
+        );
+
+      await Promise.resolve(onApplied());
+
+      if (pushBoToWoo) {
+        await storefrontApi.pushApply(goodId);
+      }
+
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -565,13 +387,14 @@ export function StorefrontPullConfirmModal({
   const proceedAfterIngredientConfirm = () => {
     if (!preview) return;
     setIngredientsConfirmOpen(false);
+    const wooApply = wooFlagsFromTriSources(sourceByRowId);
 
-    if (flags.images && flags.replaceImages && preview.local.imageCount > 0) {
+    if (wooApply.images && flags.replaceImages && preview.local.imageCount > 0) {
       setImagesConfirmOpen(true);
       return;
     }
 
-    if (flags.images && preview.local.imageCount > 0 && !flags.replaceImages) {
+    if (wooApply.images && preview.local.imageCount > 0 && !flags.replaceImages) {
       setError('Увімкніть «Замінити існуючі зображення» або зніміть вибір поля «Зображення»');
       return;
     }
@@ -580,10 +403,11 @@ export function StorefrontPullConfirmModal({
   };
 
   const handleApply = () => {
-    if (!goodId || !hasChecked || !preview) return;
+    if (!goodId || !hasApplySelection || !preview) return;
 
+    const wooApply = wooFlagsFromTriSources(sourceByRowId);
     const localIngredientCount = countLocalIngredients(preview.local.productIngredientsJson);
-    if (flags.productIngredientsJson && localIngredientCount > 0) {
+    if (wooApply.productIngredientsJson && localIngredientCount > 0) {
       setIngredientsConfirmOpen(true);
       return;
     }
@@ -591,22 +415,8 @@ export function StorefrontPullConfirmModal({
     proceedAfterIngredientConfirm();
   };
 
-  const toggle = (key: PullFieldKey) => {
-    setFlags((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      if (key === 'images' && !next.images) {
-        next.replaceImages = false;
-      }
-      return next;
-    });
-  };
-
-  const selectSafeFields = () => {
-    if (!preview) return;
-    setFlags(defaultFlags(preview, localName, localFullDescription, localShortDescription));
-  };
-
   const parsedPreview = preview ? buildParsedUniquePreview(preview.proposed.parsed) : null;
+  const wooImagesSelected = sourceByRowId.images === 'woo';
 
   return (
     <>
@@ -614,32 +424,48 @@ export function StorefrontPullConfirmModal({
         ref={modalTargetRef}
         isOpen={isOpen}
         onClose={onClose}
-        size="3xl"
+        size="4xl"
+        isDismissable={false}
         scrollBehavior="inside"
+        classNames={{ 
+          base: 'rounded-xl',
+          closeButton: 'top-4 right-3',
+        }}
       >
         <ModalContent>
           <ModalHeader
             {...moveProps}
-            className="flex flex-col items-start gap-1 pb-2 cursor-move touch-none select-none"
+            className="flex flex-col items-start gap-1 pb-2 px-4 cursor-move touch-none select-none"
           >
-            <div className="flex flex-wrap items-center gap-2">
-              <span>Завантажити з сайту</span>
+            <div className="flex flex-wrap items-center pr-8 gap-2">
+              <span className="flex items-center gap-1">Синхронізація даних товару</span>
               {sku && (
-                <Chip size="sm" variant="flat" color="primary" className="font-mono">
+                <Chip variant="flat" color="default" className="font-mono text-default-500 h-auto min-w-0 w-auto px-0.5 py-0.5">
                   {sku}
                 </Chip>
               )}
+              {isDebugMode && (
+                <span className="text-xs font-normal text-default-500">WooCommerce #{preview?.wooProductId}</span>
+              )}
+              <Tabs
+                size="sm"
+                color="secondary"
+                aria-label="Фільтр полів порівняння"
+                selectedKey={fieldView}
+                onSelectionChange={(key) =>
+                  setFieldView(String(key) as ProductPullTriFieldView)
+                }
+                classNames={{ base: 'ml-10', tabList: 'gap-0 border-1 border-gray-500/15', tab: 'h-7 min-h-7 px-2.5 text-xs', cursor: 'bg-gray-600', tabContent: 'text-gray-600 group-data-[selected=true]:text-white' }}
+              >
+                <Tab key="differences" title="Лише відмінності" />
+                <Tab key="all" title="Усі поля" />
+              </Tabs>
             </div>
-            {preview && (
-              <p className="text-xs font-normal text-default-500">
-                WooCommerce #{preview.wooProductId} · оберіть поля для імпорту в backoffice
-              </p>
-            )}
           </ModalHeader>
 
-          <ModalBody className="gap-5 scrollbar-thin-transparent px-3.5">
+          <ModalBody className="gap-5 scrollbar-thin-transparent p-4 min-h-60">
             {loading && (
-              <div className="flex items-center justify-center py-10 text-default-500">
+              <div className="flex items-center justify-center h-full flex-1 text-default-500">
                 <Spinner size="sm" />
                 <span className="ml-2 text-sm">Завантаження preview…</span>
               </div>
@@ -651,111 +477,68 @@ export function StorefrontPullConfirmModal({
               </div>
             )}
 
-            {preview && (
+            {preview?.wcCompareEnabled === false ? (
+              <p className="text-xs text-default-500">
+                Порівняння з WooCommerce — лише для товарів у гілці «Готова продукція». Доступне
+                узгодження з Dilovod.
+              </p>
+            ) : null}
+
+            {preview && triRows.length === 0 && fieldView === 'differences' ? (
+              <p className="text-sm text-default-500 pt-8 pb-6 text-center flex items-center justify-center h-full flex-1 gap-2">
+                <DynamicIcon name="check-circle" size={24} className="text-success" />
+                Відмінностей між джерелами не знайдено
+              </p>
+            ) : null}
+
+            {preview && triRows.length > 0 && (
               <>
-                <section className="space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-semibold">Порівняння даних</p>
-                    <Button
-                      size="sm"
-                      variant="flat"
-                      startContent={<DynamicIcon name="list" size={14} />}
-                      onPress={() => setAllFieldsOpen(true)}
-                    >
-                      Переглянути всі поля
-                    </Button>
-                  </div>
-                  <ComparisonTable rows={summaryRows} />
-                </section>
-
-                <section className="space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold">Поля для застосування</p>
-                      <p className="text-xs text-default-500">
-                        Обрано {selectedCount} з {PULL_FIELD_OPTIONS.length}
-                      </p>
-                    </div>
-                    <Button size="sm" variant="flat" onPress={selectSafeFields}>
-                      Безпечний вибір
-                    </Button>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {PULL_FIELD_OPTIONS.map((field) => {
-                      const conflict = field.conflictField
-                        ? hasConflict(preview, field.conflictField)
-                        : false;
-                      const selected = flags[field.key];
-
-                      return (
-                        <label
-                          key={field.key}
-                          className={[
-                            'flex items-start gap-3 rounded-md border px-3 py-2 cursor-pointer transition-colors',
-                            selected
-                              ? 'border-primary bg-primary-50/60'
-                              : 'border-default-200 hover:border-default-300 hover:bg-default-50',
-                          ].join(' ')}
-                        >
-                          <Checkbox
-                            size="sm"
-                            className="mt-0.5"
-                            isSelected={selected}
-                            onValueChange={() => toggle(field.key)}
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="flex flex-wrap items-center gap-1.5">
-                              <span className="text-sm font-medium text-default-800">{field.label}</span>
-                              {conflict && (
-                                <Chip size="sm" color="warning" variant="flat">
-                                  конфлікт
-                                </Chip>
-                              )}
-                            </span>
-                            <span className="mt-0.5 block text-xs text-default-500">{field.hint}</span>
-                            {field.key === 'productIngredientsJson' &&
-                              countLocalIngredients(preview.local.productIngredientsJson) > 0 && (
-                                <span className="mt-1 block text-xs text-warning-700">
-                                  Замінить усі локальні теги складу
-                                </span>
-                              )}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
-
-                  {flags.images && preview.local.imageCount > 0 && (
-                    <label className="flex items-start gap-3 rounded-md border border-warning-200 bg-warning-50/50 px-3 py-2 cursor-pointer">
-                      <Checkbox
-                        size="sm"
-                        className="mt-0.5"
-                        isSelected={flags.replaceImages}
-                        onValueChange={() =>
-                          setFlags((prev) => ({ ...prev, replaceImages: !prev.replaceImages }))
+                <ProductPullTriSourceTable
+                  rows={triRows}
+                  sourceByRowId={sourceByRowId}
+                  localImagePreviewUrls={localImagePreviewUrls}
+                  wooImagePreviewUrls={preview.wooImagePreviewUrls ?? []}
+                  replaceImages={
+                    wooImagesSelected && preview.local.imageCount > 0
+                      ? {
+                          visible: true,
+                          checked: flags.replaceImages,
+                          localImageCount: preview.local.imageCount,
+                          onChange: (checked) =>
+                            setFlags((prev) => ({ ...prev, replaceImages: checked })),
                         }
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="text-sm font-medium text-default-800">
-                          Замінити існуючі зображення
-                        </span>
-                        <span className="mt-0.5 block text-xs text-default-500">
-                          Локально {preview.local.imageCount} шт. буде видалено перед імпортом з WC
-                        </span>
-                      </span>
-                    </label>
-                  )}
-                </section>
+                      : undefined
+                  }
+                  onSourceChange={(rowId, source) =>
+                    setSourceByRowId((prev) => ({ ...prev, [rowId]: source }))
+                  }
+                />
 
-                {parsedPreview && (
+                {preview && (
+                  <div className="flex flex-wrap items-center justify-between w-full gap-3">
+                    <p className="text-xs font-normal text-default-500">Оберіть джерело для кожного поля</p>
+                    {selectedCount > 0 ? (
+                      <p className="text-xs text-default-500 flex items-center gap-1">
+                        <DynamicIcon name="check-circle" size={14} className="text-success" />
+                        {selectedCount}{' '}
+                        {selectedCount === 1 ? 'поле' : selectedCount < 5 ? 'поля' : 'полів'} буде оновлено
+                      </p>
+                    ) : (
+                      <p className="text-xs text-default-500">
+                        Усі видимі поля залишаються з Backoffice, нічого не буде перезаписано
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {parsedPreview && isDebugMode && (
                   <Accordion variant="splitted" className="px-0">
                     <AccordionItem
                       key="parsed"
                       aria-label="Parsed blocks preview"
                       title={
                         <div className="flex flex-wrap items-center gap-2">
-                          <span>Parsed blocks preview</span>
+                          <span className="text-sm font-normal text-default-500">Parsed blocks preview</span>
                           <Chip size="sm" variant="flat">
                             {parsedPreview.uniqueFieldCount > 0
                               ? `${parsedPreview.uniqueFieldCount} унік. полів`
@@ -861,57 +644,31 @@ export function StorefrontPullConfirmModal({
             )}
           </ModalBody>
 
-          <ModalFooter className="gap-2">
+          {preview && (
+          <ModalFooter className="gap-2 px-4 border-t border-default-200/75">
+            <Button
+              variant="light"
+              onPress={() => window.open(preview?.storefrontUrl ?? '', '_blank')}
+              isDisabled={applying}
+              startContent={<DynamicIcon name="external-link" size={15} />}
+              className="mr-auto cursor-pointer"
+            >
+              Відкрити товар на сайті
+            </Button>
             <Button variant="light" onPress={onClose} isDisabled={applying}>
               Скасувати
             </Button>
             <Button
               color="primary"
               onPress={() => void handleApply()}
-              isDisabled={!preview || !hasChecked || applying}
+              isDisabled={!preview || !hasApplySelection || applying}
               isLoading={applying}
               startContent={!applying ? <DynamicIcon name="download" size={15} /> : undefined}
             >
-              Застосувати ({selectedCount})
+              Застосувати
             </Button>
           </ModalFooter>
-        </ModalContent>
-      </Modal>
-
-      <Modal
-        ref={allFieldsModalTargetRef}
-        isOpen={allFieldsOpen}
-        onClose={() => setAllFieldsOpen(false)}
-        size="3xl"
-        scrollBehavior="inside"
-      >
-        <ModalContent>
-          <ModalHeader
-            {...allFieldsMoveProps}
-            className="flex flex-col items-start gap-1 cursor-move touch-none select-none"
-          >
-            <span>Всі поля імпорту</span>
-            {sku && (
-              <p className="text-xs font-normal text-default-500">
-                SKU {sku} · порівняння локальних даних з WooCommerce та статус застосування
-              </p>
-            )}
-          </ModalHeader>
-          <ModalBody className="gap-4">
-            <ComparisonTable rows={allImportRows} showApplyStatus />
-            {preview && (
-              <MetaLogJsonView
-                value={preview.proposed}
-                className="max-h-64"
-                collapsed={2}
-              />
-            )}
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="light" onPress={() => setAllFieldsOpen(false)}>
-              Закрити
-            </Button>
-          </ModalFooter>
+          )}
         </ModalContent>
       </Modal>
 

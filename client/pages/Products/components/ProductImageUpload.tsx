@@ -3,7 +3,15 @@
  * Патерн натхненний beUI file-upload; стилізація HeroUI.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from 'react';
 import {
   DndContext,
   KeyboardSensor,
@@ -24,8 +32,14 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Button, Chip, Progress, Spinner } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { ImagePreviewModal } from '@/components/modals/ImagePreviewModal';
+import { catalogImageThumbUrl } from '@shared/utils/catalogImageThumbUrl';
+import {
+  CatalogImageGalleryLightbox,
+  type CatalogGalleryImage,
+} from './CatalogImageGalleryLightbox';
 import { ToastService } from '@/services/ToastService';
+import { storefrontApi } from '@/services/StorefrontService';
+import { resolveCatalogMediaAbsoluteUrl } from '@shared/utils/resolveCatalogMediaAbsoluteUrl';
 import { InlineImageName } from './InlineImageName';
 import type { CatalogGoodImageDto } from '../ProductsTypes';
 
@@ -56,6 +70,7 @@ export interface ProductImageUploadProps {
   images?: CatalogGoodImageDto[];
   isDisabled?: boolean;
   overlayZClassName?: string;
+  lightboxAppendToRef?: RefObject<HTMLElement | null>;
   onImagesChange?: (images: CatalogGoodImageDto[]) => void;
 }
 
@@ -77,6 +92,7 @@ function sortCatalogImages(images: CatalogGoodImageDto[]): CatalogGoodImageDto[]
 
 interface SortableSavedImageProps {
   image: CatalogGoodImageDto;
+  displayUrl: string;
   isPrimary: boolean;
   isDisabled?: boolean;
   isSorting: boolean;
@@ -88,6 +104,7 @@ interface SortableSavedImageProps {
 
 function SortableSavedImage({
   image,
+  displayUrl,
   isPrimary,
   isDisabled,
   isSorting,
@@ -147,7 +164,7 @@ function SortableSavedImage({
           }}
         >
           <img
-            src={image.url}
+            src={displayUrl}
             alt={image.originalName}
             draggable={false}
             className="aspect-square w-full select-none object-cover"
@@ -208,6 +225,7 @@ export function ProductImageUpload({
   images = [],
   isDisabled,
   overlayZClassName,
+  lightboxAppendToRef,
   onImagesChange,
 }: ProductImageUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -227,7 +245,19 @@ export function ProductImageUpload({
   const [loadingList, setLoadingList] = useState(false);
   const [activeImageId, setActiveImageId] = useState<number | null>(null);
   const [isReordering, setIsReordering] = useState(false);
-  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
+  const [galleryOpenIndex, setGalleryOpenIndex] = useState<number | null>(null);
+  const [mediaPublicBaseUrl, setMediaPublicBaseUrl] = useState('');
+
+  const resolveDisplayUrl = useCallback(
+    (url: string) => resolveCatalogMediaAbsoluteUrl(mediaPublicBaseUrl, url),
+    [mediaPublicBaseUrl],
+  );
+
+  useEffect(() => {
+    void storefrontApi.getSettings().then((settings) => {
+      setMediaPublicBaseUrl(settings.wooCommerce?.mediaPublicBaseUrl?.trim() || '');
+    });
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -416,9 +446,6 @@ export function ProductImageUpload({
         onImagesChange?.(next);
         return next;
       });
-      setPreviewImage((current) =>
-        current && current.url === image.url ? { ...current, name: json.data!.originalName } : current,
-      );
     } catch (err) {
       ToastService.show({
         title: 'Помилка перейменування',
@@ -586,7 +613,28 @@ export function ProductImageUpload({
   };
 
   const displaySaved = goodId ? sortedSaved : [];
+
   const displayStaging = !goodId ? stagingItems : [];
+
+  const uploadGalleryImages = useMemo((): CatalogGalleryImage[] => {
+    const savedPart = displaySaved.map((img) => {
+      const src = resolveDisplayUrl(img.url);
+      return {
+        src,
+        thumbSrc: catalogImageThumbUrl(src),
+        alt: img.originalName,
+      };
+    });
+    const stagingPart = displayStaging.map((img) => {
+      const src = resolveDisplayUrl(img.url);
+      return {
+        src,
+        thumbSrc: catalogImageThumbUrl(src),
+        alt: img.originalName,
+      };
+    });
+    return [...savedPart, ...stagingPart];
+  }, [displaySaved, displayStaging, resolveDisplayUrl]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -711,19 +759,23 @@ export function ProductImageUpload({
                 activeImageId != null ? 'bg-default-100/60 ring-1 ring-primary-200/70 rounded-lg' : ''
               }`}
             >
-              {displaySaved.map((img, idx) => (
-                <SortableSavedImage
-                  key={img.id}
-                  image={img}
-                  isPrimary={idx === 0}
-                  isDisabled={isDisabled || isReordering}
-                  isSorting={activeImageId != null}
-                  overlayZClassName={overlayZClassName}
-                  onDelete={() => void handleDeleteSaved(img)}
-                  onPreview={() => setPreviewImage({ url: img.url, name: img.originalName })}
-                  onRename={(originalName) => handleRenameSaved(img, originalName)}
-                />
-              ))}
+              {displaySaved.map((img, idx) => {
+                const displayUrl = resolveDisplayUrl(img.url);
+                return (
+                  <SortableSavedImage
+                    key={img.id}
+                    image={img}
+                    displayUrl={displayUrl}
+                    isPrimary={idx === 0}
+                    isDisabled={isDisabled || isReordering}
+                    isSorting={activeImageId != null}
+                    overlayZClassName={overlayZClassName}
+                    onDelete={() => void handleDeleteSaved(img)}
+                    onPreview={() => setGalleryOpenIndex(idx)}
+                    onRename={(originalName) => handleRenameSaved(img, originalName)}
+                  />
+                );
+              })}
             </div>
           </SortableContext>
         </DndContext>
@@ -732,7 +784,9 @@ export function ProductImageUpload({
       {/* Staging (create) */}
       {displayStaging.length > 0 && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {displayStaging.map((img) => (
+          {displayStaging.map((img, stagingIdx) => {
+            const displayUrl = resolveDisplayUrl(img.url);
+            return (
             <div
               key={img.fileName}
               className="group relative overflow-hidden rounded-xl border border-default-200 bg-default-50"
@@ -741,10 +795,10 @@ export function ProductImageUpload({
                 type="button"
                 className="block w-full"
                 aria-label="Відкрити зображення у повному розмірі"
-                onClick={() => setPreviewImage({ url: img.url, name: img.originalName })}
+                onClick={() => setGalleryOpenIndex(displaySaved.length + stagingIdx)}
               >
                 <img
-                  src={img.url}
+                  src={displayUrl}
                   alt={img.originalName}
                   draggable={false}
                   className="aspect-square w-full object-cover"
@@ -771,15 +825,16 @@ export function ProductImageUpload({
                 </Button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      <ImagePreviewModal
-        isOpen={previewImage != null}
-        imageUrl={previewImage?.url ?? null}
-        imageName={previewImage?.name}
-        onClose={() => setPreviewImage(null)}
+      <CatalogImageGalleryLightbox
+        images={uploadGalleryImages}
+        openIndex={galleryOpenIndex}
+        onClose={() => setGalleryOpenIndex(null)}
+        appendToRef={lightboxAppendToRef}
       />
     </div>
   );

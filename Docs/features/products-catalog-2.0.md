@@ -1,6 +1,6 @@
 # Products 2.0 — домен керування каталогом Dilovod
 
-**Дата:** 2026-07-30 (оновлено 2026-09-30)  
+**Дата:** 2026-07-30 (оновлено 2026-10-21)  
 **Маршрут:** `/products` (`minRole: WAREHOUSE_MANAGER`)  
 **API:** `/api/catalog/`*
 
@@ -60,6 +60,7 @@
 - Default currency UAH: `1101200000001001`
 - `accPolicy` за замовчуванням (Продукція): `1201200000001001`
 - `accPolicy` комплект (Товарні набори): `1201200000001031`
+- Гілка **«Готова продукція»** (корінь `CATALOG_FINISHED_PRODUCTS_FOLDER_ID` = `1100300000001026`): порівняння з WooCommerce у pull/sync; поза гілкою WC-порівняння вимкнено (`wcCompareEnabled: false`), Dilovod ↔ BO — для всіх товарів з SKU
 
 Hard-delete не робимо: archive/trash → `setDelMark` + зміна `parent`; локально `delMark=true`. Зняття позначки (restore / вихід з архіву) → `saveObject` з `delMark: 0`.
 
@@ -85,6 +86,8 @@ server/modules/Products/
   ProductsDilovodGateway.ts   # Dilovod + fetchCachedDict + remark↔note
   ProductsLocalSync.ts        # catalog_* (+ preserve local ops; merge note)
   CatalogMediaService.ts      # зображення товару
+  catalogDilovodPreview.ts    # preview/apply полів з Dilovod для tri-source sync
+  catalogFinishedProductsFolder.ts  # піддерево «Готова продукція» (WC compare gate)
   ProductsTypes.ts            # + isArchiveFolderName, extractUkName
   CatalogOpsLookup.ts         # ops-форма legacy `products` з `catalog_*`
   ProductOpsCache.ts          # in-memory знімок для комплектації (TTL 2 хв)
@@ -118,7 +121,9 @@ server/modules/Products/
 | GET    | `/search?q=`           | Глобальний пошук (включно з архівом / смітником, крім самої папки-смітника)      |
 | GET    | `/sku/next`            | Наступний вільний SKU у папці (`?parentId=&excludeId=`)                           |
 | GET    | `/barcode/next`        | Наступний вільний внутрішній EAN-13 (серія `22…`) з Dilovod `barCodes`           |
-| GET    | `/goods/:id`           | Картка (header + BOM + prices + barcodes + stock RO); live-pull з Dilovod        |
+| GET    | `/goods/:id`           | Картка (header + BOM + prices + barcodes + stock RO); за замовч. `livePull=true`; UI drawer часто `?livePull=false` (локальне дзеркало) |
+| GET    | `/goods/:id/dilovod-preview` | Порівняння полів BO vs live Dilovod (name, weight, price, `packageRatio`); без запису |
+| POST   | `/goods/:id/dilovod-apply` | Застосувати вибрані поля з Dilovod (`applyAll` або `fields[]`) |
 | GET    | `/goods/:id/used-in`   | Зворотний BOM: `?scope=products` (страви) або `kits` (комплекти); ACL на батьків |
 | POST   | `/goods`               | Створити товар/папку                                                             |
 | PUT    | `/goods/:id`           | Оновити (вкл. BOM, ціни, ШК)                                                     |
@@ -347,6 +352,22 @@ client/pages/Products/
   - Секція не рендериться, якщо список порожній / loading / error; клік по рядку відкриває батьківську картку у стеку drawer.
 - `unitRatio` — поле лише для Admin (продукція).
 - Одиниці / типи цін / валюти — Select з `GET /dictionaries`.
+- **Tri-source sync (BO / WC / Dilovod):**
+  - При відкритті edit-картки з SKU — фонова перевірка конфліктів: `GET …/dilovod-preview` + (за правом pull) `POST /api/storefront/woo/pull-preview`.
+  - Банер **«Узгодити»** якщо є відмінності Dilovod і/або WC (WC лише в гілці «Готова продукція»).
+  - Модалка `CatalogOpenSyncModal` → `StorefrontPullConfirmModal`: таблиця `ProductPullTriSourceTable`, фільтр «Лише відмінності / Усі поля», застосування Dilovod + WC окремо; push BO→WC лише коли `wcCompareEnabled !== false`.
+  - Семантичне порівняння `storefrontDescriptionDoc` (HTML/plain `_nk_storage`, coalesce override) — `shared/utils/storefrontDescription*.ts`, `storefrontDescriptionDocDiff.ts`.
+  - Popover порівняння doc: `PullFieldStorefrontDocComparePopover` + `StorefrontDocJsonCompareView` (inline diff, спільний scroll).
+- **Зображення в картці:** `ProductImageUpload` — галерея **PhotoSwipe** (`CatalogImageGalleryLightbox`); overlay не закриває drawer (`photoswipeOverlay.ts`, `shouldDismissOverlayWhilePhotoSwipeOpen`).
+- **Detail fetch:** `fetchCatalogGoodDetail(…, { livePull: false })` для швидкого відкриття drawer без блокуючого Dilovod live-pull.
+
+### UI: CatalogTable (список)
+
+- Колонка **«Зобр.»** одразу після **SKU** (іконка + `imageCount` з `_count.images`).
+- DTO рядка: `primaryImageUrl`, `imagePreviewUrls` (до 24 файлів, primary → `sortOrder`); абсолютні URL через `mediaPublicBaseUrl` з storefront settings + fallback на origin.
+- Tooltip на **назві товару** — прев’ю головного зображення + назва.
+- Клік по лічильнику зображень — `CatalogImagePreviewPopover` (сітка 3×3, lightbox); той самий компонент, що в tri-source таблиці pull.
+- Копіювання SKU — кнопка в комірці (`SkuCopyCell`).
 - Опис — `DescriptionEditor` (не name).
 - ШК: генерація EAN-13 (`/barcode/next`) + вибір партії (reuse Movement `BatchNumbersAutocomplete`); див. секцію «Штрихкоди» вище.
 - Unsaved: snapshot form + BOM + prices + barcodes + images + objectKind/parentId → `getDrawerDirtyFields` → `isDirty` → `useUnsavedGuard` + `UnsavedChangesModal` при закритті Drawer / навігації / beforeunload.
@@ -501,7 +522,7 @@ client/pages/Products/
 | Шар       | Файли                                                                                                          |
 | --------- | -------------------------------------------------------------------------------------------------------------- |
 | Schema    | `prisma/schema.prisma`, migrations `20260727010000_*`, `20260803090000_catalog_ops_fields_and_sort`           |
-| Shared    | `shared/types/catalog.ts` (+ `CatalogGoodUsedInDto`), `shared/types/dilovod.ts`, `shared/utils/catalogSortOrder.ts` |
-| Server    | `server/modules/Products/*` (`listSkusInFolderSubtree`, `partitionCatalogSkusByArchive`, TEMP legacy після refresh гілки), `server/routes/catalog.ts`, `server/routes/products.ts` (`sync-manual` + archive→`isOutdated`), `server/lib/utils.ts` (HMR-safe `prisma`), `DilovodService` / `DilovodSyncManager` / `DilovodCacheService` |
-| Client    | `client/pages/Products/**`, `client/hooks/useUrlHashSync.ts`, `client/components/modals/ProductOrdersModal.tsx`, `ReportsShipment` (спільна модалка), `DilovodCacheManager.tsx`, `routes.config.tsx` |
+| Shared    | `shared/types/catalog.ts` (+ `CatalogGoodUsedInDto`, `imagePreviewUrls`), `shared/types/dilovod.ts`, `shared/utils/catalogSortOrder.ts`, `catalogHtmlCompare.ts`, `catalogImageThumbUrl.ts`, `resolveCatalogMediaAbsoluteUrl.ts`, `storefrontDescriptionDocDiff.ts`, `textInlineDiff.ts` |
+| Server    | `server/modules/Products/*` (`listSkusInFolderSubtree`, `partitionCatalogSkusByArchive`, `catalogDilovodPreview`, `catalogFinishedProductsFolder`, TEMP legacy після refresh гілки), `server/modules/Storefront/WooCommerceSyncService.ts` (pull preview/apply, `wcCompareEnabled`), `server/routes/catalog.ts`, `server/routes/products.ts` (`sync-manual` + archive→`isOutdated`), `server/lib/utils.ts` (HMR-safe `prisma`), `DilovodService` / `DilovodSyncManager` / `DilovodCacheService` |
+| Client    | `client/pages/Products/**` (`catalogApi.ts`, `CatalogTable`, `CatalogImagePreviewPopover`, `CatalogImageGalleryLightbox`, drawer sync modal), `client/lib/photoswipeOverlay.ts`, `client/lib/staleChunkRecovery.ts`, `client/hooks/useUrlHashSync.ts`, `client/components/modals/ProductOrdersModal.tsx`, `ReportsShipment` (спільна модалка), `DilovodCacheManager.tsx`, `routes.config.tsx` |
 | Nav badge | `NavBadge` / `isNavBadgeVisible` у `routes.config.tsx`, рендер у `Sidebar.tsx`                                 |

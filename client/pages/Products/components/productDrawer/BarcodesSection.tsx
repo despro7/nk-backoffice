@@ -1,11 +1,58 @@
 import { Button, Input, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { useProductMovementsDrawerOptional } from '@/features/product-movements/context/productMovementsDrawerContext.shared';
 import type { BarcodeRow, RowDeleteKind } from './productDrawerTypes';
 import { FieldDirtyMarker } from './FieldDirtyMarker';
 import { RowDeleteButton } from './RowDeleteButton';
 
+function BarcodeBatchMovementsButton({
+  sku,
+  productName,
+  batchId,
+  batchLabel,
+  disabled,
+}: {
+  sku: string | null;
+  productName: string | null;
+  batchId: string;
+  batchLabel: string;
+  disabled?: boolean;
+}) {
+  const movementsDrawer = useProductMovementsDrawerOptional();
+  if (!movementsDrawer) {
+    return null;
+  }
+  const { open } = movementsDrawer;
+  const canOpen = Boolean(sku?.trim() && batchId.trim());
+  return (
+    <Button
+      size="sm"
+      variant="light"
+      className="min-w-0 shrink-0 gap-1 px-2 h-10"
+      startContent={<DynamicIcon name="arrow-left-right" size={14} />}
+      isDisabled={disabled || !canOpen}
+      onPress={() => {
+        if (!sku?.trim() || !batchId.trim()) return;
+        open({
+          sku: sku.trim(),
+          productName: productName?.trim() || undefined,
+          goodPartId: batchId.trim(),
+          batchLabel: batchLabel.trim() || undefined,
+          autoGenerate: true,
+          placement: 'left',
+          nonDismissable: true,
+        });
+      }}
+    >
+      Рухи партії
+    </Button>
+  );
+}
+
 interface BarcodesSectionProps {
   barcodes: BarcodeRow[];
+  sku: string | null;
+  productName: string | null;
   saving?: boolean;
   barcodeGeneratingIdx: number | null;
   dirty?: boolean;
@@ -18,6 +65,8 @@ interface BarcodesSectionProps {
 
 export function BarcodesSection({
   barcodes,
+  sku,
+  productName,
   saving,
   barcodeGeneratingIdx,
   dirty,
@@ -31,11 +80,11 @@ export function BarcodesSection({
     <section className="space-y-3">
       <h3 className="text-sm font-semibold flex items-center gap-1">
         <DynamicIcon name="scan-barcode" size={14} />
-        <span>Штрихкоди</span>
+        <span>Штрихкоди і партії</span>
         <FieldDirtyMarker show={dirty} />
       </h3>
       {barcodes.map((b, idx) => (
-        <div key={idx} className="grid grid-cols-[5fr_4fr_auto] gap-2">
+        <div key={idx} className="grid grid-cols-[1fr_1fr_auto_auto] gap-2">
           <Input
             size="md"
             aria-label="Штрихкод"
@@ -93,6 +142,13 @@ export function BarcodesSection({
             endContent={
               <DynamicIcon name="chevrons-up-down" size={14} className="shrink-0 text-default-400" />
             }
+          />
+          <BarcodeBatchMovementsButton
+            sku={sku}
+            productName={productName}
+            batchId={b.goodPart}
+            batchLabel={b.goodPartName}
+            disabled={saving}
           />
           <RowDeleteButton
             ariaLabel="Видалити ШК"

@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-10-21 — Товари: tri-source sync, зображення в списку, PhotoSwipe
+
+**Files:** `ProductsCatalogService.ts`, `ProductsController.ts`, `catalogDilovodPreview.ts`, `catalogFinishedProductsFolder.ts`, `WooCommerceSyncService.ts`, `CatalogTable.tsx`, `ProductDrawer.tsx`, `StorefrontPullConfirmModal.tsx`, `ProductPullTriSourceTable.tsx`, `ProductImageUpload.tsx`, `CatalogImagePreviewPopover.tsx`, `CatalogImageGalleryLightbox.tsx`, `catalogApi.ts`, `shared/types/catalog.ts`, `shared/types/storefront.ts`, `storefrontDescription*.ts`, `catalogHtmlCompare.ts`, `photoswipeOverlay.ts`, `staleChunkRecovery.ts`, `server/node-build.ts`, `products-catalog-2.0.md`, `woocommerce-storefront-phase1.md`
+
+- **Sync BO / WC / Dilovod:** модалка узгодження, tri-source таблиця, Dilovod preview/apply API; WC-порівняння лише в гілці «Готова продукція» (`wcCompareEnabled`); Dilovod ↔ BO для всіх SKU.
+- **storefrontDescriptionDoc:** семантичний diff, JSON compare UI, нормалізація після pull.
+- **Список каталогу:** колонка зображень після SKU, tooltip з головним фото на назві, popover-сітка прев’ю (`CatalogImagePreviewPopover`).
+- **Картка:** PhotoSwipe для галереї; drawer не закривається при lightbox; `livePull=false` для швидшого відкриття.
+- **Deploy UX:** кеш `index.html` / immutable `assets`, відновлення після stale Vite chunk.
+
+**Документація:** [`products-catalog-2.0.md`](features/products-catalog-2.0.md), [`woocommerce-storefront-phase1.md`](features/woocommerce-storefront-phase1.md).
+
+---
+
 ## 2026-10-20 — Товари: Dilovod `printName` (varchar, очищення)
 
 **Files:** `ProductsDilovodGateway.ts`, `ProductsCatalogService.ts`, `ProductsTypes.ts`, `shared/types/catalog.ts`, `ProductDrawer.tsx`, `RequisitesSection.tsx`, `products-catalog-2.0.md`, `dilovod-metadata.md`

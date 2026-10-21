@@ -143,6 +143,27 @@ describe('parseWcDescription marketing extraction', () => {
 });
 
 describe('parseWcDescription', () => {
+  it('clears storage override from WC meta when it matches preset template', () => {
+    const storageTemplate = STOREFRONT_DEFAULT_BLOCKS.find((block) => block.id === 'storage')!.template;
+    const result = parseWcDescription({
+      product: sampleProduct({
+        meta_data: [{ key: '_nk_storage', value: storageTemplate }],
+      }),
+      presetBlocks: STOREFRONT_DEFAULT_BLOCKS,
+      metaKeys: STOREFRONT_DEFAULT_META_KEYS,
+    });
+
+    const storageBlock = result.storefrontDescriptionDoc.content.find(
+      (node) =>
+        node.type === 'storefrontBlock' &&
+        (node.attrs as { blockId?: string } | undefined)?.blockId === 'storage',
+    );
+
+    expect(
+      (storageBlock?.attrs as { overrideContent?: string | null } | undefined)?.overrideContent,
+    ).toBeNull();
+  });
+
   it('replaces em dash with en dash in imported marketing text', () => {
     const product = sampleProduct({
       description: `<p class="storefront-marketing">Меню з м'яса — зручно для щоденного харчування.</p>
