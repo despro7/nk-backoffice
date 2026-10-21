@@ -1148,6 +1148,40 @@ function getBlockNodeAttrs(node: StorefrontDescriptionNode): StorefrontBlockNode
   };
 }
 
+/** Маркетинговий абзац (WC pull / TipTap). */
+export function storefrontDescriptionDocMarketingPlain(doc: StorefrontDescriptionDoc): string {
+  for (const node of doc.content ?? []) {
+    if (
+      node.type === 'paragraph' &&
+      (node.attrs as { class?: string } | undefined)?.class === 'storefront-marketing'
+    ) {
+      return paragraphPlainForCompare(node);
+    }
+  }
+  return '';
+}
+
+export function collectStorefrontDescriptionBlocksById(
+  doc: StorefrontDescriptionDoc,
+): Map<string, StorefrontDescriptionNode> {
+  const map = new Map<string, StorefrontDescriptionNode>();
+  for (const node of doc.content ?? []) {
+    const attrs = getBlockNodeAttrs(node);
+    if (attrs?.blockId) {
+      map.set(attrs.blockId, node);
+    }
+  }
+  return map;
+}
+
+/** Канонічний JSON doc для порівняння / збереження після pull. */
+export function canonicalStorefrontDescriptionDocJson(raw: string | null | undefined): string | null {
+  if (!raw?.trim()) return null;
+  const parsed = parseStorefrontDescriptionDoc(raw);
+  if (!parsed) return raw.trim();
+  return stringifyStorefrontDescriptionDoc(normalizeStorefrontDescriptionDoc(parsed));
+}
+
 function resolveBlockNodeHtml(
   attrs: StorefrontBlockNodeAttrs,
   placeholders: StorefrontPlaceholderValues,

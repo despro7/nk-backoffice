@@ -1,4 +1,13 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { flushSync } from 'react-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -63,7 +72,11 @@ import { ProductContentTab } from './ProductContentTab';
 import { CatalogOpenSyncModal } from './CatalogOpenSyncModal';
 import { StorefrontPullConfirmModal } from './StorefrontPullConfirmModal';
 import { OpenStorefrontProductLink } from '../OpenStorefrontProductLink';
-import { shouldDismissOverlayWhilePhotoSwipeOpen } from '@/lib/photoswipeOverlay';
+import {
+  getPhotoSwipeOpenSnapshot,
+  isPhotoSwipeOpen,
+  subscribePhotoSwipeOpen,
+} from '@/lib/photoswipeOverlay';
 import { catalogApi } from '../../catalogApi';
 import { StorefrontPushRetryModal } from './StorefrontPushRetryModal';
 import { storefrontApi, STOREFRONT_SETTINGS_UPDATED_EVENT } from '@/services/StorefrontService';
@@ -833,7 +846,6 @@ export function ProductDrawer({
         }
       }
 
-      refreshCatalogSyncBanner(detail.id);
     });
   }, [
     detail?.id,
@@ -841,11 +853,20 @@ export function ProductDrawer({
     queryClient,
     objectKind,
     commitBaseline,
-    refreshCatalogSyncBanner,
     readOnly,
     isEdit,
     isFolder,
   ]);
+
+  const handleSyncReconcileComplete = useCallback(() => {
+    if (!detail?.id) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      window.setTimeout(() => {
+        refreshCatalogSyncBanner(detail.id);
+        resolve();
+      }, 200);
+    });
+  }, [detail?.id, refreshCatalogSyncBanner]);
 
   const handleStorefrontInspect = useCallback(async () => {
     if (!detail?.sku) return;
@@ -1122,6 +1143,7 @@ export function ProductDrawer({
   }, [buildPayload, isEdit, detail, createParentId, isFolder]);
 
   const closeAndDiscardStaging = useCallback(() => {
+    if (isPhotoSwipeOpen()) return;
     if (!isEdit && stagingSessionId) {
       discardStaging(stagingSessionId);
       setStagingSessionId(null);
@@ -1392,6 +1414,12 @@ export function ProductDrawer({
   const overlayZ =
     NESTED_OVERLAY_Z[Math.min(stackLevel, NESTED_OVERLAY_Z.length - 1)];
 
+  const photoSwipeOpen = useSyncExternalStore(
+    subscribePhotoSwipeOpen,
+    getPhotoSwipeOpenSnapshot,
+    () => false,
+  );
+
   return (
     <>
       <Drawer
@@ -1399,9 +1427,8 @@ export function ProductDrawer({
         onClose={requestClose}
         size="4xl"
         placement={window.innerWidth < 768 ? 'bottom' : 'right'}
-        shouldCloseOnInteractOutside={(element) =>
-          shouldDismissOverlayWhilePhotoSwipeOpen(element)
-        }
+        isDismissable={!photoSwipeOpen}
+        isKeyboardDismissDisabled={photoSwipeOpen}
         classNames={{
           wrapper: NESTED_DRAWER_Z[Math.min(stackLevel, NESTED_DRAWER_Z.length - 1)] || undefined,
           backdrop: [
@@ -2008,6 +2035,7 @@ export function ProductDrawer({
         localFullDescription={form.fullDescription}
         localShortDescription={form.description}
         onApplied={handleStorefrontPullApplied}
+        onReconcileComplete={handleSyncReconcileComplete}
         onClose={() => setPullModalOpen(false)}
       />
       <CatalogOpenSyncModal
@@ -2018,6 +2046,7 @@ export function ProductDrawer({
         localFullDescription={form.fullDescription}
         localShortDescription={form.description}
         onApplied={handleStorefrontPullApplied}
+        onReconcileComplete={handleSyncReconcileComplete}
         onClose={() => setOpenSyncModalOpen(false)}
       />
       <Modal

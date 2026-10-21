@@ -32,6 +32,8 @@ import type {
   WooPushPreviewResult,
 } from '../../../shared/types/storefront.js';
 import {
+  canonicalStorefrontDescriptionDocJson,
+  normalizeStorefrontDescriptionDoc,
   normalizeWcTypographyInHtml,
   stringifyProductIngredientsJson,
   stringifyProductNutritionJson,
@@ -122,7 +124,9 @@ function storefrontDescriptionDocFieldConflict(
   if (!localStr || !remoteStr) {
     return fieldConflict('storefrontDescriptionDoc', localStr, remoteStr);
   }
-  if (localStr === remoteStr) return null;
+  const localCanon = canonicalStorefrontDescriptionDocJson(localStr);
+  const remoteCanon = canonicalStorefrontDescriptionDocJson(remoteStr);
+  if (localCanon && remoteCanon && localCanon === remoteCanon) return null;
   if (storefrontDescriptionDocsSemanticallyEqual(localStr, remoteStr)) return null;
   return {
     field: 'storefrontDescriptionDoc',
@@ -688,7 +692,7 @@ export class WooCommerceSyncService {
     }
     if (input.apply.storefrontDescriptionDoc) {
       patch.storefrontDescriptionDoc = stringifyStorefrontDescriptionDoc(
-        preview.proposed.parsed.storefrontDescriptionDoc,
+        normalizeStorefrontDescriptionDoc(preview.proposed.parsed.storefrontDescriptionDoc),
       );
       appliedFields.push('storefrontDescriptionDoc');
     }

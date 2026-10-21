@@ -21,6 +21,7 @@ import MetaLogJsonView from '@/components/MetaLogJsonView';
 import { catalogApi } from '../../catalogApi';
 import { OpenStorefrontProductLink } from '../OpenStorefrontProductLink';
 import { storefrontApi } from '@/services/StorefrontService';
+import { ToastService } from '@/services/ToastService';
 import type { CatalogDilovodPreviewResult, CatalogDilovodPullApplyField } from '@shared/types/catalog';
 import type { WooPullApplyInput, WooPullPreviewResult } from '@shared/types/storefront';
 import { isEffectivelyEmptyHtml } from '@shared/utils/storefrontDescriptionParser';
@@ -60,6 +61,8 @@ interface StorefrontPullConfirmModalProps {
   localFullDescription: string;
   localShortDescription: string;
   onApplied: () => void | Promise<void>;
+  /** Після pull/push і оновлення картки — повторна перевірка конфліктів (банер). */
+  onReconcileComplete?: () => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -194,6 +197,7 @@ export function StorefrontPullConfirmModal({
   localFullDescription,
   localShortDescription,
   onApplied,
+  onReconcileComplete,
   onClose,
 }: StorefrontPullConfirmModalProps) {
   const [loading, setLoading] = useState(false);
@@ -332,13 +336,28 @@ export function StorefrontPullConfirmModal({
   );
 
   const runApply = async () => {
-    if (!goodId) return;
+    if (!goodId || !preview) return;
     setApplying(true);
     setError(null);
     try {
       const wooApply = wooFlagsFromTriSources(sourceByRowId);
       wooApply.replaceImages = flags.replaceImages;
       const dilovodFields = dilovodFieldsFromTriSources(sourceByRowId);
+
+      const pushBoToWoo =
+        preview.wcCompareEnabled !== false &&
+        shouldPushTriSyncChoicesToWoo(
+          triRowsAll,
+          sourceByRowId,
+          preview.conflicts.map((c) => c.field),
+        );
+
+      const hasWooPull =
+        preview.wcCompareEnabled !== false &&
+        (Object.entries(wooApply).some(
+          ([key, value]) => key !== 'replaceImages' && value === true,
+        ) ||
+          (isEmpty(localFullDescription) && Boolean(preview.proposed.fullDescription?.trim())));
 
       if (dilovodFields.length > 0) {
         await catalogApi.applyDilovodPull(goodId, { fields: dilovodFields });
@@ -348,7 +367,7 @@ export function StorefrontPullConfirmModal({
         ([key, value]) => key !== 'replaceImages' && value === true,
       );
       const needsLegacyFullSeed =
-        isEmpty(localFullDescription) && Boolean(preview?.proposed.fullDescription?.trim());
+        isEmpty(localFullDescription) && Boolean(preview.proposed.fullDescription?.trim());
 
       if (preview.wcCompareEnabled !== false) {
         if (hasWooApply) {
@@ -359,20 +378,31 @@ export function StorefrontPullConfirmModal({
         }
       }
 
-      const pushBoToWoo =
-        preview &&
-        preview.wcCompareEnabled !== false &&
-        shouldPushTriSyncChoicesToWoo(
-          triRowsAll,
-          sourceByRowId,
-          preview.conflicts.map((c) => c.field),
-        );
-
       await Promise.resolve(onApplied());
 
       if (pushBoToWoo) {
         await storefrontApi.pushApply(goodId);
       }
+
+      await onReconcileComplete?.();
+
+      const toastParts: string[] = [];
+      if (dilovodFields.length > 0) {
+        toastParts.push(`Оновлено з Dilovod (${dilovodFields.length})`);
+      }
+      if (hasWooPull) {
+        toastParts.push('Завантажено з WooCommerce');
+      }
+      if (pushBoToWoo) {
+        toastParts.push('Відправлено на WooCommerce');
+      }
+      ToastService.show({
+        title: 'Узгодження застосовано',
+        description: toastParts.length > 0 ? toastParts.join(' · ') : 'Дані картки оновлено',
+        color: 'success',
+        icon: 'check-circle',
+        timeout: 6000,
+      });
 
       onClose();
     } catch (err) {

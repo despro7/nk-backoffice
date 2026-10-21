@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-10-21 — Товари: доопрацювання узгодження та doc diff
+
+**Files:** `StorefrontPullConfirmModal.tsx`, `ProductDrawer.tsx`, `WooCommerceSyncService.ts`, `storefrontDescriptionDocDiff.ts`, `storefrontDescription.ts`, `photoswipeOverlay.ts`, `products-catalog-2.0.md`
+
+- **Узгодження:** повторна перевірка конфліктів після pull/push (`onReconcileComplete`); toast з кроками Dilovod / pull WC / push WC.
+- **storefrontDescriptionDoc:** порівняння блоків за `blockId`, канонічний JSON при conflict check, нормалізація doc при WC pull apply; `summarizeStorefrontDescriptionDocDiff` повертає `diffs` для JSON UI.
+- **ProductDrawer:** PhotoSwipe — `isDismissable` замість непідтримуваного `shouldCloseOnInteractOutside` (прибрано React warning у консолі).
+
+**Документація:** [`products-catalog-2.0.md`](features/products-catalog-2.0.md).
+
+---
+
 ## 2026-10-21 — Товари: tri-source sync, зображення в списку, PhotoSwipe
 
 **Files:** `ProductsCatalogService.ts`, `ProductsController.ts`, `catalogDilovodPreview.ts`, `catalogFinishedProductsFolder.ts`, `WooCommerceSyncService.ts`, `CatalogTable.tsx`, `ProductDrawer.tsx`, `StorefrontPullConfirmModal.tsx`, `ProductPullTriSourceTable.tsx`, `ProductImageUpload.tsx`, `CatalogImagePreviewPopover.tsx`, `CatalogImageGalleryLightbox.tsx`, `catalogApi.ts`, `shared/types/catalog.ts`, `shared/types/storefront.ts`, `storefrontDescription*.ts`, `catalogHtmlCompare.ts`, `photoswipeOverlay.ts`, `staleChunkRecovery.ts`, `server/node-build.ts`, `products-catalog-2.0.md`, `woocommerce-storefront-phase1.md`

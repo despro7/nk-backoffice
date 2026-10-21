@@ -78,9 +78,79 @@ describe('storefrontDescriptionDocDiff', () => {
     const local = JSON.stringify({ type: 'doc', content: [] });
     const remote = JSON.stringify({
       type: 'doc',
-      content: [{ type: 'p', attrs: { blockId: 'x' } }],
+      content: [
+        {
+          type: 'storefrontBlock',
+          attrs: {
+            blockId: 'natural',
+            resolver: 'template',
+            template: 'Текст',
+            overrideContent: null,
+          },
+        },
+      ],
     });
 
     expect(diffStorefrontDescriptionDocs(local, remote)).toHaveLength(1);
+  });
+
+  it('matches storefront blocks by blockId despite different order', () => {
+    const block = (blockId: string, template: string) => ({
+      type: 'storefrontBlock',
+      attrs: { blockId, resolver: 'template', template, overrideContent: null },
+    });
+    const local = JSON.stringify({
+      type: 'doc',
+      content: [block('kitComponents', 'A'), block('natural', 'B')],
+    });
+    const remote = JSON.stringify({
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          attrs: { class: 'storefront-marketing' },
+          content: [{ type: 'text', text: 'Маркетинг' }],
+        },
+        block('natural', 'B'),
+        block('kitComponents', 'A'),
+      ],
+    });
+
+    expect(summarizeStorefrontDescriptionDocDiff(local, remote).diffCount).toBe(1);
+  });
+
+  it('detects manualExclude mismatch on same blockId', () => {
+    const local = JSON.stringify({
+      type: 'doc',
+      content: [
+        {
+          type: 'storefrontBlock',
+          attrs: {
+            blockId: 'natural',
+            resolver: 'template',
+            template: 'Натуральні.',
+            overrideContent: null,
+            manualExclude: true,
+          },
+        },
+      ],
+    });
+    const remote = JSON.stringify({
+      type: 'doc',
+      content: [
+        {
+          type: 'storefrontBlock',
+          attrs: {
+            blockId: 'natural',
+            resolver: 'template',
+            template: 'Натуральні.',
+            overrideContent: null,
+            manualExclude: null,
+          },
+        },
+      ],
+    });
+
+    expect(summarizeStorefrontDescriptionDocDiff(local, remote).diffCount).toBe(1);
   });
 });

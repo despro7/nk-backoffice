@@ -4,7 +4,9 @@ import type {
   StorefrontDescriptionNode,
 } from '../types/storefront.js';
 import {
+  collectStorefrontDescriptionBlocksById,
   normalizeStorefrontDescriptionDoc,
+  storefrontDescriptionDocMarketingPlain,
   storefrontDescriptionNodesSemanticallyEqual,
 } from './storefrontDescription.js';
 
@@ -16,6 +18,8 @@ export interface StorefrontDocBlockDiff {
   blockType: string;
   kind: StorefrontDocBlockDiffKind;
 }
+
+const MARKETING_BLOCK_ID = 'storefront-marketing';
 
 function parseStorefrontDoc(raw: string | null | undefined): StorefrontDescriptionDoc | null {
   if (!raw?.trim()) return null;
@@ -56,43 +60,61 @@ function blockLabel(node: StorefrontDescriptionNode, index: number): { blockId: 
   };
 }
 
-/** Порівняння TipTap doc BO vs WC (за blockId, далі за індексом). */
+function indexOfBlockId(doc: StorefrontDescriptionDoc, blockId: string): number {
+  const idx = (doc.content ?? []).findIndex((node) => {
+    const attrs = node.attrs as StorefrontBlockNodeAttrs | undefined;
+    return attrs?.blockId === blockId;
+  });
+  return idx >= 0 ? idx : 0;
+}
+
+/** Порівняння TipTap doc BO vs WC (маркетинг + блоки за blockId, не лише індекс). */
 export function diffStorefrontDescriptionDocs(
   localRaw: string | null | undefined,
   remoteRaw: string | null | undefined,
 ): StorefrontDocBlockDiff[] {
   const localDoc = normalizedStorefrontDoc(localRaw);
   const remoteDoc = normalizedStorefrontDoc(remoteRaw);
-  const localBlocks = localDoc?.content ?? [];
-  const remoteBlocks = remoteDoc?.content ?? [];
-
   const diffs: StorefrontDocBlockDiff[] = [];
-  const maxLen = Math.max(localBlocks.length, remoteBlocks.length);
 
-  for (let index = 0; index < maxLen; index += 1) {
-    const localBlock = localBlocks[index];
-    const remoteBlock = remoteBlocks[index];
-    const label = blockLabel(localBlock ?? remoteBlock!, index);
+  const localMarketing = storefrontDescriptionDocMarketingPlain(localDoc ?? { type: 'doc', content: [] });
+  const remoteMarketing = storefrontDescriptionDocMarketingPlain(remoteDoc ?? { type: 'doc', content: [] });
+  if (localMarketing !== remoteMarketing) {
+    diffs.push({
+      index: 0,
+      blockId: MARKETING_BLOCK_ID,
+      blockType: 'paragraph',
+      kind: localMarketing && remoteMarketing ? 'changed' : localMarketing ? 'only_local' : 'only_remote',
+    });
+  }
+
+  const localBlocks = collectStorefrontDescriptionBlocksById(localDoc ?? { type: 'doc', content: [] });
+  const remoteBlocks = collectStorefrontDescriptionBlocksById(remoteDoc ?? { type: 'doc', content: [] });
+  const blockIds = new Set([...localBlocks.keys(), ...remoteBlocks.keys()]);
+  const sortedIds = [...blockIds].sort((a, b) => a.localeCompare(b, 'uk'));
+
+  for (const blockId of sortedIds) {
+    const localBlock = localBlocks.get(blockId);
+    const remoteBlock = remoteBlocks.get(blockId);
+    const index =
+      localDoc && blockId !== MARKETING_BLOCK_ID
+        ? indexOfBlockId(localDoc, blockId)
+        : remoteDoc
+          ? indexOfBlockId(remoteDoc, blockId)
+          : 0;
 
     if (!localBlock && remoteBlock) {
-      diffs.push({ index, ...label, kind: 'only_remote' });
+      diffs.push({ index, blockId, blockType: remoteBlock.type, kind: 'only_remote' });
       continue;
     }
     if (localBlock && !remoteBlock) {
-      diffs.push({ index, ...label, kind: 'only_local' });
+      diffs.push({ index, blockId, blockType: localBlock.type, kind: 'only_local' });
       continue;
     }
     if (!localBlock || !remoteBlock) continue;
 
-    const localId = blockLabel(localBlock, index).blockId;
-    const remoteId = blockLabel(remoteBlock, index).blockId;
-    if (localId && remoteId && localId !== remoteId) {
-      diffs.push({ index, ...label, kind: 'changed' });
-      continue;
-    }
-
     if (!storefrontDescriptionNodesSemanticallyEqual(localBlock, remoteBlock)) {
-      diffs.push({ index, ...label, kind: 'changed' });
+      diffs.push({ index, blockId, blockType: localBlock.type, kind: 'changed' });
     }
   }
 
@@ -128,6 +150,7 @@ export function summarizeStorefrontDescriptionDocDiff(
   };
 }
 
+/** Індекси `content[i]` з відмінностями — для розгортання гілок у JSON compare. */
 export function storefrontDocDiffContentIndexes(
   localRaw: string | null | undefined,
   remoteRaw: string | null | undefined,

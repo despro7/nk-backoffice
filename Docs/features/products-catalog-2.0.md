@@ -356,9 +356,11 @@ client/pages/Products/
   - При відкритті edit-картки з SKU — фонова перевірка конфліктів: `GET …/dilovod-preview` + (за правом pull) `POST /api/storefront/woo/pull-preview`.
   - Банер **«Узгодити»** якщо є відмінності Dilovod і/або WC (WC лише в гілці «Готова продукція»).
   - Модалка `CatalogOpenSyncModal` → `StorefrontPullConfirmModal`: таблиця `ProductPullTriSourceTable`, фільтр «Лише відмінності / Усі поля», застосування Dilovod + WC окремо; push BO→WC лише коли `wcCompareEnabled !== false`.
-  - Семантичне порівняння `storefrontDescriptionDoc` (HTML/plain `_nk_storage`, coalesce override) — `shared/utils/storefrontDescription*.ts`, `storefrontDescriptionDocDiff.ts`.
+  - Після **«Застосувати»** — оновлення картки, опційний push на WC, потім **`onReconcileComplete`** → повторний preview (банер «Узгодити» зникає, якщо конфліктів немає).
+  - Toast після узгодження: окремі рядки для Dilovod pull, завантаження з WC, відправки на WC.
+  - Семантичне порівняння `storefrontDescriptionDoc` (HTML/plain `_nk_storage`, coalesce override; diff блоків за **blockId** + маркетинг) — `storefrontDescription*.ts`, `storefrontDescriptionDocDiff.ts`; pull apply нормалізує doc (`normalizeStorefrontDescriptionDoc`).
   - Popover порівняння doc: `PullFieldStorefrontDocComparePopover` + `StorefrontDocJsonCompareView` (inline diff, спільний scroll).
-- **Зображення в картці:** `ProductImageUpload` — галерея **PhotoSwipe** (`CatalogImageGalleryLightbox`); overlay не закриває drawer (`photoswipeOverlay.ts`, `shouldDismissOverlayWhilePhotoSwipeOpen`).
+- **Зображення в картці:** `ProductImageUpload` — галерея **PhotoSwipe** (`CatalogImageGalleryLightbox`); під час lightbox drawer не закривається (`photoswipeOverlay.ts` + `isDismissable={false}` на HeroUI `Drawer`, не React Aria `shouldCloseOnInteractOutside`).
 - **Detail fetch:** `fetchCatalogGoodDetail(…, { livePull: false })` для швидкого відкриття drawer без блокуючого Dilovod live-pull.
 
 ### UI: CatalogTable (список)
