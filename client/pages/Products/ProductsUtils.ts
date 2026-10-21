@@ -1,3 +1,8 @@
+import {
+  bomRowGrossKg,
+  massUnitToKgFactor,
+  type BomWeightComponent,
+} from '@shared/utils/catalogBomWeight.js';
 import type { CatalogGoodDto, CatalogTreeItemData, CatalogTreeNodeDto } from './ProductsTypes';
 import {
   CATALOG_ROOT_ID,
@@ -914,33 +919,12 @@ export function weightsAlmostEqual(a: number, b: number): boolean {
   return Math.abs(round01(a) - round01(b)) < 0.005;
 }
 
-export function massUnitToKgFactor(
-  unit: { name: string; code?: string | null } | undefined
-): number | null {
-  if (!unit) return null;
-  const name = unit.name.trim().toLowerCase().replace(/\./g, '');
-  const code = (unit.code || '').trim().toLowerCase().replace(/\./g, '');
-  const token = `${name} ${code}`;
-  if (/^(кг|kg|кілограм)/.test(name) || /^(кг|kg)$/.test(code)) return 1;
-  if (/(^| )(л|l|літр|литр|lt|liter)/.test(token) && !/(мл|ml|мілілітр|миллилитр)/.test(token)) {
-    return 1;
-  }
-  if (/^(г|гр|грам|g)/.test(name) && !/кілограм/.test(name)) return 0.001;
-  if (/^(мл|ml|мілілітр|миллилитр)/.test(name) || /^(мл|ml)$/.test(code)) return 0.001;
-  return null;
-}
-
-export type ExpectedBomWeight = {
-  kg: number;
-  missingCount: number;
-};
-
-export type BomWeightComponent = {
-  qty: number;
-  unitId: string;
-  componentWeight: number | null;
-  cookingLossPercent?: number | null;
-};
+export type { ExpectedBomWeight, BomWeightComponent } from '@shared/utils/catalogBomWeight.js';
+export {
+  massUnitToKgFactor,
+  expectedBomWeightKg,
+  isSuspiciousSpecQty,
+} from '@shared/utils/catalogBomWeight.js';
 
 export type TechCardRow = {
   name: string;
@@ -1038,74 +1022,6 @@ export function formatTechCardMassKg(
   return `${text} кг`;
 }
 
-function bomRowGrossKg(
-  row: BomWeightComponent,
-  unitById: Map<string, { id: string; name: string; code?: string | null }>
-): number | null {
-  const qty = Number(row.qty);
-  if (!Number.isFinite(qty) || qty <= 0) return null;
-  const massFactor = massUnitToKgFactor(unitById.get(row.unitId));
-  if (massFactor != null) return qty * massFactor;
-  const w = row.componentWeight;
-  if (w != null && Number.isFinite(w) && w > 0) return qty * w;
-  return null;
-}
-
-/**
- * Очікувана вага картки, кг:
- * — рядок у кг/г/л/мл → qty (зведена до кг; 1 л = 1 кг);
- * — шт. тощо → qty × вага картки компонента, якщо вона є;
- * — qty у специфікації — маса нетто (без перерахунку на % втрат).
- * За `warnMissingPieceWeight`: `missingCount` для рядків без qty або без можливості порахувати вагу (шт. без ваги картки).
- * Для продукції `divideBy` = «Розрахунок на N шт.» (вага порції).
- */
-export function expectedBomWeightKg(
-  components: BomWeightComponent[],
-  units: Array<{ id: string; name: string; code?: string | null }>,
-  options?: { divideBy?: number; warnMissingPieceWeight?: boolean }
-): ExpectedBomWeight | null {
-  if (components.length === 0) return null;
-  const unitById = new Map(units.map((u) => [u.id, u]));
-  let sum = 0;
-  let used = 0;
-  let missingCount = 0;
-  const warnMissing = Boolean(options?.warnMissingPieceWeight);
-  for (let i = 0; i < components.length; i += 1) {
-    const row = components[i];
-    const qty = Number(row.qty);
-    if (!Number.isFinite(qty) || qty <= 0) {
-      if (warnMissing) missingCount += 1;
-      continue;
-    }
-    const netKg = bomRowGrossKg(row, unitById);
-    if (netKg != null && netKg > 0) {
-      sum += netKg;
-      used += 1;
-      continue;
-    }
-    const massFactor = massUnitToKgFactor(unitById.get(row.unitId));
-    if (massFactor == null && warnMissing) {
-      missingCount += 1;
-    }
-  }
-  if (used === 0 && missingCount === 0) return null;
-  const divideBy = options?.divideBy != null && options.divideBy > 0 ? options.divideBy : 1;
-  return { kg: Math.round((sum / divideBy) * 100) / 100, missingCount };
-}
-
-/** Ймовірно неправильний «Розрахунок на» — вага порції стає нереалістично малою. */
-export function isSuspiciousSpecQty(
-  components: BomWeightComponent[],
-  units: Array<{ id: string; name: string; code?: string | null }>,
-  specQty: number
-): boolean {
-  if (!Number.isFinite(specQty) || specQty <= 1) return false;
-  const undivided = expectedBomWeightKg(components, units, { divideBy: 1 });
-  const divided = expectedBomWeightKg(components, units, { divideBy: specQty });
-  if (!undivided || undivided.kg < 0.05) return false;
-  return divided == null || divided.kg < 0.05;
-}
-
 /** Поріг підозріло малої маси інгредієнта (0.01 г). */
 const SUSPICIOUS_INGREDIENT_MASS_KG = 0.00001;
 
@@ -1121,14 +1037,13 @@ export function isSuspiciousBomIngredientQty(
   if (!Number.isFinite(qty) || qty <= 0) return false;
 
   const unitById = new Map(units.map((u) => [u.id, u]));
-  const grossKg = bomRowGrossKg(row, unitById);
-  if (grossKg != null) {
-    return grossKg < SUSPICIOUS_INGREDIENT_MASS_KG;
+  const massFactor = massUnitToKgFactor(unitById.get(row.unitId));
+  if (massFactor != null) {
+    return qty * massFactor < SUSPICIOUS_INGREDIENT_MASS_KG;
   }
-
-  const pieceWeightKg = row.componentWeight;
-  if (pieceWeightKg != null && Number.isFinite(pieceWeightKg) && pieceWeightKg > 0) {
-    return qty * pieceWeightKg < SUSPICIOUS_INGREDIENT_MASS_KG;
+  const pieceFromWeight = row.componentWeight;
+  if (pieceFromWeight != null && Number.isFinite(pieceFromWeight) && pieceFromWeight > 0) {
+    return qty * pieceFromWeight < SUSPICIOUS_INGREDIENT_MASS_KG;
   }
 
   return false;

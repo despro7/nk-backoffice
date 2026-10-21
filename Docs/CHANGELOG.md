@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-10-21 — Товари: ціни DnD, підказки каталогу; drawer рухів товару
+
+**Files:** `PricesSection.tsx`, `pricesSectionSort.ts`, `CatalogTable.tsx`, `ProductsCatalogService.ts`, `catalogListAttentionEnrichment.ts`, `catalogCardAttention.ts`, `catalogBomWeight.ts`, `ProductPullTriSourceTable.tsx`, `BomSection.tsx`, `BarcodesSection.tsx`, `CatalogToolbar.tsx`, `Products/index.tsx`, `ResizableAppDrawer.tsx`, `ProductMovementsTable.tsx`, `useProductMovementsDrawerWidth.ts`, `products-catalog-2.0.md`, `product-movements.md`
+
+- **Ціни (картка):** ручне сортування рядків перетягуванням (`pricesSectionSort`, `@hello-pangea/dnd`), кнопка біля заголовка «Ціни».
+- **Список каталогу:** іконка ⚠️ «Потребує уваги» — обовʼязкові реквізити + військова ціна, порожній контент вітрини (без КБЖУ/складу для наборів), підозрілий `specQty` (серверний розрахунок BOM); DTO `catalogAttentionLabels`.
+- **Tri-source:** рядок «Штрихкоди і партії» (BO ↔ ERP, `barcodeCount`).
+- **BOM:** адаптивний layout рядків на вузьких екранах; горизонтальний scroll обгортка таблиці каталогу.
+- **Drawer рухів:** `ResizableAppDrawer` — toolbar pin/placement лише `md+`, тонкий scrollbar, менший заголовок на mobile; мін. ширина drawer 375 px; таблиця рухів — прихований № на mobile, «Разом» у колонці дати.
+
+**Документація:** [`products-catalog-2.0.md`](features/products-catalog-2.0.md), [`product-movements.md`](features/product-movements.md).
+
+---
+
 ## 2026-10-21 — Товари: доопрацювання узгодження та doc diff
 
 **Files:** `StorefrontPullConfirmModal.tsx`, `ProductDrawer.tsx`, `WooCommerceSyncService.ts`, `storefrontDescriptionDocDiff.ts`, `storefrontDescription.ts`, `photoswipeOverlay.ts`, `products-catalog-2.0.md`

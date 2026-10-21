@@ -32,7 +32,8 @@ import { storefrontApi } from '@/services/StorefrontService';
 import { catalogImageThumbUrl } from '@shared/utils/catalogImageThumbUrl';
 import { resolveCatalogMediaAbsoluteUrl } from '@shared/utils/resolveCatalogMediaAbsoluteUrl';
 import { formatDateOnly } from '@/lib/formatUtils';
-import type { CatalogGoodDto, CatalogMissingRequired, CatalogTreeItemData } from '../ProductsTypes';
+import { getCatalogCardAttentionLabels } from '@shared/utils/catalogCardAttention';
+import type { CatalogGoodDto, CatalogTreeItemData } from '../ProductsTypes';
 import { CATALOG_ROOT_ID } from '../ProductsTypes';
 import {
   goodTypeLabel,
@@ -52,8 +53,6 @@ import {
   applyCatalogDropAttrs,
   clearCatalogDropAttrs,
   markCatalogDndSources,
-  catalogMissingNameLabels,
-  getMissingRequiredCatalogFields,
   isKitGood,
 } from '../ProductsUtils';
 
@@ -152,9 +151,23 @@ function formatWeightKg(weight: number | null | undefined): string {
   return Number(weight).toFixed(3).replace(/\.?0+$/, '').replace('.', ',');
 }
 
-function resolveMissingRequired(row: CatalogGoodDto): CatalogMissingRequired {
-  if (row.missingRequired) return row.missingRequired;
-  return getMissingRequiredCatalogFields(row);
+function resolveCatalogAttentionLabels(row: CatalogGoodDto): string[] {
+  if (row.catalogAttentionLabels?.length) return row.catalogAttentionLabels;
+  return getCatalogCardAttentionLabels({
+    isGroup: row.isGroup,
+    accPolicyId: row.accPolicyId,
+    isKit: row.isKit,
+    weight: row.weight,
+    packageRatio: row.packageRatio,
+    doNotPublish: row.doNotPublish,
+    imageCount: row.imageCount,
+    description: row.description,
+    productIngredientsJson: row.productIngredientsJson,
+    productNutritionJson: row.productNutritionJson,
+    kitPortionCount: row.kitPortionCount,
+    specQty: row.specQty,
+    specQtySuspicious: row.specQtySuspicious,
+  });
 }
 
 function isCatalogRowArchived(
@@ -251,12 +264,12 @@ function CatalogRowNameBadges({
 
 function MissingRequiredHint({ labels }: { labels: string[] }) {
   if (labels.length === 0) return null;
-  const summary = `Не вистачає: ${labels.join(', ')}`;
+  const summary = `Потребує уваги: ${labels.join(', ')}`;
   return (
     <Tooltip
       content={
         <div className="text-xs">
-          <div className="font-semibold">Не вистачає:</div>
+          <div className="font-semibold">Потребує уваги:</div>
           <ul className="mt-0.5 list-disc pl-4">
             {labels.map((label) => (
               <li key={label}>{label}</li>
@@ -1475,7 +1488,9 @@ export function CatalogTable({
               )}
               <CatalogRowNameBadges row={row} treeItems={treeItems} />
             </button>
-            <MissingRequiredHint labels={catalogMissingNameLabels(resolveMissingRequired(row))} />
+            <MissingRequiredHint
+              labels={resolveCatalogAttentionLabels(row).filter((label) => label !== 'Вага')}
+            />
           </div>
         );
       case 'category': {
@@ -1529,7 +1544,7 @@ export function CatalogTable({
         if (row.isGroup) {
           return <span className="text-default-300">—</span>;
         }
-        const weightHint = resolveMissingRequired(row).weight ? (
+        const weightHint = resolveCatalogAttentionLabels(row).includes('Вага') ? (
           <MissingRequiredHint labels={['Вага']} />
         ) : null;
         if (!onUpdateWeight) {

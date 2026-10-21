@@ -988,53 +988,55 @@ export default function ProductsPage() {
               </Tooltip>
             )}
           </div>
-          <CatalogTable
-            rows={catalog.tableRows}
-            loading={catalog.tableLoading}
-            selectedIds={catalog.selectedIds}
-            onSelectionChange={catalog.setSelectedIds}
-            onOpenFolder={navigateToFolder}
-            onEdit={catalog.openEdit}
-            onContextMenu={openContextMenu}
-            isSearchMode={catalog.isSearchMode}
-            accPolicies={catalog.dictionaries.accPolicies}
-            pinnedHues={pinnedHues}
-            isFinishedProductsBranch={isFinishedProductsBranch}
-            isAdmin={isAdmin}
-            portionsBySku={portionsBySku}
-            portionsLoading={portionsLoading}
-            folderLookup={catalog.treeItemsFull}
-            onOpenOrders={openProductOrders}
-            sortDescriptor={tableSort}
-            onSortChange={setTableSort}
-            listSortEnabled={listSortActive}
-            onReorderGood={
-              !canEditFolder || catalog.isSearchMode
-                ? undefined
-                : (params) => {
-                    setTableSort(MANUAL_SORT);
-                    catalog.requestReorder({
-                      parentId:
-                        catalog.selectedFolderId === CATALOG_ROOT_ID
-                          ? null
-                          : catalog.selectedFolderId,
-                      ...params,
-                    });
-                  }
-            }
-            onMove={!canEditFolder || catalog.isSearchMode ? undefined : catalog.requestMove}
-            treeItems={catalog.treeItemsFull}
-            onUpdateWeight={
-              canEditFolder
-                ? (id, weight) =>
-                    catalog.updateMutation.mutateAsync({
-                      id,
-                      input: { weight },
-                      keepOpen: true,
-                    })
-                : undefined
-            }
-          />
+          <div className="overflow-x-auto overflow-y-visible">
+            <CatalogTable
+              rows={catalog.tableRows}
+              loading={catalog.tableLoading}
+              selectedIds={catalog.selectedIds}
+              onSelectionChange={catalog.setSelectedIds}
+              onOpenFolder={navigateToFolder}
+              onEdit={catalog.openEdit}
+              onContextMenu={openContextMenu}
+              isSearchMode={catalog.isSearchMode}
+              accPolicies={catalog.dictionaries.accPolicies}
+              pinnedHues={pinnedHues}
+              isFinishedProductsBranch={isFinishedProductsBranch}
+              isAdmin={isAdmin}
+              portionsBySku={portionsBySku}
+              portionsLoading={portionsLoading}
+              folderLookup={catalog.treeItemsFull}
+              onOpenOrders={openProductOrders}
+              sortDescriptor={tableSort}
+              onSortChange={setTableSort}
+              listSortEnabled={listSortActive}
+              onReorderGood={
+                !canEditFolder || catalog.isSearchMode
+                  ? undefined
+                  : (params) => {
+                      setTableSort(MANUAL_SORT);
+                      catalog.requestReorder({
+                        parentId:
+                          catalog.selectedFolderId === CATALOG_ROOT_ID
+                            ? null
+                            : catalog.selectedFolderId,
+                        ...params,
+                      });
+                    }
+              }
+              onMove={!canEditFolder || catalog.isSearchMode ? undefined : catalog.requestMove}
+              treeItems={catalog.treeItemsFull}
+              onUpdateWeight={
+                canEditFolder
+                  ? (id, weight) =>
+                      catalog.updateMutation.mutateAsync({
+                        id,
+                        input: { weight },
+                        keepOpen: true,
+                      })
+                  : undefined
+              }
+            />
+          </div>
           </div>
         </main>
       </div>

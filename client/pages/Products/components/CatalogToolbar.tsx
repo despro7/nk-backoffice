@@ -59,7 +59,7 @@ export function CatalogToolbar({
         variant="flat"
         color="primary"
         startContent={<DynamicIcon name="circle-plus" size={14} />}
-        className="hidden bg-gradient-to-b from-sky-500 to-blue-600/75 text-white hover:bg-blue-600 font-medium md:inline-flex"
+        className="hidden bg-sky-500 bg-gradient-to-b from-sky-500 to-blue-600/75 text-white hover:bg-blue-600 font-medium md:inline-flex"
         onPress={onCreateGood}
         isDisabled={busy || Boolean(readOnly)}
       >
@@ -80,7 +80,7 @@ export function CatalogToolbar({
           <Button
             size="sm"
             color="primary"
-            className="bg-gradient-to-b from-lime-500 to-green-600 text-white hover:bg-green-600 font-medium"
+            className="bg-lime-600 bg-gradient-to-b from-lime-500 to-green-600 text-white hover:bg-green-600 font-medium"
             startContent={
               <DynamicIcon
                 name={branchRefreshing ? 'refresh-cw' : 'folder-sync'}
@@ -110,7 +110,7 @@ export function CatalogToolbar({
           <Button
             size="sm"
             color="warning"
-            className="bg-gradient-to-b from-amber-400 to-orange-600 text-white hover:bg-orange-600 font-medium"
+            className="bg-yellow-500 bg-gradient-to-b from-amber-400 to-orange-600 text-white hover:bg-orange-600 font-medium"
             startContent={
               <DynamicIcon
                 name={stockRefreshing ? 'refresh-cw' : 'boxes'}

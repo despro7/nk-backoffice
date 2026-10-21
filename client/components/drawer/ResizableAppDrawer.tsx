@@ -151,7 +151,7 @@ export default function ResizableAppDrawer({
           />
         ) : null}
         {showToolbar ? (
-          <div className="absolute top-3 right-11 z-50 flex items-center gap-0.5">
+          <div className="absolute top-3 right-11 z-50 items-center gap-0.5 hidden md:flex">
             {showPinToggle ? (
               <Tooltip content={pinTooltip} placement="bottom" color="secondary">
                 <Button
@@ -193,11 +193,11 @@ export default function ResizableAppDrawer({
             headerClassName,
           )}
         >
-          <div className="text-base font-semibold">{title}</div>
+          <div className="text-sm md:text-base font-semibold">{title}</div>
           {titleExtra}
         </DrawerHeader>
 
-        <DrawerBody className={cn('flex flex-col gap-4 py-4 overflow-y-auto min-h-0', bodyClassName)}>
+        <DrawerBody className={cn('flex flex-col gap-4 py-4 overflow-y-auto min-h-0 scrollbar-thin-transparent', bodyClassName)}>
           {children}
         </DrawerBody>
 

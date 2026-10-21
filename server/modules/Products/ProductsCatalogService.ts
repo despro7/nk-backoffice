@@ -35,6 +35,12 @@ import {
   rebalanceSortOrders,
 } from '../../../shared/utils/catalogSortOrder.js';
 import { getMissingRequiredCatalogFields } from '../../../shared/utils/catalogRequiredFields.js';
+import {
+  collectListAttentionGoodIds,
+  collectListKitIds,
+  computeSpecQtySuspiciousByGoodId,
+  enrichCatalogListDtos,
+} from './catalogListAttentionEnrichment.js';
 import { computeKitPortionCountsByGoodId } from './computeKitPortionCountsByGoodId.js';
 import { productsDilovodGateway } from './ProductsDilovodGateway.js';
 import { productsLocalSync } from './ProductsLocalSync.js';
@@ -313,7 +319,27 @@ export class ProductsCatalogService {
       include: catalogListInclude,
       orderBy: [{ isGroup: 'desc' }, { sortOrder: 'asc' }, { name: 'asc' }],
     });
-    return rows.map((row) => mapGoodDto(row));
+    return this.enrichCatalogListForTable(rows);
+  }
+
+  private async enrichCatalogListForTable(
+    rows: Array<Parameters<typeof mapGoodDto>[0]>,
+  ): Promise<CatalogGoodDto[]> {
+    const dtos = rows.map((row) => mapGoodDto(row));
+    if (dtos.length === 0) return dtos;
+
+    const kitIds = collectListKitIds(dtos);
+    const kitPortionById =
+      kitIds.length > 0 ? await computeKitPortionCountsByGoodId(kitIds) : new Map<string, number>();
+    const units = await this.getUnits();
+    const specGoodIds = collectListAttentionGoodIds(dtos);
+    const specQtySuspiciousById = await computeSpecQtySuspiciousByGoodId(specGoodIds, units);
+
+    return enrichCatalogListDtos(dtos, rows, {
+      kitPortionById,
+      units,
+      specQtySuspiciousById,
+    });
   }
 
   /**
@@ -740,16 +766,21 @@ export class ProductsCatalogService {
           })
         : [];
     const parentNameById = new Map(parents.map((parent) => [parent.id, parent.name]));
-    const kitIds = rows.filter((row) => isKitAccPolicy(row.accPolicyId)).map((row) => row.id);
+    const dtos = rows.map((row) =>
+      mapGoodDto(row, row.parentId ? parentNameById.get(row.parentId) ?? null : null),
+    );
+    const kitIdsFromDtos = collectListKitIds(dtos);
     const kitPortionById =
-      kitIds.length > 0 ? await this.computeKitPortionCountsByGoodId(kitIds) : new Map<string, number>();
-    return rows.map((row) => {
-      const dto = mapGoodDto(row, row.parentId ? parentNameById.get(row.parentId) ?? null : null);
-      if (!isKitAccPolicy(row.accPolicyId)) return dto;
-      return {
-        ...dto,
-        kitPortionCount: kitPortionById.get(row.id) ?? 0,
-      };
+      kitIdsFromDtos.length > 0
+        ? await computeKitPortionCountsByGoodId(kitIdsFromDtos)
+        : new Map<string, number>();
+    const units = await this.getUnits();
+    const specGoodIds = collectListAttentionGoodIds(dtos);
+    const specQtySuspiciousById = await computeSpecQtySuspiciousByGoodId(specGoodIds, units);
+    return enrichCatalogListDtos(dtos, rows, {
+      kitPortionById,
+      units,
+      specQtySuspiciousById,
     });
   }
 
@@ -759,7 +790,7 @@ export class ProductsCatalogService {
       include: catalogListInclude,
       orderBy: { name: 'asc' },
     });
-    return rows.map((row) => mapGoodDto(row));
+    return this.enrichCatalogListForTable(rows);
   }
 
   async getUnits(): Promise<CatalogUnitDto[]> {

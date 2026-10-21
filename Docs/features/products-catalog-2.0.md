@@ -340,7 +340,8 @@ client/pages/Products/
   - **Права:** редагування BOM / `specQty` — окремий ключ `action.products.editSpec` (seed лише admin; не залежить від ACL папки). Упаковка (вага, порції в коробці) — за ACL папки. Деталі: [`woocommerce-storefront-phase1.md`](./woocommerce-storefront-phase1.md#права-доступу-rbac).
   - **Продукція** — «Специфікація товару»; qty через `NumberInputFromNumber` (див. `Docs/architecture/number-input.md`); **примітка** (Chip + Popover, Dilovod remark); мікро-конфірм видалення примітки (іконка → «Видалити?» → clear).
   - **Продукція** — колонка **% втрат** (`cookingLossPercent`, локально); підсвітка підозрілої qty (`isSuspiciousBomIngredientQty`); кнопка переносу тексту з дужок назви в примітку (`extractParenthesizedTextFromName`).
-  - **Продукція** — сортування колонок (назва, втрати, qty, од. вим.) + опційне **ручне сортування** перетягуванням (`bomSectionSort.ts`, `@hello-pangea/dnd`).
+  - **Продукція** — сортування колонок (назва, втрати, qty, од. вим.) + опційне **ручне сортування** перетягуванням (`bomSectionSort.ts`, `@hello-pangea/dnd`); адаптивний layout рядків BOM на вузьких екранах.
+  - **Ціни** — опційне **ручне сортування** рядків (`pricesSectionSort.ts`, `@hello-pangea/dnd`).
   - **Продукція** — **«Друк техкарти»** → `TechCardModal`: розрахунок на N порцій, нетто/брутто з урахуванням втрат, експорт PDF/Excel, друк (`buildTechCardRows` у `ProductsUtils.ts`).
   - **Товарні набори** — «Склад комплекту»; qty `StepperInput`; **без** примітки та втрат (`note: null` у save).
   - **Підрахунок у заголовку складу:** `N поз. / X страв / Y порцій`. **Страви** = сума `qty` прямих позицій; **порції** = рекурсивно через вкладені набори (`catalogKitPortions`, `componentNestedPortionCount` з detail/search). Рецептура страви не розгортається.
@@ -355,7 +356,7 @@ client/pages/Products/
 - **Tri-source sync (BO / WC / Dilovod):**
   - При відкритті edit-картки з SKU — фонова перевірка конфліктів: `GET …/dilovod-preview` + (за правом pull) `POST /api/storefront/woo/pull-preview`.
   - Банер **«Узгодити»** якщо є відмінності Dilovod і/або WC (WC лише в гілці «Готова продукція»).
-  - Модалка `CatalogOpenSyncModal` → `StorefrontPullConfirmModal`: таблиця `ProductPullTriSourceTable`, фільтр «Лише відмінності / Усі поля», застосування Dilovod + WC окремо; push BO→WC лише коли `wcCompareEnabled !== false`.
+  - Модалка `CatalogOpenSyncModal` → `StorefrontPullConfirmModal`: таблиця `ProductPullTriSourceTable`, фільтр «Лише відмінності / Усі поля», застосування Dilovod + WC окремо; push BO→WC лише коли `wcCompareEnabled !== false`; рядок **«Штрихкоди і партії»** (порівняння кількості ШК/партій BO ↔ Dilovod, `barcodeCount`).
   - Після **«Застосувати»** — оновлення картки, опційний push на WC, потім **`onReconcileComplete`** → повторний preview (банер «Узгодити» зникає, якщо конфліктів немає).
   - Toast після узгодження: окремі рядки для Dilovod pull, завантаження з WC, відправки на WC.
   - Семантичне порівняння `storefrontDescriptionDoc` (HTML/plain `_nk_storage`, coalesce override; diff блоків за **blockId** + маркетинг) — `storefrontDescription*.ts`, `storefrontDescriptionDocDiff.ts`; pull apply нормалізує doc (`normalizeStorefrontDescriptionDoc`).
@@ -369,7 +370,9 @@ client/pages/Products/
 - DTO рядка: `primaryImageUrl`, `imagePreviewUrls` (до 24 файлів, primary → `sortOrder`); абсолютні URL через `mediaPublicBaseUrl` з storefront settings + fallback на origin.
 - Tooltip на **назві товару** — прев’ю головного зображення + назва.
 - Клік по лічильнику зображень — `CatalogImagePreviewPopover` (сітка 3×3, lightbox); той самий компонент, що в tri-source таблиці pull.
+- **Підказки ⚠️** біля назви (і «Вага» в колонці ваги): `catalogAttentionLabels` з API (`getCatalogCardAttentionLabels` / `catalogListAttentionEnrichment`) — обовʼязкові реквізити, некоректна військова ціна, порожній контент вітрини (зображення, короткий опис; КБЖУ і склад лише для продукції, не для наборів), підозрілий `specQty` для продукції з BOM.
 - Копіювання SKU — кнопка в комірці (`SkuCopyCell`).
+- На вузьких екранах таблиця в обгортці `overflow-x-auto` (горизонтальний scroll).
 - Опис — `DescriptionEditor` (не name).
 - ШК: генерація EAN-13 (`/barcode/next`) + вибір партії (reuse Movement `BatchNumbersAutocomplete`); див. секцію «Штрихкоди» вище.
 - Unsaved: snapshot form + BOM + prices + barcodes + images + objectKind/parentId → `getDrawerDirtyFields` → `isDirty` → `useUnsavedGuard` + `UnsavedChangesModal` при закритті Drawer / навігації / beforeunload.

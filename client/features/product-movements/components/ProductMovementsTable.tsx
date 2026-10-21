@@ -93,7 +93,7 @@ function GroupBlock({ group, compact = false }: { group: ProductMovementsGroup; 
     {
       kind: 'summary',
       key: `${group.groupKey}-summary`,
-      documentLabel: 'Разом',
+      documentLabel: '',
       receiptQty: group.totals.receiptQty,
       expenseQty: group.totals.expenseQty,
       balanceQty: group.totals.balanceQty,
@@ -101,7 +101,7 @@ function GroupBlock({ group, compact = false }: { group: ProductMovementsGroup; 
   ];
 
   return (
-    <div className={`min-w-0 rounded-xl bg-default-50 ${compact ? '' : 'p-2'}`}>
+    <div className={`min-w-144 w-full rounded-xl ${compact ? '' : 'p-2'}`}>
       <div className="flex min-h-[2.375rem] flex-wrap items-center justify-between gap-2 border-b border-default-200/75 ring-1 ring-default-100 bg-default-100 px-2 py-2 rounded-t-md md:sticky md:top-0 md:z-30">
         <div className="text-sm font-semibold text-foreground">{groupTitle}</div>
         <div className="text-xs text-default-500">
@@ -122,8 +122,8 @@ function GroupBlock({ group, compact = false }: { group: ProductMovementsGroup; 
           }}
         >
           <TableHeader>
-            <TableColumn className="w-8">№</TableColumn>
-            <TableColumn className="w-26">Дата</TableColumn>
+            <TableColumn className="w-8 hidden md:table-cell">№</TableColumn>
+            <TableColumn className="min-w-24 w-auto max-w-26 rounded-bl-md md:rounded-none">Дата</TableColumn>
             <TableColumn>Документ</TableColumn>
             <TableColumn className="w-20 text-center truncate text-nowrap">Надходж.</TableColumn>
             <TableColumn className="w-20 text-center truncate text-nowrap">Витрата</TableColumn>
@@ -145,11 +145,11 @@ function GroupBlock({ group, compact = false }: { group: ProductMovementsGroup; 
                     : `${group.groupKey}-${line.rowNum}-${line.date}-${line.documentLabel}`}
                   className={`${isSummary ? 'bg-default-200/50 [&>td]:font-semibold' : 'hover:bg-default-100/60'} [&>td:first-child]:rounded-s-md [&>td:last-child]:rounded-e-md`}
                 >
-                  <TableCell className={isSummary ? '' : 'text-default-500 text-center'}>
+                  <TableCell className={`hidden md:table-cell ${isSummary ? '' : 'text-default-500 text-center'}`}>
                     {isSummary ? '' : line.rowNum}
                   </TableCell>
                   <TableCell className="whitespace-nowrap tabular-nums">
-                    {isSummary ? '' : (
+                    {isSummary ? 'Разом' : (
                       <Tooltip
                         placement="top"
                         content={line.dateTime || line.date}
@@ -164,15 +164,16 @@ function GroupBlock({ group, compact = false }: { group: ProductMovementsGroup; 
                       </Tooltip>
                     )}
                   </TableCell>
-                  <TableCell className="min-w-[160px]">
-                    <div className="flex items-center gap-2">
+                  <TableCell className="min-w-40 max-w-0 px-1.5">
+                    <div className="flex items-center gap-2 min-w-0">
                       {iconName ? (
                         <DynamicIcon name={iconName as any} size={15} className={`shrink-0 ${iconClass}`} />
                       ) : null}
                       {!isSummary && line.kind === 'line' && line.documentId ? (
                         <button
                           type="button"
-                          className="text-left text-primary hover:underline focus:outline-none focus-visible:underline"
+                          className="text-left min-w-0 max-w-full truncate text-primary hover:underline focus:outline-none focus-visible:underline"
+                          style={{ minWidth: 0 }}
                           onClick={() => {
                             openDocumentEdit({
                               dilovodDocumentId: line.documentId!,
@@ -180,13 +181,14 @@ function GroupBlock({ group, compact = false }: { group: ProductMovementsGroup; 
                             });
                           }}
                         >
-                          {line.documentLabel}
+                          <span className="block min-w-0 max-w-full truncate">{line.documentLabel}</span>
                         </button>
                       ) : (
-                        <span>{line.documentLabel}</span>
+                        <span className="block min-w-0 max-w-full truncate">{line.documentLabel}</span>
                       )}
                     </div>
                   </TableCell>
+             
                   <TableCell className="text-center font-mono">
                     {formatQty(line.receiptQty) || ''}
                   </TableCell>
@@ -236,7 +238,7 @@ export default function ProductMovementsTable({
   const movementGroups = result.groups.filter((group) => group.lines.length > 0);
 
   return (
-    <div className={`flex flex-col gap-4 min-w-0 ${compact ? '' : ''}`}>
+    <div className="flex flex-col gap-4 min-w-0">
       {result.warning ? (
         <div className="text-sm text-warning">{result.warning}</div>
       ) : null}

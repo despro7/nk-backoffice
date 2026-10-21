@@ -131,6 +131,10 @@ export interface CatalogGoodDto {
   kitPortionCount?: number | null;
   /** Обовʼязкові поля, яких бракує (продукція / набір). */
   missingRequired?: CatalogMissingRequired;
+  /** Підказки для іконки уваги в списку каталогу (обовʼязкові поля + валідація). */
+  catalogAttentionLabels?: string[];
+  /** Ймовірно некоректний «Розрахунок на» (лише продукція). */
+  specQtySuspicious?: boolean;
   /** Локальні зображення каталогу (не Dilovod); 0 для груп */
   imageCount?: number;
   /** Головне зображення для tooltip у списку */

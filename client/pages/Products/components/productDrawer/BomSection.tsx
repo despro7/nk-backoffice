@@ -234,30 +234,28 @@ export function BomSection({
       );
 
     return (
-      <div className="flex flex-col gap-1.5 [&:not(:last-child)]:border-b border-default-200/60 py-1.5">
-        <div className="flex flex-wrap md:flex-nowrap items-center gap-2 gap-y-0.5">
+      <div className="flex flex-col md:flex-row flex-nowrap items-center gap-2 gap-y-1.5">
+        <div className="flex flex-nowrap items-center gap-2 w-full">
           {showDragHandle && (
             <span
               {...dragHandleProps}
-              className="hidden md:inline-flex touch-none text-default-300 h-8 w-4 items-center justify-center cursor-grab active:cursor-grabbing hover:text-default-500 shrink-0"
+              className="inline-flex touch-none text-default-300 h-5 w-4 items-center justify-center cursor-grab active:cursor-grabbing hover:text-default-500 shrink-0"
               title="Перетягнути для зміни порядку"
             >
               <DynamicIcon name="grip-vertical" size={14} />
             </span>
           )}
-          <span className="text-sm font-semibold text-right min-w-5 tabular-nums">
+          <span className="text-sm text-default-500/60 text-right min-w-5 tabular-nums">
             {displayIndex + 1}
           </span>
-          <div
-            className={`min-w-0 ${isKit ? 'w-[calc(100%-2rem)]' : 'w-[calc(100%-9rem)]'} sm:w-auto sm:flex-1 flex items-center gap-2 md:flex-wrap`}
-          >
+          <div className="min-w-0 md:flex-1 flex items-center gap-2 md:flex-wrap">
             {c.componentGoodId ? (
               <button
                 type="button"
                 className={`min-w-0 ${isKit ? 'w-full' : 'w-auto'} md:w-auto flex items-center gap-2 text-left hover:text-primary`}
                 onClick={() => onOpenNested(c.componentGoodId)}
               >
-                <span className="truncate text-sm hover:underline mr-auto md:mr-0">
+                <span className="truncate text-sm font-medium hover:underline mr-auto md:mr-0">
                   {c.componentName}
                 </span>
                 {c.componentSku && (
@@ -423,11 +421,12 @@ export function BomSection({
               </Popover>
             )}
           </div>
-
+        </div>
+        <div className="flex flex-nowrap items-center gap-2 w-full md:w-auto pl-7 md:pl-0">
           {isGood && (
             <NumberInputFromNumber
               size="sm"
-              className="w-16 ml-7 sm:ml-0 shrink-0"
+              className="w-auto max-w-40 md:w-16 md:shrink-0"
               aria-label="Втрати при готуванні, %"
               value={c.cookingLossPercent}
               min={0}
@@ -454,7 +453,7 @@ export function BomSection({
           )}
 
           {!isKit ? (
-            <div className="w-20 ml-7 sm:ml-0 order-last sm:order-none">
+            <div className="w-auto max-w-40 md:w-20">
               <NumberInputFromNumber
                 size="sm"
                 aria-label="Кількість"
@@ -522,7 +521,7 @@ export function BomSection({
               size="sm"
               isDisabled={isSpecReadOnly}
               classNames={{
-                base: 'w-20 order-last sm:order-none',
+                base: 'w-20 shrink-0',
                 trigger: 'border-1 border-default-200',
                 popoverContent: 'bg-default-100 min-w-28',
               }}
@@ -542,7 +541,7 @@ export function BomSection({
           )}
           <RowDeleteButton
             ariaLabel="Видалити компонент"
-            className="ml-auto md:ml-0"
+            className="shrink-0"
             isDisabled={isSpecReadOnly}
             confirming={rowDeleteConfirm?.kind === 'component' && rowDeleteConfirm.idx === idx}
             onRequest={() => onRowDeleteConfirm({ kind: 'component', idx })}
@@ -742,85 +741,83 @@ export function BomSection({
           )}
         </div>
         {components.length > 0 && (
-          <div className="hidden md:flex flex-nowrap items-center gap-2 px-0.5 py-2 rounded-md bg-default-100 -mb-2">
-            {showDragHandle && <span className="w-4 shrink-0" aria-hidden />}
-            <span className="text-xs font-semibold text-default-500 text-right min-w-4.5 tabular-nums">
-              #
-            </span>
-            <div className="min-w-0 flex-1 flex items-center gap-1.5">
-              <BomSortableHeader
-                label={isKit ? 'Назва товару' : 'Назва інгредієнта'}
-                column="name"
-                sortDescriptor={sortDescriptor}
-                onSort={handleSortColumn}
-              />
-              <Tooltip
-                content={
-                  listSortDisabled
-                    ? 'Спочатку скиньте сортування колонок'
-                    : listSortEnabled
-                      ? 'Вимкнути ручне сортування'
-                      : 'Увімкнути ручне сортування перетягуванням'
-                }
-                classNames={{ content: 'text-xs max-w-52' }}
-              >
-                <Button
-                  size="sm"
-                  isDisabled={listSortDisabled || isSpecReadOnly}
-                  aria-label="Ручне сортування"
-                  aria-pressed={listSortEnabled && !listSortDisabled}
-                  className={`h-6 min-w-6 gap-1 pl-2 pr-2.5 ${
-                    listSortEnabled && !listSortDisabled
-                      ? 'bg-slate-600 text-slate-100'
-                      : 'bg-default-200/60 text-default-400'
-                  }`}
-                  onPress={() => setListSortEnabled((value) => !value)}
-                  startContent={<DynamicIcon name="arrow-up-down" size={12} />}
+          <div className="flex flex-col md:flex-row flex-nowrap items-center gap-2 px-1.5 md:px-0.5 py-2 rounded-md bg-default-100 md:-mb-2">
+            <div className="flex flex-nowrap items-center gap-2 h-5 w-full md:w-auto md:mr-auto">
+              {showDragHandle && <span className="w-4 shrink-0" aria-hidden />}
+              <span className="text-xs text-default-500/60 text-right min-w-4.5 tabular-nums">#</span>
+              <div className="min-w-0 w-full md:w-auto flex-1 flex items-center gap-1.5">
+                <BomSortableHeader
+                  label={isKit ? 'Назва товару' : 'Назва інгредієнта'}
+                  column="name"
+                  sortDescriptor={sortDescriptor}
+                  onSort={handleSortColumn}
+                />
+                <Tooltip
+                  content={
+                    listSortDisabled
+                      ? 'Спочатку скиньте сортування колонок'
+                      : listSortEnabled
+                        ? 'Вимкнути ручне сортування'
+                        : 'Увімкнути ручне сортування перетягуванням'
+                  }
+                  classNames={{ content: 'text-xs max-w-52' }}
                 >
-                  Ручне сортування
-                </Button>
-              </Tooltip>
-              {!isManualSort && (
-                <Tooltip content="Повернутися до ручного сортування" classNames={{ content: 'text-xs' }}>
                   <Button
                     size="sm"
-                    variant="flat"
-                    className="h-6 min-w-0 px-2 text-[11px] gap-1 bg-yellow-400/70 text-slate-900"
-                    startContent={<DynamicIcon name="rotate-ccw" size={12} />}
-                    onPress={() => setSortDescriptor(BOM_MANUAL_SORT)}
+                    isDisabled={listSortDisabled || isSpecReadOnly}
+                    aria-label="Ручне сортування"
+                    aria-pressed={listSortEnabled && !listSortDisabled}
+                    className={`ml-auto md:ml-0 h-6 min-w-6 gap-1 pl-2 pr-2.5 ${listSortEnabled && !listSortDisabled ? 'bg-slate-600 text-slate-100' : 'bg-default-200/60 text-default-400'}${listSortDisabled || isSpecReadOnly ? ' hidden' : ''}`}
+                    onPress={() => setListSortEnabled((value) => !value)}
+                    startContent={<DynamicIcon name="arrow-up-down" size={12} />}
                   >
-                    Скинути сортування
+                    Ручне сортування
                   </Button>
                 </Tooltip>
-              )}
+                {!isManualSort && (
+                  <Tooltip content="Повернутися до ручного сортування" classNames={{ content: 'text-xs' }}>
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      className="ml-auto md:ml-0 h-6 min-w-0 px-2 text-[11px] gap-1 bg-yellow-400/70 text-slate-900"
+                      startContent={<DynamicIcon name="rotate-ccw" size={12} />}
+                      onPress={() => setSortDescriptor(BOM_MANUAL_SORT)}
+                    >
+                      Скинути сортування
+                    </Button>
+                  </Tooltip>
+                )}
+              </div>
             </div>
-            {!isKit && <span className="w-6 shrink-0" aria-hidden />}
-            {isGood && (
+            <div className="flex flex-nowrap items-center gap-2 w-full md:w-auto">
+              {!isKit && <span className="w-6 shrink-0" aria-hidden />}
+              {isGood && (
+                <BomSortableHeader
+                  label="Втрати"
+                  column="loss"
+                  sortDescriptor={sortDescriptor}
+                  onSort={handleSortColumn}
+                  className="w-full md:w-16 max-w-40"
+                />
+              )}
               <BomSortableHeader
-                label="Втрати"
-                column="loss"
+                label="Кількість"
+                column="qty"
                 sortDescriptor={sortDescriptor}
                 onSort={handleSortColumn}
-                className="w-16 justify-center"
+                className={`w-full md:w-${isKit ? '28' : '20'} max-w-40`}
               />
-            )}
-            <BomSortableHeader
-              label="Кількість"
-              column="qty"
-              sortDescriptor={sortDescriptor}
-              onSort={handleSortColumn}
-              className={`${isKit ? 'w-28' : 'w-20'} justify-center`}
-            />
-            {!isKit && (
-              <BomSortableHeader
-                label="Од. вим."
-                column="unit"
-                sortDescriptor={sortDescriptor}
-                onSort={handleSortColumn}
-                className="w-20 justify-center"
-              />
-            )}
-            <span className="w-8 shrink-0" aria-hidden />
+              {!isKit && (
+                <BomSortableHeader
+                  label="Од. вим."
+                  column="unit"
+                  sortDescriptor={sortDescriptor}
+                  onSort={handleSortColumn}
+                  className="w-20 shrink-0 justify-center md:justify-start"
+                />
+              )}
+              <span className="w-8 shrink-0" aria-hidden />
+            </div>
           </div>
         )}
         {components.length > 0 && (
@@ -839,7 +836,7 @@ export function BomSection({
                         <div
                           ref={dragProvided.innerRef}
                           {...dragProvided.draggableProps}
-                          className={snapshot.isDragging ? 'bg-default-100 shadow-sm rounded-md' : undefined}
+                          className={`flex flex-col gap-1.5 [&:not(:last-child)]:border-b border-default-200/60 pt-1.5 pb-3 ${snapshot.isDragging ? 'bg-default-100 shadow-sm rounded-md' : undefined}`}
                         >
                           {renderBomRow(
                             entry,

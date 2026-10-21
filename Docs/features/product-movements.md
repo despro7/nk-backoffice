@@ -83,7 +83,9 @@ interface ProductMovementsOpenParams {
 - **pin / pin-off** — перемикач `nonDismissable`;
 - **arrow-left-to-line / arrow-right-to-line** — перемикач `placement`.
 
-**Resize:** смужка на внутрішньому краю; ширина 622–1024 px (кламп також ≤92vw); default ~896; persist у `localStorage` `product-movements-drawer-width-v1` (`useProductMovementsDrawerWidth`).
+**Resize:** смужка на внутрішньому краю; ширина **375–1024** px (кламп також ≤92vw); default ~840; persist у `localStorage` `product-movements-drawer-width-v1` (`useProductMovementsDrawerWidth`).
+
+**Таблиця в drawer (compact):** мін. ширина блоку групи `min-w-144`; колонка № прихована на вузьких екранах; підсумковий рядок — «Разом» у колонці дати; `ResizableAppDrawer` — pin/placement у toolbar лише на `md+`, `scrollbar-thin-transparent` у body.
 
 У compact-режимі Drawer:
 - товар заблокований (`productLocked`), якщо передано `sku` / `dilovodGoodId`;

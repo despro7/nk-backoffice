@@ -25,7 +25,8 @@ export type ProductPullTriRowId =
   | 'specQty'
   | 'mainComponentWeight'
   | 'kitPortionCount'
-  | 'images';
+  | 'images'
+  | 'barcodesAndBatches';
 
 export interface ProductPullTriRow {
   id: ProductPullTriRowId;
@@ -59,6 +60,7 @@ const ROW_DILOVOD_CONFLICT_FIELD: Partial<Record<ProductPullTriRowId, string>> =
   weight: 'weight',
   regularPrice: 'regularPrice',
   packageRatio: 'packageRatio',
+  barcodesAndBatches: 'barcodeCount',
 };
 
 function truncate(value: string | null | undefined, max = 72): string {
@@ -139,6 +141,13 @@ function formatNum(value: number | null | undefined): string {
   return String(value);
 }
 
+function formatErpRowCount(value: string | null | undefined): string {
+  if (!value?.trim()) return '—';
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return '—';
+  return `${n} поз.`;
+}
+
 function rowHasConflict(
   rowId: ProductPullTriRowId,
   wooFields: Set<string>,
@@ -205,6 +214,7 @@ export function buildProductPullTriRows(
   localShortDescription: string,
 ): ProductPullTriRow[] {
   const d = dilovod?.remoteAvailable ? dilovod : null;
+  const dilovodLocal = dilovod?.local;
   const wooCompareEnabled = preview.wcCompareEnabled !== false;
   const wooConflictFields = wooCompareEnabled
     ? new Set(preview.conflicts.map((c) => c.field))
@@ -389,6 +399,18 @@ export function buildProductPullTriRows(
       conflictDilovod: null,
       dilovodSelectable: false,
       wooSelectable: true,
+    },
+    {
+      id: 'barcodesAndBatches',
+      label: 'Штрихкоди і партії',
+      local: formatErpRowCount(dilovodLocal?.barcodeCount),
+      woo: '—',
+      dilovod: formatErpRowCount(d?.proposed.barcodeCount),
+      conflictLocal: dilovodLocal?.barcodeCount ?? null,
+      conflictWoo: null,
+      conflictDilovod: d?.proposed.barcodeCount ?? null,
+      dilovodSelectable: false,
+      wooSelectable: false,
     },
     {
       id: 'specQty',

@@ -28,7 +28,7 @@ function BarcodeBatchMovementsButton({
     <Button
       size="sm"
       variant="light"
-      className="min-w-0 shrink-0 gap-1 px-2 h-10"
+      className="min-w-0 shrink-0 gap-1 px-3 h-10"
       startContent={<DynamicIcon name="arrow-left-right" size={14} />}
       isDisabled={disabled || !canOpen}
       onPress={() => {
@@ -44,7 +44,7 @@ function BarcodeBatchMovementsButton({
         });
       }}
     >
-      Рухи партії
+      <span className="hidden md:inline-block">Рухи партії</span>
     </Button>
   );
 }

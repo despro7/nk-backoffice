@@ -63,7 +63,7 @@ export default function ProductMovementsSummaryCards({
   className,
 }: ProductMovementsSummaryCardsProps) {
   return (
-    <div className={cn('grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 min-w-0 flex-1', className)}>
+    <div className={cn('flex flex-wrap items-start justify-between gap-2 min-w-0 flex-1 [&>*]:min-w-36', className)}>
       <StatCard
         label="Партії"
         iconName="layers"
