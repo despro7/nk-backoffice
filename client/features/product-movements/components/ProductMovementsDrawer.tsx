@@ -14,6 +14,7 @@ import useProductMovementsQuery from '../hooks/useProductMovementsQuery';
 import ProductMovementsFilters from './ProductMovementsFilters';
 import ProductMovementsReportHeader from './ProductMovementsReportHeader';
 import ProductMovementsTable from './ProductMovementsTable';
+import ProductMovementsRebatchButton from './ProductMovementsRebatchButton';
 
 interface ProductMovementsDrawerProps {
   isOpen: boolean;
@@ -95,24 +96,31 @@ export default function ProductMovementsDrawer({
       maxWidth={PRODUCT_MOVEMENTS_DRAWER_MAX_WIDTH}
       resizeAriaLabel="Змінити ширину панелі рухів"
       footer={
-        <>
-          <Button variant="light" onPress={onClose}>
-            Закрити
-          </Button>
-          <Button
-            color="primary"
-            startContent={
-              <DynamicIcon
-                name={loading ? 'loader-circle' : 'table-properties'}
-                size={16}
-                className={loading ? 'animate-spin' : ''}
-              />
-            }
-            onPress={() => generate(filters, meta)}
-          >
-            Сформувати
-          </Button>
-        </>
+        <div className="flex w-full items-center justify-between gap-3">
+          <ProductMovementsRebatchButton
+            filters={filters}
+            size="sm"
+            onAfterNavigate={onClose}
+          />
+          <div className="flex items-center gap-2">
+            <Button variant="light" onPress={onClose}>
+              Закрити
+            </Button>
+            <Button
+              color="primary"
+              startContent={
+                <DynamicIcon
+                  name={loading ? 'loader-circle' : 'table-properties'}
+                  size={16}
+                  className={loading ? 'animate-spin' : ''}
+                />
+              }
+              onPress={() => generate(filters, meta)}
+            >
+              Сформувати
+            </Button>
+          </div>
+        </div>
       }
     >
       {metaError ? (

@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-10-22 — Рухи товару: кнопка Rebatch → коригування партійного обліку
+
+**Files:** `ProductMovementsRebatchButton.tsx`, `rebatchWizard.ts`, `ProductMovementsDrawer.tsx`, `ReportsProductMovements/index.tsx`, `ReleaseSetsMainFlow.tsx`, `WarehouseReleaseSets/index.tsx`, `useReleaseSets.ts`, `product-movements.md`, `warehouse-release-sets.md`
+
+- Кнопка **Rebatch** у футері drawer рухів і на сторінці звіту (зліва від «Сформувати»); права `page.warehouse.releases`.
+- Перехід на `/warehouse/releases?rebatch=1…` з контекстом фільтрів (SKU, склад, фірма, партія); `startRebatchWizard` — correction kit + автозаповнення партій.
+
+**Документація:** [`product-movements.md`](features/product-movements.md), [`warehouse-release-sets.md`](features/warehouse-release-sets.md).
+
+---
+
 ## 2026-10-21 — Товари: ціни DnD, підказки каталогу; drawer рухів товару
 
 **Files:** `PricesSection.tsx`, `pricesSectionSort.ts`, `CatalogTable.tsx`, `ProductsCatalogService.ts`, `catalogListAttentionEnrichment.ts`, `catalogCardAttention.ts`, `catalogBomWeight.ts`, `ProductPullTriSourceTable.tsx`, `BomSection.tsx`, `BarcodesSection.tsx`, `CatalogToolbar.tsx`, `Products/index.tsx`, `ResizableAppDrawer.tsx`, `ProductMovementsTable.tsx`, `useProductMovementsDrawerWidth.ts`, `products-catalog-2.0.md`, `product-movements.md`

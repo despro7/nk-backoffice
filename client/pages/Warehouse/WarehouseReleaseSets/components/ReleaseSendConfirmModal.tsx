@@ -38,6 +38,7 @@ interface Props {
   sendLabel: string;
   onConfirm: () => void;
   onClose: () => void;
+  overlayZClassName?: string;
 }
 
 export default function ReleaseSendConfirmModal({
@@ -55,6 +56,7 @@ export default function ReleaseSendConfirmModal({
   sendLabel,
   onConfirm,
   onClose,
+  overlayZClassName,
 }: Props) {
   const success = Boolean(result?.success);
   const title = getReleaseSendTitle(mode);
@@ -102,7 +104,18 @@ export default function ReleaseSendConfirmModal({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="2xl" backdrop="blur" scrollBehavior="inside" isDismissable={!isSubmitting}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      size="2xl"
+      backdrop="blur"
+      scrollBehavior="inside"
+      isDismissable={!isSubmitting}
+      classNames={{
+        wrapper: overlayZClassName,
+        backdrop: overlayZClassName,
+      }}
+    >
       <ModalContent>
         <ModalHeader className="flex flex-col gap-1">
           <div className="text-xl font-semibold">{title}</div>

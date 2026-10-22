@@ -1,6 +1,6 @@
 # Рухи по товару
 
-**Дата:** 2026-10-05 (оновлено 2026-10-16)  
+**Дата:** 2026-10-05 (оновлено 2026-10-22)  
 **Маршрут:** `/reports/product-movements` (`STOREKEEPER`+)  
 **Дозвіл:** `page.reports.productMovements`  
 **API:** `GET /api/reports/product-movements/meta`, `POST /api/reports/product-movements`
@@ -92,6 +92,21 @@ interface ProductMovementsOpenParams {
 - фільтри `size="sm"`, висота полів `h-8`;
 - таблиця без внутрішнього `p-2` у блоці групи;
 - після формування — ті самі summary-віджети (`showIdentity={false}`, full-width).
+
+### Rebatch (коригування партійного обліку)
+
+Кнопка **Rebatch** — перехід у wizard комплектування (`/warehouse/releases`) з увімкненим режимом коригування.
+
+| Де | Розміщення |
+| --- | --- |
+| Drawer рухів | Футер зліва (`ProductMovementsRebatchButton`) |
+| `/reports/product-movements` | Зліва від «Сформувати» у блоці фільтрів |
+
+**Права:** `page.warehouse.releases` (як сторінка комплектування). Без SKU у фільтрах кнопка disabled.
+
+**Параметри з фільтрів:** `sku`, `dilovodGoodId`, `productName`, `storageId`, `firmId`, `goodPartId` → query `?rebatch=1&…` (`rebatchWizard.ts`). Сторінка releases викликає `startRebatchWizard`: correction kit, `ensure-set`, автозаповнення партій; при `goodPartId` — залишається лише обрана партія.
+
+Після кліку з drawer панель рухів закривається (`onAfterNavigate`).
 
 ### Точки входу
 

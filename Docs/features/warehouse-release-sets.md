@@ -45,6 +45,12 @@ Switch у шапці сторінки. Двокроковий wizard:
 - Перед `/send` у correction UI гарантує `correctionSessionId`; бекенд підставляє UUID, якщо в payload лише comment/rebatch.
 - Чіп «Коригування» в `HistoryAccordionItem` більше не залежить лише від `correction_session_id`.
 
+#### Вхід з рухів товару (Rebatch, 2026-10-22)
+
+- Кнопка **Rebatch** у drawer і на `/reports/product-movements` → `GET /warehouse/releases?rebatch=1&sku=…` (+ опційно склад, фірма, партія).
+- `ReleaseSetsMainFlow` + `useReleaseSets.startRebatchWizard` — увімкнення correction, `ensure-set`, автозаповнення партій.
+- Деталі UI: [`product-movements.md`](product-movements.md#rebatch-коригування-партійного-обліку).
+
 ### Confirm-модалки
 
 `ReleaseSendConfirmModal` + `releaseConfirmCopy.ts` — підтвердження перед:

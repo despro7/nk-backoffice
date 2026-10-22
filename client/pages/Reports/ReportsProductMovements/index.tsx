@@ -10,6 +10,7 @@ import useProductMovementsMeta from '@/features/product-movements/hooks/useProdu
 import useProductMovementsQuery from '@/features/product-movements/hooks/useProductMovementsQuery';
 import { createDefaultFilters } from '@/features/product-movements/productMovementsUtils';
 import type { ProductMovementsFilterState } from '@/features/product-movements/types';
+import ProductMovementsRebatchButton from '@/features/product-movements/components/ProductMovementsRebatchButton';
 
 export default function ReportsProductMovementsPage() {
   const { meta, loading: metaLoading, error: metaError } = useProductMovementsMeta();
@@ -67,6 +68,7 @@ export default function ReportsProductMovementsPage() {
 
   const filterActions = (
     <>
+      <ProductMovementsRebatchButton filters={filters} />
       <Button
         color="primary"
         className="bg-blue-500 text-white"

@@ -18,6 +18,10 @@ import type {
 } from '@shared/types/warehouseRelease';
 import { buildRebatchSku, isRebatchSku } from '@shared/types/warehouseRelease';
 import { formatKyivDateTime, parseKyivDateTime } from '@shared/utils/kyivDateTime';
+import {
+  fetchRebatchSourceProduct,
+  type RebatchWizardLaunchParams,
+} from '@/features/product-movements/rebatchWizard';
 import { formatCorrectionBatchDateLabel } from './releaseConfirmCopy';
 
 export type ReleaseSetsOperationKey = 'goodKit' | 'goodUnKit';
@@ -597,13 +601,21 @@ export default function useReleaseSets() {
     items.length,
   ]);
 
-  const addSet = async (setItem: any) => {
+  type AddSetRuntimeContext = {
+    correctionMode?: boolean;
+    operationKey?: ReleaseSetsOperationKey;
+  };
+
+  const addSet = async (setItem: any, runtime?: AddSetRuntimeContext) => {
     if (items.length > 0) {
       return;
     }
 
+    const effectiveCorrectionMode = runtime?.correctionMode ?? correctionMode;
+    const effectiveOperationKey = runtime?.operationKey ?? operationKey;
+
     const availableQuantity = Number(setItem.availableQuantity ?? setItem.stockQuantity ?? setItem.stock ?? 0);
-    const isCorrectionUnkit = correctionMode && operationKey === 'goodUnKit';
+    const isCorrectionUnkit = effectiveCorrectionMode && effectiveOperationKey === 'goodUnKit';
     const resolvedAvailable = Number.isFinite(availableQuantity) && availableQuantity > 0 ? availableQuantity : null;
     const defaultQuantity = isCorrectionUnkit && resolvedAvailable != null
       ? resolvedAvailable
@@ -626,7 +638,7 @@ export default function useReleaseSets() {
     setSuggestedOperDate(null);
     lastPrefilledSetSkuRef.current = null;
 
-    if (!correctionMode && operationKey === 'goodKit') {
+    if (!effectiveCorrectionMode && effectiveOperationKey === 'goodKit') {
       const componentSkus = (Array.isArray(newItem.componentsSnapshot) ? newItem.componentsSnapshot : [])
         .map((component) => String(component?.id ?? component?.sku ?? component?.code ?? '').trim())
         .filter(Boolean);
@@ -993,7 +1005,10 @@ export default function useReleaseSets() {
     return shiftedDate;
   };
 
-  const selectCorrectionProduct = async (product: any) => {
+  const selectCorrectionProduct = async (
+    product: any,
+    runtime?: AddSetRuntimeContext,
+  ) => {
     const sourceSku = String(product.sku ?? '').trim();
     if (!sourceSku || isRebatchSku(sourceSku)) {
       throw new Error('Некоректний товар для коригування');
@@ -1014,6 +1029,11 @@ export default function useReleaseSets() {
     setCorrectionSourceSku(sourceSku);
     setCorrectionSourceGoodId(String(product.dilovodId ?? product.id ?? '').trim() || null);
 
+    const addSetContext: AddSetRuntimeContext = {
+      correctionMode: runtime?.correctionMode ?? true,
+      operationKey: runtime?.operationKey ?? 'goodKit',
+    };
+
     await addSet({
       sku: ensured.setSku,
       name: ensured.setName,
@@ -1021,7 +1041,7 @@ export default function useReleaseSets() {
       componentsSnapshot,
       sourceSku,
       isCorrectionSet: true,
-    });
+    }, addSetContext);
   };
 
   const ensureCorrectionSessionId = (): string | null => {
@@ -1465,6 +1485,52 @@ export default function useReleaseSets() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [correctionMode, operationKey, items[0]?.setSku, selectedStorage, returns.receiveFirmId, defaultSmallStorageId]);
 
+  const startRebatchWizard = useCallback(async (input: RebatchWizardLaunchParams) => {
+    resetCorrectionState();
+    setCorrectionMode(true);
+    setOperationKey('goodKit');
+    if (input.storageId) {
+      setSelectedStorage(String(input.storageId));
+    }
+    if (input.firmId) {
+      returns.setReceiveFirmId?.(String(input.firmId));
+    }
+
+    const product = await fetchRebatchSourceProduct(input.sku);
+    if (input.productName?.trim()) {
+      product.name = input.productName.trim();
+    }
+    if (input.dilovodGoodId?.trim()) {
+      product.dilovodId = input.dilovodGoodId.trim();
+    }
+
+    await selectCorrectionProduct(product, { correctionMode: true, operationKey: 'goodKit' });
+
+    const sourceSku = String(product.sku ?? input.sku).trim();
+    if (input.autoFillBatches !== false && sourceSku) {
+      const fillResult = await applyFillBatches(sourceSku);
+      const goodPartId = String(input.goodPartId ?? '').trim();
+      if (goodPartId) {
+        setComponentBatches((prev) => prev.map((allocation) => {
+          const narrowed = (allocation.batches ?? []).filter(
+            (batch) => String(batch.batchId ?? '').trim() === goodPartId,
+          );
+          if (narrowed.length === 0) return allocation;
+          return { ...allocation, batches: narrowed };
+        }));
+      }
+      return fillResult;
+    }
+
+    return null;
+  }, [
+    resetCorrectionState,
+    setSelectedStorage,
+    returns,
+    selectCorrectionProduct,
+    applyFillBatches,
+  ]);
+
   return {
     returns,
     items,
@@ -1498,6 +1564,7 @@ export default function useReleaseSets() {
     loadLastKitBatches,
     transitionToCorrectionUnkitStep,
     selectCorrectionProduct,
+    startRebatchWizard,
     buildRebatchSku,
     storages,
     selectedStorage,
