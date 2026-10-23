@@ -643,6 +643,77 @@ export function computeLineStockFromBatches(
   return { batchGp, batchMs, totalGp, totalMs };
 }
 
+/** Залишок поточної партії на складі source/dest (ГП або МС). */
+export function batchPortionsOnStorage(
+  stock: MovementMobLineStockInfo,
+  storageId: string,
+): number | null {
+  if (isGpStorage(storageId)) return stock.batchGp;
+  if (isMsStorage(storageId)) return stock.batchMs;
+  return null;
+}
+
+export function totalPortionsOnStorage(stock: MovementMobLineStockInfo, storageId: string): number {
+  if (isGpStorage(storageId)) return stock.totalGp;
+  if (isMsStorage(storageId)) return stock.totalMs;
+  return 0;
+}
+
+/** Скільки порцій можна відвантажити зі складу-джерела (партія + загальний залишок). */
+export function maxSendablePortionsFromSource(
+  stock: MovementMobLineStockInfo,
+  sourceStorageId: string,
+  otherCommittedPortions: number,
+): number {
+  const batch = batchPortionsOnStorage(stock, sourceStorageId);
+  if (batch === null) return 0;
+  const total = totalPortionsOnStorage(stock, sourceStorageId);
+  const available = Math.min(batch, total);
+  return Math.max(0, available - Math.max(0, otherCommittedPortions));
+}
+
+export function movementMobStockBadgeVariant(storageId: string): 'gp' | 'ms' | null {
+  if (isGpStorage(storageId)) return 'gp';
+  if (isMsStorage(storageId)) return 'ms';
+  return null;
+}
+
+/** Підставляє total ГП/МС зі snapshot, якщо batch-агрегація неповна. */
+export function applyMovementMobStorageTotals(
+  stock: MovementMobLineStockInfo,
+  sourceStorageId: string,
+  destStorageId: string,
+  sourcePortions: number,
+  destPortions: number,
+): MovementMobLineStockInfo {
+  let totalGp = stock.totalGp;
+  let totalMs = stock.totalMs;
+  if (isGpStorage(sourceStorageId)) {
+    totalGp = sourcePortions;
+  } else if (isGpStorage(destStorageId)) {
+    totalGp = destPortions;
+  }
+  if (isMsStorage(sourceStorageId)) {
+    totalMs = sourcePortions;
+  } else if (isMsStorage(destStorageId)) {
+    totalMs = destPortions;
+  }
+  return { ...stock, totalGp, totalMs };
+}
+
+export function clampMovementMobQty(
+  boxes: number,
+  portions: number,
+  portionsPerBox: number,
+  maxPortions: number,
+): { boxes: number; portions: number } {
+  const capped = breakdownStockPortions(
+    Math.min(lineTotalPortions(boxes, portions, portionsPerBox), Math.max(0, maxPortions)),
+    portionsPerBox,
+  );
+  return { boxes: capped.boxes, portions: capped.loosePortions };
+}
+
 function projectWarehouseStock(
   currentBatch: number | null,
   currentTotal: number,

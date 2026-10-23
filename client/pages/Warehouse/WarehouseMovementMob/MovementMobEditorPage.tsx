@@ -26,8 +26,12 @@ import {
   aggregatesFromLines,
   aggregatesFromReceivedLines,
   applyProductMetaToLines,
+  batchPortionsOnStorage,
   breakdownStockPortions,
+  clampMovementMobQty,
+  maxSendablePortionsFromSource,
   packageRatioToPortionsPerBox,
+  totalPortionsOnStorage,
   canReceiverEditAfterConfirm,
   canSenderEditAfterSubmit,
   classifyReceivingScan,
@@ -57,7 +61,7 @@ import {
   fetchBatchNumbersBySku,
   fetchConfirmReceiptPayload,
   fetchMovementLogs,
-  fetchMovementMobStocks,
+  fetchMovementMobLineStock,
   fetchProductByBarcode,
   resolveBatchNameForProduct,
   saveReceipt,
@@ -295,10 +299,76 @@ export default function MovementMobEditorPage({
     ? committedPortionsForSku(
       lines,
       draft.sku,
-      movementMobLineKey(draft.sku, draft.batchId, draft.batchNumber),
+      draft.editingLineKey ?? movementMobLineKey(draft.sku, draft.batchId, draft.batchNumber),
       editingReceived ? 'received' : 'sent',
     )
     : 0;
+  const capSentToSourceBatch = draft != null
+    && (draft.dualQtyMode
+      || !(((canReceive || canReceiverEdit) && !adminCanEdit) || editingReceived));
+  const maxSentPortionsForDraft = useMemo(() => {
+    if (!draft?.stockInfo || !capSentToSourceBatch) return null;
+    return maxSendablePortionsFromSource(draft.stockInfo, sourceId, otherCommittedPortions);
+  }, [capSentToSourceBatch, draft?.stockInfo, otherCommittedPortions, sourceId]);
+
+  const sourceBatchMissingOnSource = Boolean(
+    draft?.stockInfo
+    && capSentToSourceBatch
+    && batchPortionsOnStorage(draft.stockInfo, sourceId) === null,
+  );
+
+  useEffect(() => {
+    if (maxSentPortionsForDraft == null || !capSentToSourceBatch) return;
+    setDraft((prev) => {
+      if (!prev) return prev;
+      const capped = clampMovementMobQty(
+        prev.boxes,
+        prev.portions,
+        prev.portionsPerBox,
+        maxSentPortionsForDraft,
+      );
+      if (capped.boxes === prev.boxes && capped.portions === prev.portions) return prev;
+      return { ...prev, boxes: capped.boxes, portions: capped.portions };
+    });
+  }, [capSentToSourceBatch, maxSentPortionsForDraft, draft?.batchId, draft?.stockInfo]);
+
+  const applySentQtyToDraft = useCallback((patch: { boxes?: number; portions?: number }) => {
+    setDraft((prev) => {
+      if (!prev) return prev;
+      const perBox = prev.portionsPerBox;
+      const boxes = patch.boxes ?? prev.boxes;
+      const portions = patch.portions ?? prev.portions;
+      const cap = prev.stockInfo && capSentToSourceBatch
+        ? maxSendablePortionsFromSource(
+          prev.stockInfo,
+          sourceIdRef.current,
+          committedPortionsForSku(
+            linesRef.current,
+            prev.sku,
+            prev.editingLineKey ?? movementMobLineKey(prev.sku, prev.batchId, prev.batchNumber),
+            'sent',
+          ),
+        )
+        : null;
+      const capped = cap != null
+        ? clampMovementMobQty(boxes, portions, perBox, cap)
+        : { boxes, portions };
+      return { ...prev, boxes: capped.boxes, portions: capped.portions };
+    });
+  }, [capSentToSourceBatch]);
+
+  const draftCatalogGoodId = useMemo(() => {
+    if (!draft) return null;
+    if (draft.editingLineKey) {
+      const byKey = enrichedLines.find((line) => line.key === draft.editingLineKey);
+      if (byKey?.catalogGoodId) return byKey.catalogGoodId;
+    }
+    const line = findMovementMobLine(enrichedLines, draft.sku, draft.batchId, draft.batchNumber);
+    if (line?.catalogGoodId) return line.catalogGoodId;
+    const sameSku = enrichedLines.find((item) => item.sku === draft.sku && item.catalogGoodId);
+    return sameSku?.catalogGoodId ?? null;
+  }, [draft, enrichedLines]);
+
   const draftSentTotalPortions = useMemo(() => {
     if (!draft) return null;
     const receiving = ((canReceive || canReceiverEdit) && !adminCanEdit) || editingReceived;
@@ -424,12 +494,29 @@ export default function MovementMobEditorPage({
           const scanAddsToReceived = openDraft.dualQtyMode && receiving;
           setDraft((prev) => {
             if (!prev) return prev;
+            let boxes = scanAddsToReceived ? prev.boxes : prev.boxes + delta.boxes;
+            let portions = scanAddsToReceived ? prev.portions : prev.portions + delta.portions;
+            if (!scanAddsToReceived && prev.stockInfo) {
+              const max = maxSendablePortionsFromSource(
+                prev.stockInfo,
+                sourceIdRef.current,
+                committedPortionsForSku(
+                  linesRef.current,
+                  prev.sku,
+                  prev.editingLineKey ?? movementMobLineKey(prev.sku, prev.batchId, prev.batchNumber),
+                  'sent',
+                ),
+              );
+              const capped = clampMovementMobQty(boxes, portions, prev.portionsPerBox, max);
+              boxes = capped.boxes;
+              portions = capped.portions;
+            }
             return {
               ...prev,
               barcode: product.barcode,
               barcodeKind: product.barcodeKind,
-              boxes: scanAddsToReceived ? prev.boxes : prev.boxes + delta.boxes,
-              portions: scanAddsToReceived ? prev.portions : prev.portions + delta.portions,
+              boxes,
+              portions,
               receivedBoxes: scanAddsToReceived ? (prev.receivedBoxes ?? 0) + delta.boxes : prev.receivedBoxes,
               receivedPortions: scanAddsToReceived ? (prev.receivedPortions ?? 0) + delta.portions : prev.receivedPortions,
             };
@@ -444,15 +531,21 @@ export default function MovementMobEditorPage({
         return;
       }
 
-      const stocks = await fetchMovementMobStocks(
-        apiCall,
-        product.sku,
-        sourceIdRef.current,
-        destIdRef.current,
-      );
       const portionsPerBox = product.portionsPerBox && product.portionsPerBox > 0 ? product.portionsPerBox : 0;
       const existing = matchedSentLine
         ?? findMovementMobLine(linesRef.current, product.sku, batchId, batchNumber, product.barcode);
+      const resolvedBatchId = existing?.batchId ?? batchId;
+      const resolvedBatchNumber = existing?.batchNumber && existing.batchNumber !== '—'
+        ? existing.batchNumber
+        : batchNumber;
+      const stockInfo = await fetchMovementMobLineStock(
+        apiCall,
+        product.sku,
+        resolvedBatchId,
+        resolvedBatchNumber,
+        sourceIdRef.current,
+        destIdRef.current,
+      );
       const scanDelta = mobScanStepperDelta(mobScanStepperMode, product.barcodeKind);
       const baseBoxes = adminDualEdit
         ? (existing?.boxQuantity ?? 0)
@@ -466,6 +559,36 @@ export default function MovementMobEditorPage({
           : (existing?.portionQuantity ?? 0);
       const receivedBaseBoxes = adminDualEdit ? (existing?.receivedBoxQuantity ?? 0) : 0;
       const receivedBasePortions = adminDualEdit ? (existing?.receivedPortionQuantity ?? 0) : 0;
+      let boxes = adminDualEdit
+        ? (existing?.boxQuantity ?? 0)
+        : baseBoxes + scanDelta.boxes;
+      let portions = adminDualEdit
+        ? (existing?.portionQuantity ?? 0)
+        : basePortions + scanDelta.portions;
+      const capSent = adminDualEdit || !receiving;
+      if (capSent) {
+        const lineKey = existing?.key ?? movementMobLineKey(product.sku, resolvedBatchId, resolvedBatchNumber);
+        const max = maxSendablePortionsFromSource(
+          stockInfo,
+          sourceIdRef.current,
+          committedPortionsForSku(linesRef.current, product.sku, lineKey, 'sent'),
+        );
+        const capped = clampMovementMobQty(boxes, portions, portionsPerBox, max);
+        boxes = capped.boxes;
+        portions = capped.portions;
+        if (max <= 0) {
+          playSoundChoice('error', 'error');
+          ToastService.show({
+            title: 'Немає залишку для відвантаження',
+            description: batchPortionsOnStorage(stockInfo, sourceIdRef.current) === null
+              ? 'Партія відсутня на складі-джерелі'
+              : 'Залишок партії на складі-джерелі — 0',
+            color: 'danger',
+          });
+        }
+      }
+      const srcId = sourceIdRef.current;
+      const dstId = destIdRef.current;
       setDraft({
         sku: product.sku,
         name: product.name,
@@ -473,16 +596,10 @@ export default function MovementMobEditorPage({
         portionsPerBox,
         barcode: product.barcode,
         barcodeKind: product.barcodeKind,
-        batchId: existing?.batchId ?? batchId,
-        batchNumber: existing?.batchNumber && existing.batchNumber !== '—'
-          ? existing.batchNumber
-          : batchNumber,
-        boxes: adminDualEdit
-          ? (existing?.boxQuantity ?? 0)
-          : baseBoxes + scanDelta.boxes,
-        portions: adminDualEdit
-          ? (existing?.portionQuantity ?? 0)
-          : basePortions + scanDelta.portions,
+        batchId: resolvedBatchId,
+        batchNumber: resolvedBatchNumber,
+        boxes,
+        portions,
         receivedBoxes: adminDualEdit
           ? receivedBaseBoxes + scanDelta.boxes
           : receivedBaseBoxes,
@@ -491,8 +608,9 @@ export default function MovementMobEditorPage({
           : receivedBasePortions,
         dualQtyMode: adminDualEdit,
         editingLineKey: existing?.key,
-        sourceStock: breakdownStockPortions(stocks.sourcePortions, portionsPerBox),
-        destStock: breakdownStockPortions(stocks.destPortions, portionsPerBox),
+        stockInfo,
+        sourceStock: breakdownStockPortions(totalPortionsOnStorage(stockInfo, srcId), portionsPerBox),
+        destStock: breakdownStockPortions(totalPortionsOnStorage(stockInfo, dstId), portionsPerBox),
       });
       setDrawerOpen(true);
     } catch {
@@ -709,15 +827,33 @@ export default function MovementMobEditorPage({
     playSoundChoice('tick', 'pending');
     lookupBusyRef.current = true;
     try {
-      const stocks = await fetchMovementMobStocks(
+      const portionsPerBox = line.portionsPerBox && line.portionsPerBox > 0 ? line.portionsPerBox : 0;
+      const batchNumber = line.batchNumber === '—' ? '' : line.batchNumber;
+      const stockInfo = await fetchMovementMobLineStock(
         apiCall,
         line.sku,
+        line.batchId,
+        batchNumber,
         sourceIdRef.current,
         destIdRef.current,
       );
-      const portionsPerBox = line.portionsPerBox && line.portionsPerBox > 0 ? line.portionsPerBox : 0;
       const dualMode = adminDualEdit;
       const editReceived = (canReceive || canReceiverEdit || editingReceived) && !dualMode;
+      const srcId = sourceIdRef.current;
+      const dstId = destIdRef.current;
+      let boxes = editReceived ? line.receivedBoxQuantity : line.boxQuantity;
+      let portions = editReceived ? line.receivedPortionQuantity : line.portionQuantity;
+      const capSent = dualMode || !editReceived;
+      if (capSent) {
+        const max = maxSendablePortionsFromSource(
+          stockInfo,
+          srcId,
+          committedPortionsForSku(linesRef.current, line.sku, line.key, 'sent'),
+        );
+        const capped = clampMovementMobQty(boxes, portions, portionsPerBox, max);
+        boxes = capped.boxes;
+        portions = capped.portions;
+      }
       setDraft({
         sku: line.sku,
         name: line.productName,
@@ -726,15 +862,16 @@ export default function MovementMobEditorPage({
         barcode: line.barcode ?? '',
         barcodeKind: line.barcodeKind ?? 'portion',
         batchId: line.batchId,
-        batchNumber: line.batchNumber === '—' ? '' : line.batchNumber,
-        boxes: editReceived ? line.receivedBoxQuantity : line.boxQuantity,
-        portions: editReceived ? line.receivedPortionQuantity : line.portionQuantity,
+        batchNumber,
+        boxes,
+        portions,
         receivedBoxes: dualMode ? line.receivedBoxQuantity : undefined,
         receivedPortions: dualMode ? line.receivedPortionQuantity : undefined,
         dualQtyMode: dualMode,
         editingLineKey: line.key,
-        sourceStock: breakdownStockPortions(stocks.sourcePortions, portionsPerBox),
-        destStock: breakdownStockPortions(stocks.destPortions, portionsPerBox),
+        stockInfo,
+        sourceStock: breakdownStockPortions(totalPortionsOnStorage(stockInfo, srcId), portionsPerBox),
+        destStock: breakdownStockPortions(totalPortionsOnStorage(stockInfo, dstId), portionsPerBox),
       });
       setDrawerOpen(true);
     } catch (err) {
@@ -840,23 +977,46 @@ export default function MovementMobEditorPage({
     const nextBatchNumber = batch.batchNumber || batch.batchId;
     try {
       const barcodeInfo = await fetchBarcodeForBatch(apiCall, current.sku, nextBatchId);
-      const stocks = await fetchMovementMobStocks(
+      const portionsPerBox = current.portionsPerBox > 0 ? current.portionsPerBox : 0;
+      const stockInfo = await fetchMovementMobLineStock(
         apiCall,
         current.sku,
+        nextBatchId,
+        barcodeInfo.batchNumber || nextBatchNumber,
         sourceIdRef.current,
         destIdRef.current,
       );
-      const portionsPerBox = current.portionsPerBox > 0 ? current.portionsPerBox : 0;
       // Беремо актуальний draft після await (кількість могла змінитись у stepper).
       const latest = draftRef.current ?? current;
+      const srcId = sourceIdRef.current;
+      const dstId = destIdRef.current;
+      let boxes = latest.boxes;
+      let portions = latest.portions;
+      const max = maxSendablePortionsFromSource(
+        stockInfo,
+        srcId,
+        committedPortionsForSku(
+          linesRef.current,
+          latest.sku,
+          latest.editingLineKey
+            ?? movementMobLineKey(latest.sku, nextBatchId, barcodeInfo.batchNumber || nextBatchNumber),
+          'sent',
+        ),
+      );
+      const capped = clampMovementMobQty(boxes, portions, portionsPerBox, max);
+      boxes = capped.boxes;
+      portions = capped.portions;
       setDraft({
         ...latest,
         batchId: nextBatchId,
         batchNumber: barcodeInfo.batchNumber || nextBatchNumber,
         barcode: barcodeInfo.barcode ?? latest.barcode,
         barcodeKind: barcodeInfo.barcodeKind ?? latest.barcodeKind,
-        sourceStock: breakdownStockPortions(stocks.sourcePortions, portionsPerBox),
-        destStock: breakdownStockPortions(stocks.destPortions, portionsPerBox),
+        boxes,
+        portions,
+        stockInfo,
+        sourceStock: breakdownStockPortions(totalPortionsOnStorage(stockInfo, srcId), portionsPerBox),
+        destStock: breakdownStockPortions(totalPortionsOnStorage(stockInfo, dstId), portionsPerBox),
       });
       void invalidateMovementMobLineEnrichment(queryClient);
     } catch (err) {
@@ -1184,7 +1344,10 @@ export default function MovementMobEditorPage({
         draft={draft}
         sourceLabel={storageName(sourceId)}
         destLabel={storageName(destId)}
-        otherCommittedPortions={otherCommittedPortions}
+        sourceStorageId={sourceId}
+        destStorageId={destId}
+        maxSentPortions={maxSentPortionsForDraft}
+        sourceBatchMissingOnSource={sourceBatchMissingOnSource}
         sentTotalPortions={draftSentTotalPortions}
         confirming={confirming}
         qtySideHint={
@@ -1196,9 +1359,10 @@ export default function MovementMobEditorPage({
         }
         dualQtyMode={Boolean(draft?.dualQtyMode)}
         allowBatchChange={canEditDraft || adminCanEdit}
+        catalogGoodId={draftCatalogGoodId}
         onClose={closeDrawer}
-        onBoxesChange={(value) => setDraft((prev) => (prev ? { ...prev, boxes: value } : prev))}
-        onPortionsChange={(value) => setDraft((prev) => (prev ? { ...prev, portions: value } : prev))}
+        onBoxesChange={(value) => applySentQtyToDraft({ boxes: value })}
+        onPortionsChange={(value) => applySentQtyToDraft({ portions: value })}
         onReceivedBoxesChange={(value) => setDraft((prev) => (prev ? { ...prev, receivedBoxes: value } : prev))}
         onReceivedPortionsChange={(value) => setDraft((prev) => (prev ? { ...prev, receivedPortions: value } : prev))}
         onChangeBatch={handleOpenBatchPicker}

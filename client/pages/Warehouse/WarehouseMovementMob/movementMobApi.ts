@@ -1,9 +1,18 @@
 import type { WarehouseProductByBarcodeResponse } from '@shared/types/warehouse';
 import { isUsableDilovodBatchId } from '@shared/utils/dilovodBatchId';
-import type { MovementMobApiRecord, MovementMobProductByBarcode } from './WarehouseMovementMobTypes';
+import type {
+  MovementMobApiRecord,
+  MovementMobLineStockInfo,
+  MovementMobProductByBarcode,
+} from './WarehouseMovementMobTypes';
 import type { MovementMobRawItem } from './WarehouseMovementMobTypes';
 import type { MovementMobBatchRow } from './WarehouseMovementMobUtils';
-import { batchNumberNeedsResolution, resolveBatchDisplayName } from './WarehouseMovementMobUtils';
+import {
+  applyMovementMobStorageTotals,
+  batchNumberNeedsResolution,
+  computeLineStockFromBatches,
+  resolveBatchDisplayName,
+} from './WarehouseMovementMobUtils';
 
 type ApiCall = (url: string, options?: RequestInit) => Promise<Response>;
 
@@ -330,6 +339,32 @@ export async function fetchMovementMobStocks(
   ]);
 
   return { sourcePortions, destPortions };
+}
+
+export async function fetchMovementMobLineStock(
+  apiCall: ApiCall,
+  sku: string,
+  batchId: string,
+  batchNumber: string,
+  sourceStorageId: string,
+  destStorageId: string,
+): Promise<MovementMobLineStockInfo> {
+  const [stocks, batches] = await Promise.all([
+    fetchMovementMobStocks(apiCall, sku, sourceStorageId, destStorageId),
+    // Без storageId: для віджетів потрібні партії на ГП і МС (не лише склад-джерело).
+    fetchBatchNumbersBySku(apiCall, sku, {
+      includeSmallStorage: true,
+    }),
+  ]);
+  const resolvedName = resolveBatchDisplayName(batchId, batchNumber, batches);
+  const fromBatches = computeLineStockFromBatches(batches, batchId, batchNumber, resolvedName);
+  return applyMovementMobStorageTotals(
+    fromBatches,
+    sourceStorageId,
+    destStorageId,
+    stocks.sourcePortions,
+    stocks.destPortions,
+  );
 }
 
 export async function createWarehouseMovementDraft(

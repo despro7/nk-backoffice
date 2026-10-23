@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Button } from '@heroui/react';
+import { DynamicIcon } from 'lucide-react/dynamic';
 import { ActionBubble, ActionBubbleDock, ActionConfirmBubble } from '@/components/action-bubble';
 import { useMovementMobListTouchChrome } from './useMovementMobListLayout';
 import { PERMISSIONS } from '@shared/constants/permissions';
@@ -76,7 +78,17 @@ export default function WarehouseMovementMob() {
           </ActionBubble>
         </ActionBubbleDock>
       ) : (
-        filterBar
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0 flex-1">{filterBar}</div>
+          <Button
+            color="primary"
+            className="shrink-0 bg-gradient-to-b from-yellow-500 to-orange-500 text-white font-medium"
+            startContent={<DynamicIcon name="plus" size={18} strokeWidth={2} />}
+            onPress={() => navigate('/warehouse/movement-mob/new')}
+          >
+            Нове переміщення
+          </Button>
+        </div>
       )}
 
       <MovementMobDocumentList

@@ -185,6 +185,8 @@ export interface MovementMobScanDraft {
   portions: number;
   sourceStock: MovementMobStockBreakdown;
   destStock: MovementMobStockBreakdown;
+  /** Залишки партії / всього по ГП та МС (Dilovod batches + snapshot totals). */
+  stockInfo?: MovementMobLineStockInfo;
   /** Ключ рядка при редагуванні (для зміни партії без видалення позиції). */
   editingLineKey?: string;
   /** Адмін: одночасне редагування відправленого та отриманого. */

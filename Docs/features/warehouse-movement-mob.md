@@ -1,6 +1,6 @@
 # Мобільні переміщення між складами (`WarehouseMovementMob`)
 
-**Дата:** 2026-09-24 (оновлено)  
+**Дата:** 2026-09-24 (оновлено 2026-10-23)  
 **Маршрути:** `/warehouse/movement-mob`, `/warehouse/movement-mob/new`, `/warehouse/movement-mob/:id`  
 **Дозвіл сторінки:** `page.warehouse.movementMob`
 
@@ -96,7 +96,7 @@ Helper: `mobScanStepperDelta()` у `shared/types/movement.ts`.
 
 | Шлях | Компонент | Зміст |
 |------|-----------|--------|
-| `/warehouse/movement-mob` | `index.tsx` | Список документів, фільтри (`MovementMobFilterBar` / ActionBubble на touch-UI); кнопки адмін-редагування/видалення за дозволами |
+| `/warehouse/movement-mob` | `index.tsx` | Список документів, фільтри (`MovementMobFilterBar` / ActionBubble на touch-UI); на **desktop** — кнопка **«Нове переміщення»** праворуч від фільтрів; на touch — FAB «Нове переміщення»; кнопки адмін-редагування/видалення за дозволами |
 | `/warehouse/movement-mob/new` | `MovementMobCreatePage.tsx` | Нова чернетка → редактор |
 | `/warehouse/movement-mob/:id` | `MovementMobDocumentPage.tsx` | Перегляд або редагування збереженої чернетки |
 
@@ -180,11 +180,16 @@ Lookup: `GET /api/warehouse/product-by-barcode?code=…` → `WarehouseProductBy
 
 Усередині:
 
-- Назва, SKU, вага, шт. у коробці, партія, **ШК** (зберігається в рядку чернетки); ↻ — зміна партії.
+- Назва, SKU, вага, шт. у коробці, партія, **ШК** (зберігається в рядку чернетки); ↻ — зміна партії; icon-only **рухи партії** (`ProductMovementsDrawer`) біля номера партії.
+- Рядок напрямку: «Склад-джерело → Склад-призначення» (назви з Dilovod).
 - У `adminDualEdit` — підказка «Редагування відправленого та отриманого» + два блоки stepper.
-- Дві картки залишків: склад-джерело і склад-призначення. Показ **до → після** з урахуванням:
-  - поточного введення в drawer;
-  - уже доданих у документ порцій цього SKU (`committedPortionsForSku(..., side)`), окрім рядка, який зараз редагується (`side` = sent або received).
+- **Залишки (прогноз після поточного введення в drawer):** сітка 2×2 — зверху **«Всього»** (ГП | МС), знизу **«Партія»** (ГП | МС). У кожній картці:
+  - підпис з іконкою: **артикул** (ряд «всього») або **номер партії** (ряд «партія»), `truncate` + `text-nowrap`;
+  - бейдж складу `StockBadge` (ГП / МС);
+  - великі числа **до → після** (червоний на складі-джерелі, зелений на призначенні);
+  - під числами — **початкові** коробки / розсип (`breakdownStockPortions` від `before`, без стрілки).
+- Джерело даних: `draft.stockInfo` (`fetchMovementMobLineStock`) + `computeProjectedLineStock(..., adjustBatch: true)`.
+- **Ліміт відвантаження:** `maxSendablePortionsFromSource` — min(партія, всього) на складі-джерелі мінус `committedPortionsForSku` (інші рядки того ж SKU/партії). Якщо партії на джерелі немає (`batch === null`) або залишок 0 — stepper **заблокований**, картка партії на джерелі червона, swipe confirm вимкнений; при скані — toast + звук помилки. Clamp застосовується при відкритті drawer, повторному скані, stepper і зміні партії (`clampMovementMobQty`).
 - `StepperInput` коробок / порцій.
 - Підсумок порцій.
 - `MovementMobSwipeConfirm` → `SlideActionButton` («Проведіть для підтвердження»).
@@ -326,15 +331,17 @@ Skeleton (`@heroui/react`) **прогресивно**: залишки (`stockLoa
 
 ## Залишки в drawer сканування (чернетка)
 
-`committedPortionsForSku(lines, sku, exceptKey?, side = 'sent')` сумує `totalPortions` або `receivedTotalPortions` усіх рядків цього SKU, опційно без рядка, який відкритий у drawer.
+`committedPortionsForSku(lines, sku, exceptKey?, side = 'sent')` сумує `totalPortions` або `receivedTotalPortions` усіх рядків цього SKU, опційно без рядка, який відкритий у drawer (`exceptKey` = `editingLineKey` або ключ SKU+партія).
 
-У drawer:
+**Завантаження для drawer:** `fetchMovementMobLineStock` (`movementMobApi.ts`) — паралельно `stock-snapshot` (totals по обраних складах) і **`GET /batch-numbers/:sku?includeSmallStorage=true` без `storageId`**, щоб у відповіді були партії і на ГП, і на МС (фільтр лише по `storageId` давав прочерк партії на другому складі). Далі `computeLineStockFromBatches` + `applyMovementMobStorageTotals` (totals з snapshot перекривають sum по batch-rows, якщо потрібно).
 
-- джерело **до** = snapshot складу − committed інших рядків;
-- призначення **до** = snapshot + ті самі committed;
-- **після** = до ± кількість з drawer.
+У drawer прогноз:
 
-`breakdownStockPortions` показує коробки + розсип.
+- **до** — `stockInfo` (поточні Dilovod + snapshot);
+- **після** — `computeProjectedLineStock` з `sourceOut` / `destIn` з stepper (відправлено / отримано в dual-режимі);
+- committed інших рядків враховується в **cap** відвантаження, не в окремих «до» по картках (картки показують залишок партії/складу в цілому для SKU).
+
+`MovementMobScanDraft.stockInfo` — опційне поле `MovementMobLineStockInfo` для UI drawer.
 
 ---
 
