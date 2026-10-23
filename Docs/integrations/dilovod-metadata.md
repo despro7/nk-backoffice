@@ -184,9 +184,9 @@ await api.makeRequest({
 |---|---|
 | Presentation | «Найменування для друку первинних та податкових документів» |
 | `valueType` | `varchar`, length 1000 — **plain string**, не `{ uk, ru }` |
-| `required` | `true` у metadata (порожній рядок `''` приймається) |
+| `required` | `true` у metadata (на практиці не всі об’єкти мають поле в `getObject` / `saveObject`) |
 
-**Backoffice (Products 2.0):** поле не використовуємо (дублює `name`). Усі `saveObject` для товарів через `ProductsDilovodGateway` встановлюють `printName: ''`. Не плутати з multilang `name` / `description`.
+**Backoffice (Products 2.0):** поле не використовуємо (дублює `name`). `ProductsDilovodGateway.saveObject` **не передає** `printName` у `header`. Не плутати з multilang `name` / `description`.
 
 Див. також: [`products-catalog-2.0.md`](../features/products-catalog-2.0.md) → «printName (не використовуємо)».
 

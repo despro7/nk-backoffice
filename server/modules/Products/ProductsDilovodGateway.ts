@@ -6,7 +6,6 @@ import { DilovodApiClient } from '../../services/dilovod/DilovodApiClient.js';
 import { dilovodCacheService, type CacheType } from '../../services/dilovod/DilovodCacheService.js';
 import { translateDilovodError } from '../../services/dilovod/DilovodUtils.js';
 import { logServer } from '../../lib/utils.js';
-import { DILOVOD_GOOD_PRINT_NAME_CLEARED } from '../../../shared/types/catalog.js';
 import {
   CATALOG_DEFAULT_MAIN_UNIT_ID,
   DilovodCatalogGoodRow,
@@ -115,14 +114,13 @@ export class ProductsDilovodGateway {
     });
   }
 
+  /** `header.printName` не передаємо — на частині номенклатури поля немає в getObject/saveObject. */
   async saveObject(params: DilovodSaveGoodParams): Promise<DilovodSaveResult> {
     await this.api.ensureReady();
+    const { printName: _ignoredPrintName, ...headerWithoutPrintName } = params.header;
     const paramsToSend: DilovodSaveGoodParams = {
       ...params,
-      header: {
-        ...params.header,
-        printName: DILOVOD_GOOD_PRINT_NAME_CLEARED,
-      },
+      header: headerWithoutPrintName,
     };
     const resp = await this.api.makeRequest<any>({
       version: '0.25',

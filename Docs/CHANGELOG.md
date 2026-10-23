@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-10-23 — Товари: Dilovod saveObject без `printName`
+
+**Files:** `ProductsDilovodGateway.ts`, `ProductsTypes.ts`, `shared/types/catalog.ts`, `products-catalog-2.0.md`, `dilovod-metadata.md`
+
+- **Fix:** `saveObject` для `catalogs.goods` більше не передає `header.printName` (зокрема прибрано примусове `''`); усуває `cant set value of header.printName` для номенклатури без поля в `getObject`.
+- **Прибрано:** константа `DILOVOD_GOOD_PRINT_NAME_CLEARED`.
+
+**Документація:** [`products-catalog-2.0.md`](features/products-catalog-2.0.md), [`dilovod-metadata.md`](integrations/dilovod-metadata.md).
+
+---
+
 ## 2026-10-22 — Рухи товару: кнопка Rebatch → коригування партійного обліку
 
 **Files:** `ProductMovementsRebatchButton.tsx`, `rebatchWizard.ts`, `ProductMovementsDrawer.tsx`, `ReportsProductMovements/index.tsx`, `ReleaseSetsMainFlow.tsx`, `WarehouseReleaseSets/index.tsx`, `useReleaseSets.ts`, `product-movements.md`, `warehouse-release-sets.md`

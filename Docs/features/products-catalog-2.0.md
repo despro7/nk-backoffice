@@ -171,9 +171,9 @@ Dilovod повертає `description: { uk, ru }`. Раніше `String(obj)` �
 
 У metadata `catalogs.goods` поле **`printName`** — `varchar(1000)`, не multilang. Раніше backoffice помилково відправляв `{ uk, ru }` → `saveObject`: `cant set value of header.printName`.
 
-Політика (2026-10-20):
+Політика (оновлено 2026-10-23):
 
-- **Dilovod SoT:** `ProductsDilovodGateway.saveObject` завжди пише `printName: ''` (`DILOVOD_GOOD_PRINT_NAME_CLEARED`).
+- **Dilovod SoT:** `ProductsDilovodGateway.saveObject` **не включає** `header.printName` у payload (поле відсутнє в `getObject` для частини номенклатури, зокрема зі специфікацією `tpGoods`; явна передача `''` давала ту саму помилку).
 - **Локальне дзеркало:** create/update/sync не зберігають значення (`printName: null`); колонка лишається для сумісності / пошуку старих рядків.
 - **UI:** окреме поле «Назва для друку» прибрано з drawer; лейбли та split title — лише з `name`.
 

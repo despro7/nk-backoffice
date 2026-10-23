@@ -16,9 +16,6 @@ export const CATALOG_ACC_POLICY_GOOD = '1201200000001001';
 /** Accounting policy for kits (комплекти) */
 export const CATALOG_ACC_POLICY_KIT = '1201200000001031';
 
-/** Dilovod `catalogs.goods.printName` (varchar); не використовуємо — завжди очищаємо в SoT. */
-export const DILOVOD_GOOD_PRINT_NAME_CLEARED = '';
-
 /** Default currency — UAH */
 export const CATALOG_DEFAULT_CURRENCY_ID = '1101200000001001';
 
