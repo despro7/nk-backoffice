@@ -1,11 +1,72 @@
-import { Button, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Pagination, Select, SelectItem } from '@heroui/react';
+import {
+  Button,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  Pagination,
+  Select,
+  SelectItem,
+  Spinner,
+} from '@heroui/react';
 import HistoryAccordionItem from '../../shared/HistoryAccordionItem';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useDebug } from '@/contexts/debug-context';
 import { useState } from 'react';
 import { canEditWarehouseReleaseHistory } from '@shared/utils/releaseHistoryAccess';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
-import type { ReleaseHistoryPagination } from '../useReleaseSets';
+import {
+  DEFAULT_RELEASE_HISTORY_FILTERS,
+  type ReleaseHistoryFilters,
+  type ReleaseHistoryPagination,
+} from '../useReleaseSets';
+import {
+  hasActiveHistoryFilters,
+  ReleaseHistoryOperationTypesSelect,
+  ReleaseHistorySortSelect,
+} from './ReleaseHistoryToolbarFilters';
+
+function mapReleaseHistoryRecord(record: any) {
+  const items = Array.isArray(record.items) && record.items.length > 0
+    ? record.items
+    : [{ sku: record.setSku || '', quantity: Number(record.quantity ?? record.qty ?? 0) }];
+
+  const firstItem = Array.isArray(record.items) && record.items[0] && typeof record.items[0] === 'object'
+    ? record.items[0] as {
+      dilovod_send_error?: unknown;
+      correction_session_id?: unknown;
+    }
+    : null;
+
+  return {
+    id: String(record.id),
+    recordId: String(record.recordId ?? record.id),
+    createdAt: record.createdAt || record.created_at,
+    operDate: record.operDate || record.oper_date || record.createdAt || record.created_at,
+    createdBy: record.createdBy || record.created_by,
+    firmId: record.firmId || record.firm_id,
+    storageId: record.storageId || record.payload?.storage,
+    comment: record.comment,
+    dilovodDocId: record.dilovodDocId || record.dilovod_doc_id || null,
+    operationType: record.operationType || record.operation_type || null,
+    correctionSessionId: record.correctionSessionId
+      ?? (firstItem?.correction_session_id
+        ? String(firstItem.correction_session_id).trim() || null
+        : null),
+    internalDocNumber: record.internalDocNumber || record.internal_doc_number || null,
+    status: record.status || null,
+    sendError: firstItem?.dilovod_send_error ?? null,
+    quantity: Number(record.quantity ?? 0),
+    setSku: record.setSku || record.set_sku || null,
+    setsNormalized: record.setsNormalized,
+    items,
+    isCorrectionMerged: record.isCorrectionMerged === true,
+    correctionLayers: Array.isArray(record.correctionLayers)
+      ? record.correctionLayers.map((layer: unknown) => mapReleaseHistoryRecord(layer))
+      : undefined,
+  };
+}
 
 function DebugDilovodCheck({ mapped, onRefresh }: { mapped: any[]; onRefresh?: () => void }) {
   const [results, setResults] = useState<any[] | null>(null);
@@ -89,10 +150,14 @@ interface Props {
   records: any[];
   loading?: boolean;
   pagination?: ReleaseHistoryPagination;
+  historyFilters?: ReleaseHistoryFilters;
+  onHistoryFiltersChange?: (filters: ReleaseHistoryFilters) => void;
+  showHistoryFilters?: boolean;
   onPageChange?: (page: number) => void;
   onLimitChange?: (limit: number) => void;
   onRefresh?: () => void;
   onDelete?: (id: number) => void;
+  onMergeCorrection?: (releaseIds: number[]) => Promise<void>;
   onEdit?: (record: any) => void;
   onRetryRelease?: (id: number) => Promise<void>;
   title?: string;
@@ -105,10 +170,14 @@ export default function ReleaseHistoryTab({
   records = [],
   loading,
   pagination,
+  historyFilters,
+  onHistoryFiltersChange,
+  showHistoryFilters = false,
   onPageChange,
   onLimitChange,
   onRefresh,
   onDelete,
+  onMergeCorrection,
   onEdit,
   onRetryRelease,
   title = 'Минулі операції',
@@ -118,40 +187,7 @@ export default function ReleaseHistoryTab({
   const { isAdmin, user } = useRoleAccess();
   const [auditRefreshKey] = useState(0);
 
-  const mapped = records.map((record: any) => {
-    const items = Array.isArray(record.items) && record.items.length > 0
-      ? record.items
-      : [{ sku: record.setSku || '', quantity: Number(record.quantity ?? record.qty ?? 0) }];
-
-    const firstItem = Array.isArray(record.items) && record.items[0] && typeof record.items[0] === 'object'
-      ? record.items[0] as {
-        dilovod_send_error?: unknown;
-        correction_session_id?: unknown;
-      }
-      : null;
-
-    return {
-      id: String(record.id),
-      createdAt: record.createdAt || record.created_at,
-      operDate: record.operDate || record.oper_date || record.createdAt || record.created_at,
-      createdBy: record.createdBy || record.created_by,
-      firmId: record.firmId || record.firm_id,
-      storageId: record.storageId || record.payload?.storage,
-      comment: record.comment,
-      dilovodDocId: record.dilovodDocId || record.dilovod_doc_id || null,
-      operationType: record.operationType || record.operation_type || null,
-      correctionSessionId: firstItem?.correction_session_id
-        ? String(firstItem.correction_session_id).trim() || null
-        : null,
-      internalDocNumber: record.internalDocNumber || record.internal_doc_number || null,
-      status: record.status || null,
-      sendError: firstItem?.dilovod_send_error ?? null,
-      quantity: Number(record.quantity ?? 0),
-      setSku: record.setSku || record.set_sku || null,
-      setsNormalized: record.setsNormalized,
-      items,
-    };
-  });
+  const mapped = records.map((record: unknown) => mapReleaseHistoryRecord(record));
 
   const handleDeleteRecord = async (id: string) => {
     if (!onDelete) return;
@@ -168,27 +204,52 @@ export default function ReleaseHistoryTab({
 
   return (
     <>
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="mb-4 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-base font-semibold text-gray-800">
           {title} {total > 0 && `(${total})`}
         </h2>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2 flex-1">
+          {showHistoryFilters && historyFilters && onHistoryFiltersChange ? (
+            <>
+              <ReleaseHistoryOperationTypesSelect
+                filters={historyFilters}
+                onFiltersChange={onHistoryFiltersChange}
+              />
+              <ReleaseHistorySortSelect
+                filters={historyFilters}
+                onFiltersChange={onHistoryFiltersChange}
+              />
+            </>
+          ) : null}
           {isDebugMode && <DebugDilovodCheck mapped={mapped} onRefresh={onRefresh} />}
           <Button
             size="sm"
             variant="flat"
             color="secondary"
-            className="bg-blue-200 text-blue-900 hover:opacity-90"
+            className="bg-blue-200 text-blue-900 hover:opacity-90 shrink-0"
             onPress={onRefresh}
             startContent={<DynamicIcon name="refresh-cw" className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />}
           >
             Оновити
           </Button>
+          {showHistoryFilters && historyFilters && onHistoryFiltersChange && hasActiveHistoryFilters(historyFilters) ? (
+            <Button
+              variant="flat"
+              size="sm"
+              color="danger"
+              startContent={<DynamicIcon name="filter-x" className="w-3.5 h-3.5" />}
+              onPress={() => {
+                onHistoryFiltersChange({ ...DEFAULT_RELEASE_HISTORY_FILTERS });
+              }}
+            >
+              Скинути фільтри
+            </Button>
+          ) : null}
         </div>
       </div>
 
       {loading ? (
-        <div className="text-center py-8 text-gray-400">Завантаження...</div>
+        <div className="flex items-center gap-2 justify-center py-8 text-gray-400"> <Spinner size="sm" color="secondary" /> Завантаження...</div>
       ) : mapped.length === 0 ? (
         <div className="text-sm text-gray-500">{emptyMessage}</div>
       ) : (
@@ -207,6 +268,7 @@ export default function ReleaseHistoryTab({
             onEdit(record);
           } : undefined}
           onDeleteRecord={handleDeleteRecord}
+          onMergeCorrection={onMergeCorrection}
           onRetryRelease={onRetryRelease ? async (record) => {
             const numeric = Number(record.id);
             if (!Number.isFinite(numeric) || numeric <= 0) return;

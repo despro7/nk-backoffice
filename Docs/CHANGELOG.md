@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-10-25 — Випуски: коригування rebatch — сесії, пари kit/unkit, merge/delete в історії
+
+**Files:** `HistoryAccordionItem.tsx`, `ReleaseHistoryTab.tsx`, `ReleaseHistoryToolbarFilters.tsx`, `ReleaseSetsMainFlow.tsx`, `useReleaseSets.ts`, `WarehouseReleaseHistoryListService.ts`, `WarehouseReleaseCorrectionSessionService.ts`, `SetReleaseController.ts`, `link-release-correction-pairs.ts`, `linkReleaseCorrectionPairs.ts`, `releaseCorrectionLayers.ts`, `mergeReleaseHistoryCorrections.ts`, `releaseHistoryListGroup.ts`, `releaseHistoryDisplayTitle.ts`, `releaseHistoryDisplayDocNumber.ts`, `releaseHistoryListQuery.ts`, `releaseBatchCorrection.ts`, міграція `20261023160000_warehouse_release_correction_session_id`, `package.json` (npm scripts linker)
+
+- **DB:** колонка `correctionSessionId` + індекс; backfill з JSON items.
+- **List API:** групування correction session, rebatch matchKey, 1 kit + кілька unkit в одному рядку; фільтри типів/дат/сорту.
+- **UI:** заголовок №kit/successUnkit, шари «Помилкова спроба», підказки неповної пари; admin — видалення одного doc (не всієї сесії), «Обʼєднати з сиротами».
+- **API:** `POST …/correction-session/merge`; linker `warehouse:link-correction-pairs` / `:apply`.
+
+**Документація:** [`warehouse-release-sets.md`](features/warehouse-release-sets.md).
+
+---
+
 ## 2026-10-23 — Товари: Dilovod saveObject без `printName`
 
 **Files:** `ProductsDilovodGateway.ts`, `ProductsTypes.ts`, `shared/types/catalog.ts`, `products-catalog-2.0.md`, `dilovod-metadata.md`

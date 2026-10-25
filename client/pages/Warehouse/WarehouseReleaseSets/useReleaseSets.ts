@@ -23,8 +23,34 @@ import {
   type RebatchWizardLaunchParams,
 } from '@/features/product-movements/rebatchWizard';
 import { formatCorrectionBatchDateLabel } from './releaseConfirmCopy';
+import {
+  RELEASE_HISTORY_OPERATION_TYPES,
+  type ReleaseHistoryDateField,
+  type ReleaseHistoryOperationType,
+  type ReleaseHistorySortBy,
+} from '@shared/utils/releaseHistoryListQuery';
 
 export type ReleaseSetsOperationKey = 'goodKit' | 'goodUnKit';
+
+export type ReleaseHistoryFilters = {
+  search: string;
+  dateFrom: string | null;
+  dateTo: string | null;
+  dateField: ReleaseHistoryDateField;
+  sortBy: ReleaseHistorySortBy;
+  sortOrder: 'asc' | 'desc';
+  operationTypes: ReleaseHistoryOperationType[];
+};
+
+export const DEFAULT_RELEASE_HISTORY_FILTERS: ReleaseHistoryFilters = {
+  search: '',
+  dateFrom: null,
+  dateTo: null,
+  dateField: 'operDate',
+  sortBy: 'operDate',
+  sortOrder: 'desc',
+  operationTypes: [],
+};
 
 const RELEASE_DOC_MODE_BY_OPERATION: Record<ReleaseSetsOperationKey, string> = {
   goodKit: '1004000000000305',
@@ -480,6 +506,9 @@ export default function useReleaseSets() {
   const [history, setHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyPagination, setHistoryPagination] = useState<ReleaseHistoryPagination>(DEFAULT_PAGINATION);
+  const [historyFilters, setHistoryFilters] = useState<ReleaseHistoryFilters>(DEFAULT_RELEASE_HISTORY_FILTERS);
+  const historyFiltersRef = useRef(historyFilters);
+  historyFiltersRef.current = historyFilters;
   const [archiveSessions, setArchiveSessions] = useState<any[]>([]);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [archivePagination, setArchivePagination] = useState<ReleaseHistoryPagination>(DEFAULT_PAGINATION);
@@ -1022,10 +1051,12 @@ export default function useReleaseSets() {
     const ensuredProduct = Array.isArray(productJson?.products) ? productJson.products[0] : null;
     const componentsSnapshot = Array.isArray(ensuredProduct?.set) ? ensuredProduct.set : [{ id: sourceSku, sku: sourceSku, quantity: 1, name: product.name }];
 
-    const sessionId = normalizeCorrectionSessionId(correctionSessionId) ?? createCorrectionSessionId();
-    if (sessionId !== correctionSessionId) {
-      setCorrectionSessionId(sessionId);
-    }
+    const previousSource = String(correctionSourceSku ?? '').trim();
+    const needsFreshSession = !previousSource || previousSource !== sourceSku;
+    const sessionId = needsFreshSession
+      ? createCorrectionSessionId()
+      : (normalizeCorrectionSessionId(correctionSessionId) ?? createCorrectionSessionId());
+    setCorrectionSessionId(sessionId);
     setCorrectionSourceSku(sourceSku);
     setCorrectionSourceGoodId(String(product.dilovodId ?? product.id ?? '').trim() || null);
 
@@ -1202,6 +1233,10 @@ export default function useReleaseSets() {
       setPreviewComponents([]);
       setLastKitPrefillInfo(null);
 
+      if (correctionMode && operationKey === 'goodUnKit') {
+        setCorrectionSessionId(null);
+      }
+
       if (historySaved) {
         await loadHistory(historyPagination.page, historyPagination.limit);
       }
@@ -1250,11 +1285,29 @@ export default function useReleaseSets() {
     };
   };
 
-  const fetchReleases = async (status: 'active' | 'deleted', page: number, limit: number) => {
+  const fetchReleases = async (
+    status: 'active' | 'deleted',
+    page: number,
+    limit: number,
+    filters: ReleaseHistoryFilters = historyFiltersRef.current,
+  ) => {
     const url = new URL('/api/warehouse/releases', window.location.origin);
     url.searchParams.set('status', status);
     url.searchParams.set('page', String(page));
     url.searchParams.set('limit', String(limit));
+    url.searchParams.set('sortBy', filters.sortBy);
+    url.searchParams.set('sortOrder', filters.sortOrder);
+    url.searchParams.set('dateField', filters.dateField);
+    const search = String(filters.search ?? '').trim();
+    if (search) url.searchParams.set('search', search);
+    if (filters.dateFrom) url.searchParams.set('dateFrom', filters.dateFrom);
+    if (filters.dateTo) url.searchParams.set('dateTo', filters.dateTo);
+    if (
+      filters.operationTypes.length > 0
+      && filters.operationTypes.length < RELEASE_HISTORY_OPERATION_TYPES.length
+    ) {
+      url.searchParams.set('operationTypes', filters.operationTypes.join(','));
+    }
     const resp = await fetch(url.toString(), { credentials: 'include' });
     const json = await resp.json().catch(() => ({}));
     if (!resp.ok || !json.success) {
@@ -1266,10 +1319,14 @@ export default function useReleaseSets() {
     };
   };
 
-  const loadHistory = async (page = historyPagination.page, limit = historyPagination.limit) => {
+  const loadHistory = async (
+    page = historyPagination.page,
+    limit = historyPagination.limit,
+    filters: ReleaseHistoryFilters = historyFiltersRef.current,
+  ) => {
     setHistoryLoading(true);
     try {
-      const result = await fetchReleases('active', page, limit);
+      const result = await fetchReleases('active', page, limit, filters);
       setHistory(result.records.filter((record: any) => !isDeletedRelease(record)));
       setHistoryPagination(result.pagination);
     } catch {
@@ -1297,6 +1354,17 @@ export default function useReleaseSets() {
       ? `/api/warehouse/releases/${encodeURIComponent(String(id))}?forceLocal=true`
       : `/api/warehouse/releases/${encodeURIComponent(String(id))}`;
     const resp = await fetch(url, { method: 'DELETE', credentials: 'include' });
+    const json = await resp.json().catch(() => ({}));
+    return { ok: resp.ok, status: resp.status, json };
+  };
+
+  const mergeCorrectionSession = async (releaseIds: number[]) => {
+    const resp = await fetch('/api/warehouse/releases/correction-session/merge', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ releaseIds }),
+    });
     const json = await resp.json().catch(() => ({}));
     return { ok: resp.ok, status: resp.status, json };
   };
@@ -1577,12 +1645,15 @@ export default function useReleaseSets() {
     history,
     historyLoading,
     historyPagination,
+    historyFilters,
+    setHistoryFilters,
     archiveSessions,
     archiveLoading,
     archivePagination,
     loadHistory,
     loadArchive,
     deleteRecord,
+    mergeCorrectionSession,
     updateRecord,
     retryFailedRelease,
     getPayloadDate,

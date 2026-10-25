@@ -9,6 +9,9 @@ export const BATCH_CORRECTION_COMMENT_PREFIX_RE = /^Кор[еи]гування �
 /** Префікс + роздільник перед назвою набору в чіпі коментаря. */
 export const BATCH_CORRECTION_COMMENT_STRIP_RE = /^Кор[еи]гування парт\. обліку\s[–-]\s/i;
 
+/** Префікс REBATCH у чіпі коментаря (лише UI). */
+export const REBATCH_COMMENT_UI_PREFIX_RE = /^REBATCH:\s*/i;
+
 export function isBatchCorrectionComment(comment: unknown): boolean {
   return BATCH_CORRECTION_COMMENT_PREFIX_RE.test(String(comment ?? '').trim());
 }

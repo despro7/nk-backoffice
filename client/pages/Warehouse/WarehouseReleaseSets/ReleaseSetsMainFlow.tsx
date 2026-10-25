@@ -5,6 +5,8 @@ import useReleaseSets from './useReleaseSets';
 import SetSearchPanel from './components/SetSearchPanel';
 import ReleaseItemsPanel from './components/ReleaseItemsPanel';
 import ReleaseHistoryTab from './components/ReleaseHistoryTab';
+import { ReleaseHistoryToolbarFilters } from './components/ReleaseHistoryToolbarFilters';
+import { formatReleaseInternalDocDisplayNumber } from '@shared/utils/releaseHistoryDisplayDocNumber';
 import WarehouseDetails from '../shared/WarehouseDetails';
 import ActionsBar from './components/ActionsBar';
 import { DynamicIcon } from 'lucide-react/dynamic';
@@ -478,8 +480,8 @@ export function ReleaseSetsMainFlow({
         </p>
       </div>
 
-      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <PageTabs className="flex-1" selectedKey={pageTab} onSelectionChange={(key) => {
+      <div className="mb-4 flex flex-col gap-3 md:flex-row lg:items-center lg:justify-between">
+        <PageTabs className="min-w-0" selectedKey={pageTab} onSelectionChange={(key) => {
           const tab = key as 'main' | 'history' | 'archive';
           setPageTab(tab);
           if (tab === 'history' && rs.history.length === 0) {
@@ -494,25 +496,39 @@ export function ReleaseSetsMainFlow({
           {isAdmin() && <Tab key="archive" title="Архів" />}
         </PageTabs>
 
-        <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
-          <Switch
-            size="sm"
-            isSelected={rs.correctionMode}
-            onValueChange={handleCorrectionSwitch}
-            classNames={{
-              wrapper: 'group-data-[selected=true]:bg-blue-500!',
+        {pageTab === 'main' ? (
+          <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shrink-0">
+            <Switch
+              size="sm"
+              isSelected={rs.correctionMode}
+              onValueChange={handleCorrectionSwitch}
+              classNames={{
+                wrapper: 'group-data-[selected=true]:bg-blue-500!',
+              }}
+            >
+              Коригування партійного обліку
+            </Switch>
+          </div>
+        ) : null}
+        {pageTab === 'history' ? (
+          <ReleaseHistoryToolbarFilters
+            className="w-full lg:w-auto lg:flex-1 lg:justify-end"
+            filters={rs.historyFilters}
+            onFiltersChange={(filters) => {
+              rs.setHistoryFilters(filters);
+              void rs.loadHistory(1, rs.historyPagination.limit, filters);
             }}
-          >
-            Коригування партійного обліку
-          </Switch>
-        </div>
+          />
+        ) : null}
       </div>
 
       {pageTab === 'main' && (
         <>
           {rs.editingRelease && (
             <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
-              Редагування {rs.editingRelease.internalDocNumber ? `операції ${rs.editingRelease.internalDocNumber}` : `запису №${rs.editingRelease.id}`}. Зміни застосуються до цього комплектування, включно зі складом, датою, кількістю та партіями.
+              Редагування {rs.editingRelease.internalDocNumber
+                ? `${formatReleaseInternalDocDisplayNumber(rs.editingRelease.internalDocNumber) ?? rs.editingRelease.internalDocNumber} · комплектування`
+                : `запису №${rs.editingRelease.id}`}. Зміни застосуються до цієї операції, включно зі складом, датою, кількістю та партіями.
             </div>
           )}
           <div className="text-base font-semibold text-gray-700 mt-1 mb-2">{operationItemsLabel}</div>
@@ -602,6 +618,12 @@ export function ReleaseSetsMainFlow({
           records={rs.history}
           loading={rs.historyLoading}
           pagination={rs.historyPagination}
+          showHistoryFilters
+          historyFilters={rs.historyFilters}
+          onHistoryFiltersChange={(filters) => {
+            rs.setHistoryFilters(filters);
+            void rs.loadHistory(1, rs.historyPagination.limit, filters);
+          }}
           onPageChange={(page) => void rs.loadHistory(page, rs.historyPagination.limit)}
           onLimitChange={(limit) => void rs.loadHistory(1, limit)}
           onRefresh={() => void rs.loadHistory(rs.historyPagination.page, rs.historyPagination.limit)}
@@ -623,6 +645,23 @@ export function ReleaseSetsMainFlow({
             } catch (error) {
               const message = error instanceof Error ? error.message : 'Невідома помилка';
               ToastService.show({ title: 'Помилка видалення', description: message, color: 'danger' });
+            }
+          }}
+          onMergeCorrection={async (releaseIds: number[]) => {
+            try {
+              const result = await rs.mergeCorrectionSession(releaseIds);
+              if (!result.ok || !result.json?.success) {
+                throw new Error(result.json?.error || `Merge failed ${result.status}`);
+              }
+              ToastService.show({
+                title: 'Документи обʼєднано',
+                description: `Сесія ${result.json?.data?.sessionId ?? ''}`.trim(),
+                color: 'success',
+              });
+              await rs.loadHistory(rs.historyPagination.page, rs.historyPagination.limit);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Невідома помилка';
+              ToastService.show({ title: 'Не вдалося обʼєднати', description: message, color: 'danger' });
             }
           }}
           onEdit={(record) => {

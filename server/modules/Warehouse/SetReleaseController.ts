@@ -35,6 +35,7 @@ import {
   WAREHOUSE_HISTORY_EDIT_DENIED_MESSAGE,
 } from '../../../shared/utils/releaseHistoryAccess.js';
 import { warehouseReleaseAuditService } from './WarehouseReleaseAuditService.js';
+import { warehouseReleaseHistoryListService } from './WarehouseReleaseHistoryListService.js';
 import {
   formatKyivDateTime,
   parseKyivDateTime,
@@ -55,6 +56,7 @@ import {
   createCorrectionSessionId,
   isReleaseBatchCorrection,
 } from '../../../shared/utils/releaseBatchCorrection.js';
+import { warehouseReleaseCorrectionSessionService } from './WarehouseReleaseCorrectionSessionService.js';
 
 const router = Router();
 const RELEASE_STATUS_CREATED = 'created';
@@ -361,6 +363,7 @@ type ReleaseHistoryPayload = {
   resolvedOperationType: 'kit' | 'unkit';
   resolvedOperDate: Date;
   setSku: string | null;
+  resolvedCorrectionSessionId: string | null;
 };
 
 async function prepareReleaseHistoryPayload(params: {
@@ -442,6 +445,7 @@ async function prepareReleaseHistoryPayload(params: {
     resolvedOperationType,
     resolvedOperDate,
     setSku: itemsWithNames[0]?.set_sku ?? null,
+    resolvedCorrectionSessionId: resolvedCorrectionSession,
   };
 }
 
@@ -875,6 +879,7 @@ async function finalizeReleaseRecord(
       dilovodDocId: params.dilovodDocId,
       operationType: params.resolvedOperationType,
       comment: params.historyComment,
+      correctionSessionId: params.resolvedCorrectionSessionId,
       status: params.status,
       operDate: params.resolvedOperDate,
     },
@@ -932,6 +937,7 @@ router.post('/', authenticateToken, warehouseOperate, async (req, res) => {
       dilovodDocId: dilovodDocId != null && String(dilovodDocId).trim() !== '' ? String(dilovodDocId).trim() : null,
       operationType: historyPayload.resolvedOperationType,
       comment: historyPayload.historyComment,
+      correctionSessionId: historyPayload.resolvedCorrectionSessionId,
       status: status ?? 'created',
       createdBy: Number(userId) || 0,
       operDate: historyPayload.resolvedOperDate,
@@ -993,6 +999,7 @@ router.post('/preview', authenticateToken, warehouseOperate, async (req, res) =>
 router.post('/check-dilovod-batch', authenticateToken, warehouseOperate, async (req, res) => {
   try {
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    const readOnly = req.body?.readOnly === true;
 
     if (items.length === 0) return res.status(400).json({ success: false, error: 'items required' });
 
@@ -1040,7 +1047,7 @@ router.post('/check-dilovod-batch', authenticateToken, warehouseOperate, async (
         remark = doc?.remark ?? doc?.header?.remark ?? null;
       }
 
-      if (delMark) {
+      if (delMark && !readOnly) {
         // try find by id or dilovodDocId
         try {
           if (id != null) {
@@ -1088,7 +1095,15 @@ router.post('/check-dilovod-batch', authenticateToken, warehouseOperate, async (
         }
       }
 
-      results.push({ id, dilovodDocId: docId, success, delMark, updated, remark });
+      results.push({
+        id,
+        dilovodDocId: docId,
+        success,
+        exists: !missingInResponse,
+        delMark,
+        updated: readOnly ? false : updated,
+        remark,
+      });
     }
 
     return res.json({ success: true, results });
@@ -1813,6 +1828,29 @@ router.post('/batch-correction/fill-batches', authenticateToken, warehouseOperat
 });
 
 /** GET /api/warehouse/releases */
+/** POST /api/warehouse/releases/correction-session/merge — обʼєднати kit/unkit одного коригування в одну session. */
+router.post(
+  '/correction-session/merge',
+  authenticateToken,
+  warehouseHistoryDelete,
+  async (req, res) => {
+    try {
+      const rawIds = req.body?.releaseIds;
+      if (!Array.isArray(rawIds)) {
+        return res.status(400).json({ success: false, error: 'releaseIds[] обовʼязковий' });
+      }
+      const releaseIds = rawIds.map((value: unknown) => Number(value)).filter((id) => Number.isFinite(id));
+      const result = await warehouseReleaseCorrectionSessionService.mergeReleaseDocuments(releaseIds);
+      return res.json({ success: true, data: result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Internal server error';
+      const status = message.includes('неможливо') || message.includes('Потрібно') ? 400 : 500;
+      console.error('[SetRelease] merge correction session error:', error);
+      return res.status(status).json({ success: false, error: message });
+    }
+  },
+);
+
 router.get('/', authenticateToken, async (req, res) => {
   try {
     if (process.env.NODE_ENV === 'development') console.log('[SetRelease][get] user:', (req as any).user, 'query:', req.query);
@@ -1824,30 +1862,39 @@ router.get('/', authenticateToken, async (req, res) => {
       ? { status: 'deleted' }
       : { status: { in: RELEASE_ACTIVE_STATUSES } };
 
-    const [total, rows] = await Promise.all([
-      prisma.warehouseReleaseSet.count({ where }),
-      prisma.warehouseReleaseSet.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-    ]);
+    const sortByRaw = String(req.query.sortBy ?? 'operDate');
+    const sortBy = sortByRaw === 'createdAt' || sortByRaw === 'docNumber' ? sortByRaw : 'operDate';
+    const dateFieldRaw = String(req.query.dateField ?? 'operDate');
+    const dateField = dateFieldRaw === 'createdAt' ? 'createdAt' : 'operDate';
+    const sortOrder = String(req.query.sortOrder ?? 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
+    const operationTypesRaw = String(req.query.operationTypes ?? '').trim();
+    const operationTypes = operationTypesRaw
+      ? operationTypesRaw.split(',').map((part) => part.trim()).filter((
+        part,
+      ): part is 'kit' | 'unkit' | 'correction' => (
+        part === 'kit' || part === 'unkit' || part === 'correction'
+      ))
+      : [];
 
-    const withNormalized = rows.map((record: any) => ({
-      ...record,
-      setsNormalized: normalizeSetsArray(record.items),
-    }));
+    const { rows, pagination } = await warehouseReleaseHistoryListService.listGrouped({
+      where,
+      page,
+      limit,
+      query: {
+        search: String(req.query.search ?? '').trim() || null,
+        dateFrom: String(req.query.dateFrom ?? '').trim() || null,
+        dateTo: String(req.query.dateTo ?? '').trim() || null,
+        dateField,
+        sortBy,
+        sortOrder,
+        operationTypes: operationTypes.length > 0 ? operationTypes : null,
+      },
+    });
 
     res.json({
       success: true,
-      data: withNormalized,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.max(1, Math.ceil(total / limit)),
-      },
+      data: rows,
+      pagination,
     });
   } catch (error) {
     console.error('[SetRelease] Error fetching releases:', error);
@@ -1913,6 +1960,8 @@ router.patch('/:id', authenticateToken, warehouseOperate, async (req, res) => {
     let nextOperationType = existing.operationType;
     let nextItems: any[] = Array.isArray(existing.items) ? [...existing.items] : [];
     let parsedBatches: ReturnType<typeof parseComponentBatches> = [];
+    let nextCorrectionSessionId = existing.correctionSessionId
+      ?? extractCorrectionSessionIdFromItems(existing.items);
 
     if (fullSnapshot && bodyItems) {
       parsedBatches = parseComponentBatches(req.body?.componentBatches, {
@@ -1925,8 +1974,9 @@ router.patch('/:id', authenticateToken, warehouseOperate, async (req, res) => {
         comment: req.body?.comment,
         operationType: req.body?.operationType ?? existing.operationType,
         operDate: req.body?.operDate ?? req.body?.date ?? existing.operDate,
-        correctionSessionId: req.body?.correctionSessionId,
+        correctionSessionId: req.body?.correctionSessionId ?? existing.correctionSessionId,
       });
+      nextCorrectionSessionId = historyPayload.resolvedCorrectionSessionId;
       nextOperDate = historyPayload.resolvedOperDate;
       nextComment = historyPayload.historyComment;
       nextQuantity = historyPayload.totalQuantity;
@@ -2018,6 +2068,11 @@ router.patch('/:id', authenticateToken, warehouseOperate, async (req, res) => {
       }
     }
 
+    if (!fullSnapshot) {
+      nextCorrectionSessionId = existing.correctionSessionId
+        ?? extractCorrectionSessionIdFromItems(nextItems);
+    }
+
     const updated = await prisma.warehouseReleaseSet.update({
       where: { id },
       data: {
@@ -2028,6 +2083,7 @@ router.patch('/:id', authenticateToken, warehouseOperate, async (req, res) => {
         storageId: nextStorageId,
         firmId: nextFirmId,
         operationType: nextOperationType,
+        correctionSessionId: nextCorrectionSessionId,
         items: nextItems,
       },
     });

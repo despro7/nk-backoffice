@@ -28,6 +28,8 @@
     "cron:status": "node dist/server/scripts/check-cron-status.js",
     "orders:reconcile-external-ids": "tsx server/scripts/reconcile-order-external-ids.ts",
     "orders:reconcile-external-ids:apply": "tsx server/scripts/reconcile-order-external-ids.ts --apply",
+    "warehouse:link-correction-pairs": "tsx server/scripts/link-release-correction-pairs.ts",
+    "warehouse:link-correction-pairs:apply": "tsx server/scripts/link-release-correction-pairs.ts --apply",
     "db:generate": "prisma generate",
     "db:migrate:prod": "prisma migrate deploy",
     "db:studio": "prisma studio",

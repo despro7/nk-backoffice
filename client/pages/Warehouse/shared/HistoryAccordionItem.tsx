@@ -1,5 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
-import { Button, Chip } from '@heroui/react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Button,
+  Checkbox,
+  Chip,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  Tooltip,
+} from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { PERMISSIONS } from '@shared/constants/permissions';
@@ -18,7 +28,28 @@ import { normalizeReleaseSendError } from '@shared/utils/releaseSendError';
 import {
   BATCH_CORRECTION_COMMENT_STRIP_RE,
   isReleaseBatchCorrection,
+  REBATCH_COMMENT_UI_PREFIX_RE,
 } from '@shared/utils/releaseBatchCorrection';
+import type { ReleaseHistoryCorrectionLayer } from '@shared/utils/mergeReleaseHistoryCorrections';
+import {
+  formatReleaseHistoryDetailsHeading,
+  formatReleaseHistoryDocTrail,
+  formatReleaseHistoryLayerTitle,
+  formatReleaseHistoryPrimaryTitle,
+  parseReleaseHistoryPrimaryTitleParts,
+} from '@shared/utils/releaseHistoryDisplayTitle';
+import { formatReleaseInternalDocDisplayNumber } from '@shared/utils/releaseHistoryDisplayDocNumber';
+import {
+  buildCorrectionDocTrailFromLayers,
+  getCorrectionLayerStepPrefix,
+  isCorrectionHistoryComplete,
+  sortCorrectionLayersForDisplay,
+} from '@shared/utils/releaseCorrectionLayers';
+import {
+  listReleaseCorrectionMergeCandidates,
+  toReleasePairCandidate,
+  type ReleasePairCandidate,
+} from '@shared/utils/linkReleaseCorrectionPairs';
 
 interface HistoryAccordionItemProps {
   records: any[];
@@ -29,12 +60,170 @@ interface HistoryAccordionItemProps {
   onRefresh?: () => void;
   onLoadRecord?: (record: any) => Promise<void>;
   onDeleteRecord?: (recordId: string) => Promise<void>;
+  onMergeCorrection?: (releaseIds: number[]) => Promise<void>;
   onEditRecord?: (record: any) => Promise<void>;
   onRetryRelease?: (record: any) => Promise<void>;
   canEditRecord?: (record: any) => boolean;
   auditRefreshKey?: number;
   recordType?: 'return' | 'writeOff' | 'surplus' | 'releaseSet' | 'movement';
   detailsLoading?: Record<string, boolean>;
+};
+
+type ReleaseDilovodCheckItem = {
+  id: number;
+  dilovodDocId: string;
+  label: string;
+};
+
+const CORRECTION_INCOMPLETE_TOOLTIP = (
+  'Неповна пара коригування: немає успішного розукомплектування після комплектування '
+  + '(або залишився лише один документ сесії). Можлива помилкова спроба Dilovod — '
+  + 'перевірте сусідні рядки з тим самим коментарем.'
+);
+
+function CorrectionIncompleteHint({
+  stopAccordionToggle,
+}: {
+  stopAccordionToggle?: boolean;
+}) {
+  return (
+    <Tooltip
+      content={CORRECTION_INCOMPLETE_TOOLTIP}
+      placement="top"
+      showArrow
+      delay={200}
+      closeDelay={0}
+      classNames={{
+        base: 'before:bg-danger before:rounded-[3px]',
+        content: 'bg-danger border-0 text-white text-xs max-w-sm',
+      }}
+    >
+      <span
+        className="inline-flex shrink-0 text-danger cursor-help"
+        role="img"
+        aria-label={CORRECTION_INCOMPLETE_TOOLTIP}
+        title={CORRECTION_INCOMPLETE_TOOLTIP}
+        onMouseDown={stopAccordionToggle ? (event) => event.stopPropagation() : undefined}
+        onClick={stopAccordionToggle ? (event) => event.stopPropagation() : undefined}
+        onKeyDown={stopAccordionToggle ? (event) => event.stopPropagation() : undefined}
+      >
+        <DynamicIcon name="circle-alert" className="w-4 h-4" strokeWidth={2} />
+      </span>
+    </Tooltip>
+  );
+}
+
+function historyRecordToPairCandidate(record: {
+  id?: unknown;
+  internalDocNumber?: unknown;
+  internal_doc_number?: unknown;
+  operationType?: unknown;
+  operation_type?: unknown;
+  setSku?: unknown;
+  set_sku?: unknown;
+  quantity?: unknown;
+  comment?: unknown;
+  createdAt?: unknown;
+  created_at?: unknown;
+  correctionSessionId?: unknown;
+  items?: unknown;
+}): ReleasePairCandidate {
+  const createdRaw = record.createdAt ?? record.created_at ?? new Date(0);
+  return toReleasePairCandidate({
+    id: Number(record.id),
+    internalDocNumber: String(record.internalDocNumber ?? record.internal_doc_number ?? '').trim() || null,
+    operationType: String(record.operationType ?? record.operation_type ?? ''),
+    setSku: String(record.setSku ?? record.set_sku ?? '').trim() || null,
+    quantity: Number(record.quantity ?? 0),
+    comment: record.comment != null ? String(record.comment) : null,
+    createdAt: new Date(String(createdRaw)),
+    correctionSessionId: record.correctionSessionId != null ? String(record.correctionSessionId) : null,
+    items: record.items,
+  });
+}
+
+function collectCorrectionMemberIds(record: {
+  id?: unknown;
+  correctionLayers?: ReleaseHistoryCorrectionLayer[];
+}): number[] {
+  const layers = Array.isArray(record.correctionLayers) ? record.correctionLayers : [];
+  if (layers.length > 0) {
+    return layers
+      .map((layer) => Number(layer.recordId ?? layer.id))
+      .filter((id) => Number.isFinite(id) && id > 0);
+  }
+  const single = Number(record.id);
+  return Number.isFinite(single) && single > 0 ? [single] : [];
+}
+
+function formatReleaseHistoryCommentForDisplay(
+  comment: unknown,
+  isBatchCorrection: boolean,
+): string {
+  if (comment == null || comment === '') return '';
+  let text = String(comment);
+  if (isBatchCorrection) {
+    text = text.replace(BATCH_CORRECTION_COMMENT_STRIP_RE, '');
+    text = text.replace(REBATCH_COMMENT_UI_PREFIX_RE, '');
+  }
+  return text.trim();
+}
+
+function collectReleaseDilovodCheckItems(record: {
+  id?: unknown;
+  dilovodDocId?: unknown;
+  dilovod_doc_id?: unknown;
+  internalDocNumber?: unknown;
+  internal_doc_number?: unknown;
+  correctionLayers?: ReleaseHistoryCorrectionLayer[];
+}): ReleaseDilovodCheckItem[] {
+  const layers = Array.isArray(record.correctionLayers) ? record.correctionLayers : [];
+  const fromLayers = layers
+    .map((layer) => {
+      const dilovodDocId = String(layer.dilovodDocId ?? layer.dilovod_doc_id ?? '').trim();
+      if (!dilovodDocId) return null;
+      const internal = String(
+        layer.internalDocNumber ?? layer.internal_doc_number ?? '',
+      ).trim();
+      const label = formatReleaseInternalDocDisplayNumber(internal)
+        ?? (internal || String(layer.recordId ?? layer.id ?? '').trim() || dilovodDocId);
+      return {
+        id: Number(layer.recordId ?? layer.id),
+        dilovodDocId,
+        label,
+      };
+    })
+    .filter((row): row is ReleaseDilovodCheckItem => row != null);
+  if (fromLayers.length > 0) return fromLayers;
+
+  const dilovodDocId = String(record.dilovodDocId ?? record.dilovod_doc_id ?? '').trim();
+  if (!dilovodDocId) return [];
+  const internal = String(record.internalDocNumber ?? record.internal_doc_number ?? '').trim();
+  const label = formatReleaseInternalDocDisplayNumber(internal)
+    ?? (internal || String(record.id ?? '').trim() || dilovodDocId);
+  return [{ id: Number(record.id), dilovodDocId, label }];
+}
+
+function formatReleaseDilovodCheckAlertLine(
+  label: string,
+  result: {
+    dilovodDocId?: string;
+    exists?: boolean;
+    delMark?: boolean;
+    success?: boolean;
+    error?: string;
+  },
+): string {
+  if (result.error) return `⚠️ ${label}: помилка — ${result.error}`;
+  if (result.success === false) return `⚠️ ${label}: перевірку не виконано`;
+  const docId = String(result.dilovodDocId ?? '').trim() || '—';
+  if (result.exists === false) {
+    return `❌ ${label} (${docId})\nНе знайдено в Dilovod (немає в відповіді API)`;
+  }
+  if (result.delMark) {
+    return `🗑️ ${label} (${docId})\nЗнайдено · позначено на видалення (delMark)`;
+  }
+  return `✅ ${label} (${docId})\nЗнайдено · активний документ (delMark ні)`;
 }
 
 export const HistoryAccordionItem = ({
@@ -43,6 +232,7 @@ export const HistoryAccordionItem = ({
   showDelete = true,
   showEdit = false,
   onDeleteRecord,
+  onMergeCorrection,
   onEditRecord,
   onRetryRelease,
   canEditRecord,
@@ -58,7 +248,35 @@ export const HistoryAccordionItem = ({
   const [loadingDeleteId, setLoadingDeleteId] = useState<string | null>(null);
   const [loadingEditId, setLoadingEditId] = useState<string | null>(null);
   const [loadingRetryId, setLoadingRetryId] = useState<string | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [loadingDilovodCheckId, setLoadingDilovodCheckId] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; message: string } | null>(null);
+  const [mergeModal, setMergeModal] = useState<{
+    anchorRecordId: string;
+    memberIds: number[];
+    candidateIds: number[];
+  } | null>(null);
+  const [mergeSelectedIds, setMergeSelectedIds] = useState<Set<number>>(new Set());
+  const [loadingMerge, setLoadingMerge] = useState(false);
+
+  const correctionPairPool = useMemo(() => {
+    const seen = new Set<number>();
+    const pool: ReleasePairCandidate[] = [];
+    for (const record of records) {
+      const push = (row: typeof record) => {
+        const candidate = historyRecordToPairCandidate(row);
+        if (seen.has(candidate.id)) return;
+        seen.add(candidate.id);
+        pool.push(candidate);
+      };
+      push(record);
+      if (Array.isArray(record.correctionLayers)) {
+        for (const layer of record.correctionLayers) {
+          push(layer as typeof record);
+        }
+      }
+    }
+    return pool;
+  }, [records]);
   const [contentHeights, setContentHeights] = useState<Record<string, number>>({});
   const [layoutTick, setLayoutTick] = useState(0);
   const contentRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -123,28 +341,114 @@ export const HistoryAccordionItem = ({
     }
   };
 
-  const handleDeleteRecord = (recordId: string) => {
+  const handleDeleteRecord = (recordId: string, message: string) => {
     if (!onDeleteRecord) return;
-    setConfirmDeleteId(recordId);
+    setDeleteConfirm({ id: recordId, message });
   };
 
   const handleConfirmDelete = async () => {
-    if (!confirmDeleteId || !onDeleteRecord) return;
-    setLoadingDeleteId(confirmDeleteId);
+    if (!deleteConfirm?.id || !onDeleteRecord) return;
+    setLoadingDeleteId(deleteConfirm.id);
     try {
-      await onDeleteRecord(confirmDeleteId);
+      await onDeleteRecord(deleteConfirm.id);
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error('[HistoryAccordionItem] Error deleting record:', error);
     } finally {
       setLoadingDeleteId(null);
-      setConfirmDeleteId(null);
+      setDeleteConfirm(null);
     }
   };
 
   const handleCancelDelete = () => {
     if (loadingDeleteId) return;
-    setConfirmDeleteId(null);
+    setDeleteConfirm(null);
+  };
+
+  const openMergeModal = (record: {
+    id?: unknown;
+    correctionLayers?: ReleaseHistoryCorrectionLayer[];
+    operationType?: unknown;
+  }) => {
+    const memberIds = collectCorrectionMemberIds(record);
+    const kitLayer = (record.correctionLayers ?? []).find(
+      (layer) => String(layer.operationType ?? '').toLowerCase() === 'kit',
+    );
+    const anchor = historyRecordToPairCandidate(kitLayer ?? record);
+    const candidates = listReleaseCorrectionMergeCandidates(anchor, correctionPairPool);
+    setMergeModal({
+      anchorRecordId: String(record.id),
+      memberIds,
+      candidateIds: candidates.map((row) => row.id),
+    });
+    setMergeSelectedIds(new Set(candidates.map((row) => row.id)));
+  };
+
+  const handleConfirmMerge = async () => {
+    if (!mergeModal || !onMergeCorrection) return;
+    const releaseIds = [...new Set([...mergeModal.memberIds, ...mergeSelectedIds])];
+    if (releaseIds.length < 2) return;
+    setLoadingMerge(true);
+    try {
+      await onMergeCorrection(releaseIds);
+      setMergeModal(null);
+      setMergeSelectedIds(new Set());
+    } finally {
+      setLoadingMerge(false);
+    }
+  };
+
+  const handleCheckDilovod = async (record: {
+    id?: unknown;
+    dilovodDocId?: unknown;
+    dilovod_doc_id?: unknown;
+    internalDocNumber?: unknown;
+    internal_doc_number?: unknown;
+    correctionLayers?: ReleaseHistoryCorrectionLayer[];
+  }) => {
+    const recordId = String(record.id ?? '');
+    const checkItems = collectReleaseDilovodCheckItems(record);
+    if (checkItems.length === 0) {
+      window.alert('ℹ️ У запису немає dilovodDocId — перевірити в Dilovod неможливо.');
+      return;
+    }
+
+    setLoadingDilovodCheckId(recordId);
+    try {
+      const response = await fetch('/api/warehouse/releases/check-dilovod-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          readOnly: true,
+          items: checkItems.map(({ id, dilovodDocId }) => ({ id, dilovodDocId })),
+        }),
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok || !json?.success) {
+        window.alert(`⚠️ ${json?.error ? String(json.error) : `Помилка HTTP ${response.status}`}`);
+        return;
+      }
+
+      const results = Array.isArray(json.results) ? json.results : [];
+      const labelById = new Map(checkItems.map((item) => [item.id, item.label]));
+      const lines = results.map((row: {
+        id?: number;
+        dilovodDocId?: string;
+        exists?: boolean;
+        delMark?: boolean;
+        success?: boolean;
+        error?: string;
+      }) => {
+        const label = labelById.get(Number(row.id)) ?? `Запис №${row.id ?? '?'}`;
+        return formatReleaseDilovodCheckAlertLine(label, row);
+      });
+      window.alert(lines.join('\n\n'));
+    } catch (error) {
+      window.alert(`⚠️ ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setLoadingDilovodCheckId(null);
+    }
   };
 
   if (!records || records.length === 0) {
@@ -166,6 +470,11 @@ export const HistoryAccordionItem = ({
     unkit: { label: 'Розукомплектування', icon: 'package-open' },
   };
 
+  const RELEASE_LAYER_ICON_CLASS: Record<string, string> = {
+    kit: 'text-blue-500 bg-blue-100',
+    unkit: 'text-red-500 bg-red-100',
+  };
+
 	const isReleaseSetRecord = recordType === 'releaseSet';
 	const isMovementRecord = recordType === 'movement';
 
@@ -178,10 +487,6 @@ export const HistoryAccordionItem = ({
   const { directories } = useDilovodSettings();
   const userIds = records.map(r => Number(r.createdBy ?? r.created_by ?? null));
   const namesMap = useUserNames(userIds);
-  const recordPendingDelete = confirmDeleteId
-    ? records.find((r) => String(r.id) === confirmDeleteId)
-    : undefined;
-
   return (
     <div className="space-y-2">
       {records.map((record) => {
@@ -202,6 +507,37 @@ export const HistoryAccordionItem = ({
           setSku: record.setSku ?? record.set_sku,
           items,
         });
+        const correctionLayers: ReleaseHistoryCorrectionLayer[] = Array.isArray(record.correctionLayers)
+          && record.correctionLayers.length > 0
+          ? record.correctionLayers
+          : (isBatchCorrection
+            ? [{ ...record, recordId: String(record.id) }]
+            : []);
+        const isCorrectionDisplay = isReleaseSetRecord && correctionLayers.length > 0 && isBatchCorrection;
+        const sortedCorrectionLayers = isCorrectionDisplay
+          ? sortCorrectionLayersForDisplay(correctionLayers)
+          : correctionLayers;
+        const correctionDocTrail = isCorrectionDisplay
+          ? buildCorrectionDocTrailFromLayers(sortedCorrectionLayers)
+          : null;
+        const correctionIncomplete = isCorrectionDisplay
+          && !isCorrectionHistoryComplete(sortedCorrectionLayers);
+        const correctionKitLayer = sortedCorrectionLayers.find(
+          (layer) => String(layer.operationType ?? '').toLowerCase() === 'kit',
+        );
+        const mergeCandidates = isCorrectionDisplay && onMergeCorrection
+          ? listReleaseCorrectionMergeCandidates(
+            historyRecordToPairCandidate(correctionKitLayer ?? record),
+            correctionPairPool,
+          )
+          : [];
+        const showMergeCorrection = Boolean(onMergeCorrection && mergeCandidates.length > 0);
+        const displayOperationCfg = isCorrectionDisplay
+          ? { label: 'Коригування', icon: 'refresh-cw' }
+          : operationCfg;
+        const displayOperationIconClass = isCorrectionDisplay
+          ? 'text-violet-700 bg-violet-200'
+          : (operationType === 'kit' ? 'text-blue-500 bg-blue-100' : 'text-red-500 bg-red-100');
         const totalQuantity = sumHistoryItemsQuantity(items);
         const isExpanded = expandedRecordId === String(record.id);
 				const reason = record.reason || record.writeOffReason || record.surplusReason || record.write_off_reason;
@@ -223,11 +559,37 @@ export const HistoryAccordionItem = ({
           && formatDate(primaryDateValue) !== formatDate(secondaryDateValue);
         const recordEditable = Boolean(showEdit && onEditRecord && (!canEditRecord || canEditRecord(record)));
         const operationDocNumber = record.internalDocNumber || record.internal_doc_number || null;
+        const releaseHistoryTitle = isReleaseSetRecord && displayOperationCfg
+          ? (isCorrectionDisplay && correctionDocTrail
+            ? `${displayOperationCfg.label} ${correctionDocTrail}`
+            : formatReleaseHistoryPrimaryTitle({
+              operationLabel: displayOperationCfg.label,
+              primaryDocNumber: operationDocNumber,
+              docTrail: null,
+            }))
+          : null;
+        const releaseDetailsHeadingKind = isCorrectionDisplay
+          ? 'correction' as const
+          : operationType === 'unkit'
+            ? 'unkit' as const
+            : operationType === 'kit'
+              ? 'kit' as const
+              : 'operation' as const;
+        const releaseDetailsHeading = isReleaseSetRecord
+          ? (isCorrectionDisplay && correctionDocTrail
+            ? `Деталі коригування ${correctionDocTrail}`
+            : formatReleaseHistoryDetailsHeading({
+              kind: releaseDetailsHeadingKind,
+              docTrail: null,
+              operationDocNumber,
+            }))
+          : null;
         const movementDocLabel = isMovementRecord
           ? (operationDocNumber || record.docNumber || record.doc_number || null)
           : null;
         const releaseStatus = String(record.status ?? '').toLowerCase();
-        const sendFailed = releaseStatus === 'send_failed';
+        const sendFailed = releaseStatus === 'send_failed'
+          || correctionLayers.some((layer) => String(layer.status ?? '').toLowerCase() === 'send_failed');
         const sendError = normalizeReleaseSendError(record.sendError);
         const totalPortions = recordType === 'releaseSet' ? setsForCount.reduce((sum: number, set: any) => {
           const componentsTotal = Number(set.componentsTotal ?? 0);
@@ -253,20 +615,34 @@ export const HistoryAccordionItem = ({
                   className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`}
                 />
 								<div className="flex items-center gap-4">
-                  {operationCfg && !isMovementRecord && (
-                    <span className={`p-2 rounded-full ${
-                      operationType === 'kit'
-                        ? 'text-blue-500 bg-blue-100'
-                        : 'text-red-500 bg-red-100'
-                    }`}>
-                      <DynamicIcon name={operationCfg.icon as any} size={16} strokeWidth={1.5} />
+                  {displayOperationCfg && !isMovementRecord && (
+                    <span className={`p-2 rounded-full ${displayOperationIconClass}`}>
+                      <DynamicIcon name={displayOperationCfg.icon as any} size={16} strokeWidth={1.5} />
                     </span>
                   )}
 									<div className="flex flex-col min-w-28">
-                    <span className="text-sm font-medium text-gray-700 tabular-nums">
-                      {isMovementRecord
-                        ? (movementDocLabel ?? '—')
-                        : (operationCfg ? operationCfg.label : recordName)}
+                    <span className={`text-sm font-medium inline-flex items-center gap-1 flex-wrap ${correctionIncomplete ? 'text-danger' : 'text-gray-700'}`}>
+                      {isMovementRecord ? (
+                        movementDocLabel ?? '—'
+                      ) : (() => {
+                        const fallback = releaseHistoryTitle
+                          ?? (displayOperationCfg ? displayOperationCfg.label : recordName);
+                        const parts = releaseHistoryTitle
+                          ? parseReleaseHistoryPrimaryTitleParts(releaseHistoryTitle)
+                          : { docPrefix: null, label: fallback };
+                        if (parts.docPrefix) {
+                          return (
+                            <>
+                              <span>{parts.label}</span>
+                              <span>{parts.docPrefix}</span>
+                            </>
+                          );
+                        }
+                        return fallback;
+                      })()}
+                      {correctionIncomplete ? (
+                        <CorrectionIncompleteHint stopAccordionToggle />
+                      ) : null}
                     </span>
 										<span className="text-xs text-gray-400">{formatRelativeDate(record[cfg.dateField || 'createdAt'], { maxRelativeDays: 1 })}</span>
 									</div>
@@ -280,7 +656,7 @@ export const HistoryAccordionItem = ({
                     {reason && (
                       <Chip size="sm" color="default" variant="flat" className="bg-gray-200 text-gray-700">{reason}</Chip>
                     )}
-                    {isBatchCorrection && (
+                    {isBatchCorrection && !isCorrectionDisplay && (
                       <Chip
                         size="sm"
                         color="secondary"
@@ -300,10 +676,9 @@ export const HistoryAccordionItem = ({
                         startContent={<DynamicIcon name="message-circle-more" className="w-3 h-3 ml-1 mr-0.5" />}
                       >
                         {truncateText(
-                          isBatchCorrection && typeof record.comment === 'string'
-                            ? record.comment.replace(BATCH_CORRECTION_COMMENT_STRIP_RE, '')
-                            : record.comment,
-                          25
+                          formatReleaseHistoryCommentForDisplay(record.comment, isBatchCorrection)
+                            || String(record.comment),
+                          25,
                         )}
                       </Chip>
 										)}
@@ -361,11 +736,9 @@ export const HistoryAccordionItem = ({
               <div ref={(el) => { if (el) contentRefs.current[String(record.id)] = el; }} className="p-4">
                 <div className="mb-6">
                   <div className="flex items-center gap-4 mb-2">
-                    <h3 className="text-lg font-semibold text-gray-700 flex flex-wrap items-baseline gap-2">
-                      <span>Деталі операції</span>
-                      {operationDocNumber ? (
-                        <span className="text-sm font-normal text-default-500">{operationDocNumber}</span>
-                      ) : null}
+                    <h3 className="text-lg font-semibold flex flex-wrap items-center gap-2 text-gray-800">
+                      {releaseDetailsHeading ?? 'Деталі операції'}
+                      {correctionIncomplete ? <CorrectionIncompleteHint /> : null}
                     </h3>
                     <div className="flex items-center gap-3 ml-auto">
                       {/* Delete button (only visible to admin) */}
@@ -378,12 +751,32 @@ export const HistoryAccordionItem = ({
                             className="bg-red-200/80 text-red-700 h-auto px-2.5 py-1.5 gap-1 min-w-0"
                             isDisabled={!!loadingLoadId}
                             startContent={<DynamicIcon name={loadingDeleteId === String(record.id) ? 'loader-circle' : 'trash-2'} className={loadingDeleteId === String(record.id) ? 'w-3 h-3 animate-spin' : 'w-3 h-3'} />}
-                            onPress={() => handleDeleteRecord(String(record.id))}
+                            onPress={() => handleDeleteRecord(
+                              String(record.id),
+                              isCorrectionDisplay && sortedCorrectionLayers.length > 1
+                                ? `Буде видалено лише запис №${operationDocNumber ?? record.id} (один документ БД), не всю сесію коригування.`
+                                : `${operationDocNumber ?? `Запис №${record.id}`} буде позначено deleted${record.dilovodDocId ? ' (delMark у Dilovod, якщо є doc id)' : ' локально'}.`,
+                            )}
                           >
                             Видалити
                           </Button>
                         </div>
                       )}
+                      {showMergeCorrection && canDeleteHistory ? (
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            color="secondary"
+                            className="h-auto px-2.5 py-1.5 gap-1 min-w-0 bg-violet-200/90 text-violet-900"
+                            isDisabled={!!loadingLoadId || loadingMerge}
+                            startContent={<DynamicIcon name="link-2" className="w-3 h-3" />}
+                            onPress={() => openMergeModal(record)}
+                          >
+                            Обʼєднати з сиротами
+                          </Button>
+                        </div>
+                      ) : null}
                       {/* Edit button (optional) */}
                       {recordEditable && (
                         <div onClick={(e) => e.stopPropagation()}>
@@ -422,6 +815,26 @@ export const HistoryAccordionItem = ({
                           </Button>
                         </div>
                       )}
+                      {isReleaseSetRecord && collectReleaseDilovodCheckItems(record).length > 0 ? (
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            color="default"
+                            className="h-auto px-2.5 py-1.5 gap-1 min-w-0 bg-amber-300/90 text-gray-850"
+                            isDisabled={!!loadingLoadId}
+                            startContent={(
+                              <DynamicIcon
+                                name={loadingDilovodCheckId === String(record.id) ? 'loader-circle' : 'search-check'}
+                                className={loadingDilovodCheckId === String(record.id) ? 'w-3 h-3 animate-spin' : 'w-3 h-3'}
+                              />
+                            )}
+                            onPress={() => void handleCheckDilovod(record)}
+                          >
+                            Перевірити в Dilovod
+                          </Button>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 
@@ -442,17 +855,36 @@ export const HistoryAccordionItem = ({
                         Склад: <b>{(getStorageDisplayName(record.storageId || record.payload?.storage, record.storageName, directories) || '—')}</b>
                       </span>
                     )}
-                    <span className="border-l border-gray-300 pl-3">
-                      Дата створення: <b>{formatDate(primaryDateValue)}</b>
-                    </span>
-                    {shouldShowSecondaryDate && (
-                      <span className="bg-amber-100 text-gray-700 px-1.5 py-0.5 rounded">
-                        Дата операції:
-                        <span className="font-semibold"> {formatDate(secondaryDateValue)}</span>
-                      </span>
+                    {!isCorrectionDisplay && (
+                      <>
+                        <span className="border-l border-gray-300 pl-3">
+                          Дата створення: <b>{formatDate(primaryDateValue)}</b>
+                        </span>
+                        {shouldShowSecondaryDate && (
+                          <span className="bg-amber-100 text-gray-700 px-1.5 py-0.5 rounded">
+                            Дата операції:
+                            <span className="font-semibold"> {formatDate(secondaryDateValue)}</span>
+                          </span>
+                        )}
+                      </>
                     )}
                   </div>
-                  {record.comment && <p className="text-[13px] text-gray-500 mt-1">Коментар: <b>{record.comment}</b></p>}
+                  {correctionIncomplete ? (
+                    <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-900">
+                      {mergeCandidates.length > 0
+                        ? `Успішний другий етап, ймовірно, у сусідньому рядку (${mergeCandidates.map((row) => formatReleaseInternalDocDisplayNumber(row.internalDocNumber) ?? `#${row.id}`).join(', ')}). Натисніть «Обʼєднати з сиротами» або видаліть помилкову спробу без Dilovod.`
+                        : 'Немає успішного розукомплектування після kit (або сесія розірвана). Перевірте сусідні рядки з тим самим коментарем або запустіть warehouse:link-correction-pairs:apply.'}
+                    </p>
+                  ) : null}
+                  {record.comment && (
+                    <p className="text-[13px] text-gray-500 mt-1">
+                      Коментар:{' '}
+                      <b>
+                        {formatReleaseHistoryCommentForDisplay(record.comment, isBatchCorrection)
+                          || record.comment}
+                      </b>
+                    </p>
+                  )}
                   {sendFailed && sendError && (
                     <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800 space-y-2">
                       <p>
@@ -484,6 +916,104 @@ export const HistoryAccordionItem = ({
 	                      <DynamicIcon name="loader-circle" className="w-4 h-4 animate-spin" />
 	                      Завантаження позицій…
 	                    </div>
+	                  ) : recordType === 'releaseSet' && isCorrectionDisplay ? (
+                      <div className="space-y-4">
+                        {sortedCorrectionLayers.map((layer) => {
+                          const layerOperation = String(layer.operationType ?? '').toLowerCase();
+                          const layerCfg = RELEASE_OPERATION_CONFIG[layerOperation]
+                            ?? { label: layerOperation || 'Операція', icon: 'package' };
+                          const layerStepPrefix = getCorrectionLayerStepPrefix(layer, sortedCorrectionLayers);
+                          const layerItems = (Array.isArray(layer.setsNormalized) && layer.setsNormalized.length > 0)
+                            ? layer.setsNormalized
+                            : (Array.isArray(layer.items) ? layer.items : items);
+                          const layerCreatedAt = String(layer.createdAt ?? layer.created_at ?? '');
+                          const layerOperDate = String(layer.operDate ?? layer.oper_date ?? '');
+                          const layerDocNumber = String(
+                            layer.internalDocNumber ?? layer.internal_doc_number ?? '',
+                          ).trim() || null;
+                          const layerShowOperDate = layerOperDate.length > 0
+                            && layerCreatedAt.length > 0
+                            && formatDate(layerCreatedAt) !== formatDate(layerOperDate);
+                          const layerStatus = String(layer.status ?? '').toLowerCase();
+                          const layerSendFailed = layerStatus === 'send_failed';
+                          const layerDilovodDocId = String(layer.dilovodDocId ?? layer.dilovod_doc_id ?? '').trim();
+                          const layerCanDeleteLocally = canDeleteHistory && showDelete && onDeleteRecord
+                            && layerSendFailed && !layerDilovodDocId;
+                          const layerIconClass = RELEASE_LAYER_ICON_CLASS[layerOperation]
+                            ?? 'text-gray-600 bg-gray-100';
+                          const layerId = String(layer.recordId ?? layer.id);
+
+                          return (
+                            <div
+                              key={String(layer.recordId ?? layer.id)}
+                              className="overflow-hidden rounded-lg border border-violet-200/80 bg-white shadow-sm"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-violet-100 bg-violet-50/80 px-3 py-2.5">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className={`rounded-full p-1.5 ${layerIconClass}`}>
+                                    <DynamicIcon name={layerCfg.icon as any} size={14} strokeWidth={1.5} />
+                                  </span>
+                                  <span className="text-sm font-semibold text-gray-800">
+                                    {formatReleaseHistoryLayerTitle({
+                                      operationLabel: layerCfg.label,
+                                      docNumber: layerDocNumber,
+                                      stepPrefix: layerStepPrefix,
+                                    })}
+                                  </span>
+                                  {layerSendFailed ? (
+                                    <Chip size="sm" color="danger" variant="flat" className="text-[12px] text-red-700">
+                                      Помилка Dilovod
+                                    </Chip>
+                                  ) : null}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                                  <span>
+                                    Дата створення:{' '}
+                                    <b className="text-gray-700">{formatDate(layerCreatedAt)}</b>
+                                  </span>
+                                  {layerShowOperDate ? (
+                                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-gray-700">
+                                      Дата операції:{' '}
+                                      <span className="font-semibold">{formatDate(layerOperDate)}</span>
+                                    </span>
+                                  ) : null}
+                                  {layerCanDeleteLocally ? (
+                                    <Button
+                                      size="sm"
+                                      variant="flat"
+                                      color="danger"
+                                      className="h-auto min-h-0 px-2 py-1 text-xs"
+                                      isDisabled={loadingDeleteId === layerId}
+                                      startContent={(
+                                        <DynamicIcon
+                                          name={loadingDeleteId === layerId ? 'loader-circle' : 'trash-2'}
+                                          className={loadingDeleteId === layerId ? 'w-3 h-3 animate-spin' : 'w-3 h-3'}
+                                        />
+                                      )}
+                                      onPress={() => handleDeleteRecord(
+                                        layerId,
+                                        `Помилкова спроба ${layerDocNumber ?? layerId} без документа в Dilovod буде видалена лише локально (status deleted).`,
+                                      )}
+                                    >
+                                      Видалити помилку
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <div className="p-2">
+                                <HistoryItemsTable mode="sets" sets={layerItems} hideHeader />
+                              </div>
+                              <WarehouseReleaseAuditAccordion
+                                releaseId={Number(layer.recordId ?? layer.id)}
+                                refreshKey={auditRefreshKey}
+                                titleHint={layerDocNumber}
+                                className="mx-2 mb-2"
+                                onLayoutChange={() => setLayoutTick((value) => value + 1)}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
 	                  ) : recordType === 'releaseSet' ? (
 	                    <HistoryItemsTable mode="sets" sets={record.setsNormalized ?? items} />
 	                  ) : (
@@ -491,10 +1021,11 @@ export const HistoryAccordionItem = ({
 	                  )}
 	                </div>
 
-                {recordType === 'releaseSet' && isExpanded ? (
+                {recordType === 'releaseSet' && isExpanded && !isCorrectionDisplay ? (
                   <WarehouseReleaseAuditAccordion
                     releaseId={Number(record.id)}
                     refreshKey={auditRefreshKey}
+                    titleHint={operationDocNumber}
                     className="mt-4"
                     onLayoutChange={() => setLayoutTick((value) => value + 1)}
                   />
@@ -507,15 +1038,9 @@ export const HistoryAccordionItem = ({
 
       {canDeleteHistory && showDelete && onDeleteRecord ? (
         <ConfirmModal
-          isOpen={confirmDeleteId !== null}
+          isOpen={deleteConfirm !== null}
           title="Видалити запис?"
-          message={
-            recordPendingDelete
-              ? recordType === 'releaseSet'
-                ? `Запис №${recordPendingDelete.id} буде видалений. Документ у Dilovod буде позначено на видалення (delMark).`
-                : `Запис №${recordPendingDelete.id} буде видалений безповоротно.`
-              : 'Запис буде видалений безповоротно.'
-          }
+          message={deleteConfirm?.message ?? 'Запис буде позначено deleted.'}
           confirmText="Видалити"
           cancelText="Скасувати"
           confirmColor="danger"
@@ -523,6 +1048,58 @@ export const HistoryAccordionItem = ({
           onConfirm={() => void handleConfirmDelete()}
           onCancel={handleCancelDelete}
         />
+      ) : null}
+
+      {mergeModal && onMergeCorrection ? (
+        <Modal isOpen onClose={() => !loadingMerge && setMergeModal(null)} size="lg">
+          <ModalContent>
+            <ModalHeader className="text-base">Обʼєднати документи коригування</ModalHeader>
+            <ModalBody className="gap-3 text-sm text-gray-700">
+              <p>
+                Обрані рядки отримають одну <code className="text-xs">correctionSessionId</code> і зʼявляться одним коригуванням (kit + unkit + помилкові спроби).
+              </p>
+              <p className="text-xs text-gray-500">
+                Уже в сесії: {mergeModal.memberIds.map((id) => `#${id}`).join(', ')}
+              </p>
+              <div className="flex flex-col gap-2 max-h-64 overflow-y-auto border border-gray-200 rounded-lg p-2">
+                {mergeModal.candidateIds.map((id) => {
+                  const candidate = correctionPairPool.find((row) => row.id === id);
+                  const label = formatReleaseInternalDocDisplayNumber(candidate?.internalDocNumber ?? null) ?? `#${id}`;
+                  const op = String(candidate?.operationType ?? '').toLowerCase();
+                  return (
+                    <Checkbox
+                      key={id}
+                      isSelected={mergeSelectedIds.has(id)}
+                      onValueChange={(checked) => {
+                        setMergeSelectedIds((prev) => {
+                          const next = new Set(prev);
+                          if (checked) next.add(id);
+                          else next.delete(id);
+                          return next;
+                        });
+                      }}
+                    >
+                      {label} · {op === 'kit' ? 'комплектування' : op === 'unkit' ? 'розукомплектування' : op}
+                    </Checkbox>
+                  );
+                })}
+              </div>
+            </ModalBody>
+            <ModalFooter>
+              <Button variant="flat" onPress={() => setMergeModal(null)} isDisabled={loadingMerge}>
+                Скасувати
+              </Button>
+              <Button
+                color="secondary"
+                isLoading={loadingMerge}
+                isDisabled={mergeSelectedIds.size === 0}
+                onPress={() => void handleConfirmMerge()}
+              >
+                Обʼєднати
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
       ) : null}
     </div>
   );

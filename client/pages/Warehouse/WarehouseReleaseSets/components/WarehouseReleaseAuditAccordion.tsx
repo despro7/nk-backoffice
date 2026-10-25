@@ -8,12 +8,15 @@ import {
 } from '@shared/utils/warehouseReleaseAuditFormat';
 import type { WarehouseReleaseAuditLogDto } from '../warehouseReleaseAuditTypes';
 import { hrAccordionClassNames } from '@/components/hr/HrAuditAccordion';
+import { formatReleaseAuditAccordionTitle } from '@shared/utils/releaseHistoryDisplayTitle';
 
 interface Props {
   releaseId: number | null;
   refreshKey?: number;
   className?: string;
   onLayoutChange?: () => void;
+  /** Додатковий контекст у заголовку (напр. номер документа кроку коригування). */
+  titleHint?: string | null;
 }
 
 export function WarehouseReleaseAuditAccordion({
@@ -21,6 +24,7 @@ export function WarehouseReleaseAuditAccordion({
   refreshKey = 0,
   className,
   onLayoutChange,
+  titleHint,
 }: Props) {
   const [logs, setLogs] = useState<WarehouseReleaseAuditLogDto[]>([]);
   const [loading, setLoading] = useState(false);
@@ -60,7 +64,7 @@ export function WarehouseReleaseAuditAccordion({
       >
         <AccordionItem
           key="release-audit"
-          title="Історія змін"
+          title={formatReleaseAuditAccordionTitle(titleHint)}
           subtitle={`${logs.length} ${pluralize(logs.length, 'запис', 'записи', 'записів')}`}
           classNames={hrAccordionClassNames}
         >

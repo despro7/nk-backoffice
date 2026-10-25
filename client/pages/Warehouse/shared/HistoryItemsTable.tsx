@@ -212,15 +212,15 @@ export const HistoryItemsTable: React.FC<Props> = ({
           return (
           <div key={`set-${idx}`} className={`overflow-x-auto px-1 pb-1 bg-gray-200 rounded-md ${className ?? ''}`}>
             <div className="flex items-center gap-2 px-2 py-2">
-              <span className="rounded bg-amber-200/80 px-1 py-0 text-sm ring-1 ring-amber-100">{setItem.setSku}</span>
+              <span className="rounded bg-amber-200/80 px-1 py-0 text-sm ring-1 ring-amber-700/30">{setItem.setSku}</span>
               <h4 className="text-md font-medium text-gray-700">
                 {setItem.setName}
                 <span className="mx-2 text-xs">✕</span>
                 <span>{setItem.setQty} шт.</span>
               </h4>
               {kitBatchNumber ? (
-                <span className="ml-auto text-xs font-medium text-gray-600">
-                  Партія набору: <span className="font-mono text-gray-800">{kitBatchNumber}</span>
+                <span className="text-sm font-medium text-gray-600 ml-auto">
+                  Партія набору: <span className="rounded bg-fuchsia-200/80 px-1.5 py-0.5 text-sm leading-snug ring-1 ring-fuchsia-800/25 font-mono text-gray-800">{kitBatchNumber}</span>
                 </span>
               ) : null}
             </div>

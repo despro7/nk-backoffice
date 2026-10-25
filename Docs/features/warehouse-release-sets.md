@@ -98,6 +98,47 @@ Switch у шапці сторінки. Двокроковий wizard:
 - `formatDate` / `formatDateTime` на клієнті також з `timeZone: 'Europe/Kyiv'`.
 - **Розширення (той самий день):** той самий контракт застосовано до переміщень, sale/return, writeoff/surplus UI, returns, cash-in/виписки — див. [`warehouse-movement-dilovod-export.md`](warehouse-movement-dilovod-export.md).
 
+### Історія коригування: сесії, пари kit/unkit, UI (2026-10-25)
+
+Коригування rebatch часто має **кілька документів** на один продукт: kit → unkit з `send_failed` → повторний unkit. Усі вони мають спільну **`correctionSessionId`** (колонка `warehouse_release_set.correctionSessionId`, міграція `20261023160000_warehouse_release_correction_session_id`, backfill з `items[0].correction_session_id`).
+
+#### Групування в історії
+
+- Список будується через `WarehouseReleaseHistoryListService` + `buildReleaseHistoryGroupIndex` (`shared/utils/releaseHistoryListGroup.ts`).
+- Ключ групи: `correction:{sessionId}`; якщо в одній session **1 kit + ≥2 unkit** (помилка + успіх) — **один рядок UI** з усіма шарами (`partitionCorrectionSessionMembers`).
+- Пара kit↔unkit перевіряється за **matchKey** (`linkReleaseCorrectionPairs.ts`): для rebatch — `batch|qty|normalizedComment` (без SKU); інакше SKU + qty + comment. Різний продукт у спільній session → audit «invalid pair».
+
+#### Заголовки та шари в акордеоні
+
+- Заголовок коригування: **№512/514** (kit + **успішний** unkit), без номера помилкової спроби — `releaseCorrectionLayers.ts`, `releaseHistoryDisplayTitle.ts`.
+- Шари: **Крок 1 · kit**, **Помилкова спроба ·** unkit `send_failed`, **Крок 2 ·** успішний unkit.
+- **Неповна пара** (червоний текст + ⚠️): немає успішного unkit після kit (`isCorrectionHistoryComplete`).
+
+#### Фільтри історії
+
+- `ReleaseHistoryToolbarFilters.tsx` — пошук, діапазон дат, мультиселект типів операцій, сорт; «Скинути» на другому рядку в `ReleaseHistoryTab`.
+
+#### Адмін: видалення та обʼєднання
+
+Право: `warehouse.history.delete` (ADMIN).
+
+| Дія | UI | API / поведінка |
+|---|---|---|
+| Видалити **один** документ | «Видалити» / «Видалити помилку» на шарі `send_failed` **без** `dilovodDocId` | `DELETE /api/warehouse/releases/:id` (`?forceLocal=true` якщо Dilovod «not found») |
+| Обʼєднати сироту з сесією | «Обʼєднати з сиротами» (кандидати — той самий matchKey, інша session) | `POST /api/warehouse/releases/correction-session/merge` body `{ releaseIds: number[] }` → `WarehouseReleaseCorrectionSessionService` |
+| Масовий repair у БД | — | `npm run warehouse:link-correction-pairs` (dry-run), `npm run warehouse:link-correction-pairs:apply` — `server/scripts/link-release-correction-pairs.ts` |
+
+Скрипт linker: audit валідних/хибних пар, розʼєднання mismatch session, план звʼязку; для **1 kit + N unkit** одного matchKey записує **одну session на всі `memberIds`**.
+
+#### Ключові shared-модулі
+
+| Модуль | Призначення |
+|---|---|
+| `releaseCorrectionLayers.ts` | Сортування шарів, trail №kit/successUnkit, «Помилкова спроба» |
+| `mergeReleaseHistoryCorrections.ts` | Один рядок API з `correctionLayers[]` |
+| `linkReleaseCorrectionPairs.ts` | matchKey, partition, plan/audit, merge candidates |
+| `releaseHistoryListQuery.ts` | Фільтри/сорт для list API |
+
 ### Рефреш залишків при мета-змінах (2026-10-16)
 
 - Зміна **дати / складу / фірми** перезапитує залишки набору (`availableQuantity` через `/stock-snapshot` + `asOfDate`) і партій компонентів (bulk batch-numbers).
@@ -122,7 +163,7 @@ Switch у шапці сторінки. Двокроковий wizard:
 | Hook | `useReleaseSets.ts` |
 | Партії UI | `ReleaseComponentBatchesPanel.tsx`, `BatchNumbersAutocomplete.tsx` |
 | FIFO | `shared/utils/fifoBatchAllocation.ts` |
-| Історія / аудит | `ReleaseHistoryTab.tsx`, `HistoryAccordionItem.tsx`, `WarehouseReleaseAuditService.ts`, `releaseHistoryAccess.ts` |
+| Історія / аудит | `ReleaseHistoryTab.tsx`, `ReleaseHistoryToolbarFilters.tsx`, `HistoryAccordionItem.tsx`, `WarehouseReleaseHistoryListService.ts`, `WarehouseReleaseCorrectionSessionService.ts`, `releaseHistoryAccess.ts`, `linkReleaseCorrectionPairs.ts`, `releaseCorrectionLayers.ts` |
 | Backend | `SetReleaseController.ts`, `WarehouseBatchesService.ts` |
 | Dilovod | `DilovodGoodPartsService.ts`, `DilovodApiClient.findGoodPartsByOwnerIds` |
 | Типи | `shared/types/warehouseRelease.ts` |
@@ -147,6 +188,8 @@ Switch у шапці сторінки. Двокроковий wizard:
 | POST | `/api/warehouse/releases/batch-correction/fill-batches` | Автозаповнення партій |
 | POST | `/api/warehouse/batches/create` | Створення партії (surplus / correction) |
 | GET | `/api/warehouse/releases/:id/audit` | Журнал змін запису випуску |
+| POST | `/api/warehouse/releases/correction-session/merge` | Обʼєднати документи коригування в одну `correctionSessionId` (admin) |
+| DELETE | `/api/warehouse/releases/:id` | Видалення / `?forceLocal=true` |
 | GET | `/api/warehouse/batch-numbers?skus=` | Bulk-партії (FIFO, prefetch); `skipExpiration`, `storageId`, `asOfDate` |
 
 ## Dilovod: обмеження `catalogs.goodParts`
