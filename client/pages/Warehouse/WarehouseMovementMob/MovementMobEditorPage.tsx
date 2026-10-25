@@ -1335,6 +1335,9 @@ export default function MovementMobEditorPage({
         }}
         onSyncDilovod={() => setSyncOpen(true)}
         syncingDilovod={syncingDilovod}
+        dilovodDocId={document?.dilovodDocId ?? null}
+        dilovodCheckRecordId={document?.id ?? null}
+        dilovodCheckLabel={document?.internalDocNumber ?? document?.docNumber ?? null}
         onCancelReceipt={isFinalized && canOverrideEdit ? () => setCancelReceiptOpen(true) : undefined}
         cancelingReceipt={cancelingReceipt}
       />

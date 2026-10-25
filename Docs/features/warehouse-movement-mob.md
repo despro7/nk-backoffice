@@ -1,6 +1,6 @@
 # Мобільні переміщення між складами (`WarehouseMovementMob`)
 
-**Дата:** 2026-09-24 (оновлено 2026-10-23)  
+**Дата:** 2026-09-24 (оновлено 2026-10-25)  
 **Маршрути:** `/warehouse/movement-mob`, `/warehouse/movement-mob/new`, `/warehouse/movement-mob/:id`  
 **Дозвіл сторінки:** `page.warehouse.movementMob`
 
@@ -412,6 +412,24 @@ Pending: сіра точка, сірий заголовок, без імені �
 
 Експорт: `WarehouseMovementExport.exportWarehouseMovementToDilovod` (якщо є `dilovodDocId` — оновлення, інакше створення). Клієнт: `movementMobApi.ts`.
 
+### Коментар у Dilovod (`remark`)
+
+Для документів mob-циклу (`submittedAt` або mob-формат `items` у БД) при `confirm-receipt` / `sync-dilovod` у поле `remark` потрапляє користувацький текст + один суфікс:
+
+- створення: `Додано з Backoffice (сканування) 23.10.2026, 16:30:52` (локаль `uk-UA`);
+- оновлення: `Оновлено з Backoffice (сканування) …`.
+
+Десктопний v2 / legacy movement — той самий шаблон **без** `(сканування)`. Утиліти: `shared/utils/warehouseMovementNotes.ts` (`buildEffectiveMovementNotes`, `isMobScanMovementRecord`). Після успішного експорту той самий текст зберігається в `warehouse_movement.notes`.
+
+### Збереження полів скану при правках v2
+
+Mob зберігає в `items` JSON поля на кшталт `barcode`, `batchNumber`, `receivedPortions`, `batchLinked`. Якщо той самий документ відкрити в **movement-v2** drawer:
+
+- `GET …/details?forEdit=true` **не** перезаписує mob-`items` кешем Dilovod (`MovementHistoryService.persistDetailsToDB` — skip);
+- `PUT /api/warehouse/:id` з v2 **мержить** рядки (`mergeIncomingPutItemsPreservingMobScan` у `shared/utils/warehouseMovementMobItems.ts`).
+
+Документи, вже зіпсовані перезаписом до цього фіксу, можна частково відновити скриптом `scripts/repair-mob-movement-scan-fields.ts` (audit / історія змін).
+
 **Dilovod `getBatchNumbersBySku`:** фільтр SKU — оператор `IL` (список); `goodPart__pr` не вказувати в `fields` (API повертає помилку); при 0 партій з firm — повтор без firm; `unwrapDilovodId` / `unwrapDilovodName` для трансформації.
 
 Міграції: `20260830120000_warehouse_movement_receipt_fields/`, `20260904120000_warehouse_movement_receipt_scan_fields/`.
@@ -447,5 +465,8 @@ client/pages/Warehouse/WarehouseMovementMob/
     └── …
 
 shared/utils/warehouseMovementEdit.ts   — isWithinEditWindow, isReceiverOfMovement
+shared/utils/warehouseMovementMobItems.ts — isMobMovementStoredItems, mergeIncomingPutItemsPreservingMobScan
+shared/utils/warehouseMovementNotes.ts  — remark Backoffice / (сканування)
+scripts/repair-mob-movement-scan-fields.ts — repair mob items з audit
 client/components/ui/DurationMinutesField.tsx — інпут тривалості (хв/год/днів) для налаштувань
 ```

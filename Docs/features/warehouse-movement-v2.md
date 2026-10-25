@@ -54,6 +54,7 @@
 | Footer | **Скасувати** → `onClose` (без збереження); **Зберегти та відправити** → `useMovementV2SendFlow` |
 | UX drawer | Без «Параметри переміщення»; компактний summary; дії лише в footer |
 | Права | `ACTION_WAREHOUSE_MOVEMENT_EDIT` |
+| Документи mob | Якщо запис зі скану (`linkedMobScan` / mob-`items`), drawer показує підказку; збереження не затирає ШК/partію — див. [mob — збереження полів скану](./warehouse-movement-mob.md#збереження-полів-скану-при-правках-v2). Strip `remark` з Dilovod: опційно `(сканування)` у regex. |
 
 Точки входу: `ProductMovementsTable`, історія v1/v2 (`openDocumentEdit`).
 

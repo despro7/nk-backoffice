@@ -1006,19 +1006,29 @@ router.post('/check-dilovod-batch', authenticateToken, warehouseOperate, async (
     const results: Array<any> = [];
     const { dilovodService } = await import('../../services/dilovod/DilovodService.js');
 
-    // Build list of docIds to fetch in batch
-    const requestedDocIds = items.map((it: any) => String(it?.dilovodDocId ?? '').trim()).filter((d: string) => d);
-
-    // Fetch documents in chunks via Dilovod batch API
-    const docs = await dilovodService.getMovementDocumentsBatch(requestedDocIds).catch((e) => {
-      console.warn('[SetRelease][check-dilovod-batch] batch fetch failed', e);
-      return [] as any[];
-    });
+    const { WAREHOUSE_HISTORY_DILOVOD_FROM } = await import('../../../shared/constants/warehouseHistoryDilovodFrom.js');
 
     const docsById: Record<string, any> = {};
-    for (const d of Array.isArray(docs) ? docs : []) {
-      const id = d?.id != null ? String(d.id) : (d?.ID != null ? String(d.ID) : null);
-      if (id) docsById[String(id)] = d;
+    const groups = new Map<string, string[]>();
+    for (const it of items) {
+      const docId = String(it?.dilovodDocId ?? '').trim();
+      if (!docId) continue;
+      const from = String(it?.dilovodFrom ?? '').trim() || WAREHOUSE_HISTORY_DILOVOD_FROM.releaseSet;
+      const bucket = groups.get(from) ?? [];
+      bucket.push(docId);
+      groups.set(from, bucket);
+    }
+
+    for (const [from, docIds] of groups) {
+      const uniqueIds = [...new Set(docIds)];
+      const docs = await dilovodService.getDilovodDocumentsBatch(from, uniqueIds).catch((e) => {
+        console.warn('[SetRelease][check-dilovod-batch] batch fetch failed', { from, error: e });
+        return [] as any[];
+      });
+      for (const d of Array.isArray(docs) ? docs : []) {
+        const id = d?.id != null ? String(d.id) : (d?.ID != null ? String(d.ID) : null);
+        if (id) docsById[String(id)] = d;
+      }
     }
 
     for (const it of items) {

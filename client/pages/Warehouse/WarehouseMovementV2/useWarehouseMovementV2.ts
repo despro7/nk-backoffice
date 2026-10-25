@@ -42,6 +42,8 @@ export default function useWarehouseMovementV2() {
   const [lines, setLines] = useState<MovementV2Line[]>([]);
   const [notes, setNotes] = useState('');
   const [savedDraft, setSavedDraft] = useState<MovementDraft | null>(null);
+  /** Локальний запис з mob-сканом (ШК у items) — v2 edit не затирає ці поля після merge на сервері. */
+  const [linkedMobScan, setLinkedMobScan] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const [history, setHistory] = useState<any[]>([]);
@@ -148,7 +150,7 @@ export default function useWarehouseMovementV2() {
       const items = serializeMovementItems(summaryItems);
       let result: MovementDraft & { _existing?: boolean };
 
-      if (savedDraft && savedDraft.status !== 'finalized' && savedDraft.id > 0) {
+      if (savedDraft && savedDraft.id > 0) {
         result = await updateDraft(savedDraft.id, {
           items,
           movementDate: movementDateTime.toISOString(),
@@ -270,6 +272,27 @@ export default function useWarehouseMovementV2() {
   }, [fetchHistoryPage, historyPagination.page, historyPagination.limit, loadHistoryRecordDetails]);
 
   const loadFromDilovodDocument = useCallback(async (dilovodDocumentId: string) => {
+    let localRecord: {
+      id?: number;
+      status?: string;
+      internalDocNumber?: string;
+      sourceWarehouse?: string;
+      destinationWarehouse?: string;
+      hasMobScanItems?: boolean;
+    } | null = null;
+    try {
+      const localRes = await fetch(
+        `/api/warehouse/movement-by-dilovod/${encodeURIComponent(dilovodDocumentId)}`,
+        { credentials: 'include' },
+      );
+      if (localRes.ok) {
+        localRecord = await localRes.json();
+      }
+    } catch {
+      localRecord = null;
+    }
+    setLinkedMobScan(Boolean(localRecord?.hasMobScanItems));
+
     const details = await fetchGoodMovingDetailsForEdit(dilovodDocumentId);
     const doc = goodMovingDocumentFromDetails(dilovodDocumentId, details);
 
@@ -281,7 +304,7 @@ export default function useWarehouseMovementV2() {
     }
 
     const remark = doc.remark
-      ? doc.remark.replace(/(?:\s*\|\s*)?(?:Додано|Оновлено) з Backoffice.*$/, '').trim()
+      ? doc.remark.replace(/(?:\s*\|\s*)?(?:Додано|Оновлено) з Backoffice(?: \(сканування\))?.*$/, '').trim()
       : '';
     setNotes(remark);
 
@@ -289,13 +312,13 @@ export default function useWarehouseMovementV2() {
     setLines(nextLines);
 
     const draft: MovementDraft = {
-      id: 0,
-      internalDocNumber: doc.number || '0',
+      id: localRecord?.id ?? 0,
+      internalDocNumber: localRecord?.internalDocNumber || doc.number || '0',
       docNumber: doc.number || undefined,
       dilovodDocId: dilovodDocumentId,
-      status: 'draft',
-      sourceWarehouse: doc.storage || storage,
-      destinationWarehouse: doc.storageTo || storageTo,
+      status: (localRecord?.status as MovementDraft['status']) ?? 'draft',
+      sourceWarehouse: localRecord?.sourceWarehouse || doc.storage || storage,
+      destinationWarehouse: localRecord?.destinationWarehouse || doc.storageTo || storageTo,
       items: [],
       draftCreatedAt: new Date().toISOString(),
       movementDate: formatLocalDateTime(
@@ -354,5 +377,6 @@ export default function useWarehouseMovementV2() {
     archivePagination,
     loadArchive,
     loadFromDilovodDocument,
+    linkedMobScan,
   };
 }

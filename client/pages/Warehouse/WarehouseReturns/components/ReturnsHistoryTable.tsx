@@ -7,6 +7,10 @@ import { PERMISSIONS } from '@shared/constants/permissions';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { formatTrackingNumberWithIcon, pluralize } from '@/lib';
 import { HistoryItemsTable } from '../../shared/HistoryItemsTable';
+import {
+  collectHistoryDilovodCheckItems,
+  runWarehouseHistoryDilovodCheck,
+} from '../../shared/warehouseHistoryDilovodCheck';
 import type { ReturnHistoryRecord, ReturnHistoryItem } from '../WarehouseReturnsTypes';
 import useUserNames from '@/hooks/useUserNames';
 import { getFirmDisplayName } from '@shared/utils/directoryUtils';
@@ -28,6 +32,7 @@ export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: R
   const [loadingLoadId, setLoadingLoadId] = useState<string | null>(null);
   const [loadingDeleteId, setLoadingDeleteId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [loadingDilovodCheckId, setLoadingDilovodCheckId] = useState<string | null>(null);
   const [contentHeights, setContentHeights] = useState<Record<string, number>>({});
   const contentRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -84,6 +89,17 @@ export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: R
 
   const handleCancelDelete = () => {
     setConfirmDeleteId(null);
+  };
+
+  const handleCheckDilovod = async (record: ReturnHistoryRecord) => {
+    setLoadingDilovodCheckId(record.id);
+    try {
+      await runWarehouseHistoryDilovodCheck(collectHistoryDilovodCheckItems(record, { recordType: 'return' }));
+    } catch (error) {
+      window.alert(`⚠️ ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setLoadingDilovodCheckId(null);
+    }
   };
 
   useEffect(() => {
@@ -162,40 +178,56 @@ export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: R
                 className="p-4"
               >
                 <div className="mb-6">
-                  <div className="flex items-center gap-4">
-                    <h3 className="text-lg font-semibold text-gray-700 mb-2">
+                  <div className="flex items-center gap-4 mb-2">
+                    <h3 className="text-lg font-semibold text-gray-700">
                       Деталі повернення #{record.id}
                     </h3>
-                    {isAdmin && (
-                      <div className="flex items-center gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
-                        {onDeleteRecord && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="flat"
-                              color="danger"
-                              className="bg-red-200 h-auto px-2.5 py-1.5 gap-1.5 opacity-60"
-                              isLoading={loadingDeleteId === record.id}
-                              isDisabled={!!loadingLoadId}
-                              startContent={loadingDeleteId !== record.id ? <DynamicIcon name="trash-2" className="w-3 h-3" /> : undefined}
-                              onPress={() => handleDeleteRecord(record.id)}
-                            >
-                              Видалити
-                            </Button>
-                            <ConfirmModal
-                              isOpen={confirmDeleteId === record.id}
-                              title="Видалити запис повернення?"
-                              message={`Запис повернення №${record.id} буде видалений безповоротно.`}
-                              confirmText="Видалити"
-                              cancelText="Скасувати"
-                              confirmColor="danger"
-                              onConfirm={handleConfirmDelete}
-                              onCancel={handleCancelDelete}
+                    <div className="flex items-center gap-2 ml-auto" onClick={(e) => e.stopPropagation()}>
+                      {collectHistoryDilovodCheckItems(record, { recordType: 'return' }).length > 0 ? (
+                        <Button
+                          size="sm"
+                          variant="flat"
+                          color="default"
+                          className="h-auto px-2.5 py-1.5 gap-1 min-w-0 bg-amber-300/90 text-gray-850"
+                          isDisabled={!!loadingLoadId}
+                          startContent={(
+                            <DynamicIcon
+                              name={loadingDilovodCheckId === record.id ? 'loader-circle' : 'search-check'}
+                              className={loadingDilovodCheckId === record.id ? 'w-3 h-3 animate-spin' : 'w-3 h-3'}
                             />
-                          </>
-                        )}
-                      </div>
-                    )}
+                          )}
+                          onPress={() => void handleCheckDilovod(record)}
+                        >
+                          Перевірити в Dilovod
+                        </Button>
+                      ) : null}
+                      {isAdmin && onDeleteRecord && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="flat"
+                            color="danger"
+                            className="bg-red-200 h-auto px-2.5 py-1.5 gap-1.5 opacity-60"
+                            isLoading={loadingDeleteId === record.id}
+                            isDisabled={!!loadingLoadId}
+                            startContent={loadingDeleteId !== record.id ? <DynamicIcon name="trash-2" className="w-3 h-3" /> : undefined}
+                            onPress={() => handleDeleteRecord(record.id)}
+                          >
+                            Видалити
+                          </Button>
+                          <ConfirmModal
+                            isOpen={confirmDeleteId === record.id}
+                            title="Видалити запис повернення?"
+                            message={`Запис повернення №${record.id} буде видалений безповоротно.`}
+                            confirmText="Видалити"
+                            cancelText="Скасувати"
+                            confirmColor="danger"
+                            onConfirm={handleConfirmDelete}
+                            onCancel={handleCancelDelete}
+                          />
+                        </>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-3 text-[13px] text-gray-500 flex-wrap">
                     <span>Автор: <b>{namesMap[Number(record.createdBy ?? -1)] ?? record.createdBy ?? '—'}</b></span>

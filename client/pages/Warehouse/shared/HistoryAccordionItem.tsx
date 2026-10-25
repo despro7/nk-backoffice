@@ -45,6 +45,11 @@ import {
   isCorrectionHistoryComplete,
   sortCorrectionLayersForDisplay,
 } from '@shared/utils/releaseCorrectionLayers';
+import type { WarehouseHistoryDilovodRecordType } from '@shared/constants/warehouseHistoryDilovodFrom';
+import {
+  collectHistoryDilovodCheckItems,
+  runWarehouseHistoryDilovodCheck,
+} from './warehouseHistoryDilovodCheck';
 import {
   listReleaseCorrectionMergeCandidates,
   toReleasePairCandidate,
@@ -65,14 +70,8 @@ interface HistoryAccordionItemProps {
   onRetryRelease?: (record: any) => Promise<void>;
   canEditRecord?: (record: any) => boolean;
   auditRefreshKey?: number;
-  recordType?: 'return' | 'writeOff' | 'surplus' | 'releaseSet' | 'movement';
+  recordType?: WarehouseHistoryDilovodRecordType;
   detailsLoading?: Record<string, boolean>;
-};
-
-type ReleaseDilovodCheckItem = {
-  id: number;
-  dilovodDocId: string;
-  label: string;
 };
 
 const CORRECTION_INCOMPLETE_TOOLTIP = (
@@ -167,63 +166,6 @@ function formatReleaseHistoryCommentForDisplay(
     text = text.replace(REBATCH_COMMENT_UI_PREFIX_RE, '');
   }
   return text.trim();
-}
-
-function collectReleaseDilovodCheckItems(record: {
-  id?: unknown;
-  dilovodDocId?: unknown;
-  dilovod_doc_id?: unknown;
-  internalDocNumber?: unknown;
-  internal_doc_number?: unknown;
-  correctionLayers?: ReleaseHistoryCorrectionLayer[];
-}): ReleaseDilovodCheckItem[] {
-  const layers = Array.isArray(record.correctionLayers) ? record.correctionLayers : [];
-  const fromLayers = layers
-    .map((layer) => {
-      const dilovodDocId = String(layer.dilovodDocId ?? layer.dilovod_doc_id ?? '').trim();
-      if (!dilovodDocId) return null;
-      const internal = String(
-        layer.internalDocNumber ?? layer.internal_doc_number ?? '',
-      ).trim();
-      const label = formatReleaseInternalDocDisplayNumber(internal)
-        ?? (internal || String(layer.recordId ?? layer.id ?? '').trim() || dilovodDocId);
-      return {
-        id: Number(layer.recordId ?? layer.id),
-        dilovodDocId,
-        label,
-      };
-    })
-    .filter((row): row is ReleaseDilovodCheckItem => row != null);
-  if (fromLayers.length > 0) return fromLayers;
-
-  const dilovodDocId = String(record.dilovodDocId ?? record.dilovod_doc_id ?? '').trim();
-  if (!dilovodDocId) return [];
-  const internal = String(record.internalDocNumber ?? record.internal_doc_number ?? '').trim();
-  const label = formatReleaseInternalDocDisplayNumber(internal)
-    ?? (internal || String(record.id ?? '').trim() || dilovodDocId);
-  return [{ id: Number(record.id), dilovodDocId, label }];
-}
-
-function formatReleaseDilovodCheckAlertLine(
-  label: string,
-  result: {
-    dilovodDocId?: string;
-    exists?: boolean;
-    delMark?: boolean;
-    success?: boolean;
-    error?: string;
-  },
-): string {
-  if (result.error) return `⚠️ ${label}: помилка — ${result.error}`;
-  if (result.success === false) return `⚠️ ${label}: перевірку не виконано`;
-  const docId = String(result.dilovodDocId ?? '').trim() || '—';
-  if (result.exists === false) {
-    return `❌ ${label} (${docId})\nНе знайдено в Dilovod (немає в відповіді API)`;
-  }
-  if (result.delMark) {
-    return `🗑️ ${label} (${docId})\nЗнайдено · позначено на видалення (delMark)`;
-  }
-  return `✅ ${label} (${docId})\nЗнайдено · активний документ (delMark ні)`;
 }
 
 export const HistoryAccordionItem = ({
@@ -398,52 +340,11 @@ export const HistoryAccordionItem = ({
     }
   };
 
-  const handleCheckDilovod = async (record: {
-    id?: unknown;
-    dilovodDocId?: unknown;
-    dilovod_doc_id?: unknown;
-    internalDocNumber?: unknown;
-    internal_doc_number?: unknown;
-    correctionLayers?: ReleaseHistoryCorrectionLayer[];
-  }) => {
+  const handleCheckDilovod = async (record: Parameters<typeof collectHistoryDilovodCheckItems>[0]) => {
     const recordId = String(record.id ?? '');
-    const checkItems = collectReleaseDilovodCheckItems(record);
-    if (checkItems.length === 0) {
-      window.alert('ℹ️ У запису немає dilovodDocId — перевірити в Dilovod неможливо.');
-      return;
-    }
-
     setLoadingDilovodCheckId(recordId);
     try {
-      const response = await fetch('/api/warehouse/releases/check-dilovod-batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          readOnly: true,
-          items: checkItems.map(({ id, dilovodDocId }) => ({ id, dilovodDocId })),
-        }),
-      });
-      const json = await response.json().catch(() => ({}));
-      if (!response.ok || !json?.success) {
-        window.alert(`⚠️ ${json?.error ? String(json.error) : `Помилка HTTP ${response.status}`}`);
-        return;
-      }
-
-      const results = Array.isArray(json.results) ? json.results : [];
-      const labelById = new Map(checkItems.map((item) => [item.id, item.label]));
-      const lines = results.map((row: {
-        id?: number;
-        dilovodDocId?: string;
-        exists?: boolean;
-        delMark?: boolean;
-        success?: boolean;
-        error?: string;
-      }) => {
-        const label = labelById.get(Number(row.id)) ?? `Запис №${row.id ?? '?'}`;
-        return formatReleaseDilovodCheckAlertLine(label, row);
-      });
-      window.alert(lines.join('\n\n'));
+      await runWarehouseHistoryDilovodCheck(collectHistoryDilovodCheckItems(record, { recordType }));
     } catch (error) {
       window.alert(`⚠️ ${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -815,7 +716,7 @@ export const HistoryAccordionItem = ({
                           </Button>
                         </div>
                       )}
-                      {isReleaseSetRecord && collectReleaseDilovodCheckItems(record).length > 0 ? (
+                      {collectHistoryDilovodCheckItems(record, { recordType }).length > 0 ? (
                         <div onClick={(e) => e.stopPropagation()}>
                           <Button
                             size="sm"

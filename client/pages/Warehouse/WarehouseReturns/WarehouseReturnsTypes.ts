@@ -81,5 +81,6 @@ export interface ReturnHistoryRecord {
   payload: Record<string, any>;
   createdAt: string;
   createdBy: string;
-  
+  /** ID документа оприбуткування в Dilovod */
+  returnNumber?: string | null;
 }

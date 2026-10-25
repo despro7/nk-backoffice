@@ -17,6 +17,10 @@ import MovementMobProductCard from './MovementMobProductCard';
 import MovementMobWarehouseSelectors, {
   type MovementMobStorageOption,
 } from './MovementMobWarehouseSelectors';
+import {
+  collectHistoryDilovodCheckItems,
+  runWarehouseHistoryDilovodCheck,
+} from '../../shared/warehouseHistoryDilovodCheck';
 
 interface MovementMobDocumentScreenProps {
   editorMode: MovementMobEditorMode;
@@ -69,6 +73,9 @@ interface MovementMobDocumentScreenProps {
   stockRefreshing?: boolean;
   batchLoading?: boolean;
   batchRefreshing?: boolean;
+  dilovodDocId?: string | null;
+  dilovodCheckRecordId?: number | null;
+  dilovodCheckLabel?: string | null;
 }
 
 export default function MovementMobDocumentScreen({
@@ -122,7 +129,31 @@ export default function MovementMobDocumentScreen({
   stockRefreshing = false,
   batchLoading = false,
   batchRefreshing = false,
+  dilovodDocId = null,
+  dilovodCheckRecordId = null,
+  dilovodCheckLabel = null,
 }: MovementMobDocumentScreenProps) {
+  const [checkingDilovod, setCheckingDilovod] = useState(false);
+
+  const dilovodCheckItems = collectHistoryDilovodCheckItems(
+    {
+      id: dilovodCheckRecordId ?? undefined,
+      dilovodDocId,
+      internalDocNumber: dilovodCheckLabel,
+    },
+    { recordType: 'movement' },
+  );
+
+  const handleCheckDilovod = async () => {
+    setCheckingDilovod(true);
+    try {
+      await runWarehouseHistoryDilovodCheck(dilovodCheckItems);
+    } catch (error) {
+      window.alert(`⚠️ ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setCheckingDilovod(false);
+    }
+  };
   const isView = editorMode === 'view';
   const isEmpty = editorMode === 'empty';
   const isFormation = editorMode === 'formation';
@@ -353,9 +384,9 @@ export default function MovementMobDocumentScreen({
         />
       )}
 
-      {showAdminActions && !isDeleted && (
+      {(showAdminActions || dilovodCheckItems.length > 0) && !isDeleted && (
         <div className="flex flex-wrap items-stretch gap-2 mt-6">
-          {showDebugPayload && onShowPayload && (
+          {showAdminActions && showDebugPayload && onShowPayload && (
             <Button
               variant="flat"
               className="min-w-0 h-10 text-primary-700 border-1.5 border-primary-300 bg-primary-50 hover:bg-primary-100"
@@ -370,7 +401,7 @@ export default function MovementMobDocumentScreen({
               Payload
             </Button>
           )}
-          {onShowLogs && (
+          {showAdminActions && onShowLogs && (
             <Button
               variant="flat"
               className="min-w-0 h-10 text-default-700 border-1.5 border-default-600 bg-transparent hover:bg-default-100"
@@ -385,7 +416,7 @@ export default function MovementMobDocumentScreen({
               Logs
             </Button>
           )}
-          {canAdminEdit && (adminEditing ? (
+          {showAdminActions && canAdminEdit && (adminEditing ? (
             <Button
               variant="flat"
               className="min-w-0 h-10 text-white bg-neutral-400/75 hover:bg-neutral-400/80"
@@ -404,7 +435,7 @@ export default function MovementMobDocumentScreen({
               Редагувати
             </Button>
           ))}
-          {canAdminDelete && (
+          {showAdminActions && canAdminDelete && (
             <Button
               color="danger"
               className="min-w-0 h-10 text-danger-700 border-1.5 border-danger-500 bg-transparent hover:bg-danger-700 hover:text-white"
@@ -414,6 +445,24 @@ export default function MovementMobDocumentScreen({
               Видалити
             </Button>
           )}
+          {dilovodCheckItems.length > 0 ? (
+            <Button
+              variant="flat"
+              className="min-w-0 h-10 text-amber-900 border-1.5 border-amber-400 bg-amber-50 hover:bg-amber-100"
+              isDisabled={checkingDilovod}
+              startContent={(
+                <DynamicIcon
+                  name={checkingDilovod ? 'loader-circle' : 'search-check'}
+                  size={16}
+                  strokeWidth={1.75}
+                  className={`shrink-0 ${checkingDilovod ? 'animate-spin' : ''}`}
+                />
+              )}
+              onPress={() => void handleCheckDilovod()}
+            >
+              Перевірити в Dilovod
+            </Button>
+          ) : null}
         </div>
       )}
     </div>

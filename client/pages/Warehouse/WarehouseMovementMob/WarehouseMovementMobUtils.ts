@@ -966,6 +966,9 @@ export function toDocumentViewModel(
   return {
     id: record.id,
     displayNumber: formatDocNumber(record.internalDocNumber),
+    internalDocNumber: record.internalDocNumber,
+    docNumber: record.docNumber ?? null,
+    dilovodDocId: record.dilovodDocId ?? null,
     draftCreatedAt: record.draftCreatedAt,
     status: record.status,
     mode: resolveScreenMode(record.status),

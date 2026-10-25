@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-10-25 — Переміщення mob: збереження полів скану, remark «(сканування)», історія Dilovod
+
+**Files:** `warehouseMovementMobItems.ts`, `warehouseMovementNotes.ts`, `MovementHistoryService.ts`, `WarehouseController.ts`, `useWarehouseMovementV2.ts`, `MovementV2DilovodEditDrawer.tsx`, `useMovementDraftState.ts`, `warehouseHistoryDilovodFrom.ts`, `warehouseHistoryDilovodCheck.ts`, `HistoryAccordionItem.tsx`, `ReturnsHistoryTable.tsx`, `SetReleaseController.ts`, `DilovodService.ts`, `repair-mob-movement-scan-fields.ts`, `warehouse-movement-mob.md`, `warehouse-movement-v2.md`
+
+- **Mob + v2:** якщо `warehouse_movement.items` у mob-форматі (ШК, `batchNumber`, `received*`), `persistDetailsToDB` не перезаписує їх кешем Dilovod; `PUT /api/warehouse/:id` з v2 мержить рядки через `mergeIncomingPutItemsPreservingMobScan`.
+- **Dilovod remark:** `confirm-receipt` / `sync-dilovod` для mob-документів додають суфікс `Додано|Оновлено з Backoffice (сканування) <дата uk-UA>` (`buildEffectiveMovementNotes`, channel `mob-scan`); v2 лишається без `(сканування)`.
+- **UI v2 drawer:** підказка для документів зі скану; strip remark при завантаженні з Dilovod враховує `(сканування)`.
+- **Історія:** спільний `warehouseHistoryDilovodCheck` + `WAREHOUSE_HISTORY_DILOVOD_FROM` — перевірка партій у Dilovod для переміщень, повернень, списань тощо; `check-dilovod-batch` у releases батчить по `dilovodFrom`.
+- **Repair:** `scripts/repair-mob-movement-scan-fields.ts` — відновлення mob-полів з audit JSON (якщо items були перезаписані до фіксу).
+
+**Документація:** [`warehouse-movement-mob.md`](features/warehouse-movement-mob.md), [`warehouse-movement-v2.md`](features/warehouse-movement-v2.md).
+
+---
+
 ## 2026-10-25 — Випуски: коригування rebatch — сесії, пари kit/unkit, merge/delete в історії
 
 **Files:** `HistoryAccordionItem.tsx`, `ReleaseHistoryTab.tsx`, `ReleaseHistoryToolbarFilters.tsx`, `ReleaseSetsMainFlow.tsx`, `useReleaseSets.ts`, `WarehouseReleaseHistoryListService.ts`, `WarehouseReleaseCorrectionSessionService.ts`, `SetReleaseController.ts`, `link-release-correction-pairs.ts`, `linkReleaseCorrectionPairs.ts`, `releaseCorrectionLayers.ts`, `mergeReleaseHistoryCorrections.ts`, `releaseHistoryListGroup.ts`, `releaseHistoryDisplayTitle.ts`, `releaseHistoryDisplayDocNumber.ts`, `releaseHistoryListQuery.ts`, `releaseBatchCorrection.ts`, міграція `20261023160000_warehouse_release_correction_session_id`, `package.json` (npm scripts linker)

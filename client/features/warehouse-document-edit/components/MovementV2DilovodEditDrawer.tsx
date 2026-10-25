@@ -105,15 +105,22 @@ export default function MovementV2DilovodEditDrawer({
     );
   } else {
     body = (
-      <MovementV2EditorPanel
-        mov={mov}
-        sendFlow={sendFlow}
-        modalOverlayZClassName={NESTED_OVERLAY_Z}
-        sendLabel="Зберегти та відправити"
-        showDirectionHeading={false}
-        hideInlineActions
-        compactSummarySpacing
-      />
+      <>
+        {mov.linkedMobScan ? (
+          <p className="mb-3 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-800">
+            Документ створено через сканування (movement-mob). Штрих-коди та дані прийому збережуться при збереженні з v2.
+          </p>
+        ) : null}
+        <MovementV2EditorPanel
+          mov={mov}
+          sendFlow={sendFlow}
+          modalOverlayZClassName={NESTED_OVERLAY_Z}
+          sendLabel="Зберегти та відправити"
+          showDirectionHeading={false}
+          hideInlineActions
+          compactSummarySpacing
+        />
+      </>
     );
   }
 

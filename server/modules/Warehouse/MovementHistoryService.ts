@@ -6,7 +6,9 @@ import { prisma } from '../../lib/utils.js';
 import { DilovodApiClient } from '../../services/dilovod/DilovodApiClient.js';
 import type { GoodMovingDocument, GoodMovingDocumentDetails, MovementHistoryResponse } from '../../../shared/types/movement.js';
 import type { GetMovementHistoryParams } from './WarehouseTypes.js';
+import { isMobMovementStoredItems } from '../../../shared/utils/warehouseMovementMobItems.js';
 import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
+import { WarehouseService } from './WarehouseService.js';
 
 export class MovementHistoryService {
   private static dilovodClient: DilovodApiClient | null = null;
@@ -224,6 +226,21 @@ export class MovementHistoryService {
         : [];
 
       if (goods.length === 0) return;
+
+      const movement = await prisma.warehouseMovement.findFirst({
+        where: { dilovodDocId },
+        select: { items: true },
+      });
+      const existingItems = movement
+        ? (WarehouseService.parseItems(movement.items) as Record<string, unknown>[])
+        : [];
+      if (isMobMovementStoredItems(existingItems)) {
+        console.log(
+          `💾 [MovementHistoryService] skip persistDetailsToDB for ${dilovodDocId}`
+          + ' — mob scan items preserved',
+        );
+        return;
+      }
 
       // Збираємо Dilovod ID товарів для маппінгу good → sku через таблицю products
       const dilovodIds = goods.map((g: any) => g.good).filter(Boolean);

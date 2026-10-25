@@ -206,6 +206,9 @@ export interface MovementMobChronologyEvent {
 export interface MovementMobDocumentViewModel {
   id: number;
   displayNumber: string;
+  internalDocNumber: string;
+  docNumber: string | null;
+  dilovodDocId: string | null;
   /** Фактична дата створення переміщення (ISO). */
   draftCreatedAt: string;
   status: MovementMobDbStatus | string;

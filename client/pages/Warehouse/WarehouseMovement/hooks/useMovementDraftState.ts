@@ -5,6 +5,7 @@ import { serializeMovementItems } from '../WarehouseMovementUtils';
 import type { MovementProduct, MovementDraft, MovementBatch } from '../WarehouseMovementTypes';
 import { DILOVOD_WAREHOUSE_DEFAULTS } from '@shared/types/dilovod';
 import { formatKyivDateTime } from '@shared/utils/kyivDateTime';
+import { buildEffectiveMovementNotes } from '@shared/utils/warehouseMovementNotes';
 
 // ---------------------------------------------------------------------------
 // useMovementDraftState — стан і логіка чернетки переміщення
@@ -22,23 +23,8 @@ import { formatKyivDateTime } from '@shared/utils/kyivDateTime';
 /** Форматує Date у "YYYY-MM-DD HH:mm:ss" (Europe/Kyiv wall-clock для Dilovod) */
 export const formatLocalDateTime = (date: Date): string => formatKyivDateTime(date);
 
-/** Генерує суфікс коментаря. isAdd=true → "Додано", false → "Оновлено" */
-const buildDefaultNotes = (isAdd: boolean): string => {
-  const date = new Date().toLocaleString('uk-UA');
-  return (isAdd ? 'Додано' : 'Оновлено') + ' з Backoffice ' + date;
-};
-
-/**
- * Видаляє попередній суфікс "Додано/Оновлено з Backoffice …" і додає новий.
- * Гарантує що суфікс не дублюється при повторних збереженнях.
- */
-export const buildEffectiveNotes = (userNotes: string, isAdd: boolean): string => {
-  const suffix = buildDefaultNotes(isAdd);
-  const cleaned = userNotes
-    .replace(/\s*\|\s*(Додано|Оновлено) з Backoffice .+$/, '')
-    .trim();
-  return cleaned ? `${cleaned} | ${suffix}` : suffix;
-};
+export const buildEffectiveNotes = (userNotes: string, isAdd: boolean): string =>
+  buildEffectiveMovementNotes(userNotes, isAdd, 'default');
 
 // ---------------------------------------------------------------------------
 // Трансформація даних документа Dilovod → MovementBatch[]
@@ -485,7 +471,7 @@ export const useMovementDraftState = (
         if (doc.remark) {
           setNotes(
             doc.remark
-              .replace(/(?:\s*\|\s*)?(?:Додано|Оновлено) з Backoffice.*$/, '')
+              .replace(/(?:\s*\|\s*)?(?:Додано|Оновлено) з Backoffice(?: \(сканування\))?.*$/, '')
               .trim(),
           );
         }

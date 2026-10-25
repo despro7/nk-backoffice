@@ -33,6 +33,14 @@ import {
   isUsableDilovodBatchId,
   sanitizeStoredBatchName,
 } from '../../../shared/utils/dilovodBatchId.js';
+import {
+  isMobMovementStoredItems,
+  mergeIncomingPutItemsPreservingMobScan,
+} from '../../../shared/utils/warehouseMovementMobItems.js';
+import {
+  buildEffectiveMovementNotes,
+  isMobScanMovementRecord,
+} from '../../../shared/utils/warehouseMovementNotes.js';
 import { parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import {
   repairWarehouseInventorySession,
@@ -1557,16 +1565,57 @@ router.put('/:id', authenticateToken, async (req, res) => {
       console.log(`📦 [Warehouse] Дата переміщення: ${parsedMovementDate.toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv' })}`);
     }
 
+    let itemsToSave = items;
+    if (Array.isArray(items)) {
+      const storedItems = WarehouseService.parseItems(existingDraft.items) as Record<string, unknown>[];
+      itemsToSave = mergeIncomingPutItemsPreservingMobScan(
+        storedItems,
+        items as Record<string, unknown>[],
+      );
+    }
+
     const updatedDraft = await WarehouseService.updateMovement(Number(id), {
-      items,
+      items: itemsToSave,
       notes,
-      movementDate: parsedMovementDate
+      movementDate: parsedMovementDate,
     });
 
     console.log(`✅ [Warehouse] Чернетку оновлено (id ${updatedDraft.id})`);
     res.json(updatedDraft);
   } catch (error) {
     console.error('🚨 [Warehouse] Error updating draft:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/warehouse/movement-by-dilovod/:dilovodDocId — локальний запис mob/v2 за ID Dilovod
+router.get('/movement-by-dilovod/:dilovodDocId', authenticateToken, async (req, res) => {
+  try {
+    const dilovodDocId = String(req.params.dilovodDocId ?? '').trim();
+    if (!dilovodDocId) {
+      return res.status(400).json({ error: 'dilovodDocId is required' });
+    }
+    const movement = await prisma.warehouseMovement.findUnique({
+      where: { dilovodDocId },
+      select: {
+        id: true,
+        internalDocNumber: true,
+        status: true,
+        sourceWarehouse: true,
+        destinationWarehouse: true,
+        items: true,
+      },
+    });
+    if (!movement) {
+      return res.status(404).json({ error: 'Документ не знайдено' });
+    }
+    const storedItems = WarehouseService.parseItems(movement.items);
+    return res.json({
+      ...movement,
+      hasMobScanItems: isMobMovementStoredItems(storedItems),
+    });
+  } catch (error) {
+    console.error('🚨 [Warehouse] movement-by-dilovod:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1768,8 +1817,21 @@ async function exportReceivedQuantitiesToDilovod(params: {
   );
 
   const deviations = WarehouseService.buildReceiptDeviations(items);
+  const isMobScan = isMobScanMovementRecord({
+    submittedAt: movement.submittedAt,
+    items,
+  });
+  const isAddToDilovod = !String(movement.dilovodDocId ?? '').trim();
+  const effectiveNotes = isMobScan
+    ? buildEffectiveMovementNotes(movement.notes, isAddToDilovod, 'mob-scan')
+    : movement.notes;
+  const draftForExport = isMobScan
+    ? { ...movement, notes: effectiveNotes }
+    : movement;
+  const notesExtraUpdate = isMobScan && !dryRun ? { notes: effectiveNotes } : {};
+
   const exportResult = await exportWarehouseMovementToDilovod({
-    draft: movement,
+    draft: draftForExport,
     summaryItems,
     userId,
     movementDate: movement.movementDate,
@@ -1779,6 +1841,7 @@ async function exportReceivedQuantitiesToDilovod(params: {
       ? undefined
       : {
         deviations: JSON.stringify(deviations),
+        ...notesExtraUpdate,
         ...(extraUpdate ?? {}),
       },
   });
