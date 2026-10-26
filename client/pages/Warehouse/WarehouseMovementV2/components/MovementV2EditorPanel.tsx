@@ -56,6 +56,9 @@ export default function MovementV2EditorPanel({
     [mov.storage, dirsCtx.directories],
   );
 
+  // Drawer: hideInlineActions + compactSummarySpacing; головна вкладка — без compact.
+  const compactLayout = compactSummarySpacing || hideInlineActions;
+
   return (
     <>
       <MovementDirectionDetails
@@ -67,7 +70,7 @@ export default function MovementV2EditorPanel({
         movementDateTime={mov.movementDateTime}
         onMovementDateTimeChange={mov.setMovementDateTime}
         showSectionTitle={showDirectionHeading}
-        compactSpacing={compactSummarySpacing}
+        compactSpacing={compactLayout}
       />
 
       <MovementRegisterPanel
@@ -81,14 +84,14 @@ export default function MovementV2EditorPanel({
         onRemoveLine={mov.removeLine}
         overlayZClassName={modalOverlayZClassName}
         batchPickerShouldBlockScroll={modalOverlayZClassName ? false : undefined}
-        compactSpacing={compactSummarySpacing}
+        compactSpacing={compactLayout}
       />
 
       <MovementSummaryPanel
         items={mov.summaryItems}
         sourceStorageId={mov.storage}
         destStorageId={mov.storageTo}
-        compactSpacing={compactSummarySpacing}
+        compactSpacing={compactLayout}
       />
 
       {!hideInlineActions ? (

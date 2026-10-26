@@ -99,10 +99,11 @@ function buildBatchCacheKey(
   storageId?: string,
   includeNonPositiveQty?: boolean,
   skipExpiration?: boolean,
+  includeNegativeQty?: boolean,
 ): string {
   const firmPart = firmId ?? 'default';
   const storagePart = storageId ?? 'any';
-  const qtyPart = includeNonPositiveQty ? 'nonpos' : 'pos';
+  const qtyPart = includeNegativeQty ? 'nonzero' : includeNonPositiveQty ? 'nonpos' : 'pos';
   const expirationPart = skipExpiration ? 'noexp' : 'exp';
   if (!asOfDate) {
     return `${sku}:${firmPart}:${storageMode}:${storagePart}:${qtyPart}:${expirationPart}:now`;
@@ -160,6 +161,11 @@ async function enrichBatchesWithCatalogZeroBalance(
     options.firmId,
     options.allBalanceBatches,
   );
+}
+
+/** Переміщення: лише ненульові залишки з balance (без каталожних qty=0). */
+function filterNonZeroBalanceBatches(batches: BatchNumbersRow[]): BatchNumbersRow[] {
+  return batches.filter((batch) => batch.quantity !== 0);
 }
 
 /** Dilovod balance може повертати кілька рядків на одну пару batchId+storage (різні firm). */
@@ -609,6 +615,7 @@ router.get('/batch-numbers', authenticateToken, async (req, res) => {
       onlySmallStorage,
       storageId,
       includeNonPositiveQty,
+      includeNegativeQty,
       skipExpiration,
     } = req.query;
 
@@ -625,6 +632,7 @@ router.get('/batch-numbers', authenticateToken, async (req, res) => {
     const shouldIncludeSmallStorage = includeSmallStorage === 'true';
     const shouldOnlySmallStorage = onlySmallStorage === 'true';
     const shouldIncludeNonPositiveQty = includeNonPositiveQty === 'true';
+    const shouldIncludeNegativeQty = includeNegativeQty === 'true';
     const shouldSkipExpiration = skipExpiration === 'true';
     const targetStorageId = typeof storageId === 'string' && storageId.trim() ? storageId.trim() : undefined;
 
@@ -635,6 +643,8 @@ router.get('/batch-numbers', authenticateToken, async (req, res) => {
         return res.status(400).json({ error: 'Invalid date format. Expected YYYY-MM-DD HH:mm:ss (Kyiv) or ISO' });
       }
     }
+
+    const dilovodIncludeNonPositive = shouldIncludeNonPositiveQty || shouldIncludeNegativeQty;
 
     const { DilovodService } = await import('../../services/dilovod/DilovodService.js');
     const { getDilovodConfigFromDB } = await import('../../services/dilovod/DilovodUtils.js');
@@ -667,6 +677,7 @@ router.get('/batch-numbers', authenticateToken, async (req, res) => {
         targetStorageId,
         shouldIncludeNonPositiveQty,
         shouldSkipExpiration,
+        shouldIncludeNegativeQty,
       );
 
       if (!forceRefresh) {
@@ -698,14 +709,14 @@ router.get('/batch-numbers', authenticateToken, async (req, res) => {
         finalFirmId,
         parsedDate,
         {
-          includeNonPositiveQty: shouldIncludeNonPositiveQty,
+          includeNonPositiveQty: dilovodIncludeNonPositive,
           skipExpiration: shouldSkipExpiration,
         },
       );
 
       for (const sku of cacheMissSkus) {
         const rawBatches = fetchedBySku[sku] ?? [];
-        const filteredBatches = dedupeBatchesByStorage(
+        let filteredBatches = dedupeBatchesByStorage(
           await enrichBatchNamesFromCatalog(
             filterBatchesByStorageMode(rawBatches, dilovodConfig, {
               targetStorageId,
@@ -714,6 +725,9 @@ router.get('/batch-numbers', authenticateToken, async (req, res) => {
             }),
           ),
         );
+        if (shouldIncludeNegativeQty) {
+          filteredBatches = filterNonZeroBalanceBatches(filteredBatches);
+        }
         batchesBySku[sku] = filteredBatches;
 
         if (filteredBatches.length > 0) {
@@ -725,6 +739,7 @@ router.get('/batch-numbers', authenticateToken, async (req, res) => {
             targetStorageId,
             shouldIncludeNonPositiveQty,
             shouldSkipExpiration,
+            shouldIncludeNegativeQty,
           );
           batchCache.set(cacheKey, { data: filteredBatches, timestamp: Date.now(), ttl });
         }
@@ -748,6 +763,7 @@ router.get('/batch-numbers', authenticateToken, async (req, res) => {
       cachedSkuCount: fromCacheCount,
       fetchedSkuCount: cacheMissSkus.length,
       includeNonPositiveQty: shouldIncludeNonPositiveQty,
+      includeNegativeQty: shouldIncludeNegativeQty,
       skipExpiration: shouldSkipExpiration,
     });
   } catch (error) {
@@ -763,12 +779,24 @@ router.get('/batch-numbers', authenticateToken, async (req, res) => {
 router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
   try {
     const { sku } = req.params;
-    const { firmId, asOfDate, force, includeSmallStorage, onlySmallStorage, storageId, includeNonPositiveQty } = req.query;
+    const {
+      firmId,
+      asOfDate,
+      force,
+      includeSmallStorage,
+      onlySmallStorage,
+      storageId,
+      includeNonPositiveQty,
+      includeNegativeQty,
+    } = req.query;
     const forceRefresh = force === 'true';
     const shouldIncludeSmallStorage = includeSmallStorage === 'true';
     const shouldOnlySmallStorage = onlySmallStorage === 'true';
     // Виняток для повернень: дозволити партії з qty ≤ 0 на дату asOfDate
     const shouldIncludeNonPositiveQty = includeNonPositiveQty === 'true';
+    /** Переміщення: balance з qty≠0, без каталожних нульових партій. */
+    const shouldIncludeNegativeQty = includeNegativeQty === 'true';
+    const dilovodIncludeNonPositive = shouldIncludeNonPositiveQty || shouldIncludeNegativeQty;
     // Якщо передано storageId — фільтруємо партії лише по цьому складу (склад-джерело переміщення)
     const targetStorageId = typeof storageId === 'string' && storageId.trim() ? storageId.trim() : undefined;
 
@@ -804,7 +832,7 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
     }
 
     const catalogEnrichStorageId = targetStorageId
-      ?? (shouldIncludeNonPositiveQty ? dilovodConfig.smallStorageId : undefined);
+      ?? (shouldIncludeNonPositiveQty && !shouldIncludeNegativeQty ? dilovodConfig.smallStorageId : undefined);
 
     // --- Кеш ---
     const storageMode: BatchStorageMode = shouldOnlySmallStorage
@@ -812,7 +840,16 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
       : shouldIncludeSmallStorage
         ? 'all'
         : 'exclude-small';
-    const cacheKey = buildBatchCacheKey(sku, finalFirmId, parsedDate, storageMode, targetStorageId, shouldIncludeNonPositiveQty);
+    const cacheKey = buildBatchCacheKey(
+      sku,
+      finalFirmId,
+      parsedDate,
+      storageMode,
+      targetStorageId,
+      shouldIncludeNonPositiveQty,
+      false,
+      shouldIncludeNegativeQty,
+    );
     const ttl = resolveBatchCacheTtl(parsedDate);
     const ttlLabel = ttl === BATCH_CACHE_TTL_LONG ? '12 год' : '5 хв';
 
@@ -823,26 +860,32 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
         const ageLabel = ageSeconds < 60 ? `${ageSeconds}с` : (ageSeconds < 3600 ? `${Math.round(ageSeconds / 60)}хв` : `${Math.round(ageSeconds / 3600)}год`);
         const cachedTtlLabel = cached.ttl === BATCH_CACHE_TTL_LONG ? '12 год' : '5 хв';
         console.log(`✅ [Warehouse] Партії для SKU ${sku} отримані з кешу (вік: ${ageLabel}, TTL запису: ${cachedTtlLabel}). Дата переміщення ${parsedDate ? `${parsedDate.toLocaleString('uk-UA')}` : 'не вказана'}.`);
-        let cachedBalanceBatches: BatchNumbersRow[] | undefined;
-        if (shouldIncludeNonPositiveQty && catalogEnrichStorageId) {
-          const rawBalanceBatches = await dilovodService.getBatchNumbersBySku(sku, finalFirmId, parsedDate, {
-            includeNonPositiveQty: true,
-          });
-          cachedBalanceBatches = await enrichBatchNamesFromCatalog(rawBalanceBatches);
-        }
-        const cachedBatches = await enrichBatchesWithCatalogZeroBalance(
-          sku,
-          dedupeBatchesByStorage(
-            await enrichBatchNamesFromCatalog(cached.data as BatchNumbersRow[]),
-          ),
-          {
-            includeNonPositiveQty: shouldIncludeNonPositiveQty,
-            storageId: catalogEnrichStorageId,
-            firmId: finalFirmId,
-            allBalanceBatches: cachedBalanceBatches,
-            dilovodService,
-          },
+        const cachedBase = dedupeBatchesByStorage(
+          await enrichBatchNamesFromCatalog(cached.data as BatchNumbersRow[]),
         );
+        let cachedBatches = cachedBase;
+        if (shouldIncludeNegativeQty) {
+          cachedBatches = filterNonZeroBalanceBatches(cachedBase);
+        } else {
+          let cachedBalanceBatches: BatchNumbersRow[] | undefined;
+          if (shouldIncludeNonPositiveQty && catalogEnrichStorageId) {
+            const rawBalanceBatches = await dilovodService.getBatchNumbersBySku(sku, finalFirmId, parsedDate, {
+              includeNonPositiveQty: true,
+            });
+            cachedBalanceBatches = await enrichBatchNamesFromCatalog(rawBalanceBatches);
+          }
+          cachedBatches = await enrichBatchesWithCatalogZeroBalance(
+            sku,
+            cachedBase,
+            {
+              includeNonPositiveQty: shouldIncludeNonPositiveQty,
+              storageId: catalogEnrichStorageId,
+              firmId: finalFirmId,
+              allBalanceBatches: cachedBalanceBatches,
+              dilovodService,
+            },
+          );
+        }
         return res.json({
           success: true,
           sku,
@@ -851,6 +894,7 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
           asOfDate: parsedDate ? parsedDate.toISOString() : null,
           fromCache: true,
           includeNonPositiveQty: shouldIncludeNonPositiveQty,
+          includeNegativeQty: shouldIncludeNegativeQty,
         });
       }
     } else {
@@ -858,31 +902,41 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
       batchCache.delete(cacheKey);
     }
 
-    console.log(`📦 [Warehouse] GET /batch-numbers/:sku - запит партій для SKU: ${sku}${parsedDate ? ` на дату ${parsedDate.toLocaleString('uk-UA')}` : ''}${shouldIncludeNonPositiveQty ? ' (вкл. qty≤0)' : ''}`);
+    console.log(
+      `📦 [Warehouse] GET /batch-numbers/:sku - запит партій для SKU: ${sku}${parsedDate ? ` на дату ${parsedDate.toLocaleString('uk-UA')}` : ''}`
+      + `${shouldIncludeNonPositiveQty ? ' (вкл. qty≤0)' : ''}${shouldIncludeNegativeQty ? ' (лише qty≠0)' : ''}`,
+    );
 
     const balanceBatches = await enrichBatchNamesFromCatalog(
       await dilovodService.getBatchNumbersBySku(sku, finalFirmId, parsedDate, {
-        includeNonPositiveQty: shouldIncludeNonPositiveQty,
+        includeNonPositiveQty: dilovodIncludeNonPositive,
       }),
     );
 
-    const filteredBatches = await enrichBatchesWithCatalogZeroBalance(
-      sku,
-      dedupeBatchesByStorage(
-        filterBatchesByStorageMode(balanceBatches, dilovodConfig, {
-          targetStorageId,
-          shouldOnlySmallStorage,
-          shouldIncludeSmallStorage,
-        }),
-      ),
-      {
-        includeNonPositiveQty: shouldIncludeNonPositiveQty,
-        storageId: catalogEnrichStorageId,
-        firmId: finalFirmId,
-        allBalanceBatches: balanceBatches,
-        dilovodService,
-      },
+    const afterStorageFilter = dedupeBatchesByStorage(
+      filterBatchesByStorageMode(balanceBatches, dilovodConfig, {
+        targetStorageId,
+        shouldOnlySmallStorage,
+        shouldIncludeSmallStorage,
+      }),
     );
+
+    let filteredBatches: BatchNumbersRow[];
+    if (shouldIncludeNegativeQty) {
+      filteredBatches = filterNonZeroBalanceBatches(afterStorageFilter);
+    } else {
+      filteredBatches = await enrichBatchesWithCatalogZeroBalance(
+        sku,
+        afterStorageFilter,
+        {
+          includeNonPositiveQty: shouldIncludeNonPositiveQty,
+          storageId: catalogEnrichStorageId,
+          firmId: finalFirmId,
+          allBalanceBatches: balanceBatches,
+          dilovodService,
+        },
+      );
+    }
 
     const filterLabel = targetStorageId
       ? `лише склад ${targetStorageId}`
@@ -909,6 +963,7 @@ router.get('/batch-numbers/:sku', authenticateToken, async (req, res) => {
       asOfDate: parsedDate ? parsedDate.toISOString() : null,
       fromCache: false,
       includeNonPositiveQty: shouldIncludeNonPositiveQty,
+      includeNegativeQty: shouldIncludeNegativeQty,
     });
   } catch (error) {
     console.error('🚨 [Warehouse] Помилка при отриманні партій:', error);

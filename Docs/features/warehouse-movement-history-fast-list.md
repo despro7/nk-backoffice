@@ -10,7 +10,7 @@
 Клієнт: GET /api/warehouse/movements/history?sync=true&page&limit&from&to
   → (опційно) sync шапок Dilovod — без getObject / tpGoods
   → listMovementHistory — Prisma warehouse_movement, items не читаються в списку
-  → відповідь: шапки + порожні items/itemsNormalized
+  → відповідь: шапки + порожні items/itemsNormalized; `createdAt` = `draftCreatedAt`, `movementDate` — для UI дат у акордеоні
 
 Клієнт: lazyEnrichHistoryPage + розгортання акордеону
   → GET /api/warehouse/movements/history/:id/details

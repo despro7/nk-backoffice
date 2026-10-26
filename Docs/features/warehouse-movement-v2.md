@@ -35,6 +35,18 @@
 
 При додаванні з пошуку `dilovodId` рядка береться з `catalogGoodId` індексу (архівні SKU не проходять через `GET /api/products` без `showOutdated`). Перед відправкою сервер дозаповнює відсутній `dilovodId` з каталогу (`WarehousePayloadBuilder.enrichSummaryItemsDilovodIds`).
 
+**Набори (комплекти):** для рядка визначається `isSet` з каталогу (`shared/utils/productIsSet.ts`, `movementV2Catalog.ts`); у payload `accGood` = рахунок комплектів, не ГП (`WarehousePayloadBuilder.buildPayload`).
+
+### Партії в реєстрі v2
+
+Реєстр використовує `WarehouseProductBatchesPanel` з режимом **`movementBatchPicker`** (не `goodUnKit`):
+
+| Поведінка | Деталі |
+|-----------|--------|
+| API | `includeNegativeQty=true` на `GET /api/warehouse/batch-numbers` — balance з qty≠0, **без** каталожних нульових партій (на відміну від `includeNonPositiveQty` для розукомплектування) |
+| UI picker | Показуються лише партії з qty≠0; **мінусові** видно, але не обираються (бейдж «Мінус — не для переміщення») |
+| Bulk | `skipExpiration=true` як і в release sets |
+
 ## Історія (UI)
 
 Спільний `HistoryAccordionItem` з `recordType="movement"`:
@@ -43,6 +55,8 @@
 - Без круглої іконки `arrow-left-right`.
 - Напрям — `MovementMobDirectionBadges` (ГП → МС), не повні назви складів у chip.
 - Кількість одиниць — `sumHistoryItemsQuantity` / `resolveHistoryItemQuantity` (`totalPortions` пріоритетніше за `portionQuantity`) — `historyNormalize.ts` (client + server).
+- **Дати:** «Дата створення» = `draftCreatedAt` (у списку API також поле `createdAt`); якщо `movementDate` відрізняється — жовтий блок **«Дата операції»** (як у комплектації/списаннях), логіка в `HistoryAccordionItem`.
+- **Видалення:** кнопка «Видалити» → `DELETE /api/warehouse/:id` (delMark у Dilovod за наявності `dilovodDocId`); право `ACTION_WAREHOUSE_HISTORY_DELETE` + override `ACTION_WAREHOUSE_MOVEMENT_DELETE` для не-чернеток.
 
 Редагування документа Dilovod: drawer `WarehouseDocumentEditDrawer` — UI **v2**, не v1 `MovementEditorView`.
 
@@ -54,7 +68,7 @@
 | Форма | `MovementV2EditorPanel` + `useWarehouseMovementV2.loadFromDilovodDocument` / `movementV2Adapters.linesFromGoodMovingDetails` |
 | Завантаження | `GET /api/warehouse/details/:id?forEdit=true` (Dilovod-first) |
 | Footer | **Скасувати** → `onClose` (без збереження); **Зберегти та відправити** → `useMovementV2SendFlow` |
-| UX drawer | Без «Параметри переміщення»; компактний summary; дії лише в footer |
+| UX drawer | Без «Параметри переміщення»; `compactSummarySpacing` + `hideInlineActions` → компактні відступи реєстру/summary (`compactLayout` у `MovementV2EditorPanel`); дії лише в footer |
 | Права | `ACTION_WAREHOUSE_MOVEMENT_EDIT` |
 | Документи mob | Якщо запис зі скану (`linkedMobScan` / mob-`items`), drawer показує підказку; збереження не затирає ШК/partію — див. [mob — збереження полів скану](./warehouse-movement-mob.md#збереження-полів-скану-при-правках-v2). Strip `remark` з Dilovod: опційно `(сканування)` у regex. |
 

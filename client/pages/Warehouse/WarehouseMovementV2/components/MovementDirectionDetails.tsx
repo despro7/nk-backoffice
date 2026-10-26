@@ -76,7 +76,7 @@ export default function MovementDirectionDetails({
       {showSectionTitle ? (
         <div className="text-base font-semibold text-gray-700 mt-1 mb-2">Параметри переміщення</div>
       ) : null}
-      <Card className={`bg-white mb-6 ${compactSpacing ? 'p-2 rounded-lg' : 'p-4 rounded-xl'} ${showSectionTitle ? '' : 'mt-0'}`} shadow="sm">
+      <Card className={`bg-white mb-6 ${compactSpacing ? 'p-2 rounded-lg overflow-visible' : 'p-4 rounded-xl'} ${showSectionTitle ? '' : 'mt-0'}`} shadow="sm">
         <div className="flex flex-wrap md:flex-nowrap gap-4 items-end">
           <Select
             label="Зі складу"

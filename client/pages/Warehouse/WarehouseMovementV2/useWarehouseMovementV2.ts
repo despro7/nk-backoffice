@@ -13,6 +13,7 @@ import { serializeMovementItems } from '../WarehouseMovement/WarehouseMovementUt
 import { buildEffectiveNotes, formatLocalDateTime } from '../WarehouseMovement/hooks/useMovementDraftState';
 import type { CreateWarehouseMovementRequest } from '@/types/warehouse';
 import { linesFromGoodMovingDetails, linesToSummaryItems } from './movementV2Adapters';
+import { enrichMovementV2LinesIsSet, fetchSkusIsSet } from './movementV2Catalog';
 import { fetchGoodMovingDetailsForEdit } from '@/features/warehouse-document-edit/api/fetchGoodMovingDetailsForEdit';
 import { goodMovingDocumentFromDetails } from '@/features/warehouse-document-edit/utils/goodMovingDocumentFromDetails';
 import { lazyEnrichHistoryPage } from '@/pages/Warehouse/shared/lazyEnrichHistoryPage';
@@ -87,6 +88,7 @@ export default function useWarehouseMovementV2() {
       }]
       : [];
 
+    const isSetBySku = await fetchSkusIsSet([hit.sku]);
     const line: MovementV2Line = {
       id: `line-${hit.sku}-${Date.now()}`,
       sku: hit.sku,
@@ -94,6 +96,7 @@ export default function useWarehouseMovementV2() {
       barcode: hit.barcodes[0] ?? '',
       dilovodId,
       portionsPerBox: hit.portionsPerBox > 0 ? hit.portionsPerBox : 1,
+      isSet: isSetBySku.get(hit.sku) ?? false,
       stockAtStorage: hit.stockAtStorage ?? null,
       batches: initialBatches,
     };
@@ -309,7 +312,7 @@ export default function useWarehouseMovementV2() {
       : '';
     setNotes(remark);
 
-    const nextLines = linesFromGoodMovingDetails(details);
+    const nextLines = await enrichMovementV2LinesIsSet(linesFromGoodMovingDetails(details));
     setLines(nextLines);
 
     const draft: MovementDraft = {
@@ -346,6 +349,18 @@ export default function useWarehouseMovementV2() {
     }
   }, [archivePagination.page, archivePagination.limit, fetchHistoryPage]);
 
+  const deleteHistoryRecord = useCallback(async (recordId: string) => {
+    const id = String(recordId).trim();
+    if (!id || !Number.isFinite(Number(id))) {
+      throw new Error('Некоректний id запису');
+    }
+    const response = await apiCall(`${API_BASE}/${id}`, { method: 'DELETE' });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok || !json?.success) {
+      throw new Error(json?.error || `HTTP ${response.status}`);
+    }
+  }, [apiCall]);
+
   return {
     storage,
     setStorage,
@@ -381,5 +396,6 @@ export default function useWarehouseMovementV2() {
     loadArchive,
     loadFromDilovodDocument,
     linkedMobScan,
+    deleteHistoryRecord,
   };
 }

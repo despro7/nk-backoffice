@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-10-26 — Переміщення v2: accGood наборів, партії, історія (видалення + дати)
+
+**Files:** `movementV2Catalog.ts`, `productIsSet.ts`, `WarehouseController.ts` (`includeNegativeQty`), `MovementV2HistoryTab`, `WarehouseProductBatchesPanel`, `BatchNumbersAutocomplete`, `warehouse-movement-v2.md`
+
+- **Payload:** `isSet` з каталогу для комплектів — правильний `accGood` у goodMoving.
+- **Партії:** режим переміщення (`movementBatchPicker`) — без нульових каталожних партій; мінуси лише для відображення.
+- **Історія:** «Видалити»; дата операції (жовтий блок) при `movementDate` ≠ `draftCreatedAt`.
+
+**Документація:** [`warehouse-movement-v2.md`](features/warehouse-movement-v2.md).
+
+---
+
 ## 2026-10-26 — Склад: єдині фільтри історії Dilovod; dilovodId для архівних SKU у переміщенні v2
 
 **Files:** `warehouseDocHistoryListQuery.ts`, `WarehouseDocHistoryToolbarFilters.tsx`, `warehouseGoodDocumentHistoryList.ts`, `returnsHistoryList.ts`, `movementV2HistoryList.ts`, `WarehousePayloadBuilder.ts`, `WarehouseMovementExport.ts`, `fifoBatchAllocation.ts`, write-off/surplus/returns/movement-v2/release UI, `warehouse-doc-history-filters.md`

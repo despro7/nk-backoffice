@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/utils.js';
 import type { WarehouseProductByBarcodeResponse } from '../../../shared/types/warehouse.js';
 import { isUsableDilovodBatchId } from '../../../shared/utils/dilovodBatchId.js';
+import { productIsSet } from '../../../shared/utils/productIsSet.js';
 import {
   isWithinEditWindow,
   isReceiverOfMovement,
@@ -735,14 +736,7 @@ export class WarehouseService {
   }
 
   static productIsSet(rawSet: unknown): boolean {
-    if (Array.isArray(rawSet)) return rawSet.length > 0;
-    if (typeof rawSet !== 'string' || !rawSet.trim()) return false;
-    try {
-      const parsed = JSON.parse(rawSet);
-      return Array.isArray(parsed) && parsed.length > 0;
-    } catch {
-      return false;
-    }
+    return productIsSet(rawSet);
   }
 
   static buildSummaryItemsFromReceived(

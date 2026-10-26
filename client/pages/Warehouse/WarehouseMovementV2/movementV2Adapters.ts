@@ -58,14 +58,15 @@ export function batchesToMovementBatches(
   batches: ReleaseComponentBatch[],
   storageId: string,
   portionsPerBox: number,
+  isSet = false,
 ): MovementBatch[] {
   const ppb = portionsPerBox > 0 ? portionsPerBox : 1;
   return batches
     .filter((batch) => Number(batch.quantity ?? 0) > 0)
     .map((batch, index) => {
       const total = Number(batch.quantity ?? 0);
-      const boxes = Math.floor(total / ppb);
-      const portions = total % ppb;
+      const boxes = isSet ? 0 : Math.floor(total / ppb);
+      const portions = isSet ? total : total % ppb;
       return {
         id: `${batch.batchId}-${index}`,
         batchId: batch.batchId,
@@ -86,8 +87,9 @@ export function lineToMovementProduct(line: MovementV2Line, storageId: string): 
     barcode: line.barcode,
     dilovodId: line.dilovodId,
     portionsPerBox: line.portionsPerBox > 0 ? line.portionsPerBox : 1,
+    isSet: line.isSet,
     details: {
-      batches: batchesToMovementBatches(line.batches, storageId, line.portionsPerBox),
+      batches: batchesToMovementBatches(line.batches, storageId, line.portionsPerBox, Boolean(line.isSet)),
       forecast: 0,
     },
     stockData: null,

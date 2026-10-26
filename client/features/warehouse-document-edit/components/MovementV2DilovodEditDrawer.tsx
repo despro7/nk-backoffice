@@ -118,7 +118,7 @@ export default function MovementV2DilovodEditDrawer({
           sendLabel="Зберегти та відправити"
           showDirectionHeading={false}
           hideInlineActions
-          compactSummarySpacing
+          compactSummarySpacing={true}
         />
       </>
     );

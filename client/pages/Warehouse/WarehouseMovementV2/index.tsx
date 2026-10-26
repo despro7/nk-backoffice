@@ -8,6 +8,7 @@ import { WarehouseDocHistoryToolbarFilters } from '../shared/WarehouseDocHistory
 import useWarehouseMovementV2 from './useWarehouseMovementV2';
 import { useMovementV2SendFlow } from './hooks/useMovementV2SendFlow';
 import { useWarehouseDocumentEditDrawer } from '@/features/warehouse-document-edit/context/WarehouseDocumentEditDrawerContext';
+import { ToastService } from '@/services/ToastService';
 
 type PageTab = 'main' | 'history' | 'archive';
 
@@ -60,7 +61,7 @@ export default function WarehouseMovementV2Page() {
 
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <PageTabs
-          className="flex-1 min-w-0"
+          className="min-w-0"
           selectedKey={pageTab}
           onSelectionChange={(key) => {
             const tab = key as PageTab;
@@ -123,6 +124,24 @@ export default function WarehouseMovementV2Page() {
           }}
           detailsLoading={mov.historyDetailsLoading}
           onEdit={openMovementEdit}
+          onDeleteRecord={async (recordId) => {
+            try {
+              await mov.deleteHistoryRecord(recordId);
+              ToastService.show({ title: 'Переміщення видалено', color: 'success' });
+              loadHistoryPage(
+                mov.historyPagination.page,
+                mov.historyPagination.limit,
+                true,
+              );
+            } catch (error) {
+              ToastService.show({
+                title: 'Не вдалося видалити',
+                description: error instanceof Error ? error.message : undefined,
+                color: 'danger',
+              });
+              throw error;
+            }
+          }}
         />
       )}
 

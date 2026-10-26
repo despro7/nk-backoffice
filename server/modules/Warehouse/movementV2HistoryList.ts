@@ -157,6 +157,8 @@ function mapMovementListRow(rec: {
 }) {
   return {
     ...rec,
+    createdAt: rec.draftCreatedAt,
+    movementDate: rec.movementDate,
     items: [],
     itemsNormalized: [],
     comment: rec.notes,

@@ -7,6 +7,8 @@ export interface MovementV2Line {
   barcode: string;
   dilovodId: string | null;
   portionsPerBox: number;
+  /** Комплект (набір) — інший accGood у Dilovod goodMoving. */
+  isSet?: boolean;
   /** Залишок на складі-джерелі з пошуку (порції). */
   stockAtStorage?: number | null;
   batches: ReleaseComponentBatch[];

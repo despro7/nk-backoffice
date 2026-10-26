@@ -132,7 +132,7 @@ export default function WarehouseProductBatchesPanel({
         showSectionHeading={false}
         freeQuantityMode
         wrapInCard={false}
-        operationKey="goodUnKit"
+        movementBatchPicker
         onRemoveComponent={onRemove ? () => onRemove() : undefined}
         overlayZClassName={overlayZClassName}
         batchPickerShouldBlockScroll={batchPickerShouldBlockScroll}

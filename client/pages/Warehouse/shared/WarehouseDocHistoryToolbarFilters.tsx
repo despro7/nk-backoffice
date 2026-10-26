@@ -77,7 +77,7 @@ export function WarehouseDocHistoryToolbarFilters({ filters, onFiltersChange, cl
   };
 
   return (
-    <div className={`flex flex-wrap items-center gap-2 ${className ?? ''}`}>
+    <div className={`flex-1 flex flex-wrap items-center gap-2 ${className ?? ''}`}>
       <Input
         aria-label="Пошук"
         placeholder="№, SKU, партія…"

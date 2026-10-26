@@ -24,6 +24,7 @@ interface Props {
   onLoadRecord?: (record: any) => Promise<void>;
   detailsLoading?: Record<string, boolean>;
   onEdit?: (record: any) => void;
+  onDeleteRecord?: (recordId: string) => Promise<void>;
   title?: string;
   emptyMessage?: string;
   variant?: 'movement' | 'archive';
@@ -47,7 +48,11 @@ function mapMovementHistoryRecord(record: any) {
 
   return {
     id: String(record.id),
-    createdAt: record.createdAt || record.created_at,
+    createdAt:
+      record.createdAt
+      || record.created_at
+      || record.draftCreatedAt
+      || record.draft_created_at,
     movementDate: record.movementDate || record.movement_date,
     createdBy: record.createdBy || record.created_by,
     sourceWarehouse: record.sourceWarehouse || record.source_warehouse,
@@ -71,6 +76,7 @@ export default function MovementV2HistoryTab({
   onLoadRecord,
   detailsLoading,
   onEdit,
+  onDeleteRecord,
   title = 'Історія переміщень',
   emptyMessage = 'Немає записів',
   variant = 'movement',
@@ -131,7 +137,8 @@ export default function MovementV2HistoryTab({
         <HistoryAccordionItem
           records={mapped}
           recordType="movement"
-          showDelete={false}
+          showDelete={variant !== 'archive' && Boolean(onDeleteRecord)}
+          onDeleteRecord={onDeleteRecord}
           showEdit={variant !== 'archive' && Boolean(onEdit)}
           onEditRecord={onEdit ? async (record) => {
             onEdit(record);
