@@ -8,7 +8,7 @@ import {
   PRODUCT_MOVEMENTS_DRAWER_MIN_WIDTH,
 } from '../hooks/useProductMovementsDrawerWidth';
 import type { ProductMovementsDrawerPlacement, ProductMovementsFilterState } from '../types';
-import { createDefaultFilters } from '../productMovementsUtils';
+import { createDefaultFilters, normalizeProductMovementsFilters } from '../productMovementsUtils';
 import useProductMovementsMeta from '../hooks/useProductMovementsMeta';
 import useProductMovementsQuery from '../hooks/useProductMovementsQuery';
 import ProductMovementsFilters from './ProductMovementsFilters';
@@ -47,6 +47,7 @@ export default function ProductMovementsDrawer({
     reset,
   } = useProductMovementsQuery();
   const [filters, setFilters] = useState<ProductMovementsFilterState>(createDefaultFilters());
+  const [filtersMountKey, setFiltersMountKey] = useState(0);
   const openSessionRef = useRef(0);
   const autoGenerateSessionRef = useRef<number | null>(null);
 
@@ -56,11 +57,12 @@ export default function ProductMovementsDrawer({
       return;
     }
 
-    const nextFilters = initialFilters ?? createDefaultFilters();
+    const nextFilters = normalizeProductMovementsFilters(initialFilters ?? createDefaultFilters());
     const sessionId = openSessionRef.current + 1;
     openSessionRef.current = sessionId;
     autoGenerateSessionRef.current = autoGenerate ? sessionId : null;
 
+    setFiltersMountKey((value) => value + 1);
     setFilters(nextFilters);
     reset();
   }, [isOpen, initialFilters, autoGenerate, reset]);
@@ -130,9 +132,10 @@ export default function ProductMovementsDrawer({
       ) : null}
 
       <ProductMovementsFilters
+        key={filtersMountKey}
         meta={meta}
         filters={filters}
-        onChange={setFilters}
+        onChange={(next) => setFilters(normalizeProductMovementsFilters(next))}
         compact
         productLocked={Boolean(initialFilters?.sku || initialFilters?.dilovodGoodId)}
       />

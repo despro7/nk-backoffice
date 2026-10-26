@@ -145,18 +145,75 @@ export function defaultPeriod(): { startDate: string; endDate: string } {
   const last30Days = presets.find((preset) => preset.key === 'last30Days');
   if (last30Days) {
     const range = last30Days.getRange();
-    return {
-      startDate: calendarValueToYmd(range.start),
-      endDate: calendarValueToYmd(range.end),
-    };
+    return normalizeProductMovementsPeriod(
+      calendarValueToYmd(range.start),
+      calendarValueToYmd(range.end),
+    );
   }
 
   const now = today(getLocalTimeZone());
   const start = now.subtract({ days: 29 });
+  return normalizeProductMovementsPeriod(
+    calendarValueToYmd(start),
+    calendarValueToYmd(now),
+  );
+}
+
+/** Зрізає період до сьогодні (локально) і виправляє інвертований або невалідний діапазон. */
+export function normalizeProductMovementsPeriod(
+  startDate: string,
+  endDate: string,
+): { startDate: string; endDate: string } {
+  const maxDate = today(getLocalTimeZone());
+  let start = parseYmdToCalendarDate(startDate);
+  let end = parseYmdToCalendarDate(endDate);
+
+  if (!start && !end) {
+    const fallback = today(getLocalTimeZone());
+    return {
+      startDate: calendarValueToYmd(fallback),
+      endDate: calendarValueToYmd(fallback),
+    };
+  }
+  if (!start) start = end!;
+  if (!end) end = start!;
+
+  if (start.compare(end) > 0) {
+    const swappedStart = end;
+    end = start;
+    start = swappedStart;
+  }
+
+  if (end.compare(maxDate) > 0) {
+    end = maxDate;
+  }
+  if (start.compare(maxDate) > 0) {
+    start = maxDate;
+  }
+  if (start.compare(end) > 0) {
+    start = end;
+  }
+
   return {
     startDate: calendarValueToYmd(start),
-    endDate: calendarValueToYmd(now),
+    endDate: calendarValueToYmd(end),
   };
+}
+
+export function matchProductMovementsDatePresetKey(range: DateRange | null): string | null {
+  if (!range?.start || !range?.end) {
+    return null;
+  }
+  for (const preset of createStandardDatePresets()) {
+    const candidate = preset.getRange();
+    if (
+      candidate.start.compare(range.start) === 0
+      && candidate.end.compare(range.end) === 0
+    ) {
+      return preset.key;
+    }
+  }
+  return 'custom';
 }
 
 export function dateRangeToPeriod(range: DateRange | null): { startDate: string; endDate: string } | null {
@@ -172,6 +229,17 @@ export function periodToDateRange(startDate: string, endDate: string): DateRange
   const end = parseYmdToCalendarDate(endDate);
   if (!start || !end) return null;
   return { start, end };
+}
+
+export function normalizeProductMovementsFilters(
+  filters: ProductMovementsFilterState,
+): ProductMovementsFilterState {
+  const period = normalizeProductMovementsPeriod(filters.startDate, filters.endDate);
+  return {
+    ...filters,
+    startDate: period.startDate,
+    endDate: period.endDate,
+  };
 }
 
 export function createDefaultFilters(): ProductMovementsFilterState {
@@ -191,7 +259,10 @@ export function createDefaultFilters(): ProductMovementsFilterState {
 
 export function filtersFromOpenParams(params: ProductMovementsOpenParams): ProductMovementsFilterState {
   const base = createDefaultFilters();
-  const period = params.period ?? { startDate: base.startDate, endDate: base.endDate };
+  const period = normalizeProductMovementsPeriod(
+    params.period?.startDate ?? base.startDate,
+    params.period?.endDate ?? base.endDate,
+  );
   return {
     ...base,
     sku: params.sku ?? null,

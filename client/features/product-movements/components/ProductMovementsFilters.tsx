@@ -16,6 +16,8 @@ import {
   createDatePresets,
   dateRangeToPeriod,
   formatProductDisplayLabel,
+  matchProductMovementsDatePresetKey,
+  normalizeProductMovementsPeriod,
   periodToDateRange,
 } from '../productMovementsUtils';
 import {
@@ -102,7 +104,15 @@ export default function ProductMovementsFilters({
   const [datePresetKey, setDatePresetKey] = useState<string | null>('last30Days');
   const datePresets = useMemo(() => createDatePresets(), []);
   const maxDate = today(getLocalTimeZone());
-  const dateRange = periodToDateRange(filters.startDate, filters.endDate);
+  const dateRange = useMemo(
+    () => periodToDateRange(filters.startDate, filters.endDate),
+    [filters.endDate, filters.startDate],
+  );
+
+  useEffect(() => {
+    const matched = matchProductMovementsDatePresetKey(dateRange);
+    setDatePresetKey(matched ?? 'last30Days');
+  }, [dateRange, filters.endDate, filters.startDate]);
 
   const storageOptions = useMemo(
     () => (meta?.storages ?? []).map((item) => ({ key: item.id, label: item.name })),
@@ -116,8 +126,10 @@ export default function ProductMovementsFilters({
   const handleDateRangeChange = useCallback((range: DateRange | null) => {
     const period = dateRangeToPeriod(range);
     if (!period) return;
-    onChange({ ...filters, startDate: period.startDate, endDate: period.endDate });
-    setDatePresetKey('custom');
+    const normalized = normalizeProductMovementsPeriod(period.startDate, period.endDate);
+    onChange({ ...filters, startDate: normalized.startDate, endDate: normalized.endDate });
+    const nextRange = periodToDateRange(normalized.startDate, normalized.endDate);
+    setDatePresetKey(matchProductMovementsDatePresetKey(nextRange) ?? 'custom');
   }, [filters, onChange]);
 
   const handleDatePresetChange = useCallback((key: string | null) => {
@@ -145,13 +157,25 @@ export default function ProductMovementsFilters({
       triggerClassName: filterControlHeight,
     }),
     createDateRangeFilterConfig({
+      key: `dateRange-${filters.startDate}-${filters.endDate}`,
       value: dateRange,
       onChange: handleDateRangeChange,
       maxValue: maxDate,
       size: compact ? 'sm' : 'md',
       inputWrapperClassName: filterControlHeight,
     }),
-  ], [compact, datePresetKey, datePresets, dateRange, filterControlHeight, handleDatePresetChange, handleDateRangeChange, maxDate]);
+  ], [
+    compact,
+    datePresetKey,
+    datePresets,
+    dateRange,
+    filterControlHeight,
+    filters.endDate,
+    filters.startDate,
+    handleDatePresetChange,
+    handleDateRangeChange,
+    maxDate,
+  ]);
 
   const { batches, loading: batchesLoading, fetchBatches } = useBatchNumbers();
   const [productMenuOpen, setProductMenuOpen] = useState(false);
