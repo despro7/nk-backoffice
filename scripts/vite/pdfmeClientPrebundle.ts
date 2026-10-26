@@ -5,11 +5,13 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
 import type { Plugin } from 'vite';
+import { createEsbuildPdfmePatchPlugin } from './pdfmeDesignerRotatedDragPatch.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const require = createRequire(path.join(root, 'package.json'));
 const cacheDir = path.join(root, 'node_modules/.cache/pdfme-client-bundle');
 const stubPath = path.join(root, 'client/shims/pdfmeConverterBrowserStub.ts');
+const patchSourcePath = path.join(root, 'scripts/vite/pdfmeDesignerRotatedDragPatch.ts');
 
 const ENTRIES = {
   ui: { pkg: '@pdfme/ui', file: 'ui.js' },
@@ -36,6 +38,8 @@ function cacheKey(): string {
         schemas: pkgVersion('@pdfme/schemas'),
         common: pkgVersion('@pdfme/common'),
         stub: stubStat.mtimeMs,
+        patch: fs.statSync(patchSourcePath).mtimeMs,
+        bundleRevision: 2,
       }),
     )
     .digest('hex');
@@ -60,6 +64,7 @@ async function ensureBundle(entryPkg: string, outfile: string, key: string): Pro
     alias: {
       '@pdfme/converter': stubPath,
     },
+    plugins: entryPkg === '@pdfme/ui' ? [createEsbuildPdfmePatchPlugin()] : [],
   });
   fs.writeFileSync(stamp, key);
 }

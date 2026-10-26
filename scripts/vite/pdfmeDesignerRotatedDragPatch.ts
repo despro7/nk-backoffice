@@ -647,7 +647,7 @@ export function patchPdfmeUiBundle(source: string): { code: string; patched: boo
   return { code, patched };
 }
 
-function createEsbuildPdfmePatchPlugin() {
+export function createEsbuildPdfmePatchPlugin() {
   return {
     name: 'pdfme-ui-designer-patch-esbuild',
     setup(build: { onLoad: (opts: { filter: RegExp }, fn: (args: { path: string }) => Promise<{ contents: string; loader: 'js' }>) => void }) {
