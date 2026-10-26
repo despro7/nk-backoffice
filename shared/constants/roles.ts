@@ -56,8 +56,10 @@ export function isRoleValue(value: string | null | undefined): value is RoleValu
 /** Заголовок UI-preview: адмін просить сервер перевіряти доступ як нижча роль. */
 export const ROLE_PREVIEW_HEADER = 'X-Role-Preview';
 export const ROLE_PREVIEW_APPLIED_HEADER = 'X-Role-Preview-Applied';
-/** Відповідь requireRole / requireMinRole: клієнт показує toast, не читаючи body. */
+/** Відповідь requirePermission / requireRole: клієнт показує toast (читає message / X-Required-Permission). */
 export const INSUFFICIENT_ROLE_HEADER = 'X-Insufficient-Role';
+/** Ключ права, якого не вистачає (action.* або page.*). */
+export const REQUIRED_PERMISSION_HEADER = 'X-Required-Permission';
 
 /**
  * Ендпоінти сесії/ідентичності завжди йдуть від реальної ролі,

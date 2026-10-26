@@ -2,11 +2,13 @@ import {
   ROLE_PREVIEW_HEADER,
   ROLE_PREVIEW_APPLIED_HEADER,
   INSUFFICIENT_ROLE_HEADER,
+  REQUIRED_PERMISSION_HEADER,
   ROLE_LABELS,
   isRoleValue,
   isRolePreviewExemptPath,
 } from '@shared/constants/roles';
 import { ToastService } from '@/services/ToastService';
+import { describeInsufficientPermissionAction } from '@/lib/resolvePermissionLabel';
 
 let previewRole: string | null = null;
 let roleLabelResolver: ((slug: string) => string | null) | null = null;
@@ -14,6 +16,11 @@ let fetchPatched = false;
 let originalFetch: typeof window.fetch | null = null;
 let lastInsufficientRoleToastAt = 0;
 const INSUFFICIENT_ROLE_TOAST_COOLDOWN_MS = 2000;
+
+type InsufficientRoleBody = {
+  message?: string;
+  permissionKey?: string;
+};
 
 /**
  * Встановлює роль для попереднього перегляду при запитах fetch.
@@ -78,7 +85,16 @@ function isSameOriginApiUrl(url: string): boolean {
   }
 }
 
-function notifyInsufficientRole(response: Response): void {
+async function readInsufficientRoleBody(response: Response): Promise<InsufficientRoleBody | null> {
+  try {
+    const data = (await response.clone().json()) as InsufficientRoleBody;
+    return data && typeof data === 'object' ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+async function notifyInsufficientRole(response: Response): Promise<void> {
   if (response.status !== 403) return;
   if (response.headers.get(INSUFFICIENT_ROLE_HEADER) !== '1') return;
 
@@ -90,11 +106,27 @@ function notifyInsufficientRole(response: Response): void {
   const deniedRole = previewApplied || previewRole;
   const roleLabel = deniedRole ? resolveRoleLabel(deniedRole) : null;
 
+  const body = await readInsufficientRoleBody(response);
+  const permissionKey =
+    body?.permissionKey?.trim()
+    || response.headers.get(REQUIRED_PERMISSION_HEADER)?.trim()
+    || null;
+  const actionDescription = describeInsufficientPermissionAction(body?.message, permissionKey);
+
+  let description: string;
+  if (actionDescription && roleLabel) {
+    description = `Роль «${roleLabel}» не має доступу. ${actionDescription}`;
+  } else if (actionDescription) {
+    description = actionDescription;
+  } else if (roleLabel) {
+    description = `Роль «${roleLabel}» не має доступу до цієї дії`;
+  } else {
+    description = 'У вас немає доступу до цієї дії';
+  }
+
   ToastService.show({
     title: 'Недостатньо прав',
-    description: roleLabel
-      ? `Роль «${roleLabel}» не має доступу до цієї дії`
-      : 'У вас немає доступу до цієї дії',
+    description,
     color: previewApplied ? 'warning' : 'danger',
     settingKey: 'apiErrors',
   });
@@ -141,8 +173,8 @@ export function installRolePreviewFetch(): void {
   originalFetch = window.fetch.bind(window);
 
   window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-    return dispatchFetch(input, init).then((response) => {
-      notifyInsufficientRole(response);
+    return dispatchFetch(input, init).then(async (response) => {
+      await notifyInsufficientRole(response);
       return response;
     });
   };

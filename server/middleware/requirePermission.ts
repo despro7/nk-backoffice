@@ -1,23 +1,36 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import { INSUFFICIENT_ROLE_HEADER } from '../../shared/constants/roles.js';
-import { registerAction } from '../../shared/constants/permissions.js';
+import { INSUFFICIENT_ROLE_HEADER, REQUIRED_PERMISSION_HEADER } from '../../shared/constants/roles.js';
+import {
+  formatPermissionDenialMessage,
+  getRegisteredActionLabel,
+  registerAction,
+} from '../../shared/constants/permissions.js';
 import { roleService } from '../services/RoleService.js';
 
 export type PermissionGuard = RequestHandler & { key: string };
 
-export function sendInsufficientRole(res: Response, message: string) {
+export function sendInsufficientRole(
+  res: Response,
+  message: string,
+  options?: { permissionKey?: string },
+) {
   res.setHeader(INSUFFICIENT_ROLE_HEADER, '1');
+  if (options?.permissionKey) {
+    res.setHeader(REQUIRED_PERMISSION_HEADER, options.permissionKey);
+  }
   return res.status(403).json({
     success: false,
     error: 'Insufficient permissions',
     code: 'INSUFFICIENT_ROLE',
     message,
+    ...(options?.permissionKey ? { permissionKey: options.permissionKey } : {}),
   });
 }
 
 function permissionGuard(
   hasPermissionFn: (slug: string, key: string) => Promise<boolean>,
-  key: string
+  key: string,
+  explicitLabel?: string,
 ): PermissionGuard {
   const mw = async (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
@@ -34,7 +47,9 @@ function permissionGuard(
 
     const allowed = await hasPermissionFn(req.user.role, key);
     if (!allowed) {
-      return sendInsufficientRole(res, `Required permission: ${key}`);
+      return sendInsufficientRole(res, formatPermissionDenialMessage(key, explicitLabel), {
+        permissionKey: key,
+      });
     }
 
     next();
@@ -47,7 +62,7 @@ export function createRequirePermission(
 ) {
   return (group: string, name: string, label: string): PermissionGuard => {
     const key = registerAction(group, name, label);
-    return permissionGuard(hasPermissionFn, key);
+    return permissionGuard(hasPermissionFn, key, label);
   };
 }
 
@@ -88,7 +103,9 @@ export function createRequireAnyPermissionKey(
         }
       }
 
-      return sendInsufficientRole(res, `Required permission: ${keys.join(' | ')}`);
+      const labels = keys.map((k) => getRegisteredActionLabel(k) ?? k);
+      const message = `Потрібне одне з прав: ${labels.map((l) => `«${l}»`).join(', ')}`;
+      return sendInsufficientRole(res, message, { permissionKey: keys.join('|') });
     };
     return mw;
   };

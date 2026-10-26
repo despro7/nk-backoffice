@@ -5,6 +5,15 @@
 
 ---
 
+## 2026-10-26 — Права доступу: назва дії в toast при 403
+
+**Files:** `requirePermission.ts`, `permissions.ts`, `roles.ts`, `rolePreviewFetch.ts`, `resolvePermissionLabel.ts`
+
+- **API:** при `INSUFFICIENT_ROLE` — українське `message` з label права, `permissionKey` у body та заголовок `X-Required-Permission`.
+- **Клієнт:** глобальний перехоплювач `fetch` показує в toast конкретну дію (або текст з сервера); для `page.*` — назва з `routes.config`; у прев’ю ролі — роль + дія.
+
+---
+
 ## 2026-10-26 — Переміщення v2: пошук товару в drawer без закриття панелі
 
 **Files:** `WarehouseProductSearch.tsx`, `MovementRegisterPanel.tsx`, `MovementV2EditorPanel.tsx`, `warehouse-movement-v2.md`

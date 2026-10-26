@@ -5,6 +5,8 @@ import {
   actionKey,
   canAccessRoute,
   collectPagePermissions,
+  formatPermissionDenialMessage,
+  getRegisteredActionLabel,
   hasPermission,
   isActionPermission,
   isPagePermission,
@@ -336,6 +338,15 @@ describe('registerAction', () => {
   it('throws when the same key is registered with a different label', () => {
     registerAction('products', 'edit', 'Редагувати товари');
     expect(() => registerAction('products', 'edit', 'Інша назва')).toThrow(/already registered/i);
+  });
+
+  it('formatPermissionDenialMessage uses registered label', () => {
+    registerAction('warehouse', 'operate', 'Створювати/відправляти складські документи');
+    const key = actionKey('warehouse', 'operate');
+    expect(getRegisteredActionLabel(key)).toBe('Створювати/відправляти складські документи');
+    expect(formatPermissionDenialMessage(key)).toBe(
+      'Потрібне право: «Створювати/відправляти складські документи»',
+    );
   });
 });
 

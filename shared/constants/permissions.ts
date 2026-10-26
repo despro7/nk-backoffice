@@ -186,6 +186,29 @@ export function listRegisteredActions(): PermissionDef[] {
   return [...actionRegistry.values()];
 }
 
+export function getRegisteredActionLabel(key: string): string | null {
+  const normalized = normalizePermissionKey(key);
+  if (!normalized) return null;
+  return actionRegistry.get(normalized)?.label ?? null;
+}
+
+/** Людське повідомлення для 403 INSUFFICIENT_ROLE (сервер + fallback на клієнті). */
+export function formatPermissionDenialMessage(key: string, explicitLabel?: string): string {
+  const label = explicitLabel?.trim() || getRegisteredActionLabel(key);
+  if (label) return `Потрібне право: «${label}»`;
+  return `Потрібне право (${key})`;
+}
+
+const REQUIRED_PERMISSION_PREFIX = /^Required permission:\s*/i;
+
+/** Витягує ключ(і) з legacy-повідомлення middleware. */
+export function parseRequiredPermissionKeys(message: string): string[] {
+  const trimmed = message.trim();
+  if (!REQUIRED_PERMISSION_PREFIX.test(trimmed)) return [];
+  const rest = trimmed.replace(REQUIRED_PERMISSION_PREFIX, '');
+  return rest.split(/\s*\|\s*/).map((part) => part.trim()).filter(Boolean);
+}
+
 export function resetActionRegistry(): void {
   actionRegistry.clear();
 }

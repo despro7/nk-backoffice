@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Request, Response, NextFunction } from 'express';
-import { INSUFFICIENT_ROLE_HEADER } from '../../shared/constants/roles';
+import { INSUFFICIENT_ROLE_HEADER, REQUIRED_PERMISSION_HEADER } from '../../shared/constants/roles';
 import { actionKey, pageKey, resetActionRegistry } from '../../shared/constants/permissions';
 import { createRequirePermission, createRequirePermissionKey } from './requirePermission';
 
@@ -58,6 +58,9 @@ describe('requirePermission', () => {
     expect(res.statusCode).toBe(403);
     expect(res.headers[INSUFFICIENT_ROLE_HEADER]).toBe('1');
     expect(res.body.code).toBe('INSUFFICIENT_ROLE');
+    expect(res.body.message).toBe('Потрібне право: «Керувати користувачами»');
+    expect(res.body.permissionKey).toBe(actionKey('users', 'manage'));
+    expect(res.headers[REQUIRED_PERMISSION_HEADER]).toBe(actionKey('users', 'manage'));
     expect(next).not.toHaveBeenCalled();
   });
 
