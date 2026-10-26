@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-10-26 — Наліпки: пріоритет чернетки; склад з BOM за обʼємом
+
+**Files:** `ProductLabelsTab.tsx`, `ProductLabelService.ts`, `CatalogLabelService.ts`, `ProductLabelsController.ts`, `storefrontDescription.ts`, `product-labels.md`, `products-catalog-2.0.md`, `woocommerce-storefront-phase1.md`
+
+- **Вкладка «Наліпки»:** при відкритті та зміні партії за замовчуванням показується збережена **чернетка** (партія з `GET …/labels/draft/latest`), не останній PDF; після генерації PDF — щойно створена версія.
+- **Одна чернетка на товар + `labelKind`:** при `PUT …/labels/draft` чернетки для інших партій видаляються.
+- **Контент → Склад:** «Оновити зі специфікації» сортує інгредієнти за `qty` (найбільший перший).
+
+**Документація:** [`product-labels.md`](features/product-labels.md).
+
+---
+
 ## 2026-10-26 — Наліпки: превʼю Designer, комплекти без коробки, UX синхронізації
 
 **Files:** `ProductLabelsTab.tsx`, `SettingsLabelTemplates.tsx`, `labelTemplateInputs.ts`, `labelTemplateDefaults.ts`, `labelInputs.ts`, `labelMvtVariables.ts`, `CatalogLabelService.ts`, `LabelTemplateService.ts`, `LabelTemplatePreviewProductPicker.tsx`, `useFinishedProductSearchIndex.ts`, `product-labels.md`

@@ -115,6 +115,20 @@ export class CatalogLabelService {
     };
   }
 
+  /** Остання збережена чернетка для товару (будь-яка партія). */
+  async getLatestDraft(
+    goodId: string,
+    labelKind: ProductLabelKind,
+  ): Promise<ProductLabelDraftDto | null> {
+    const row = await prisma.catalogProductLabelDraft.findFirst({
+      where: { goodId, labelKind },
+      orderBy: { updatedAt: 'desc' },
+      select: { batchId: true },
+    });
+    if (!row) return null;
+    return this.getDraft(goodId, row.batchId, labelKind);
+  }
+
   async listHistory(
     goodId: string,
     batchId: string,
@@ -169,6 +183,14 @@ export class CatalogLabelService {
       inputs: merged,
       nutritionEnergyManual: Boolean(input.payload.nutritionEnergyManual),
     };
+
+    await prisma.catalogProductLabelDraft.deleteMany({
+      where: {
+        goodId,
+        labelKind: input.labelKind,
+        NOT: { batchId: input.batchId },
+      },
+    });
 
     const row = await prisma.catalogProductLabelDraft.upsert({
       where: {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Accordion,
   AccordionItem,
@@ -105,7 +105,6 @@ export function ProductLabelsTab({
   const [deleting, setDeleting] = useState(false);
   const [viewingVersion, setViewingVersion] = useState(false);
   const [userPickedBatch, setUserPickedBatch] = useState(false);
-  const preferPublishedIdRef = useRef<number | undefined>(undefined);
 
   const { batches, loading: batchesLoading, error: batchesError, fetchBatches } = useBatchNumbers();
   const sku = detail.sku || '';
@@ -138,7 +137,6 @@ export function ProductLabelsTab({
     setHistoryEntries([]);
     setSavedDraftPayloadKey(null);
     setViewingVersion(false);
-    preferPublishedIdRef.current = undefined;
   }, [labelKind]);
 
   useEffect(() => {
@@ -236,14 +234,15 @@ export function ProductLabelsTab({
           history = await ProductLabelService.listHistory(detail.id, batch.batchId, kind);
         }
         setHistoryEntries(history);
-        const preferId = options?.preferPublishedId ?? preferPublishedIdRef.current;
-        preferPublishedIdRef.current = undefined;
-        const preferred = preferId
-          ? history.find((row) => row.entryType === 'published' && row.id === preferId)
-          : undefined;
-        if (preferred) {
-          selectHistoryEntry(preferred);
-          return;
+        const preferPublishedId = options?.preferPublishedId;
+        if (preferPublishedId != null) {
+          const preferred = history.find(
+            (row) => row.entryType === 'published' && row.id === preferPublishedId,
+          );
+          if (preferred) {
+            selectHistoryEntry(preferred);
+            return;
+          }
         }
         const draftEntry = history.find((row) => row.entryType === 'draft');
         if (draftEntry) {
@@ -275,22 +274,37 @@ export function ProductLabelsTab({
     let cancelled = false;
     void (async () => {
       try {
-        const latest = await ProductLabelService.getLatestPublished(detail.id, labelKind);
-        if (cancelled || !latest) return;
-        const batchFromList = batches.find((b) => b.batchId === latest.batchId);
+        const latestDraft = await ProductLabelService.getLatestDraft(detail.id, labelKind);
+        if (cancelled) return;
+        const anchor = latestDraft
+          ? {
+              batchId: latestDraft.batchId,
+              batchNumber: latestDraft.batchNumber,
+              expiration: latestDraft.payload.inputs.expires_at || null,
+            }
+          : await ProductLabelService.getLatestPublished(detail.id, labelKind).then((latest) =>
+              latest
+                ? {
+                    batchId: latest.batchId,
+                    batchNumber: latest.batchNumber,
+                    expiration: latest.payload.inputs.expires_at || null,
+                  }
+                : null,
+            );
+        if (cancelled || !anchor) return;
+        const batchFromList = batches.find((b) => b.batchId === anchor.batchId);
         const batch: BatchNumber =
           batchFromList ??
           ({
-            batchId: latest.batchId,
-            batchNumber: latest.batchNumber,
+            batchId: anchor.batchId,
+            batchNumber: anchor.batchNumber,
             storage: '',
             storageDisplayName: '',
             quantity: 0,
             firm: '',
             firmDisplayName: '',
-            expiration: latest.payload.inputs.expires_at || null,
+            expiration: anchor.expiration,
           } satisfies BatchNumber);
-        preferPublishedIdRef.current = latest.id;
         setSelectedBatch(batch);
       } catch {
         // Користувач обере партію вручну
@@ -428,7 +442,6 @@ export function ProductLabelsTab({
         batchNumber: selectedBatch.batchNumber,
         labelKind,
       });
-      preferPublishedIdRef.current = created.id;
       await loadLabelState(selectedBatch, labelKind, { preferPublishedId: created.id });
       ToastService.show({ title: `PDF v${created.version} згенеровано`, color: 'success' });
     } catch (err) {

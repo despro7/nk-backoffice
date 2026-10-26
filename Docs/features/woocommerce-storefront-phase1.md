@@ -236,7 +236,7 @@ Layout **1/3 + 2/3**:
 
 | Секція | Компонент | Призначення |
 |--------|-----------|-------------|
-| Склад | `ProductIngredientsTags` | JSON-теги → `productIngredientsJson`; видалення chip — через `ConfirmModal`; ✕ при hover — `text-danger` |
+| Склад | `ProductIngredientsTags` | JSON-теги → `productIngredientsJson`; «Оновити зі специфікації» — `buildIngredientsJsonFromBom` (порядок за `qty` спадно); видалення chip — через `ConfirmModal`; ✕ при hover — `text-danger` |
 | КБЖВ | `StorefrontNutritionFields` | `productNutritionJson` |
 | Публікація | Switch + Select | `doNotPublish`, `storefrontPresetId` |
 | **Повний опис** | `StorefrontDescriptionEditor` | `storefrontDescriptionDoc` (TipTap JSON) |

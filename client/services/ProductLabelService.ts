@@ -18,6 +18,20 @@ async function parseJson<T>(res: Response): Promise<ApiResult<T>> {
 }
 
 export class ProductLabelService {
+  static async getLatestDraft(
+    goodId: string,
+    labelKind: ProductLabelKind,
+  ): Promise<ProductLabelDraftDto | null> {
+    const url = new URL(
+      `/api/products/${encodeURIComponent(goodId)}/labels/draft/latest`,
+      window.location.origin,
+    );
+    url.searchParams.set('labelKind', labelKind);
+    const res = await fetch(url.toString(), { credentials: 'include' });
+    const body = await parseJson<ProductLabelDraftDto | null>(res);
+    return body.data ?? null;
+  }
+
   static async getDraft(
     goodId: string,
     batchId: string,

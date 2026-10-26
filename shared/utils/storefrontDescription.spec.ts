@@ -153,6 +153,15 @@ describe('ingredients json helpers', () => {
     expect(formatIngredientsList(['Картопля', 'морква'])).toBe('картопля, морква');
   });
 
+  it('orders ingredients from BOM by qty descending', () => {
+    const tags = buildIngredientsJsonFromBom([
+      { componentName: 'Сіль', qty: 0.01 },
+      { componentName: 'Вода', qty: 5 },
+      { componentName: 'Картопля', qty: 2 },
+    ]);
+    expect(tags).toEqual(['вода', 'картопля', 'сіль']);
+  });
+
   it('compares ingredient lists', () => {
     expect(ingredientsListsEqual(['a', 'b'], ['a', 'b'])).toBe(true);
     expect(ingredientsListsEqual(['a'], ['b'])).toBe(false);

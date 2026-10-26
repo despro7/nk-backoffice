@@ -609,9 +609,10 @@ export function formatIngredientsList(items: string[]): string {
 }
 
 export function buildIngredientsJsonFromBom(components: BomIngredientRow[]): string[] {
+  const byQtyDesc = [...components].sort((a, b) => (b.qty ?? 0) - (a.qty ?? 0));
   const seen = new Set<string>();
   const result: string[] = [];
-  for (const row of components) {
+  for (const row of byQtyDesc) {
     const tag = normalizeIngredientTag(row.componentName);
     if (!tag || seen.has(tag)) continue;
     seen.add(tag);

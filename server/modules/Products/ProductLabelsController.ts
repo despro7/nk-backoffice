@@ -33,6 +33,19 @@ async function assertGoodExists(goodId: string): Promise<void> {
   }
 }
 
+// GET /api/products/:goodId/labels/draft/latest?labelKind=
+router.get('/:goodId/labels/draft/latest', ...authOnly, catalogManage, async (req, res) => {
+  try {
+    const goodId = req.params.goodId;
+    const labelKind = catalogLabelService.assertLabelKind(String(req.query.labelKind || 'portion'));
+    await assertGoodExists(goodId);
+    const data = await catalogLabelService.getLatestDraft(goodId, labelKind);
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'GET draft latest');
+  }
+});
+
 // GET /api/products/:goodId/labels/draft?batchId=&labelKind=
 router.get('/:goodId/labels/draft', ...authOnly, catalogManage, async (req, res) => {
   try {

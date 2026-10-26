@@ -15,7 +15,7 @@ PDF-етикетки **100×100 мм** для партій готової про
 | --- | --- |
 | Шаблон | `catalog_label_templates` + матриця дефолтів: **продукція** — portion + box; **комплекти** — portion; override на `catalog_goods` (`labelTemplateDefaultSlots` у `shared/utils/labelTemplateDefaults.ts`) |
 | Дані на наліпці | `LabelInputMap` (`shared/constants/labelInputKeys.ts`), резолвер `LabelInputResolver` |
-| Чернетка | Одна на `(goodId, batchId, labelKind)`; `updatedBy` + `updatedAt` |
+| Чернетка | **Одна активна** на `(goodId, labelKind)` — при збереженні інші партії видаляються; у БД ключ `(goodId, batchId, labelKind)`; `updatedBy` + `updatedAt`; спільна для всіх користувачів до генерації PDF |
 | Опубліковані PDF | Кожна генерація — `version`, файл у `uploads/catalog-labels/{goodId}/`, `publishedBy` |
 | Історія в UI | `GET …/labels/history` — **чернетка + PDF** в одному списку «Версії» |
 | Превʼю | `LabelPdfmeViewer` (pdfme Form); підпис під превʼю (дата, автор, партія) |
@@ -71,8 +71,9 @@ PDF-етикетки **100×100 мм** для партій готової про
 
 | Method | Path | Опис |
 | --- | --- | --- |
-| GET | `…/labels/draft?batchId=&labelKind=` | Чернетка |
-| PUT | `…/labels/draft` | Зберегти чернетку (`updatedBy` = поточний user) |
+| GET | `…/labels/draft?batchId=&labelKind=` | Чернетка для партії |
+| GET | `…/labels/draft/latest?labelKind=` | Остання збережена чернетка по товару (`updatedAt` desc) |
+| PUT | `…/labels/draft` | Зберегти чернетку (`updatedBy` = поточний user); інші чернетки цього `labelKind` для інших партій — видаляються |
 | POST | `…/labels/seed` | Перестворити чернетку з картки |
 | GET | `…/labels/history?batchId=&labelKind=` | **Чернетка + опубліковані** (для UI) |
 | GET | `…/labels/published?batchId=&labelKind=` | Лише PDF-версії |
@@ -96,8 +97,8 @@ PDF-етикетки **100×100 мм** для партій готової про
 
 1. **Tabs** `Порція | Коробка` (для комплектів — лише порція, без вкладки коробки).
 2. **Пресет** — override або «За замовчуванням (Settings)»; при `templateId === null` підвантажується дефолт через `resolveTemplate`.
-3. **Партія** — `BatchNumbersAutocomplete`; автопідстановка з `published/latest`.
-4. **Версії** — один Select: чернетка (`Чернетка · дата · автор`) і `vN · дата · автор`; перемикання завантажує payload; PDF — режим перегляду, чернетка — редагування.
+3. **Партія** — `BatchNumbersAutocomplete`; автопідстановка: спочатку партія з `draft/latest`, інакше з `published/latest`.
+4. **Версії** — один Select: чернетка (`Чернетка · дата · автор`) і `vN · дата · автор`; при відкритті вкладки / зміні партії **за замовчуванням обрана чернетка**, якщо вона є; після **«Згенерувати PDF»** — щойно створена опублікована версія; PDF — режим перегляду, чернетка — редагування.
 5. Під превʼю — `formatProductLabelHistoryCaption` (збережено / згенеровано, автор, партія).
 6. **Дії:** зберегти чернетку · синхронізувати з картки (`seed`) · згенерувати PDF · завантажити / друк (браузер) лише для обраного **PDF** · «Редагувати як чернетку» (клон з PDF). Під час дії кнопки з іконкою: `isLoading` + `startContent={loading ? null : icon}` (спінер замість іконки, не між іконкою й текстом).
 
