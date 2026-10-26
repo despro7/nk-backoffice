@@ -230,14 +230,14 @@ export function buildPrismaSearchOr<T extends Record<string, unknown>>(
   if (!term) return null;
   const clauses: T[] = [];
   for (const field of fields) {
-    clauses.push({ [field]: { contains: term } } as T);
+    clauses.push({ [field]: { contains: term } } as unknown as T);
   }
-  clauses.push({ [itemsColumn]: { contains: term } } as T);
+  clauses.push({ [itemsColumn]: { contains: term } } as unknown as T);
   const digits = term.replace(/\D/g, '');
   if (digits && /^\d+$/.test(digits)) {
     const numeric = Number(digits);
     if (Number.isFinite(numeric)) {
-      clauses.push({ id: numeric } as T);
+      clauses.push({ id: numeric } as unknown as T);
     }
   }
   return clauses;
