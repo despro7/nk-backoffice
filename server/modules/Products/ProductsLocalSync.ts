@@ -351,7 +351,9 @@ export class ProductsLocalSync {
       goodPartName?: string | null;
     }>
   ): Promise<void> {
-    await tx.catalogGoodBarcode.deleteMany({ where: { goodId } });
+    await tx.catalogGoodBarcode.deleteMany({
+      where: { goodId, barcodeKind: { not: 'box' } },
+    });
     if (barcodes.length === 0) return;
     const now = new Date();
     await tx.catalogGoodBarcode.createMany({
@@ -362,6 +364,7 @@ export class ProductsLocalSync {
         dilovodRegisterId: b.dilovodRegisterId ?? null,
         goodPart: b.goodPart?.trim() || '',
         goodPartName: b.goodPartName?.trim() || null,
+        barcodeKind: 'portion',
         syncedAt: now,
       })),
     });

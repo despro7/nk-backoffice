@@ -1054,11 +1054,15 @@ router.get('/barcode-for-batch', authenticateToken, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Товар не знайдено в каталозі' });
     }
 
+    const kindParam = typeof req.query.kind === 'string' ? req.query.kind.trim() : 'portion';
+    const barcodeKind = kindParam === 'box' ? 'box' : 'portion';
+
     const barcodeRow = await prisma.catalogGoodBarcode.findFirst({
       where: {
         goodId: good.id,
         goodPart: batchId,
         activity: true,
+        barcodeKind,
       },
       orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
       select: { code: true, goodPartName: true },
@@ -1068,7 +1072,7 @@ router.get('/barcode-for-batch', authenticateToken, async (req, res) => {
       return res.json({
         success: true,
         barcode: null,
-        barcodeKind: 'portion',
+        barcodeKind,
         batchNumber: null,
       });
     }
@@ -1077,7 +1081,7 @@ router.get('/barcode-for-batch', authenticateToken, async (req, res) => {
     res.json({
       success: true,
       barcode: barcodeRow.code,
-      barcodeKind: 'portion',
+      barcodeKind,
       batchNumber,
     });
   } catch (error) {
@@ -1092,8 +1096,7 @@ router.get('/barcode-for-batch', authenticateToken, async (req, res) => {
  * Lookup товару за ШК для мобільного скану.
  * Залишки — GET /stock-snapshot (`storages[storageId]`) або POST з `storageId` → `selectedStock`.
  *
- * ШК коробки ще немає в БД; barcodeKind завжди 'portion'. Коли з’явиться box-код —
- * перевіряти його першим; конфлікт того самого коду на обох рівнях → 'box'.
+ * barcodeKind: portion (Dilovod) або box (внутрішній NK, наліпка коробки). При колізії коду — пріоритет box.
  */
 router.get('/product-by-barcode', authenticateToken, async (req, res) => {
   try {

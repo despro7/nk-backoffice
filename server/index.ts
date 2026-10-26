@@ -10,6 +10,7 @@ import authSettingsRoutes from "./routes/auth-settings.js";
 import protectedRoutes from "./routes/protected.js";
 import ordersRoutes from "./routes/orders.js";
 import productsRoutes from "./routes/products.js";
+import labelTemplatesRoutes from "./routes/label-templates.js";
 import catalogRoutes from "./routes/catalog.js";
 import storefrontRoutes from "./routes/storefront.js";
 import boxesRoutes from "./routes/boxes.js";
@@ -178,6 +179,7 @@ export function createServer() {
 
   // Products routes (legacy)
   app.use("/api/products", productsRoutes);
+  app.use("/api/label-templates", labelTemplatesRoutes);
 
   // Products 2.0 catalog
   app.use("/api/catalog", catalogRoutes);

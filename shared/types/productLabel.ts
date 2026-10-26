@@ -1,3 +1,5 @@
+import type { ProductLabelPayloadV2 } from './labelTemplate.js';
+
 export type ProductLabelKind = 'portion' | 'box';
 
 export type ProductLabelTitleAlign = 'left' | 'center' | 'right';
@@ -34,7 +36,11 @@ export interface ProductLabelDraftDto {
   batchId: string;
   labelKind: ProductLabelKind;
   batchNumber: string;
-  payload: ProductLabelPayload;
+  payload: ProductLabelPayloadV2;
+  /** База з картки товару (без override). */
+  baseInputs: ProductLabelPayloadV2['inputs'];
+  updatedBy: number | null;
+  updatedByName?: string | null;
   updatedAt: string;
 }
 
@@ -47,7 +53,7 @@ export interface ProductLabelPublishedDto {
   version: number;
   barcode: string;
   pdfFileName: string;
-  payload: ProductLabelPayload;
+  payload: ProductLabelPayloadV2;
   publishedBy: number | null;
   publishedByName?: string | null;
   publishedAt: string;

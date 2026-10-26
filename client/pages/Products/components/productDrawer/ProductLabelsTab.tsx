@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Accordion,
+  AccordionItem,
   Button,
-  Dropdown,
-  DropdownItem,
-  DropdownMenu,
-  DropdownTrigger,
+  Card,
+  CardBody,
+  Divider,
   Input,
   Select,
   SelectItem,
@@ -14,31 +15,45 @@ import {
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { saveAs } from 'file-saver';
+import type { Template } from '@pdfme/common';
 import type { CatalogGoodDetailDto } from '../../ProductsTypes';
 import type { BatchNumber } from '@/pages/Warehouse/WarehouseMovement/hooks/useBatchNumbers';
 import { BatchNumbersAutocomplete } from '@/pages/Warehouse/WarehouseMovement/components/BatchNumbersAutocomplete';
 import { useBatchNumbers } from '@/pages/Warehouse/WarehouseMovement/hooks/useBatchNumbers';
 import { ProductLabelService } from '@/services/ProductLabelService';
+import { LabelTemplateService } from '@/services/LabelTemplateService';
 import { ToastService } from '@/services/ToastService';
-import PrinterService from '@/services/printerService';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
-import type {
-  ProductLabelKind,
-  ProductLabelPayload,
-  ProductLabelPublishedDto,
-} from '@shared/types/productLabel';
+import type { ProductLabelKind, ProductLabelPublishedDto } from '@shared/types/productLabel';
 import {
-  ensureNutritionText,
-  getNutritionValidationErrors,
-  isNutritionTextComplete,
-} from '@shared/utils/productLabelNutrition';
+  formatProductLabelHistoryCaption,
+  formatProductLabelHistoryOption,
+  PRODUCT_LABEL_DRAFT_SELECTION_KEY,
+  productLabelHistorySelectionKey,
+  type ProductLabelHistoryEntry,
+} from '@shared/utils/productLabelHistory';
+import type { ProductLabelPayloadV2 } from '@shared/types/labelTemplate';
+import { CATALOG_ACC_POLICY_KIT } from '@shared/types/catalog';
 import {
-  ensureStorageText,
-  prepareProductLabelForRender,
-  resolveLabelExpiryDate,
-} from '@shared/utils/productLabel';
-import { ensureSplitTitle } from '@shared/utils/splitProductTitle';
-import { ProductLabelPreview } from './ProductLabelPreview';
+  LABEL_EDITABLE_KEYS,
+  LABEL_INPUT_LABELS,
+  LABEL_INPUTS_SCHEMA_VERSION,
+  type LabelInputKey,
+  type LabelInputMap,
+} from '@shared/constants/labelInputKeys';
+import {
+  diffLabelOverrides,
+  emptyLabelInputs,
+  getLabelNutritionErrors,
+  mergeLabelOverrides,
+  withAutoEnergy,
+} from '@shared/utils/labelInputs';
+import {
+  hydrateLabelTemplateContent,
+  toLabelPdfmeTemplate,
+} from '@shared/pdfme/builtInLabelTemplates';
+import { loadLabelDesignerAssets } from '@/pages/Settings/labelTemplates/labelPdfmeFonts';
+import { LabelPdfmeViewer } from './label/LabelPdfmeViewer';
 
 interface ProductLabelsTabProps {
   detail: CatalogGoodDetailDto;
@@ -47,22 +62,8 @@ interface ProductLabelsTabProps {
   overlayZClassName?: string;
 }
 
-const EMPTY_PAYLOAD = (kind: ProductLabelKind): ProductLabelPayload => ({
-  labelKind: kind,
-  batchId: '',
-  batchNumber: '',
-  barcode: '',
-  title: { line1: '', line2: '', line1FontSize: 14, line2FontSize: 11, align: 'center' },
-  ingredientsText: '',
-  nutritionText: '',
-  nutritionEnergyManual: false,
-  storageText: '',
-  expiresAt: '',
-  netWeightLabel: '',
-});
-
-function labelPayloadKey(payload: ProductLabelPayload): string {
-  return JSON.stringify(prepareProductLabelForRender(payload));
+function payloadKey(payload: ProductLabelPayloadV2): string {
+  return JSON.stringify(payload.inputs);
 }
 
 export function ProductLabelsTab({
@@ -71,10 +72,17 @@ export function ProductLabelsTab({
   isAdmin = false,
   overlayZClassName,
 }: ProductLabelsTabProps) {
+  const audience = detail.accPolicyId === CATALOG_ACC_POLICY_KIT ? 'kit' : 'good';
   const [labelKind, setLabelKind] = useState<ProductLabelKind>('portion');
-  const [payload, setPayload] = useState<ProductLabelPayload>(() => EMPTY_PAYLOAD('portion'));
-  const [published, setPublished] = useState<ProductLabelPublishedDto[]>([]);
-  const [selectedVersionId, setSelectedVersionId] = useState<string>('');
+  const [baseInputs, setBaseInputs] = useState<LabelInputMap>(() => emptyLabelInputs());
+  const [overrides, setOverrides] = useState<Partial<LabelInputMap>>({});
+  const [energyManual, setEnergyManual] = useState(false);
+  const [templateId, setTemplateId] = useState<string | null>(null);
+  const [template, setTemplate] = useState<Template | null>(null);
+  const [presetOptions, setPresetOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [historyEntries, setHistoryEntries] = useState<ProductLabelHistoryEntry[]>([]);
+  const [selectedEntryKey, setSelectedEntryKey] = useState('');
+  const [savedDraftPayloadKey, setSavedDraftPayloadKey] = useState<string | null>(null);
   const [selectedBatch, setSelectedBatch] = useState<BatchNumber | null>(null);
   const [batchPickerOpen, setBatchPickerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -85,14 +93,27 @@ export function ProductLabelsTab({
   const [printing, setPrinting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [viewingVersion, setViewingVersion] = useState(false);
-  const [printQuantity, setPrintQuantity] = useState(1);
   const [userPickedBatch, setUserPickedBatch] = useState(false);
-
   const preferPublishedIdRef = useRef<number | undefined>(undefined);
 
   const { batches, loading: batchesLoading, error: batchesError, fetchBatches } = useBatchNumbers();
-
   const sku = detail.sku || '';
+
+  const inputs = useMemo(
+    () => withAutoEnergy(mergeLabelOverrides(baseInputs, overrides), energyManual),
+    [baseInputs, overrides, energyManual],
+  );
+
+  const draftPayload = useMemo<ProductLabelPayloadV2>(
+    () => ({
+      version: LABEL_INPUTS_SCHEMA_VERSION,
+      templateId,
+      inputs,
+      overrides,
+      nutritionEnergyManual: energyManual,
+    }),
+    [templateId, inputs, overrides, energyManual],
+  );
 
   useEffect(() => {
     if (!sku) return;
@@ -102,104 +123,136 @@ export function ProductLabelsTab({
   useEffect(() => {
     setUserPickedBatch(false);
     setSelectedBatch(null);
-    setSelectedVersionId('');
-    setPublished([]);
+    setSelectedEntryKey('');
+    setHistoryEntries([]);
+    setSavedDraftPayloadKey(null);
     setViewingVersion(false);
     preferPublishedIdRef.current = undefined;
   }, [labelKind]);
 
-  const applyDraftPayload = useCallback(
-    (draftPayload: ProductLabelPayload, batch: BatchNumber) => {
-      setPayload({
-        ...draftPayload,
-        title: ensureSplitTitle(draftPayload.title, detail.name, detail.printName),
-        nutritionText: ensureNutritionText(draftPayload.nutritionText),
-        storageText: ensureStorageText(draftPayload.storageText),
-        nutritionEnergyManual: Boolean(draftPayload.nutritionEnergyManual),
-        expiresAt: resolveLabelExpiryDate(draftPayload.expiresAt, batch.expiration),
-      });
+  useEffect(() => {
+    let cancelled = false;
+    void LabelTemplateService.list({ audience, labelKind }).then((rows) => {
+      if (!cancelled) setPresetOptions(rows.map((row) => ({ id: row.id, name: row.name })));
+    }).catch(() => {
+      if (!cancelled) setPresetOptions([]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [audience, labelKind]);
+
+  const applyDraft = useCallback((draft: Awaited<ReturnType<typeof ProductLabelService.getDraft>>) => {
+    if (!draft) return;
+    setBaseInputs({ ...emptyLabelInputs(), ...draft.baseInputs });
+    setOverrides(draft.payload.overrides ?? {});
+    setEnergyManual(Boolean(draft.payload.nutritionEnergyManual));
+    setTemplateId(draft.payload.templateId);
+    setSavedDraftPayloadKey(payloadKey(draft.payload));
+  }, []);
+
+  const applyPublishedVersion = useCallback((row: ProductLabelPublishedDto) => {
+    setBaseInputs({ ...emptyLabelInputs(), ...row.payload.inputs });
+    setOverrides({});
+    setTemplateId(row.payload.templateId);
+    setViewingVersion(true);
+    setSavedDraftPayloadKey(null);
+  }, []);
+
+  const selectHistoryEntry = useCallback(
+    (entry: ProductLabelHistoryEntry) => {
+      const key = productLabelHistorySelectionKey(entry);
+      setSelectedEntryKey(key);
+      if (entry.entryType === 'draft') {
+        applyDraft(entry);
+        setViewingVersion(false);
+        return;
+      }
+      applyPublishedVersion(entry);
     },
-    [detail.name, detail.printName],
+    [applyDraft, applyPublishedVersion],
   );
 
+  const loadTemplate = useCallback(
+    async (id: string | null, kind: ProductLabelKind) => {
+      const assets = await loadLabelDesignerAssets();
+      const applyResolved = (resolved: Awaited<ReturnType<typeof ProductLabelService.resolveTemplate>>) => {
+        if (!resolved.template) {
+          setTemplate(null);
+          return;
+        }
+        setTemplate(
+          hydrateLabelTemplateContent(toLabelPdfmeTemplate(resolved.template), assets) as Template,
+        );
+      };
+
+      if (id) {
+        try {
+          const detailTemplate = await LabelTemplateService.get(id);
+          setTemplate(
+            hydrateLabelTemplateContent(toLabelPdfmeTemplate(detailTemplate.template), assets) as Template,
+          );
+          return;
+        } catch {
+          // fallback — пресет видалили, беремо дефолт з матриці
+        }
+      }
+
+      const resolved = await ProductLabelService.resolveTemplate(detail.id, kind);
+      applyResolved(resolved);
+    },
+    [detail.id],
+  );
+
+  useEffect(() => {
+    void loadTemplate(templateId, labelKind).catch(() => setTemplate(null));
+  }, [templateId, labelKind, loadTemplate]);
+
   const loadLabelState = useCallback(
-    async (
-      batch: BatchNumber,
-      kind: ProductLabelKind,
-      options?: { preferPublishedId?: number },
-    ) => {
+    async (batch: BatchNumber, kind: ProductLabelKind, options?: { preferPublishedId?: number }) => {
       if (!detail.id || !batch.batchId) return;
       setLoading(true);
       setViewingVersion(false);
       try {
-        let draft = await ProductLabelService.getDraft(detail.id, batch.batchId, kind);
-        if (!draft) {
-          draft = await ProductLabelService.seedDraft(detail.id, {
+        let history = await ProductLabelService.listHistory(detail.id, batch.batchId, kind);
+        if (!history.some((row) => row.entryType === 'draft')) {
+          await ProductLabelService.seedDraft(detail.id, {
             batchId: batch.batchId,
             labelKind: kind,
             batchNumber: batch.batchNumber,
             expiration: batch.expiration,
           });
+          history = await ProductLabelService.listHistory(detail.id, batch.batchId, kind);
         }
-        const versions = await ProductLabelService.listPublished(detail.id, batch.batchId, kind);
-        setPublished(versions);
-
+        setHistoryEntries(history);
         const preferId = options?.preferPublishedId ?? preferPublishedIdRef.current;
         preferPublishedIdRef.current = undefined;
-        const preferred = preferId ? versions.find((v) => v.id === preferId) : undefined;
-
+        const preferred = preferId
+          ? history.find((row) => row.entryType === 'published' && row.id === preferId)
+          : undefined;
         if (preferred) {
-          setPayload(preferred.payload);
-          setSelectedVersionId(String(preferred.id));
-          setViewingVersion(true);
+          selectHistoryEntry(preferred);
           return;
         }
-
-        applyDraftPayload(draft.payload, batch);
-        setSelectedVersionId(versions[0] ? String(versions[0].id) : '');
+        const draftEntry = history.find((row) => row.entryType === 'draft');
+        if (draftEntry) {
+          selectHistoryEntry(draftEntry);
+          return;
+        }
+        const firstPublished = history.find((row) => row.entryType === 'published');
+        if (firstPublished) selectHistoryEntry(firstPublished);
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Помилка завантаження наліпки';
-        ToastService.show({ title: 'Наліпки', description: message, color: 'danger' });
+        ToastService.show({
+          title: 'Наліпки',
+          description: err instanceof Error ? err.message : 'Помилка завантаження наліпки',
+          color: 'danger',
+        });
       } finally {
         setLoading(false);
       }
     },
-    [applyDraftPayload, detail.id],
+    [detail.id, selectHistoryEntry],
   );
-
-  const handleResetDraft = async () => {
-    if (!selectedBatch || readOnly) return;
-    setResetting(true);
-    try {
-      // Force-refresh кешу партій Dilovod (термін придатності тощо).
-      await fetchBatches(sku, undefined, undefined, true, undefined, {
-        includeSmallStorage: true,
-      });
-
-      const draft = await ProductLabelService.seedDraft(detail.id, {
-        batchId: selectedBatch.batchId,
-        labelKind,
-        batchNumber: selectedBatch.batchNumber,
-        expiration: selectedBatch.expiration,
-      });
-      applyDraftPayload(draft.payload, selectedBatch);
-      setViewingVersion(false);
-      setResetConfirmOpen(false);
-      ToastService.show({
-        title: 'Чернетку скинуто',
-        description: 'Підставлено дані з картки товару (вага, склад, ШК, термін)',
-        color: 'success',
-      });
-    } catch (err) {
-      ToastService.show({
-        title: 'Помилка скидання чернетки',
-        description: err instanceof Error ? err.message : undefined,
-        color: 'danger',
-      });
-    } finally {
-      setResetting(false);
-    }
-  };
 
   useEffect(() => {
     if (!selectedBatch) return;
@@ -208,13 +261,11 @@ export function ProductLabelsTab({
 
   useEffect(() => {
     if (!detail.id || userPickedBatch || selectedBatch) return;
-
     let cancelled = false;
     void (async () => {
       try {
         const latest = await ProductLabelService.getLatestPublished(detail.id, labelKind);
         if (cancelled || !latest) return;
-
         const batchFromList = batches.find((b) => b.batchId === latest.batchId);
         const batch: BatchNumber =
           batchFromList ??
@@ -226,89 +277,87 @@ export function ProductLabelsTab({
             quantity: 0,
             firm: '',
             firmDisplayName: '',
-            expiration: latest.payload.expiresAt || null,
+            expiration: latest.payload.inputs.expires_at || null,
           } satisfies BatchNumber);
-
         preferPublishedIdRef.current = latest.id;
         setSelectedBatch(batch);
       } catch {
         // Користувач обере партію вручну
       }
     })();
-
     return () => {
       cancelled = true;
     };
   }, [detail.id, labelKind, batches, userPickedBatch, selectedBatch]);
 
-  const selectedVersion = useMemo(
-    () => published.find((p) => String(p.id) === selectedVersionId) ?? null,
-    [published, selectedVersionId],
+  const publishedEntries = useMemo(
+    () => historyEntries.filter((row): row is ProductLabelHistoryEntry & { entryType: 'published' } => row.entryType === 'published'),
+    [historyEntries],
   );
 
-  const versionOptions = useMemo(
+  const selectedHistoryEntry = useMemo(
     () =>
-      published.map((row) => ({
-        key: String(row.id),
-        label: `v${row.version} · ${new Date(row.publishedAt).toLocaleString('uk-UA')}`,
-      })),
-    [published],
+      historyEntries.find((row) => productLabelHistorySelectionKey(row) === selectedEntryKey) ?? null,
+    [historyEntries, selectedEntryKey],
   );
 
-  const handleBatchSelect = (batch: BatchNumber) => {
-    setUserPickedBatch(true);
-    setSelectedBatch(batch);
-    // Закриття — через BatchNumbersAutocomplete.closeAfterSelect (rAF).
-  };
+  const selectedPublished = useMemo(
+    () => (selectedHistoryEntry?.entryType === 'published' ? selectedHistoryEntry : null),
+    [selectedHistoryEntry],
+  );
 
-  const patchPayload = (patch: Partial<ProductLabelPayload>) => {
-    setViewingVersion(false);
-    setPayload((prev) => ({ ...prev, ...patch }));
-  };
-
-  const handleVersionSelect = (key: string) => {
-    setSelectedVersionId(key);
-    const row = published.find((p) => String(p.id) === key);
-    if (row) {
-      setPayload(row.payload);
-      setViewingVersion(true);
-    }
-  };
-
-  /** Чи макет відрізняється від обраної опублікованої версії. */
   const isDirty = useMemo(() => {
-    if (!selectedVersion) return true;
-    return labelPayloadKey(payload) !== labelPayloadKey(selectedVersion.payload);
-  }, [payload, selectedVersion]);
+    if (viewingVersion) return false;
+    if (selectedPublished && selectedEntryKey !== PRODUCT_LABEL_DRAFT_SELECTION_KEY) {
+      return payloadKey(draftPayload) !== payloadKey(selectedPublished.payload);
+    }
+    if (publishedEntries.length === 0) return true;
+    if (savedDraftPayloadKey) {
+      return payloadKey(draftPayload) !== savedDraftPayloadKey;
+    }
+    return true;
+  }, [
+    draftPayload,
+    publishedEntries.length,
+    savedDraftPayloadKey,
+    selectedEntryKey,
+    selectedPublished,
+    viewingVersion,
+  ]);
 
-  const nutritionErrors = useMemo(
-    () => getNutritionValidationErrors(payload.nutritionText),
-    [payload.nutritionText],
-  );
-  const nutritionIncomplete = !isNutritionTextComplete(payload.nutritionText);
+  const nutritionErrors = useMemo(() => getLabelNutritionErrors(inputs), [inputs]);
+
+  const patchInput = (key: LabelInputKey, value: string) => {
+    setViewingVersion(false);
+    if (key === 'nutrition_energy') setEnergyManual(true);
+    setOverrides((prev) => {
+      const next = { ...prev, [key]: value };
+      return diffLabelOverrides(baseInputs, mergeLabelOverrides(baseInputs, next));
+    });
+  };
 
   const handleSaveDraft = async () => {
     if (!selectedBatch || readOnly || viewingVersion) return;
     setSaving(true);
     try {
-      const preparedPayload = prepareProductLabelForRender(payload);
       const data = await ProductLabelService.saveDraft(detail.id, {
         batchId: selectedBatch.batchId,
         labelKind,
         batchNumber: selectedBatch.batchNumber,
-        payload: preparedPayload,
+        payload: draftPayload,
       });
-      setPayload(data.payload);
-      ToastService.show({
-        title: 'Чернетку збережено!',
-        description: nutritionIncomplete
-          ? 'Але поживна цінність ще не заповнена повністю'
-          : undefined,
-        color: nutritionIncomplete ? 'warning' : 'success',
-      });
+      applyDraft(data);
+      const history = await ProductLabelService.listHistory(
+        detail.id,
+        selectedBatch.batchId,
+        labelKind,
+      );
+      setHistoryEntries(history);
+      setSelectedEntryKey(PRODUCT_LABEL_DRAFT_SELECTION_KEY);
+      ToastService.show({ title: 'Чернетку збережено', color: 'success' });
     } catch (err) {
       ToastService.show({
-        title: 'Помилка збереження!',
+        title: 'Помилка збереження',
         description: err instanceof Error ? err.message : undefined,
         color: 'danger',
       });
@@ -317,43 +366,60 @@ export function ProductLabelsTab({
     }
   };
 
-  const handleGenerate = async () => {
+  const handleResetDraft = async () => {
     if (!selectedBatch || readOnly) return;
-    if (nutritionIncomplete) {
-      ToastService.show({
-        title: 'Заповніть поживну цінність',
-        description: nutritionErrors[0] || 'Усі 4 рядки мають містити числові значення',
-        color: 'warning',
-      });
-      return;
-    }
-    setGenerating(true);
+    setResetting(true);
     try {
-      const preparedPayload = prepareProductLabelForRender(payload);
-      await ProductLabelService.saveDraft(detail.id, {
+      await fetchBatches(sku, undefined, undefined, true, undefined, { includeSmallStorage: true });
+      const draft = await ProductLabelService.seedDraft(detail.id, {
         batchId: selectedBatch.batchId,
         labelKind,
         batchNumber: selectedBatch.batchNumber,
-        payload: preparedPayload,
+        expiration: selectedBatch.expiration,
       });
-      const row = await ProductLabelService.generatePublished(detail.id, preparedPayload);
-      const versions = await ProductLabelService.listPublished(
+      applyDraft(draft);
+      const history = await ProductLabelService.listHistory(
         detail.id,
         selectedBatch.batchId,
         labelKind,
       );
-      setPublished(versions);
-      setPayload(row.payload);
-      setSelectedVersionId(String(row.id));
-      setViewingVersion(true);
-      ToastService.show({
-        title: 'PDF згенеровано',
-        description: `Версія v${row.version}`,
-        color: 'success',
-      });
+      setHistoryEntries(history);
+      setSelectedEntryKey(PRODUCT_LABEL_DRAFT_SELECTION_KEY);
+      setViewingVersion(false);
+      setResetConfirmOpen(false);
+      ToastService.show({ title: 'Чернетку скинуто', color: 'success' });
     } catch (err) {
       ToastService.show({
-        title: 'Помилка генерації PDF',
+        title: 'Помилка скидання чернетки',
+        description: err instanceof Error ? err.message : undefined,
+        color: 'danger',
+      });
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const handleGenerate = async () => {
+    if (!selectedBatch || readOnly || nutritionErrors.length > 0) {
+      if (nutritionErrors[0]) {
+        ToastService.show({ title: nutritionErrors[0], color: 'warning' });
+      }
+      return;
+    }
+    setGenerating(true);
+    try {
+      const created = await ProductLabelService.generatePublished(detail.id, {
+        payload: draftPayload,
+        batchId: selectedBatch.batchId,
+        batchNumber: selectedBatch.batchNumber,
+        labelKind,
+      });
+      preferPublishedIdRef.current = created.id;
+      await loadLabelState(selectedBatch, labelKind, { preferPublishedId: created.id });
+      ToastService.show({ title: `PDF v${created.version} згенеровано`, color: 'success' });
+    } catch (err) {
+      ToastService.show({
+        title: 'Помилка генерації',
         description: err instanceof Error ? err.message : undefined,
         color: 'danger',
       });
@@ -362,56 +428,51 @@ export function ProductLabelsTab({
     }
   };
 
-  const resolveVersionId = (): number | null => {
-    if (selectedVersionId) return parseInt(selectedVersionId, 10);
-    return published[0]?.id ?? null;
-  };
-
-  const handleDownload = async () => {
-    const labelId = resolveVersionId();
-    if (!labelId) {
-      ToastService.show({ title: 'Спочатку згенеруйте PDF', color: 'warning' });
-      return;
-    }
+  const handlePresetChange = async (key: string) => {
+    const nextId = key === 'default' ? null : key;
     try {
-      const res = await fetch(ProductLabelService.pdfUrl(detail.id, labelId), {
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      const version = published.find((p) => p.id === labelId);
-      saveAs(blob, version?.pdfFileName || `label-${labelId}.pdf`);
+      await ProductLabelService.setTemplateOverride(detail.id, labelKind, nextId);
+      const resolved = await ProductLabelService.resolveTemplate(detail.id, labelKind);
+      setTemplateId(resolved.templateId);
+      if (resolved.template) {
+        const assets = await loadLabelDesignerAssets();
+        setTemplate(
+          hydrateLabelTemplateContent(toLabelPdfmeTemplate(resolved.template), assets) as Template,
+        );
+      }
+      ToastService.show({ title: 'Пресет наліпки оновлено', color: 'success' });
     } catch (err) {
       ToastService.show({
-        title: 'Помилка завантаження',
+        title: 'Не вдалося змінити пресет',
         description: err instanceof Error ? err.message : undefined,
         color: 'danger',
       });
     }
   };
 
-  const printPdfInBrowser = (blob: Blob) => {
-    const url = URL.createObjectURL(blob);
-    const printWindow = window.open(url, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
-    if (printWindow) {
-      printWindow.onload = () => {
-        setTimeout(() => printWindow.print(), 500);
-      };
-      setTimeout(() => URL.revokeObjectURL(url), 30000);
-    } else {
-      URL.revokeObjectURL(url);
-      throw new Error('Браузер заблокував вікно друку');
+  const resolveVersionId = () => {
+    if (selectedEntryKey === PRODUCT_LABEL_DRAFT_SELECTION_KEY) {
+      return publishedEntries[0]?.id;
     }
+    const parsed = parseInt(selectedEntryKey, 10);
+    return Number.isFinite(parsed) ? parsed : publishedEntries[0]?.id;
+  };
+
+  const canUsePublishedPdf = selectedEntryKey !== PRODUCT_LABEL_DRAFT_SELECTION_KEY && Boolean(selectedPublished);
+
+  const handleDownload = async () => {
+    const labelId = resolveVersionId();
+    if (!labelId) return;
+    const res = await fetch(ProductLabelService.pdfUrl(detail.id, labelId), { credentials: 'include' });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    saveAs(blob, `label-${labelKind}.pdf`);
   };
 
   const fetchSelectedPdfBlob = async (): Promise<Blob> => {
     const labelId = resolveVersionId();
-    if (!labelId) {
-      throw new Error('Спочатку згенеруйте PDF');
-    }
-    const res = await fetch(ProductLabelService.pdfUrl(detail.id, labelId), {
-      credentials: 'include',
-    });
+    if (!labelId) throw new Error('Спочатку згенеруйте PDF');
+    const res = await fetch(ProductLabelService.pdfUrl(detail.id, labelId), { credentials: 'include' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.blob();
   };
@@ -420,37 +481,15 @@ export function ProductLabelsTab({
     setPrinting(true);
     try {
       const blob = await fetchSelectedPdfBlob();
-      printPdfInBrowser(blob);
-    } catch (err) {
-      ToastService.show({
-        title: 'Помилка друку',
-        description: err instanceof Error ? err.message : undefined,
-        color: 'danger',
-      });
-    } finally {
-      setPrinting(false);
-    }
-  };
-
-  const handlePrintQz = async () => {
-    const labelId = resolveVersionId();
-    if (!labelId) {
-      ToastService.show({ title: 'Спочатку згенеруйте PDF', color: 'warning' });
-      return;
-    }
-    const copies = Math.min(999, Math.max(1, printQuantity));
-    setPrinting(true);
-    try {
-      const res = await fetch('/api/settings/equipment', { credentials: 'include' });
-      const json = await res.json();
-      const printerName = json?.data?.printer?.name as string | undefined;
-      if (!printerName) {
-        throw new Error('Принтер не налаштовано (Налаштування → Обладнання)');
-      }
-      const base64 = await ProductLabelService.fetchPdfBase64(detail.id, labelId);
-      for (let i = 0; i < copies; i += 1) {
-        await PrinterService.printPdf(printerName, base64);
-      }
+      const url = URL.createObjectURL(blob);
+      const frame = document.createElement('iframe');
+      frame.style.display = 'none';
+      frame.src = url;
+      document.body.appendChild(frame);
+      frame.onload = () => {
+        frame.contentWindow?.print();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+      };
     } catch (err) {
       ToastService.show({
         title: 'Помилка друку',
@@ -464,33 +503,12 @@ export function ProductLabelsTab({
 
   const handleDeleteVersion = async () => {
     const labelId = resolveVersionId();
-    if (!labelId || !isAdmin) return;
-    const row = published.find((p) => p.id === labelId);
-    if (!row) return;
-    const confirmed = window.confirm(
-      `Видалити версію v${row.version} від ${new Date(row.publishedAt).toLocaleString('uk-UA')}?`,
-    );
-    if (!confirmed) return;
-
+    if (!labelId || !isAdmin || !selectedBatch) return;
+    if (!window.confirm('Видалити обрану версію PDF?')) return;
     setDeleting(true);
     try {
       await ProductLabelService.deletePublished(detail.id, labelId);
-      if (!selectedBatch) return;
-      const versions = await ProductLabelService.listPublished(
-        detail.id,
-        selectedBatch.batchId,
-        labelKind,
-      );
-      setPublished(versions);
-      if (versions[0]) {
-        setSelectedVersionId(String(versions[0].id));
-        setPayload(versions[0].payload);
-        setViewingVersion(true);
-      } else {
-        setSelectedVersionId('');
-        setViewingVersion(false);
-        await loadLabelState(selectedBatch, labelKind);
-      }
+      await loadLabelState(selectedBatch, labelKind);
       ToastService.show({ title: 'Версію видалено', color: 'success' });
     } catch (err) {
       ToastService.show({
@@ -504,236 +522,241 @@ export function ProductLabelsTab({
   };
 
   const handleCloneVersion = () => {
-    const labelId = resolveVersionId();
-    const row = published.find((p) => p.id === labelId);
-    if (!row) return;
-    setPayload(row.payload);
+    if (!selectedPublished) return;
+    setOverrides(
+      diffLabelOverrides(baseInputs, { ...emptyLabelInputs(), ...selectedPublished.payload.inputs }),
+    );
+    setSelectedEntryKey(PRODUCT_LABEL_DRAFT_SELECTION_KEY);
     setViewingVersion(false);
     ToastService.show({ title: 'Версію скопійовано в чернетку', color: 'success' });
   };
 
   if (!sku) {
-    return (
-      <p className="py-8 text-center text-sm text-default-500">
-        Для наліпок потрібен артикул (SKU) товару.
-      </p>
-    );
+    return <p className="py-8 text-center text-sm text-default-500">Для наліпок потрібен артикул (SKU) товару.</p>;
   }
 
   return (
     <section className="space-y-4">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
-        <div className="space-y-4">
-          <Tabs
-            selectedKey={labelKind}
-            onSelectionChange={(key) => setLabelKind(key as ProductLabelKind)}
-            size="md"
-            fullWidth
-            color="primary"
-            aria-label="Тип наліпки"
-          >
-            <Tab key="portion" title="Порція" />
-            <Tab key="box" title="Коробка" isDisabled />
-          </Tabs>
-
-          <Input
-            size="md"
-            label="Номер партії"
-            labelPlacement="outside"
-            placeholder="Оберіть партію…"
-            value={selectedBatch?.batchNumber || ''}
-            isReadOnly
-            onClick={() => setBatchPickerOpen(true)}
-            classNames={{ input: 'cursor-pointer' }}
-            endContent={
-              <Button
-                isIconOnly
-                size="sm"
-                variant="light"
-                aria-label="Обрати партію"
-                onPress={() => setBatchPickerOpen(true)}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)]">
+        <div className="flex flex-col gap-3">
+          <Card className="border border-default-200 shadow-none">
+            <CardBody className="gap-4 p-4">
+              <Tabs
+                selectedKey={labelKind}
+                onSelectionChange={(key) => setLabelKind(key as ProductLabelKind)}
+                size="md"
+                fullWidth
+                color="primary"
+                aria-label="Тип наліпки"
               >
-                <DynamicIcon name="chevrons-up-down" size={16} />
-              </Button>
-            }
-          />
-          {batchesError ? <p className="text-xs text-danger">{batchesError}</p> : null}
+                <Tab key="portion" title="Порція" />
+                <Tab key="box" title="Коробка" />
+              </Tabs>
 
-          {versionOptions.length > 0 ? (
-            <div className="flex items-end gap-2">
               <Select
-                label="Версія"
+                label="Пресет"
                 labelPlacement="outside"
                 size="md"
-                className="min-w-0 flex-1"
-                selectedKeys={selectedVersionId ? [selectedVersionId] : []}
+                selectedKeys={[
+                  templateId && presetOptions.some((p) => p.id === templateId) ? templateId : 'default',
+                ]}
                 onSelectionChange={(keys) => {
                   const key = Array.from(keys)[0];
-                  if (key) handleVersionSelect(String(key));
+                  if (key) void handlePresetChange(String(key));
                 }}
+                isDisabled={readOnly}
               >
-                {versionOptions.map((opt) => (
-                  <SelectItem key={opt.key}>{opt.label}</SelectItem>
-                ))}
+                {[
+                  <SelectItem key="default">За замовчуванням (Settings)</SelectItem>,
+                  ...presetOptions.map((opt) => <SelectItem key={opt.id}>{opt.name}</SelectItem>),
+                ]}
               </Select>
-              {isAdmin ? (
+
+              <Input
+                size="md"
+                label="Номер партії"
+                labelPlacement="outside"
+                placeholder="Оберіть партію…"
+                value={selectedBatch?.batchNumber || ''}
+                isReadOnly
+                onClick={() => setBatchPickerOpen(true)}
+                classNames={{ input: 'cursor-pointer' }}
+              />
+              {batchesError ? <p className="text-xs text-danger">{batchesError}</p> : null}
+
+              {historyEntries.length > 0 ? (
+                <div className="flex items-end gap-2">
+                  <Select
+                    label="Версії"
+                    labelPlacement="outside"
+                    size="md"
+                    className="min-w-0 flex-1"
+                    selectedKeys={selectedEntryKey ? [selectedEntryKey] : []}
+                    onSelectionChange={(keys) => {
+                      const key = Array.from(keys)[0];
+                      if (!key) return;
+                      const row = historyEntries.find(
+                        (entry) => productLabelHistorySelectionKey(entry) === String(key),
+                      );
+                      if (row) selectHistoryEntry(row);
+                    }}
+                  >
+                    {historyEntries.map((row) => (
+                      <SelectItem
+                        key={productLabelHistorySelectionKey(row)}
+                        textValue={formatProductLabelHistoryOption(row)}
+                      >
+                        {formatProductLabelHistoryOption(row)}
+                      </SelectItem>
+                    ))}
+                  </Select>
+                  {isAdmin ? (
+                    <Button
+                      isIconOnly
+                      size="md"
+                      variant="flat"
+                      color="danger"
+                      aria-label="Видалити версію PDF"
+                      onPress={() => void handleDeleteVersion()}
+                      isLoading={deleting}
+                      isDisabled={
+                        !selectedPublished || readOnly || selectedEntryKey === PRODUCT_LABEL_DRAFT_SELECTION_KEY
+                      }
+                    >
+                      <DynamicIcon name="trash-2" size={16} />
+                    </Button>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-xs text-default-500">Завантаження версій…</p>
+              )}
+
+              {viewingVersion && selectedPublished ? (
                 <Button
-                  isIconOnly
-                  size="md"
+                  size="sm"
                   variant="flat"
-                  color="danger"
-                  aria-label="Видалити версію"
-                  onPress={() => void handleDeleteVersion()}
-                  isLoading={deleting}
-                  isDisabled={!selectedVersionId || readOnly}
+                  className="w-full"
+                  onPress={handleCloneVersion}
+                  isDisabled={readOnly}
                 >
-                  <DynamicIcon name="trash-2" size={16} />
+                  Редагувати як чернетку
                 </Button>
               ) : null}
-            </div>
-          ) : (
-            <p className="text-xs text-default-500">Ще немає опублікованих версій</p>
-          )}
+            </CardBody>
+          </Card>
 
-          {viewingVersion ? (
-            <p className="rounded-[8px] bg-default-100 px-3 py-2 text-xs text-default-600">
-              Режим перегляду версії. Натисніть «Редагувати як чернетку», щоб змінити.
-            </p>
-          ) : null}
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              variant="flat"
-              color="warning"
-              className="bg-rose-400 text-white"
-              onPress={handleSaveDraft}
-              isLoading={saving}
-              isDisabled={!selectedBatch || readOnly || loading || viewingVersion || resetting}
-            >
-              Зберегти чернетку
-            </Button>
-            <Button
-              size="sm"
-              variant="flat"
-              onPress={() => setResetConfirmOpen(true)}
-              isDisabled={!selectedBatch || readOnly || loading || saving || resetting}
-              startContent={
-                <DynamicIcon
-                  name={resetting ? 'loader-2' : 'rotate-ccw'}
-                  size={14}
-                  className={resetting ? 'animate-spin' : undefined}
-                />
-              }
-            >
-              Скинути чернетку
-            </Button>
-            <Button
-              size="sm"
-              color="primary"
-              onPress={handleGenerate}
-              isLoading={generating}
-              isDisabled={!selectedBatch || readOnly || loading || !isDirty || resetting}
-            >
-              Згенерувати PDF
-            </Button>
-          </div>
-
-          <div className="flex flex-wrap items-end gap-2">
-            <Button
-              variant="bordered"
-              onPress={() => void handleDownload()}
-              isDisabled={!published.length}
-              startContent={<DynamicIcon name="download" size={14} />}
-            >
-              Завантажити
-            </Button>
-            <Dropdown placement="bottom-start">
-              <DropdownTrigger>
+          <Card className="border border-default-200 shadow-none">
+            <CardBody className="gap-3 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-default-500">Чернетка</p>
+              <div className="flex flex-col gap-2">
                 <Button
-                  variant="bordered"
-                  isLoading={printing}
-                  isDisabled={!published.length}
-                  startContent={<DynamicIcon name="printer" size={14} />}
-                  endContent={<DynamicIcon name="chevron-down" size={14} />}
+                  size="md"
+                  variant="flat"
+                  className="justify-start"
+                  onPress={() => void handleSaveDraft()}
+                  isLoading={saving}
+                  isDisabled={!selectedBatch || readOnly || viewingVersion}
+                  startContent={<DynamicIcon name="save" size={16} />}
                 >
-                  Друк
+                  Зберегти чернетку
                 </Button>
-              </DropdownTrigger>
-              <DropdownMenu
-                aria-label="Спосіб друку"
-                onAction={(key) => {
-                  if (key === 'browser') void handlePrintBrowser();
-                  if (key === 'qz') void handlePrintQz();
-                }}
-              >
-                <DropdownItem key="browser" startContent={<DynamicIcon name="monitor" size={14} />}>
-                  Через браузер
-                </DropdownItem>
-                <DropdownItem key="qz" startContent={<DynamicIcon name="printer" size={14} />}>
-                  Через QZ Tray
-                </DropdownItem>
-              </DropdownMenu>
-            </Dropdown>
-            <Input
-              type="number"
-              size="sm"
-              label="К-сть (QZ)"
-              labelPlacement="outside"
-              className="w-24"
-              min={1}
-              max={999}
-              value={String(printQuantity)}
-              onValueChange={(value) => {
-                const parsed = parseInt(value, 10);
-                setPrintQuantity(Number.isFinite(parsed) && parsed > 0 ? Math.min(999, parsed) : 1);
-              }}
-              isDisabled={!published.length}
-            />
-            {published.length > 0 ? (
-              <Button variant="flat" onPress={handleCloneVersion} isDisabled={readOnly}>
-                Редагувати як чернетку
-              </Button>
-            ) : null}
-          </div>
+                <Button
+                  size="md"
+                  variant="flat"
+                  className="justify-start"
+                  onPress={() => setResetConfirmOpen(true)}
+                  isDisabled={!selectedBatch || readOnly || resetting}
+                  startContent={<DynamicIcon name="refresh-cw" size={16} />}
+                >
+                  Синхронізувати з картки
+                </Button>
+                <Button
+                  size="md"
+                  color="primary"
+                  className="justify-start"
+                  onPress={() => void handleGenerate()}
+                  isLoading={generating}
+                  isDisabled={!selectedBatch || readOnly || !isDirty}
+                  startContent={<DynamicIcon name="file-output" size={16} />}
+                >
+                  Згенерувати PDF
+                </Button>
+              </div>
 
-          <p className="text-xs text-default-500">
-            Чернетки спільні для всіх користувачів. Кожна генерація PDF створює нову незмінну версію.
-            «Скинути чернетку» перестворює її з картки товару й оновлює кеш партій.
-          </p>
+              <Divider />
+
+              <p className="text-xs font-semibold uppercase tracking-wide text-default-500">Опублікований PDF</p>
+              <div className="flex flex-col gap-2">
+                <Button
+                  size="md"
+                  variant="bordered"
+                  className="justify-start"
+                  onPress={() => void handleDownload()}
+                  isDisabled={!canUsePublishedPdf}
+                  startContent={<DynamicIcon name="download" size={16} />}
+                >
+                  Завантажити
+                </Button>
+                <Button
+                  size="md"
+                  variant="bordered"
+                  className="justify-start"
+                  isLoading={printing}
+                  isDisabled={!canUsePublishedPdf}
+                  onPress={() => void handlePrintBrowser()}
+                  startContent={<DynamicIcon name="printer" size={16} />}
+                >
+                  Друк (браузер)
+                </Button>
+              </div>
+            </CardBody>
+          </Card>
+
+          <Accordion variant="splitted" defaultExpandedKeys={['fields']}>
+            <AccordionItem
+              key="fields"
+              aria-label="Текстові поля наліпки"
+              title={
+                <span className="text-sm font-semibold text-foreground">Текстові поля</span>
+              }
+              subtitle="Локальні правки чернетки"
+            >
+              <div className="max-h-[min(40vh,320px)] space-y-2 overflow-y-auto pb-1 pr-1">
+                {LABEL_EDITABLE_KEYS.map((key) => (
+                  <Input
+                    key={key}
+                    size="sm"
+                    label={LABEL_INPUT_LABELS[key]}
+                    labelPlacement="outside"
+                    value={inputs[key] || ''}
+                    isReadOnly={readOnly || viewingVersion}
+                    onValueChange={(value) => patchInput(key, value)}
+                  />
+                ))}
+                {nutritionErrors[0] && !viewingVersion ? (
+                  <p className="text-xs text-warning-600">{nutritionErrors[0]}</p>
+                ) : null}
+              </div>
+            </AccordionItem>
+          </Accordion>
         </div>
 
-        <div className="relative flex w-full min-w-0 justify-center lg:justify-start">
+        <div className="min-w-0">
           {loading ? (
-            <div className="flex min-h-[480px] w-full items-center justify-center">
+            <div className="flex min-h-[480px] items-center justify-center">
               <Spinner label="Завантаження наліпки…" />
             </div>
           ) : selectedBatch ? (
             <div className="flex w-full flex-col items-center gap-2">
-              <ProductLabelPreview
-                payload={payload}
-                onChange={patchPayload}
-                disabled={readOnly || viewingVersion}
-                nutritionErrors={viewingVersion ? [] : nutritionErrors}
-              />
-              {selectedVersion ? (
+              <LabelPdfmeViewer template={template} inputs={inputs} />
+              {selectedHistoryEntry ? (
                 <p className="text-center text-xs text-secondary">
-                  Згенеровано{' '}
-                  {new Date(selectedVersion.publishedAt).toLocaleString('uk-UA')}
-                  {selectedVersion.publishedByName
-                    ? ` · ${selectedVersion.publishedByName}`
-                    : selectedVersion.publishedBy
-                      ? ` · користувач #${selectedVersion.publishedBy}`
-                      : ''}
-                  {' · '}партія {selectedVersion.batchNumber}
+                  {formatProductLabelHistoryCaption(selectedHistoryEntry)}
                 </p>
               ) : null}
             </div>
           ) : (
-            <div className="flex min-h-[360px] w-full flex-col items-center justify-center rounded-[12px] border border-dashed border-default-200 bg-default-50 p-6 text-center">
-              <DynamicIcon name="square-text" size={48} strokeWidth={1.5} className="mb-2 text-secondary" />
-              <p className="text-sm max-w-2xs">Оберіть партію для попереднього перегляду наліпки</p>
-            </div>
+            <p className="py-16 text-center text-sm text-default-500">Оберіть партію для попереднього перегляду</p>
           )}
         </div>
       </div>
@@ -746,25 +769,20 @@ export function ProductLabelsTab({
         selectedStorage={selectedBatch?.storage || ''}
         includeAllStorages
         shouldBlockScroll={false}
-        onSelect={handleBatchSelect}
+        onSelect={(batch) => {
+          setUserPickedBatch(true);
+          setSelectedBatch(batch);
+        }}
         onClose={() => setBatchPickerOpen(false)}
-        onRefresh={() =>
-          void fetchBatches(sku, undefined, undefined, true, undefined, {
-            includeSmallStorage: true,
-          })
-        }
+        onRefresh={() => void fetchBatches(sku, undefined, undefined, true, undefined, { includeSmallStorage: true })}
         overlayZClassName={overlayZClassName}
       />
 
       <ConfirmModal
         isOpen={resetConfirmOpen}
-        title="Скинути чернетку наліпки?"
-        message={
-          selectedBatch
-            ? `Чернетку для партії «${selectedBatch.batchNumber}» буде перестворено з картки товару (вага, склад, ШК, термін). Опубліковані PDF не зміняться.`
-            : ''
-        }
-        confirmText="Скинути"
+        title="Синхронізувати наліпку з картки?"
+        message="Локальні правки чернетки буде скинуто. Опубліковані PDF не зміняться."
+        confirmText="Синхронізувати"
         confirmColor="warning"
         confirmLoading={resetting}
         overlayZClassName={overlayZClassName}

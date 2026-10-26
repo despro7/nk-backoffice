@@ -1,64 +1,32 @@
 /**
- * Чернетки та опубліковані версії наліпок товару (PDF 100×100 мм).
+ * Чернетки та опубліковані версії наліпок (pdfme, 100×100 мм).
  */
 
 import fs from 'fs/promises';
 import path from 'path';
-import React from 'react';
-import { renderToBuffer } from '@react-pdf/renderer';
 import type { Prisma } from '@prisma/client';
 import { prisma, logServer } from '../../lib/utils.js';
 import type {
   ProductLabelDraftDto,
   ProductLabelKind,
-  ProductLabelPayload,
   ProductLabelPublishedDto,
 } from '../../../shared/types/productLabel.js';
+import type { ProductLabelHistoryEntry } from '../../../shared/utils/productLabelHistory.js';
+import type { ProductLabelPayloadV2 } from '../../../shared/types/labelTemplate.js';
+import { LABEL_INPUTS_SCHEMA_VERSION } from '../../../shared/constants/labelInputKeys.js';
+import { isProductLabelKind, parseProductLabelPayload } from '../../../shared/utils/productLabel.js';
 import {
-  buildSeedLabelPayload,
-  formatLabelExpiryDate,
-  isProductLabelKind,
-  parseProductLabelPayload,
-} from '../../../shared/utils/productLabel.js';
-import { isMissingDilovodDate } from '../../../shared/utils/dilovodBatchId.js';
-import { getNutritionValidationErrors } from '../../../shared/utils/productLabelNutrition.js';
-import {
-  nutritionJsonToText,
-  parseProductIngredientsJson,
-  parseProductNutritionJson,
-  resolveIngredientsText,
-} from '../../../shared/utils/storefrontDescription.js';
-import { ensureStorageText } from '../../../shared/utils/productLabel.js';
-import { PORTION_LABEL_STATIC } from '../../../shared/constants/productLabelPortionStatic.js';
-import { DilovodApiClient } from '../../services/dilovod/DilovodApiClient.js';
-import { extractBatchExpirationFromGoodPartHeader } from '../../services/dilovod/DilovodUtils.js';
-import { ProductLabelPdfDocument } from './ProductLabelPdfDocument.js';
-import { ensureProductLabelPdfFonts } from './productLabelPdfFonts.js';
-
-const dilovodApiClient = new DilovodApiClient();
-
-async function resolveGoodPartExpiration(
-  batchId: string,
-  hint?: string | null,
-): Promise<string | null> {
-  const trimmed = hint?.trim();
-  if (trimmed && !isMissingDilovodDate(trimmed)) return trimmed;
-
-  try {
-    const obj = await dilovodApiClient.getObject(batchId);
-    const header =
-      obj.header && typeof obj.header === 'object'
-        ? (obj.header as Record<string, unknown>)
-        : undefined;
-    const expiration = extractBatchExpirationFromGoodPartHeader(header);
-    if (expiration && !isMissingDilovodDate(expiration)) return expiration;
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    logServer(`[CatalogLabel] expiration resolve failed for ${batchId}: ${msg}`);
-  }
-
-  return trimmed && !isMissingDilovodDate(trimmed) ? trimmed : null;
-}
+  diffLabelOverrides,
+  getLabelNutritionErrors,
+  isPayloadV2,
+  mergeLabelOverrides,
+  v1PayloadToInputs,
+  withAutoEnergy,
+} from '../../../shared/utils/labelInputs.js';
+import { applyLabelOverrides, resolveLabelBaseInputs } from './LabelInputResolver.js';
+import { labelTemplateService } from './LabelTemplateService.js';
+import { generateLabelPdfBuffer } from './pdfme/labelPdfmeRuntime.js';
+import type { LabelInputMap } from '../../../shared/constants/labelInputKeys.js';
 
 const UPLOADS_ROOT = path.resolve(process.cwd(), 'uploads', 'catalog-labels');
 
@@ -74,76 +42,40 @@ async function ensureLabelsDir(goodId: string): Promise<void> {
   await fs.mkdir(labelsDir(goodId), { recursive: true });
 }
 
-function toDraftDto(row: {
-  goodId: string;
-  batchId: string;
-  labelKind: string;
-  batchNumber: string;
-  payloadJson: unknown;
-  updatedAt: Date;
-}): ProductLabelDraftDto | null {
-  const payload = parseProductLabelPayload(row.payloadJson);
-  if (!payload) return null;
+function toJson(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+function readStored(
+  raw: unknown,
+  base: LabelInputMap,
+): ProductLabelPayloadV2 | null {
+  if (isPayloadV2(raw)) {
+    const inputs = mergeLabelOverrides(base, raw.overrides);
+    return {
+      version: LABEL_INPUTS_SCHEMA_VERSION,
+      templateId: raw.templateId ?? null,
+      inputs,
+      overrides: raw.overrides ?? {},
+      nutritionEnergyManual: Boolean(raw.nutritionEnergyManual),
+    };
+  }
+  const legacy = parseProductLabelPayload(raw);
+  if (!legacy) return null;
+  const legacyInputs = v1PayloadToInputs(legacy);
+  const overrides = diffLabelOverrides(base, legacyInputs);
   return {
-    goodId: row.goodId,
-    batchId: row.batchId,
-    labelKind: row.labelKind as ProductLabelKind,
-    batchNumber: row.batchNumber,
-    payload,
-    updatedAt: row.updatedAt.toISOString(),
+    version: LABEL_INPUTS_SCHEMA_VERSION,
+    templateId: null,
+    inputs: mergeLabelOverrides(base, overrides),
+    overrides,
+    nutritionEnergyManual: Boolean(legacy.nutritionEnergyManual),
   };
 }
 
-function toPublishedDto(row: {
-  id: number;
-  goodId: string;
-  batchId: string;
-  labelKind: string;
-  batchNumber: string;
-  version: number;
-  barcode: string;
-  pdfFileName: string;
-  payloadJson: unknown;
-  publishedBy: number | null;
-  publishedAt: Date;
-  user?: { name: string | null } | null;
-}): ProductLabelPublishedDto | null {
-  const payload = parseProductLabelPayload(row.payloadJson);
-  if (!payload) return null;
-  return {
-    id: row.id,
-    goodId: row.goodId,
-    batchId: row.batchId,
-    labelKind: row.labelKind as ProductLabelKind,
-    batchNumber: row.batchNumber,
-    version: row.version,
-    barcode: row.barcode,
-    pdfFileName: row.pdfFileName,
-    payload,
-    publishedBy: row.publishedBy,
-    publishedByName: row.user?.name ?? null,
-    publishedAt: row.publishedAt.toISOString(),
-  };
-}
-
-async function renderLabelPdf(payload: ProductLabelPayload): Promise<Buffer> {
-  ensureProductLabelPdfFonts();
-  const doc = React.createElement(ProductLabelPdfDocument, { payload });
-  return renderToBuffer(doc as React.ReactElement);
-}
-
-function toJsonPayload(payload: ProductLabelPayload): Prisma.InputJsonValue {
-  return JSON.parse(JSON.stringify(payload)) as Prisma.InputJsonValue;
-}
-
-function buildPdfFileName(
-  labelKind: ProductLabelKind,
-  version: number,
-  batchId: string,
-): string {
+function buildPdfFileName(labelKind: ProductLabelKind, version: number, batchId: string): string {
   const shortBatch = batchId.slice(-8);
-  const ts = Date.now();
-  return `label-${labelKind}-v${version}-${shortBatch}-${ts}.pdf`;
+  return `label-${labelKind}-v${version}-${shortBatch}-${Date.now()}.pdf`;
 }
 
 export class CatalogLabelService {
@@ -154,19 +86,47 @@ export class CatalogLabelService {
   ): Promise<ProductLabelDraftDto | null> {
     const row = await prisma.catalogProductLabelDraft.findUnique({
       where: { goodId_batchId_labelKind: { goodId, batchId, labelKind } },
+      include: { user: { select: { name: true } } },
     });
     if (!row) return null;
-    const dto = toDraftDto(row);
-    if (!dto) return null;
-
-    if (!dto.payload.expiresAt?.trim()) {
-      const expiration = await resolveGoodPartExpiration(batchId, null);
-      if (expiration) {
-        dto.payload.expiresAt = formatLabelExpiryDate(expiration);
-      }
+    const baseInputs = await resolveLabelBaseInputs({
+      goodId,
+      batchId,
+      batchNumber: row.batchNumber,
+      labelKind: row.labelKind as ProductLabelKind,
+    });
+    const payload = readStored(row.payloadJson, baseInputs);
+    if (!payload) return null;
+    if (!payload.templateId) {
+      const resolved = await labelTemplateService.resolveForGood(goodId, labelKind);
+      payload.templateId = resolved.templateId;
     }
+    return {
+      goodId: row.goodId,
+      batchId: row.batchId,
+      labelKind: row.labelKind as ProductLabelKind,
+      batchNumber: row.batchNumber,
+      payload,
+      baseInputs,
+      updatedBy: row.updatedBy,
+      updatedByName: row.user?.name ?? null,
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  }
 
-    return dto;
+  async listHistory(
+    goodId: string,
+    batchId: string,
+    labelKind: ProductLabelKind,
+  ): Promise<ProductLabelHistoryEntry[]> {
+    const draft = await this.getDraft(goodId, batchId, labelKind);
+    const published = await this.listPublished(goodId, batchId, labelKind);
+    const entries: ProductLabelHistoryEntry[] = [];
+    if (draft) entries.push({ entryType: 'draft', ...draft });
+    for (const row of published) {
+      entries.push({ entryType: 'published', ...row });
+    }
+    return entries;
   }
 
   async saveDraft(
@@ -175,22 +135,38 @@ export class CatalogLabelService {
       batchId: string;
       labelKind: ProductLabelKind;
       batchNumber: string;
-      payload: ProductLabelPayload;
+      payload: ProductLabelPayloadV2;
+      expiration?: string | null;
+      updatedBy?: number | null;
     },
   ): Promise<ProductLabelDraftDto> {
     const good = await prisma.catalogGood.findUnique({
       where: { id: goodId },
       select: { id: true, isGroup: true },
     });
-    if (!good || good.isGroup) {
-      throw new Error('Товар не знайдено');
-    }
+    if (!good || good.isGroup) throw new Error('Товар не знайдено');
 
-    const payload: ProductLabelPayload = {
-      ...input.payload,
-      labelKind: input.labelKind,
+    const baseInputs = await resolveLabelBaseInputs({
+      goodId,
       batchId: input.batchId,
       batchNumber: input.batchNumber,
+      expiration: input.expiration,
+      labelKind: input.labelKind,
+    });
+    const overrides = input.payload.overrides ?? {};
+    const merged = withAutoEnergy(
+      applyLabelOverrides(baseInputs, overrides),
+      Boolean(input.payload.nutritionEnergyManual),
+    );
+    const resolved = input.payload.templateId
+      ? { templateId: input.payload.templateId }
+      : await labelTemplateService.resolveForGood(goodId, input.labelKind);
+    const payload: ProductLabelPayloadV2 = {
+      version: LABEL_INPUTS_SCHEMA_VERSION,
+      templateId: resolved.templateId,
+      overrides,
+      inputs: merged,
+      nutritionEnergyManual: Boolean(input.payload.nutritionEnergyManual),
     };
 
     const row = await prisma.catalogProductLabelDraft.upsert({
@@ -206,17 +182,28 @@ export class CatalogLabelService {
         batchId: input.batchId,
         labelKind: input.labelKind,
         batchNumber: input.batchNumber,
-        payloadJson: toJsonPayload(payload),
+        payloadJson: toJson(payload),
+        updatedBy: input.updatedBy ?? null,
       },
       update: {
         batchNumber: input.batchNumber,
-        payloadJson: toJsonPayload(payload),
+        payloadJson: toJson(payload),
+        updatedBy: input.updatedBy ?? null,
       },
+      include: { user: { select: { name: true } } },
     });
 
-    const dto = toDraftDto(row);
-    if (!dto) throw new Error('Некоректний payload чернетки');
-    return dto;
+    return {
+      goodId,
+      batchId: input.batchId,
+      labelKind: input.labelKind,
+      batchNumber: input.batchNumber,
+      payload,
+      baseInputs,
+      updatedBy: row.updatedBy,
+      updatedByName: row.user?.name ?? null,
+      updatedAt: row.updatedAt.toISOString(),
+    };
   }
 
   async listPublished(
@@ -229,9 +216,10 @@ export class CatalogLabelService {
       orderBy: { version: 'desc' },
       include: { user: { select: { name: true } } },
     });
-    return rows
-      .map((row) => toPublishedDto(row))
-      .filter((row): row is ProductLabelPublishedDto => row != null);
+    return rows.flatMap((row) => {
+      const dto = this.toPublished(row);
+      return dto ? [dto] : [];
+    });
   }
 
   async getLatestPublished(
@@ -244,45 +232,99 @@ export class CatalogLabelService {
       include: { user: { select: { name: true } } },
     });
     if (!row) return null;
-    return toPublishedDto(row);
+    return this.toPublished(row);
+  }
+
+  private toPublished(row: {
+    id: number;
+    goodId: string;
+    batchId: string;
+    labelKind: string;
+    batchNumber: string;
+    version: number;
+    barcode: string;
+    pdfFileName: string;
+    payloadJson: unknown;
+    publishedBy: number | null;
+    publishedAt: Date;
+    user?: { name: string | null } | null;
+  }): ProductLabelPublishedDto | null {
+    if (!isPayloadV2(row.payloadJson)) {
+      const legacy = parseProductLabelPayload(row.payloadJson);
+      if (!legacy) return null;
+      const inputs = v1PayloadToInputs(legacy);
+      return {
+        id: row.id,
+        goodId: row.goodId,
+        batchId: row.batchId,
+        labelKind: row.labelKind as ProductLabelKind,
+        batchNumber: row.batchNumber,
+        version: row.version,
+        barcode: row.barcode,
+        pdfFileName: row.pdfFileName,
+        payload: {
+          version: LABEL_INPUTS_SCHEMA_VERSION,
+          templateId: null,
+          inputs,
+          overrides: inputs,
+          nutritionEnergyManual: Boolean(legacy.nutritionEnergyManual),
+        },
+        publishedBy: row.publishedBy,
+        publishedByName: row.user?.name ?? null,
+        publishedAt: row.publishedAt.toISOString(),
+      };
+    }
+    return {
+      id: row.id,
+      goodId: row.goodId,
+      batchId: row.batchId,
+      labelKind: row.labelKind as ProductLabelKind,
+      batchNumber: row.batchNumber,
+      version: row.version,
+      barcode: row.barcode,
+      pdfFileName: row.pdfFileName,
+      payload: row.payloadJson,
+      publishedBy: row.publishedBy,
+      publishedByName: row.user?.name ?? null,
+      publishedAt: row.publishedAt.toISOString(),
+    };
   }
 
   async deletePublished(goodId: string, labelId: number): Promise<void> {
     const row = await prisma.catalogProductLabel.findUnique({ where: { id: labelId } });
-    if (!row || row.goodId !== goodId) {
-      throw new Error('Версію наліпки не знайдено');
-    }
-
-    const abs = labelPdfPath(row.goodId, row.pdfFileName);
+    if (!row || row.goodId !== goodId) throw new Error('Версію наліпки не знайдено');
     try {
-      await fs.unlink(abs);
+      await fs.unlink(labelPdfPath(row.goodId, row.pdfFileName));
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       logServer(`[CatalogLabel] PDF unlink failed for ${labelId}: ${msg}`);
     }
-
     await prisma.catalogProductLabel.delete({ where: { id: labelId } });
+  }
+
+  private async renderStored(payload: ProductLabelPayloadV2): Promise<Buffer> {
+    if (!payload.templateId) throw new Error('У версії немає шаблону');
+    const template = await labelTemplateService.get(payload.templateId);
+    const inputs = mergeLabelOverrides(
+      payload.inputs as LabelInputMap,
+      payload.overrides,
+    );
+    return generateLabelPdfBuffer(template.template as never, inputs);
   }
 
   async getPublishedPdfBuffer(labelId: number): Promise<{ buffer: Buffer; fileName: string }> {
     const row = await prisma.catalogProductLabel.findUnique({ where: { id: labelId } });
     if (!row) throw new Error('Версію наліпки не знайдено');
-
     const abs = labelPdfPath(row.goodId, row.pdfFileName);
     try {
       const buffer = await fs.readFile(abs);
       return { buffer, fileName: row.pdfFileName };
     } catch {
-      const payload = parseProductLabelPayload(row.payloadJson);
-      if (!payload) {
-        throw new Error('PDF файл не знайдено');
-      }
-
-      logServer(
-        `[CatalogLabel] PDF missing on disk for label ${labelId} (${row.pdfFileName}), regenerating from payload`,
-      );
+      const published = this.toPublished(row);
+      if (!published) throw new Error('PDF файл не знайдено');
+      logServer(`[CatalogLabel] PDF missing for ${labelId}, regenerating`);
       await ensureLabelsDir(row.goodId);
-      const pdfBuffer = await renderLabelPdf(payload);
+      const pdfBuffer = await this.renderStored(published.payload);
       await fs.writeFile(abs, pdfBuffer);
       return { buffer: pdfBuffer, fileName: row.pdfFileName };
     }
@@ -290,53 +332,77 @@ export class CatalogLabelService {
 
   async generatePublished(
     goodId: string,
-    payload: ProductLabelPayload,
+    payload: ProductLabelPayloadV2,
     publishedBy: number | null,
+    batch: { batchId: string; batchNumber: string; labelKind: ProductLabelKind },
   ): Promise<ProductLabelPublishedDto> {
     const good = await prisma.catalogGood.findUnique({
       where: { id: goodId },
       select: { id: true, isGroup: true },
     });
-    if (!good || good.isGroup) {
-      throw new Error('Товар не знайдено');
-    }
+    if (!good || good.isGroup) throw new Error('Товар не знайдено');
 
-    const nutritionErrors = getNutritionValidationErrors(payload.nutritionText);
+    const baseInputs = await resolveLabelBaseInputs({
+      goodId,
+      batchId: batch.batchId,
+      batchNumber: batch.batchNumber,
+      labelKind: batch.labelKind,
+    });
+    const inputs = withAutoEnergy(
+      applyLabelOverrides(baseInputs, payload.overrides),
+      Boolean(payload.nutritionEnergyManual),
+    );
+    const nutritionErrors = getLabelNutritionErrors(inputs);
     if (nutritionErrors.length > 0) {
       throw new Error(`Поживна цінність не заповнена: ${nutritionErrors[0]}`);
     }
 
-    const labelKind = payload.labelKind;
-    const batchId = payload.batchId;
-    const batchNumber = payload.batchNumber;
+    const resolved = payload.templateId
+      ? await labelTemplateService.get(payload.templateId)
+      : null;
+    const fallback = resolved
+      ? null
+      : await labelTemplateService.resolveForGood(goodId, batch.labelKind);
+    const template = resolved?.template ?? fallback?.template;
+    const templateId = resolved?.id ?? fallback?.templateId ?? null;
+    if (!template || !templateId) {
+      throw new Error('Немає шаблону наліпки. Створіть пресет у налаштуваннях.');
+    }
+
+    const stored: ProductLabelPayloadV2 = {
+      version: LABEL_INPUTS_SCHEMA_VERSION,
+      templateId,
+      inputs,
+      overrides: payload.overrides ?? {},
+      nutritionEnergyManual: Boolean(payload.nutritionEnergyManual),
+    };
 
     const last = await prisma.catalogProductLabel.findFirst({
-      where: { goodId, batchId, labelKind },
+      where: { goodId, batchId: batch.batchId, labelKind: batch.labelKind },
       orderBy: { version: 'desc' },
       select: { version: true },
     });
     const version = (last?.version ?? 0) + 1;
-    const pdfFileName = buildPdfFileName(labelKind, version, batchId);
-
+    const pdfFileName = buildPdfFileName(batch.labelKind, version, batch.batchId);
     await ensureLabelsDir(goodId);
-    const pdfBuffer = await renderLabelPdf(payload);
+    const pdfBuffer = await generateLabelPdfBuffer(template as never, inputs);
     await fs.writeFile(labelPdfPath(goodId, pdfFileName), pdfBuffer);
 
     const row = await prisma.catalogProductLabel.create({
       data: {
         goodId,
-        batchId,
-        labelKind,
-        batchNumber,
+        batchId: batch.batchId,
+        labelKind: batch.labelKind,
+        batchNumber: batch.batchNumber,
         version,
-        barcode: payload.barcode,
+        barcode: inputs.barcode || '',
         pdfFileName,
-        payloadJson: toJsonPayload(payload),
+        payloadJson: toJson(stored),
         publishedBy,
       },
+      include: { user: { select: { name: true } } },
     });
-
-    const dto = toPublishedDto(row);
+    const dto = this.toPublished(row);
     if (!dto) throw new Error('Некоректний payload опублікованої наліпки');
     return dto;
   }
@@ -348,70 +414,22 @@ export class CatalogLabelService {
       labelKind: ProductLabelKind;
       batchNumber: string;
       expiration?: string | null;
+      updatedBy?: number | null;
     },
   ): Promise<ProductLabelDraftDto> {
-    const good = await prisma.catalogGood.findUnique({
-      where: { id: goodId },
-      include: {
-        components: { orderBy: { rowNum: 'asc' } },
-        barcodes: true,
-      },
-    });
-    if (!good || good.isGroup) {
-      throw new Error('Товар не знайдено');
-    }
-
-    const componentIds = good.components.map((c) => c.componentGoodId);
-    const componentGoods =
-      componentIds.length > 0
-        ? await prisma.catalogGood.findMany({
-            where: { id: { in: componentIds } },
-            select: { id: true, name: true },
-          })
-        : [];
-    const nameById = new Map(componentGoods.map((g) => [g.id, g.name]));
-
-    const ingredients = good.components.map((c) => ({
-      componentName: nameById.get(c.componentGoodId) || c.componentGoodId,
-      qty: c.qty,
-    }));
-
-    const nutritionJson = parseProductNutritionJson(good.productNutritionJson);
-    const nutritionText = nutritionJson ? nutritionJsonToText(nutritionJson) : undefined;
-    const storageText = ensureStorageText(PORTION_LABEL_STATIC.storageText);
-    const ingredientsJson = parseProductIngredientsJson(good.productIngredientsJson);
-    const { text: ingredientsText } = resolveIngredientsText(ingredientsJson, ingredients);
-
-    const batchBarcode = good.barcodes.find(
-      (b) => b.activity && b.goodPart === input.batchId,
-    );
-    const defaultBarcode = good.barcodes.find(
-      (b) => b.activity && (!b.goodPart || b.goodPart === ''),
-    );
-    const barcode = batchBarcode?.code || defaultBarcode?.code || '';
-    const expiration = await resolveGoodPartExpiration(input.batchId, input.expiration);
-
-    const payload = buildSeedLabelPayload({
-      labelKind: input.labelKind,
-      batchId: input.batchId,
-      batchNumber: input.batchNumber,
-      barcode,
-      name: good.name,
-      printName: good.printName,
-      weightKg: good.weight,
-      ingredients,
-      expiration,
-      nutritionText,
-    });
-
-    payload.ingredientsText = ingredientsText;
-    payload.storageText = storageText;
-
+    const resolved = await labelTemplateService.resolveForGood(goodId, input.labelKind);
     return this.saveDraft(goodId, {
       batchId: input.batchId,
       labelKind: input.labelKind,
       batchNumber: input.batchNumber,
-      payload,
+      expiration: input.expiration,
+      updatedBy: input.updatedBy,
+      payload: {
+        version: LABEL_INPUTS_SCHEMA_VERSION,
+        templateId: resolved.templateId,
+        inputs: {},
+        overrides: {},
+      },
     });
   }
 

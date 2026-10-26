@@ -29,6 +29,8 @@ model User {
   hrPayrollLocks             HrPayrollPeriod[]   @relation("HrPayrollLockedBy")
   hrAuditLogs                HrAuditLog[]
   catalogProductLabels       CatalogProductLabel[]
+  catalogProductLabelDraftsUpdated CatalogProductLabelDraft[]
+  catalogLabelTemplatesUpdated CatalogLabelTemplate[]
 
   @@map("users")
 }
@@ -361,16 +363,18 @@ model WarehouseReleaseSet {
   storageId         String?  @db.VarChar(191)
   firmId            String?  @db.VarChar(255)
   dilovodDocId      String?  @db.VarChar(255)
-  operationType     String   @default("kit") @db.VarChar(20)
-  comment           String?  @db.Text
-  status            String   @default("created")
-  createdBy         Int?
-  createdAt         DateTime @default(now())
-  operDate          DateTime @default(now())
+  operationType        String   @default("kit") @db.VarChar(20)
+  comment              String?  @db.Text
+  correctionSessionId  String?  @db.VarChar(36)
+  status               String   @default("created")
+  createdBy            Int?
+  createdAt            DateTime @default(now())
+  operDate             DateTime @default(now())
 
   @@index([setSku])
   @@index([status])
   @@index([createdBy])
+  @@index([correctionSessionId])
   @@map("warehouse_release_set")
 }
 
@@ -541,8 +545,15 @@ model CatalogGood {
   prices     CatalogGoodPrice[]
   barcodes   CatalogGoodBarcode[]
   images     CatalogGoodImage[]
+  /// Override пресета наліпки «Порція»; null = дефолт Settings
+  portionLabelTemplateId String? @db.VarChar(36)
+  /// Override пресета наліпки «Коробка»; null = дефолт Settings
+  boxLabelTemplateId String? @db.VarChar(36)
+
   labelDrafts CatalogProductLabelDraft[]
   labels     CatalogProductLabel[]
+  portionLabelTemplate CatalogLabelTemplate? @relation("PortionLabelTemplate", fields: [portionLabelTemplateId], references: [id], onDelete: SetNull)
+  boxLabelTemplate     CatalogLabelTemplate? @relation("BoxLabelTemplate", fields: [boxLabelTemplateId], references: [id], onDelete: SetNull)
 
   @@index([parentId])
   @@index([parentId, sortOrder])
@@ -550,6 +561,8 @@ model CatalogGood {
   @@index([delMark])
   @@index([name])
   @@index([storefrontPresetId])
+  @@index([portionLabelTemplateId])
+  @@index([boxLabelTemplateId])
   @@map("catalog_goods")
 }
 
@@ -643,6 +656,8 @@ model CatalogGoodBarcode {
   goodPart          String   @default("") @db.VarChar(32)
   /// goodPart__pr (людська назва/номер партії) для UI
   goodPartName      String?  @db.VarChar(255)
+  /// portion — Dilovod / порційний ШК; box — внутрішній ШК коробки (NK, для скану в переміщеннях)
+  barcodeKind       String   @default("portion") @db.VarChar(16)
   activity          Boolean  @default(true)
   syncedAt          DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -653,6 +668,7 @@ model CatalogGoodBarcode {
   @@index([goodId])
   @@index([code])
   @@index([goodPart])
+  @@index([goodId, goodPart, barcodeKind])
   @@map("catalog_good_barcodes")
 }
 
@@ -663,9 +679,11 @@ model CatalogProductLabelDraft {
   labelKind   String   @db.VarChar(16) // portion | box
   batchNumber String   @db.VarChar(255)
   payloadJson Json
+  updatedBy   Int?
   updatedAt   DateTime @updatedAt
 
   good CatalogGood @relation(fields: [goodId], references: [id], onDelete: Cascade)
+  user User?       @relation(fields: [updatedBy], references: [id], onDelete: SetNull)
 
   @@unique([goodId, batchId, labelKind])
   @@index([goodId])
@@ -691,6 +709,44 @@ model CatalogProductLabel {
   @@unique([goodId, batchId, labelKind, version])
   @@index([goodId, batchId, labelKind])
   @@map("catalog_product_labels")
+}
+
+/// Master-шаблон наліпки (pdfme Template JSON).
+model CatalogLabelTemplate {
+  id            String   @id @default(uuid()) @db.VarChar(36)
+  slug          String   @unique @db.VarChar(64)
+  name          String   @db.VarChar(128)
+  iconKey       String?  @db.VarChar(48)
+  labelKind     String   @db.VarChar(16)
+  audience      String   @db.VarChar(16)
+  templateJson  Json
+  basePdfMeta   Json?
+  schemaVersion     Int      @default(1)
+  isArchived        Boolean  @default(false)
+  isDeletionLocked  Boolean  @default(false)
+  updatedBy         Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user            User?                         @relation(fields: [updatedBy], references: [id], onDelete: SetNull)
+  defaults        CatalogLabelTemplateDefault[]
+  portionGoods    CatalogGood[]                 @relation("PortionLabelTemplate")
+  boxGoods        CatalogGood[]                 @relation("BoxLabelTemplate")
+
+  @@index([labelKind, audience, isArchived])
+  @@map("catalog_label_templates")
+}
+
+/// Дефолтний пресет для пари аудиторія × слот.
+model CatalogLabelTemplateDefault {
+  audience   String @db.VarChar(16)
+  labelKind  String @db.VarChar(16)
+  templateId String @db.VarChar(36)
+
+  template CatalogLabelTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+
+  @@id([audience, labelKind])
+  @@map("catalog_label_template_defaults")
 }
 
 /// Журнал дій HR (audit trail користувача)

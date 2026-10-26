@@ -36,6 +36,7 @@ const SettingsChatwootBot = lazyPage(() => import('./pages/SettingsChatwootBot')
 const ChatwootBotStatistics = lazyPage(() => import('./pages/ChatwootBotStatistics'));
 const SettingsStorefront = lazyPage(() => import('./pages/SettingsStorefront'));
 const SettingsUsers = lazyPage(() => import('./pages/Settings/Users'));
+const SettingsLabelTemplates = lazyPage(() => import('./pages/SettingsLabelTemplates'));
 const SettingsDilovod = lazyPage(() => import('./pages/SettingsDilovod'));
 const SettingsDirectoriesCache = lazyPage(() => import('./pages/SettingsDirectoriesCache'));
 const SettingsWarehouseMovement = lazyPage(() => import('./pages/SettingsWarehouseMovement'));
@@ -715,6 +716,18 @@ export const appRoutes: AppRoute[] = [
       color: 'danger',
       until: '2026-09-08',
     },
+  },
+  {
+    path: '/settings/label-templates',
+    component: SettingsLabelTemplates,
+    title: 'Шаблони наліпок',
+    pageTitle: 'Шаблони наліпок | NK Backoffice',
+    navLabel: 'Шаблони наліпок',
+    icon: <DynamicIcon name="tags" size={20} className="max-w-full max-h-full" />,
+    inNav: true,
+    parent: 'settings',
+    order: 9.6,
+    permission: { name: 'labelTemplates', label: 'Шаблони наліпок' },
   },
   {
     path: '/settings/design',

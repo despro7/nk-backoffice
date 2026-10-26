@@ -4,6 +4,7 @@ import locatorBabelJsx from "@locator/babel-jsx";
 import path from "path";
 import tailwindcss from "@tailwindcss/vite";
 import type { Application } from "express";
+import { pdfmeDesignerRotatedDragPatch } from "./scripts/vite/pdfmeDesignerRotatedDragPatch";
 
 const disableHmr = process.env.VITE_DISABLE_HMR === "1";
 const projectRoot = __dirname;
@@ -35,6 +36,7 @@ export default defineConfig(({ mode }) => ({
     outDir: "dist/client",
   },
   plugins: [
+    pdfmeDesignerRotatedDragPatch(),
     react({
       babel: {
         plugins: [
@@ -71,6 +73,8 @@ export default defineConfig(({ mode }) => ({
       "react-dom/client",
       "react/jsx-dev-runtime",
       "@locator/runtime",
+      "@pdfme/ui",
+      "pako",
     ],
   },
 }));

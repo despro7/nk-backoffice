@@ -1,276 +1,178 @@
 # Наліпки для друку (Products 2.0)
 
-**Дата:** 2026-09-16  
-**UI:** `ProductDrawer` → вкладка **«Наліпки»**  
-**API:** `/api/products/:goodId/labels/*`  
-**Доступ:** permission `catalog.manage` (мін. роль `WAREHOUSE_MANAGER`)
+**Оновлено:** 2026-10-26  
+**UI:** `ProductDrawer` → вкладка **«Наліпки»**; **Налаштування** → **Шаблони наліпок** (`/settings/label-templates`)  
+**API:** `/api/products/:goodId/labels/*`, `/api/label-templates/*`  
+**Доступ:** `catalog.manage` (мін. `WAREHOUSE_MANAGER`); шаблони — permission `labelTemplates` (BOSS, ADMIN)
 
 ---
 
 ## Огляд
 
-Модуль генерації PDF-етикеток **100×100 мм** для партій готової продукції. Макет за Figma (node `2062:1676`, Auto Layout → Flexbox). Перший тип — **«Порція»** (`portion`); **«Коробка»** (`box`) — заглушка в UI (наступний етап).
+PDF-етикетки **100×100 мм** для партій готової продукції. Макет задається **pdfme**-шаблонами (Designer у налаштуваннях). Типи: **«Порція»** (`portion`) та **«Коробка»** (`box`).
 
 | Що | Рішення |
 | --- | --- |
-| Чернетка | Спільна для всіх користувачів (без `userId`); ключ `(goodId, batchId, labelKind)` |
-| Опубліковані версії | Кожна генерація PDF — новий запис `version` + файл на диску |
-| Автор ревізії | `publishedBy` + `publishedByName` при генерації PDF |
-| Превʼю | HTML Canvas з inline-редагуванням; масштаб адаптивний |
-| PDF | `@react-pdf/renderer`, той самий flex-макет що й Canvas |
-| Штрихкод EAN-13 | Шрифт `CodeEAN13.woff` (без растру в PDF) |
-| Графіка в PDF | SVG з `/public` (не PNG) |
+| Шаблон | `catalog_label_templates` + матриця дефолтів (good/kit × portion/box); override на `catalog_goods` |
+| Дані на наліпці | `LabelInputMap` (`shared/constants/labelInputKeys.ts`), резолвер `LabelInputResolver` |
+| Чернетка | Одна на `(goodId, batchId, labelKind)`; `updatedBy` + `updatedAt` |
+| Опубліковані PDF | Кожна генерація — `version`, файл у `uploads/catalog-labels/{goodId}/`, `publishedBy` |
+| Історія в UI | `GET …/labels/history` — **чернетка + PDF** в одному списку «Версії» |
+| Превʼю | `LabelPdfmeViewer` (pdfme Form); підпис під превʼю (дата, автор, партія) |
+| PDF | `@pdfme/generator` + `labelPdfmeRuntime.ts`, шрифти Arial з assets Designer |
+| ШК порції | `catalog_good_barcodes` (`barcodeKind: portion`), привʼязка до `goodPart` (партія) |
+| ШК коробки | `barcodeKind: box`, один EAN-13 на пару good+batch (`CatalogBoxBarcodeService`); скан на моб. переміщенні → +1 «Коробок» |
 
 ---
 
 ## Схема БД
 
-Міграція: `prisma/migrations/20260916010000_add_catalog_product_labels/`
-
-| Таблиця | Призначення |
+| Міграція / таблиця | Призначення |
 | --- | --- |
-| `catalog_product_label_drafts` | Чернетка payload для пари товар + партія + тип |
-| `catalog_product_labels` | Історія згенерованих PDF (`version`, `pdfFileName`, `payloadJson`, `publishedBy`) |
+| `20260916010000_add_catalog_product_labels` | `catalog_product_label_drafts`, `catalog_product_labels` |
+| `20261021150000_catalog_label_templates` | Шаблони, дефолти, `portionLabelTemplateId` / `boxLabelTemplateId` на товарі |
+| `20261026140000_catalog_barcode_kind_box` | `catalog_good_barcodes.barcodeKind` |
+| `20261026150000_label_draft_updated_by` | `catalog_product_label_drafts.updatedBy` |
 
-PDF зберігаються в `uploads/catalog-labels/{goodId}/`.
+| Таблиця | Поля (ключові) |
+| --- | --- |
+| `catalog_product_label_drafts` | `payloadJson` (v2), `updatedBy`, `updatedAt` |
+| `catalog_product_labels` | `version`, `pdfFileName`, `payloadJson`, `publishedBy`, `publishedAt` |
+| `catalog_label_templates` | `templateJson`, `labelKind`, `audience`, `slug`, `isArchived` |
+| `catalog_label_template_defaults` | `(audience, labelKind)` → `templateId` |
 
 ---
 
-## Payload (`ProductLabelPayload`)
+## Payload v2 (`ProductLabelPayloadV2`)
 
-Тип: `shared/types/productLabel.ts`.
+Типи: `shared/types/labelTemplate.ts`, `shared/types/productLabel.ts`.
 
-| Поле | Джерело / редагування |
+| Поле | Зміст |
 | --- | --- |
-| `title` | Авто-розбиття назви (`splitProductTitle`); inline + toolbar (вирівнювання, ± шрифт) |
-| `ingredientsText` | BOM → назви компонентів через кому; **редагований** |
-| `nutritionText` | Шаблон з плейсхолдерами; **4 числові інпути**; валідація перед генерацією |
-| `nutritionEnergyManual` | `true` якщо ккал задані вручну (інакше Atwater: б×4 + ж×9 + в×4) |
-| `storageText` | Статичний текст за замовчуванням; **редагований** |
-| `batchNumber` | З обраної партії Dilovod |
-| `expiresAt` | З `goodParts.expiration` → формат `MM.YYYY`; **редагований** |
-| `netWeightLabel` | З ваги товару (`weight` кг → `400г`); **редагований** |
-| `barcode` | ШК партії з `catalog_good_barcodes` або дефолтний активний |
+| `version` | `LABEL_INPUTS_SCHEMA_VERSION` |
+| `templateId` | UUID пресета pdfme або `null` (дефолт з матриці) |
+| `inputs` | Повний `LabelInputMap` після merge |
+| `overrides` | Локальні правки чернетки відносно бази з картки |
+| `nutritionEnergyManual` | Ручна енергетична цінність (ккал) |
 
-Чернетка може зберігатися **без штрихкоду** (поле порожнє). Генерація PDF вимагає заповненої поживної цінності.
+### Джерела полів (`LabelInputResolver`)
+
+- Назва, вага, ШК, партія, термін, BOM, nutrition JSON — картка товару + Dilovod.
+- **Склад і зберігання** — спочатку override-блоки `storefrontDescriptionDoc` (`resolver: ingredients` / `storage`), інакше картка/BOM (`labelStorefrontOverrides.ts`).
+- **Коробка** — окремий box-штрихкод; порційний ШК не змішується з box (`barcodeKind`).
+
+Генерація PDF вимагає валідної поживної цінності (`getLabelNutritionErrors`).
 
 ---
 
-## API
+## API (товар)
 
-Підключення: `server/routes/products.ts` → `ProductLabelsController`.
+`ProductLabelsController` → `server/routes/products.ts`.
 
 | Method | Path | Опис |
 | --- | --- | --- |
-| GET | `/api/products/:goodId/labels/draft?batchId=&labelKind=` | Чернетка; якщо `expiresAt` порожній — сервер добирає з Dilovod |
-| PUT | `/api/products/:goodId/labels/draft` | Зберегти чернетку |
-| POST | `/api/products/:goodId/labels/seed` | Створити чернетку з BOM/ваги/ШК; body: `batchId`, `batchNumber`, `labelKind`, `expiration?` |
-| GET | `/api/products/:goodId/labels/published?batchId=&labelKind=` | Список версій (desc за `version`) |
-| GET | `/api/products/:goodId/labels/published/latest?labelKind=` | Остання згенерована версія по товару (без `batchId`) |
-| POST | `/api/products/:goodId/labels/published/generate` | Зберегти PDF + новий запис версії |
-| GET | `/api/products/:goodId/labels/published/:id/pdf` | Скачати / inline PDF |
-| DELETE | `/api/products/:goodId/labels/published/:id` | Видалити версію + PDF (**лише ADMIN**) |
+| GET | `…/labels/draft?batchId=&labelKind=` | Чернетка |
+| PUT | `…/labels/draft` | Зберегти чернетку (`updatedBy` = поточний user) |
+| POST | `…/labels/seed` | Перестворити чернетку з картки |
+| GET | `…/labels/history?batchId=&labelKind=` | **Чернетка + опубліковані** (для UI) |
+| GET | `…/labels/published?batchId=&labelKind=` | Лише PDF-версії |
+| GET | `…/labels/published/latest?labelKind=` | Останній PDF по товару |
+| GET | `…/labels/resolve-template?labelKind=` | Який шаблон застосується |
+| PATCH | `…/labels/template` | Override пресета на товарі |
+| POST | `…/labels/published/generate` | Новий PDF + версія |
+| GET | `…/labels/published/:id/pdf` | Файл PDF |
+| DELETE | `…/labels/published/:id` | Видалити версію (**ADMIN**) |
 
 Клієнт: `client/services/ProductLabelService.ts`.
 
----
+### API шаблонів
 
-## UI (`ProductLabelsTab`)
-
-Файл: `client/pages/Products/components/productDrawer/ProductLabelsTab.tsx`.
-
-1. **Tabs** `Порція | Коробка` (`labelKind`).
-2. **Select партії** — `BatchNumbersAutocomplete` + `useBatchNumbers` (`includeSmallStorage: true`). Якщо для товару вже є PDF — **партія і остання версія підставляються автоматично** (`GET …/published/latest`).
-3. **Select версії** — якщо є опубліковані PDF; **видалення** (🗑) — лише **ADMIN**.
-4. **Превʼю** — `ProductLabelPreview` → `PortionLabelCanvas`; під макетом — **аналітика** (дата, автор, партія).
-5. **Дії:** Зберегти чернетку · **Скинути чернетку** · Згенерувати PDF · Скачати · **Друк** (dropdown: браузер / QZ Tray + к-сть) · Копіювати версію в чернетку.
-
-**Скинути чернетку** — `POST …/labels/seed` поверх існуючої чернетки + force-refresh кешу партій. Підставляє вагу/склад/ШК/термін з картки товару; опубліковані PDF не чіпає. Корисно, якщо для партії залишилась стара порожня чернетка (напр. без ваги).
-
-Режим перегляду версії (`viewingVersion`) — поля read-only.
-
-### Превʼю та межі наліпки
-
-`ProductLabelPreview.tsx`:
-
-- Canvas масштабується від ширини контейнера (`PREVIEW_MIN_SCALE` … `PREVIEW_MAX_SCALE`).
-- Зверху — слот для toolbar заголовка (`PREVIEW_TOOLBAR_OVERFLOW_PX`).
-- Canvas прив’язаний до **нижнього краю** (`transformOrigin: bottom left`), щоб панель керування не виходила за рамку.
-- Рамка наліпки — overlay `border-2` (лише візуальний контроль, не впливає на PDF).
-
-### Inline-редагування (Canvas)
-
-| Компонент | Призначення |
-| --- | --- |
-| `LabelEditableZone` | `contentEditable`; outline: `LABEL_EDITABLE_OUTLINE_CLASSES` (`ring-primary`) |
-| `LabelEditableBlock` | Суцільний outline для блоків з префіксом («Склад:», умови зберігання) |
-| `LabelTitleBlock` | Заголовок + toolbar (align, font ±) при фокусі |
-| `NutritionValueFields` | Readonly labels + 4 числові інпути динамічної ширини |
-| `Ean13BarcodeText` | EAN-13 через `CodeEAN13.woff` + `encodeEan13ForFont` |
-
-Макет і розміри: `shared/utils/productLabelPortionLayout.ts`, статичні тексти: `shared/constants/productLabelPortionStatic.ts`.
+`server/routes/label-templates.ts` — CRUD, дефолти, preview PDF, `preview-inputs`, override по товарах.  
+Клієнт: `client/services/LabelTemplateService.ts`.
 
 ---
 
-## PDF
+## UI — картка товару (`ProductLabelsTab`)
+
+1. **Tabs** `Порція | Коробка`.
+2. **Пресет** — override або «За замовчуванням (Settings)»; при `templateId === null` підвантажується дефолт через `resolveTemplate`.
+3. **Партія** — `BatchNumbersAutocomplete`; автопідстановка з `published/latest`.
+4. **Версії** — один Select: чернетка (`Чернетка · дата · автор`) і `vN · дата · автор`; перемикання завантажує payload; PDF — режим перегляду, чернетка — редагування.
+5. Під превʼю — `formatProductLabelHistoryCaption` (збережено / згенеровано, автор, партія).
+6. **Дії:** зберегти чернетку · синхронізувати з картки (`seed`) · згенерувати PDF · завантажити / друк (браузер) лише для обраного **PDF** · «Редагувати як чернетку» (клон з PDF).
+
+Превʼю: `label/LabelPdfmeViewer.tsx`. Текстові поля — accordion з `LABEL_EDITABLE_KEYS`.
+
+---
+
+## UI — налаштування шаблонів
+
+`client/pages/SettingsLabelTemplates.tsx` — список пресетів, pdfme Designer (100×100 мм), матриця дефолтів, overrides по товарах, живий preview (індекс ГП `warehouse-search-index` + партія, `GET …/preview-inputs`).
+
+Допоміжні модулі: `client/pages/Settings/labelTemplates/*`, `shared/pdfme/*`.
+
+---
+
+## PDF (сервер)
 
 | Файл | Роль |
 | --- | --- |
-| `server/modules/Products/ProductLabelPdfDocument.tsx` | React-PDF документ (flex-макет) |
-| `server/modules/Products/productLabelPdfFonts.ts` | Реєстрація шрифтів (Days One, Open Sans Condensed, CodeEAN13) |
-| `server/modules/Products/CatalogLabelService.ts` | CRUD, seed, `renderToBuffer` |
+| `server/modules/Products/pdfme/labelPdfmeRuntime.ts` | `generateLabelPdfBuffer` |
+| `server/modules/Products/CatalogLabelService.ts` | Чернетки, history, generate, файли |
+| `server/modules/Products/LabelTemplateService.ts` | CRUD шаблонів, resolve для товару |
 
-Шрифти: `public/fonts/`, `public/CodeEAN13.woff`.  
-Ассети: `nk-food-logo.svg`, `portion-instruction.svg`, `qr-code-nkfood.svg`, `estimated.svg`, `icon-warning.svg`.
-
-Перед рендером PDF payload проходить **`prepareProductLabelForRender`** (типографіка текстових полів).
+Legacy `@react-pdf/renderer` для наліпок **знято**; react-pdf лишається для інших документів (техкарта тощо), якщо використовується.
 
 ---
 
-## Типографіка текстів
+## Склад і термін придатності
 
-Бібліотека: **[typograf](https://github.com/typograf/typograf)** (`npm`, locale `uk`).  
-Утиліти: `shared/utils/typograph.ts` (+ `typograph.spec.ts`).
-
-| Функція | Призначення |
-| --- | --- |
-| `typographUk(text)` | Типографує довільний український рядок |
-| `typographProductLabelPayload(payload)` | Типографує `title`, `ingredientsText`, `nutritionText`, `storageText` |
-| `prepareProductLabelForRender(payload)` | Обгортка в `shared/utils/productLabel.ts` для превʼю / PDF |
-
-### Що робить
-
-- Неразривні пробіли після коротких слів (`за`, `до`, `не`, `в`, `У` …).
-- Неразривний пробіл перед `%` (`75%`).
-- Лапки «ёлочки» (`"Нова Кухня"` → `«Нова Кухня»`).
-- Додаткове правило для одиниць виміру на етикетках: `24 годин`, `68,3 ккал`, `300 г` (число + одиниця не розриваються при переносі рядка).
-
-Приклад (умови зберігання, `PORTION_LABEL_STATIC.storageText`):
-
-```
-…не більше 75%. …не більше 24 годин.
-         ↑ nbsp              ↑ nbsp перед %    ↑ nbsp перед «годин»
-```
-
-### Коли застосовується
-
-| Момент | Де |
-| --- | --- |
-| Завантаження чернетки | `ensureStorageText` (дефолт + збережений текст) |
-| Blur у Canvas | `LabelEditableZone` / `LabelEditableBlock` з `typographOnBlur` («Склад», умови зберігання) |
-| Збереження / генерація PDF | `ProductLabelsTab` → `prepareProductLabelForRender` перед API |
-| Превʼю Canvas | Статичні блоки (`warning`, адреса, виробник, заголовок поживної цінності) — `typographUk` при рендері |
-| PDF | `ProductLabelPdfDocument` → `prepareProductLabelForRender` + статичні тексти |
-
-Редагування: користувач вводить звичайний текст; після blur або збереження в payload зберігається вже типографована версія (операція ідемпотентна).
-
-### Використання в коді
-
-```typescript
-import { typographUk } from '@shared/utils/typograph';
-import { prepareProductLabelForRender } from '@shared/utils/productLabel';
-
-const storage = typographUk(PORTION_LABEL_STATIC.storageText);
-const forPdf = prepareProductLabelForRender(draftPayload);
-```
-
-Залежність: `typograf` у `package.json` (dependencies).
+- Термін: `formatLabelExpiryDate` → `MM.YYYY`; fallback з Dilovod `goodParts` / `getObject` (див. попередні нотатки в git-історії docs).
+- Поживна цінність: `shared/utils/labelInputs.ts`, `getLabelNutritionErrors`, auto energy (Atwater).
 
 ---
 
-## Поживна цінність
-
-Утиліти: `shared/utils/productLabelNutrition.ts` (+ `productLabelNutrition.spec.ts`).
-
-- Стартовий шаблон: `PRODUCT_LABEL_NUTRITION_TEMPLATE` (плейсхолдери `__`).
-- `getNutritionValidationErrors` / `isNutritionTextComplete` — блокують генерацію PDF.
-- `patchNutritionWithAutoEnergy` — автоперерахунок ккал при зміні Б/Ж/В, якщо не `nutritionEnergyManual`.
-- Ручна ккал: підкреслення dotted на Canvas.
-
----
-
-## Термін придатності («Вжити до»)
-
-### Формат
-
-`formatLabelExpiryDate` (`shared/utils/productLabel.ts`): Dilovod `YYYY-MM-DD …` → **`MM.YYYY`** (напр. `2027-08-15` → `08.2027`).  
-Ігнорує «нульові» дати Dilovod (`0000-00-00`) через `isMissingDilovodDate`.
-
-### Ланцюжок даних
-
-```
-Dilovod goodPart (expiration)
-  → GET /api/warehouse/batch-numbers/:sku  (поле expiration)
-  → ProductLabelsTab (batch.expiration)
-  → resolveLabelExpiryDate (клієнт, якщо в чернетці порожньо)
-  → CatalogLabelService.getDraft / seedDraft (серверний fallback через getObject)
-```
-
-### Відома особливість Dilovod API
-
-Запит `catalogs.goodParts` з фільтром `id IN (...)` **повертає expiration лише для частини партій**.  
-Тому в `DilovodApiClient.enrichBatchExpirationsFromGoodParts`:
-
-1. Спочатку bulk-запит до `catalogs.goodParts`.
-2. Для id без дати — **`getObject(batchId)`** → `header.expiration` (надійний шлях).
-
-Хелпер: `extractBatchExpirationFromGoodPartHeader` (`DilovodUtils.ts`).
-
-Серверний кеш партій (`WarehouseController`, TTL 5 хв) може тимчасово віддавати записи без `expiration` — після оновлення коду потрібен **force refresh** (`?force=true`) або очікування TTL.
-
----
-
-## Backend-файли
+## Backend / shared (актуальні шляхи)
 
 ```
 server/modules/Products/
-  ProductLabelsController.ts    # Express routes
-  CatalogLabelService.ts        # чернетки, версії, PDF, seed, resolve expiration
-  ProductLabelPdfDocument.tsx   # PDF layout
-  productLabelPdfFonts.ts
+  ProductLabelsController.ts
+  CatalogLabelService.ts
+  LabelInputResolver.ts
+  LabelTemplateService.ts
+  CatalogBoxBarcodeService.ts
+  pdfme/labelPdfmeRuntime.ts
+
+server/routes/label-templates.ts
 
 shared/
-  types/productLabel.ts
-  utils/productLabel.ts
-  utils/productLabelNutrition.ts
-  utils/productLabelPortionLayout.ts
-  utils/splitProductTitle.ts
-  utils/encodeEan13Font.ts
-  utils/typograph.ts              # typograf (uk) + одиниці виміру
-  constants/productLabelPortionStatic.ts
+  types/productLabel.ts, labelTemplate.ts
+  constants/labelInputKeys.ts
+  utils/labelInputs.ts, productLabelHistory.ts, labelStorefrontOverrides.ts
+  pdfme/   # merge template, plugins, built-in presets
 
-client/pages/Products/components/productDrawer/
-  ProductLabelsTab.tsx
-  ProductLabelPreview.tsx
-  label/
-    PortionLabelCanvas.tsx
-    LabelEditableZone.tsx
-    LabelEditableBlock.tsx
-    LabelTitleBlock.tsx
-    NutritionValueFields.tsx
-    Ean13BarcodeText.tsx
+client/
+  pages/Products/components/productDrawer/ProductLabelsTab.tsx
+  pages/Products/components/productDrawer/label/LabelPdfmeViewer.tsx
+  pages/SettingsLabelTemplates.tsx
+  pages/Settings/labelTemplates/
+  services/ProductLabelService.ts, LabelTemplateService.ts
 ```
 
 ---
 
 ## Тести
 
-- `shared/utils/productLabelNutrition.spec.ts` — парсинг, Atwater, `patchNutritionWithAutoEnergy`.
-- `shared/utils/splitProductTitle.spec.ts` — розбиття назви на 2 рядки.
-- `shared/utils/typograph.spec.ts` — неразривні пробіли, лапки, payload наліпки.
-
----
-
-## Майбутнє (не реалізовано)
-
-- Тип наліпки **«Коробка»** (окремий макет).
-- AI-генерація блоку «Склад».
-- Головний шаблон наліпок (спільні статичні блоки для всіх товарів).
+- `shared/utils/labelInputs.spec.ts`
+- `shared/utils/productLabelHistory.spec.ts`
+- `shared/utils/labelTemplateDefaults.spec.ts`
+- `server/modules/Products/CatalogBoxBarcodeService.spec.ts`
+- `server/modules/Products/pdfme/labelPdfmeRuntime.spec.ts`
+- `shared/pdfme/*.spec.ts`
 
 ---
 
 ## Пов’язана документація
 
-- `Docs/features/products-catalog-2.0.md` — каталог, Drawer, штрихкоди з партіями.
-- `Docs/features/warehouse-movement-mob.md` — `useBatchNumbers`, резолв назв партій.
-- `Docs/integrations/dilovod-metadata.md` — `goodParts`, `getObject`.
+- `Docs/features/products-catalog-2.0.md` — каталог, штрихкоди, опис вітрини.
+- `Docs/features/warehouse-movement-mob.md` — скан box-ШК, партії.

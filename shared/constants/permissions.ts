@@ -259,6 +259,7 @@ export const PERMISSION_SEEDS: Array<{ key: PermissionKey; seed: SeedGrant }> = 
   { key: pageKey('settings', 'admin'), seed: only(ROLES.ADMIN) },
   { key: pageKey('settings', 'storefront'), seed: only(ROLES.ADMIN) },
   { key: pageKey('settings', 'users'), seed: only(ROLES.ADMIN) },
+  { key: pageKey('settings', 'labelTemplates'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
 
   { key: actionKey('users', 'manage'), seed: only(ROLES.ADMIN) },
   { key: actionKey('roles', 'manage'), seed: only(ROLES.ADMIN) },
@@ -355,6 +356,7 @@ export const PERMISSIONS = {
   PAGE_SETTINGS_ADMIN: pageKey('settings', 'admin'),
   PAGE_SETTINGS_STOREFRONT: pageKey('settings', 'storefront'),
   PAGE_SETTINGS_USERS: pageKey('settings', 'users'),
+  PAGE_SETTINGS_LABEL_TEMPLATES: pageKey('settings', 'labelTemplates'),
   ACTION_USERS_MANAGE: actionKey('users', 'manage'),
   ACTION_ROLES_MANAGE: actionKey('roles', 'manage'),
   ACTION_SETTINGS_ADMIN: actionKey('settings', 'admin'),

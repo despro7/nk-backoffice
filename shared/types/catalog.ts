@@ -213,6 +213,8 @@ export interface CatalogGoodBarcodeDto {
   goodPart?: string | null;
   /** goodPart__pr — номер/назва партії для UI */
   goodPartName?: string | null;
+  /** portion — Dilovod; box — внутрішній ШК коробки для скану */
+  barcodeKind?: 'portion' | 'box';
   activity: boolean;
 }
 

@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import tailwindcss from "@tailwindcss/vite";
+import { pdfmeDesignerRotatedDragPatch } from "./scripts/vite/pdfmeDesignerRotatedDragPatch";
 
 export default defineConfig(({ mode }) => ({
   server: {
@@ -41,7 +42,7 @@ export default defineConfig(({ mode }) => ({
       },
     },
   },
-  plugins: [react(), tailwindcss()],
+  plugins: [pdfmeDesignerRotatedDragPatch(), react(), tailwindcss()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./client"),
@@ -52,5 +53,8 @@ export default defineConfig(({ mode }) => ({
     __APP_VERSION__: JSON.stringify(process.env.npm_package_version || "1.0.0"),
     "process.env.NODE_ENV": JSON.stringify(mode),
     "process.env.CLIENT_URL": JSON.stringify(process.env.CLIENT_URL),
+  },
+  optimizeDeps: {
+    include: ["@pdfme/ui", "pako"],
   },
 }));

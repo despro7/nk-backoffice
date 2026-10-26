@@ -1,9 +1,11 @@
 import type {
   ProductLabelDraftDto,
   ProductLabelKind,
-  ProductLabelPayload,
   ProductLabelPublishedDto,
 } from '@shared/types/productLabel';
+import type { ProductLabelHistoryEntry } from '@shared/utils/productLabelHistory';
+import type { ProductLabelPayloadV2, ResolvedLabelTemplateDto } from '@shared/types/labelTemplate';
+import type { LabelPdfmeTemplate } from '@shared/types/labelTemplate';
 
 type ApiResult<T> = { success: boolean; data?: T; error?: string };
 
@@ -38,7 +40,7 @@ export class ProductLabelService {
       batchId: string;
       labelKind: ProductLabelKind;
       batchNumber: string;
-      payload: ProductLabelPayload;
+      payload: ProductLabelPayloadV2;
     },
   ): Promise<ProductLabelDraftDto> {
     const res = await fetch(`/api/products/${encodeURIComponent(goodId)}/labels/draft`, {
@@ -73,6 +75,22 @@ export class ProductLabelService {
     await parseJson<null>(res);
   }
 
+  static async listHistory(
+    goodId: string,
+    batchId: string,
+    labelKind: ProductLabelKind,
+  ): Promise<ProductLabelHistoryEntry[]> {
+    const url = new URL(
+      `/api/products/${encodeURIComponent(goodId)}/labels/history`,
+      window.location.origin,
+    );
+    url.searchParams.set('batchId', batchId);
+    url.searchParams.set('labelKind', labelKind);
+    const res = await fetch(url.toString(), { credentials: 'include' });
+    const body = await parseJson<ProductLabelHistoryEntry[]>(res);
+    return body.data ?? [];
+  }
+
   static async listPublished(
     goodId: string,
     batchId: string,
@@ -95,7 +113,12 @@ export class ProductLabelService {
 
   static async generatePublished(
     goodId: string,
-    payload: ProductLabelPayload,
+    input: {
+      payload: ProductLabelPayloadV2;
+      batchId: string;
+      batchNumber: string;
+      labelKind: ProductLabelKind;
+    },
   ): Promise<ProductLabelPublishedDto> {
     const res = await fetch(
       `/api/products/${encodeURIComponent(goodId)}/labels/published/generate`,
@@ -103,11 +126,39 @@ export class ProductLabelService {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payload }),
+        body: JSON.stringify(input),
       },
     );
     const body = await parseJson<ProductLabelPublishedDto>(res);
     return body.data!;
+  }
+
+  static async resolveTemplate(
+    goodId: string,
+    labelKind: ProductLabelKind,
+  ): Promise<ResolvedLabelTemplateDto & { template: LabelPdfmeTemplate | null }> {
+    const url = new URL(
+      `/api/products/${encodeURIComponent(goodId)}/labels/resolve-template`,
+      window.location.origin,
+    );
+    url.searchParams.set('labelKind', labelKind);
+    const res = await fetch(url.toString(), { credentials: 'include' });
+    const body = await parseJson<ResolvedLabelTemplateDto & { template: LabelPdfmeTemplate | null }>(res);
+    return body.data!;
+  }
+
+  static async setTemplateOverride(
+    goodId: string,
+    labelKind: ProductLabelKind,
+    templateId: string | null,
+  ): Promise<void> {
+    const res = await fetch(`/api/products/${encodeURIComponent(goodId)}/labels/template`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ labelKind, templateId }),
+    });
+    await parseJson<unknown>(res);
   }
 
   static async seedDraft(

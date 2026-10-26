@@ -487,8 +487,13 @@ export class WarehouseService {
     const usableRows = barcodeRows.filter(
       (row) => row.good && !row.good.delMark && !row.good.isGroup,
     );
+    const sortedRows = [...usableRows].sort((a, b) => {
+      const aBox = a.barcodeKind === 'box' ? 1 : 0;
+      const bBox = b.barcodeKind === 'box' ? 1 : 0;
+      return bBox - aBox;
+    });
     const catalogHit =
-      usableRows.find((row) => isUsableDilovodBatchId(row.goodPart)) ?? usableRows[0];
+      sortedRows.find((row) => isUsableDilovodBatchId(row.goodPart)) ?? sortedRows[0];
 
     if (catalogHit) {
       const good = catalogHit.good;
@@ -499,6 +504,7 @@ export class WarehouseService {
           ? catalogHit.goodPart.trim()
           : null;
         const batchNumber = catalogHit.goodPartName?.trim() || null;
+        const barcodeKind = catalogHit.barcodeKind === 'box' ? 'box' : 'portion';
         return WarehouseService.toBarcodeLookupResponse(
           {
             sku: product.sku,
@@ -510,6 +516,7 @@ export class WarehouseService {
           trimmed,
           batchId,
           batchNumber,
+          barcodeKind,
         );
       }
     }
@@ -801,6 +808,7 @@ export class WarehouseService {
     scannedCode: string,
     batchId: string | null,
     batchNumber: string | null,
+    barcodeKind: WarehouseProductByBarcodeResponse['barcodeKind'] = 'portion',
   ): WarehouseProductByBarcodeResponse {
     return {
       sku: product.sku,
@@ -808,7 +816,7 @@ export class WarehouseService {
       weight: product.weight,
       portionsPerBox: product.portionsPerBox,
       barcode: scannedCode,
-      barcodeKind: 'portion',
+      barcodeKind,
       batchId,
       batchNumber,
     };

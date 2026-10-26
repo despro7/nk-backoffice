@@ -871,6 +871,7 @@ export class WarehouseBatchesService {
         code,
         goodPart: batchId,
         goodPartName: batchName || null,
+        barcodeKind: 'portion',
         activity: true,
         dilovodRegisterId: registerId,
       },
