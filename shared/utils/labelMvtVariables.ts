@@ -56,7 +56,7 @@ function nutritionToken(value: string | undefined): string {
   return value?.match(/[\d]+(?:[.,]\d+)?/)?.[0]?.trim() ?? '';
 }
 
-function stripPrefix(value: string, prefix: string): string {
+export function stripLabelTextPrefix(value: string, prefix: string): string {
   const trimmed = value.trim();
   if (!trimmed) return '';
   if (trimmed.toLowerCase().startsWith(prefix.toLowerCase())) {
@@ -95,7 +95,7 @@ export function buildLabelMvtVariableMap(source: LabelInputSource): LabelMvtVari
     batch: source.batchNumber.trim(),
     expires: source.expiresAt.trim(),
     ingredients: ingredientsRaw.toLowerCase().startsWith('склад')
-      ? stripPrefix(ingredientsRaw, 'Склад:')
+      ? stripLabelTextPrefix(ingredientsRaw, 'Склад:')
       : ingredientsRaw,
     net_weight: formatNetWeightLabel(source.weightKg),
     net_weight_label: PORTION_LABEL_STATIC.netWeightLabel,
@@ -123,13 +123,13 @@ export function buildLabelMvtVariableMapFromInputs(
 
   return {
     kcal,
-    proteins: proteins || stripPrefix(inputs.nutrition_proteins ?? '', 'Білки').replace(/г$/i, '').trim(),
-    fats: fats || stripPrefix(inputs.nutrition_fats ?? '', 'Жири').replace(/г$/i, '').trim(),
-    carbs: carbs || stripPrefix(inputs.nutrition_carbs ?? '', 'Вуглеводи').replace(/г$/i, '').trim(),
-    salt: salt || stripPrefix(inputs.nutrition_salt ?? '', 'Сіль').replace(/г$/i, '').trim(),
-    batch: stripPrefix(inputs.batch_number ?? '', PORTION_LABEL_STATIC.batchLabel),
-    expires: stripPrefix(inputs.expires_at ?? '', PORTION_LABEL_STATIC.expiryLabel),
-    ingredients: stripPrefix(inputs.ingredients ?? '', 'Склад:'),
+    proteins: proteins || stripLabelTextPrefix(inputs.nutrition_proteins ?? '', 'Білки').replace(/г$/i, '').trim(),
+    fats: fats || stripLabelTextPrefix(inputs.nutrition_fats ?? '', 'Жири').replace(/г$/i, '').trim(),
+    carbs: carbs || stripLabelTextPrefix(inputs.nutrition_carbs ?? '', 'Вуглеводи').replace(/г$/i, '').trim(),
+    salt: salt || stripLabelTextPrefix(inputs.nutrition_salt ?? '', 'Сіль').replace(/г$/i, '').trim(),
+    batch: stripLabelTextPrefix(inputs.batch_number ?? '', PORTION_LABEL_STATIC.batchLabel),
+    expires: stripLabelTextPrefix(inputs.expires_at ?? '', PORTION_LABEL_STATIC.expiryLabel),
+    ingredients: stripLabelTextPrefix(inputs.ingredients ?? '', 'Склад:'),
     net_weight: inputs.net_weight?.trim() ?? '',
     net_weight_label: inputs.net_weight_label?.trim() ?? PORTION_LABEL_STATIC.netWeightLabel,
     main_product_weight: inputs.main_product_weight?.trim() ?? '',

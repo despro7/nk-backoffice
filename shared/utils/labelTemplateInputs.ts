@@ -1,12 +1,15 @@
-import type { LabelInputKey, LabelInputMap } from '../constants/labelInputKeys.js';
+import { LABEL_INPUT_KEY_SET, type LabelInputKey, LabelInputMap } from '../constants/labelInputKeys.js';
+import { PORTION_LABEL_STATIC } from '../constants/productLabelPortionStatic.js';
 import { LABEL_MVT_VARIABLE_SET } from '../constants/labelMvtVariables.js';
 import type { LabelPdfmeTemplate } from '../types/labelTemplate.js';
+import { unknownTemplateSchemaNames } from '../pdfme/validateTemplateSchemaNames.js';
 import { emptyLabelInputs } from './labelInputs.js';
 import {
   buildLabelMvtVariableMapFromInputs,
   fieldPlaceholderTemplate,
   parseMvtVariableNames,
   pickMvtVariablePayload,
+  stripLabelTextPrefix,
   substituteMvtTemplate,
 } from './labelMvtVariables.js';
 
@@ -31,6 +34,45 @@ function mvtVariableNames(field: SchemaField): string[] {
 function isKnownPlaceholderTemplate(template: string): boolean {
   const names = parseMvtVariableNames(template);
   return names.length > 0 && names.every((n) => LABEL_MVT_VARIABLE_SET.has(n));
+}
+
+function fieldStaticText(field: SchemaField): string {
+  const content = typeof field.content === 'string' ? field.content.trim() : '';
+  if (content && !content.includes('{')) return content;
+  const text = typeof field.text === 'string' ? field.text.trim() : '';
+  if (text && !text.includes('{')) return text;
+  return '';
+}
+
+/** Поле з фіксованим текстом у Designer (не readOnly, але не з довідника inputs). */
+function isStaticDesignerField(field: SchemaField): boolean {
+  if (field.readOnly === true) return true;
+  const name = typeof field.name === 'string' ? field.name.trim() : '';
+  if (!name || !LABEL_INPUT_KEY_SET.has(name)) return true;
+  const placeholder = fieldPlaceholderTemplate(field);
+  if (placeholder && isKnownPlaceholderTemplate(placeholder)) return false;
+  if (schemaType(field) === 'multiVariableText') return false;
+  return false;
+}
+
+function valueForCatalogTextField(
+  field: SchemaField,
+  key: LabelInputKey,
+  merged: LabelInputMap,
+): string {
+  const raw = merged[key] ?? '';
+  const staticText = fieldStaticText(field).toLowerCase();
+
+  if (key === 'expires_at' && staticText.includes('вжити')) {
+    return stripLabelTextPrefix(raw, PORTION_LABEL_STATIC.expiryLabel);
+  }
+  if (key === 'batch_number' && staticText.includes('парт')) {
+    return stripLabelTextPrefix(raw, PORTION_LABEL_STATIC.batchLabel);
+  }
+  if (key === 'ingredients' && staticText.includes('склад')) {
+    return stripLabelTextPrefix(raw, 'Склад:');
+  }
+  return raw;
 }
 
 /**
@@ -68,7 +110,11 @@ export function resolvePdfmeInputs(
         continue;
       }
 
-      pdfmeInputs[name] = merged[name as LabelInputKey] ?? '';
+      if (isStaticDesignerField(field)) {
+        continue;
+      }
+
+      pdfmeInputs[name] = valueForCatalogTextField(field, name as LabelInputKey, merged);
     }
   }
 
@@ -94,4 +140,20 @@ export function unknownMvtVariableNames(template: LabelPdfmeTemplate): string[] 
     }
   }
   return [...unknown];
+}
+
+/** Невідомі імена, які очікують дані з картки (не статичний текст Designer). */
+export function unknownDynamicSchemaNames(template: LabelPdfmeTemplate): string[] {
+  const unknown = new Set(unknownTemplateSchemaNames(template));
+  const dynamic: string[] = [];
+  for (const page of template.schemas ?? []) {
+    for (const raw of page) {
+      const field = raw as SchemaField;
+      const name = typeof field.name === 'string' ? field.name.trim() : '';
+      if (!name || !unknown.has(name)) continue;
+      if (isStaticDesignerField(field)) continue;
+      dynamic.push(name);
+    }
+  }
+  return dynamic;
 }

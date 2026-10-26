@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { isWarehouseProductArchived } from '@shared/types/warehouseProductSearch';
 
 export type FinishedProductSearchHit = {
   id: string;
@@ -16,11 +17,24 @@ async function fetchIndex(): Promise<FinishedProductSearchHit[]> {
     .then(async (res) => {
       const json = await res.json();
       if (!res.ok || !json?.success || !Array.isArray(json.data)) return [];
-      return json.data.map((row: { catalogGoodId: string; name: string; sku: string }) => ({
-        id: String(row.catalogGoodId),
-        name: String(row.name ?? ''),
-        sku: row.sku ? String(row.sku) : null,
-      }));
+      return json.data
+        .filter(
+          (row: {
+            delMark?: boolean;
+            isOutdated?: boolean;
+            parentName?: string | null;
+          }) =>
+            !isWarehouseProductArchived({
+              delMark: Boolean(row.delMark),
+              isOutdated: Boolean(row.isOutdated),
+              parentName: row.parentName ?? null,
+            }),
+        )
+        .map((row: { catalogGoodId: string; name: string; sku: string }) => ({
+          id: String(row.catalogGoodId),
+          name: String(row.name ?? ''),
+          sku: row.sku ? String(row.sku) : null,
+        }));
     })
     .then((rows) => {
       cachedIndex = rows;

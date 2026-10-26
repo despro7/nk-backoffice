@@ -46,8 +46,11 @@ import {
   type LabelTemplateIconKey,
 } from '@shared/constants/labelTemplateIcons';
 import { sanitizeLabelTemplateDefaults } from '@shared/utils/labelTemplateDefaults';
-import { unknownTemplateSchemaNames } from '@shared/pdfme/validateTemplateSchemaNames';
-import { unknownMvtVariableNames, resolvePdfmeInputs } from '@shared/utils/labelTemplateInputs';
+import { unknownMvtVariableNames, unknownDynamicSchemaNames, resolvePdfmeInputs } from '@shared/utils/labelTemplateInputs';
+import {
+  isLabelTemplateSlotEnabled,
+  labelTemplateDefaultSlots,
+} from '@shared/utils/labelTemplateDefaults';
 import { applyLabelPreviewInputsToTemplate } from '@shared/pdfme/applyLabelPreviewInputsToTemplate';
 import { preserveSchemaOnTypeChange } from '@shared/pdfme/preserveSchemaOnTypeChange';
 import type { LabelInputMap } from '@shared/constants/labelInputKeys';
@@ -59,16 +62,13 @@ import {
 
 const DESIGNER_ROTATE_SHIFT_SNAP_DEG = 15;
 
-const AUDIENCES: LabelTemplateAudience[] = ['good', 'kit'];
-const KINDS: ProductLabelKind[] = ['portion', 'box'];
-
 const CONFIRM_EXPAND_LABEL_CLASS =
   'overflow-hidden whitespace-nowrap transition-all duration-200 ease-out';
 const CONFIRM_EXPAND_BUTTON_CLASS =
   'min-w-8 gap-0 overflow-hidden px-3.5 transition-[min-width,padding] duration-200 ease-out';
 
 function isTemplateInDefaults(id: string, matrix: LabelTemplateDefaults): boolean {
-  return AUDIENCES.some((aud) => KINDS.some((kind) => matrix[aud][kind] === id));
+  return labelTemplateDefaultSlots().some(({ audience, labelKind }) => matrix[audience][labelKind] === id);
 }
 
 export default function SettingsLabelTemplates() {
@@ -112,13 +112,11 @@ export default function SettingsLabelTemplates() {
     if (isDeletionLocked) return 'Зніміть блокування від видалення (перемикач нижче).';
     if (isDefaultTemplate) {
       const slots: string[] = [];
-      for (const aud of AUDIENCES) {
-        for (const kind of KINDS) {
-          if (defaults[aud][kind] === selectedId) {
-            slots.push(
-              `${aud === 'kit' ? 'комплекти' : 'продукція'} · ${kind === 'portion' ? 'порція' : 'коробка'}`,
-            );
-          }
+      for (const { audience: aud, labelKind: kind } of labelTemplateDefaultSlots()) {
+        if (defaults[aud][kind] === selectedId) {
+          slots.push(
+            `${aud === 'kit' ? 'комплекти' : 'продукція'} · ${kind === 'portion' ? 'порція' : 'коробка'}`,
+          );
         }
       }
       return `Шаблон у дефолтах (${slots.join(', ')}). Оберіть інший у «Дефолтні шаблони» і збережіть матрицю.`;
@@ -309,7 +307,7 @@ export default function SettingsLabelTemplates() {
       return;
     }
 
-    const unknownFieldNames = unknownTemplateSchemaNames(template);
+    const unknownFieldNames = unknownDynamicSchemaNames(template);
     if (unknownFieldNames.length > 0) {
       ToastService.show({
         title: 'Підказка перед збереженням',
@@ -580,7 +578,10 @@ export default function SettingsLabelTemplates() {
                 selectedKeys={[audience]}
                 onSelectionChange={(keys) => {
                   const key = Array.from(keys)[0];
-                  if (key === 'good' || key === 'kit') setAudience(key);
+                  if (key === 'good' || key === 'kit') {
+                    setAudience(key);
+                    if (key === 'kit' && labelKind === 'box') setLabelKind('portion');
+                  }
                 }}
               >
                 <SelectItem key="good">Продукція</SelectItem>
@@ -598,7 +599,9 @@ export default function SettingsLabelTemplates() {
                 }}
               >
                 <SelectItem key="portion">Порція</SelectItem>
-                <SelectItem key="box">Коробка</SelectItem>
+                {isLabelTemplateSlotEnabled(audience, 'box') ? (
+                  <SelectItem key="box">Коробка</SelectItem>
+                ) : null}
               </Select>
             </div>
             <div className="flex flex-wrap items-end justify-between gap-3 border-t border-default-200/80 pt-3">
@@ -692,7 +695,7 @@ export default function SettingsLabelTemplates() {
               title={
                 <span className="flex items-center gap-2 text-sm font-semibold text-gray-900">
                   <DynamicIcon name="layout-grid" size={16} className="text-gray-600" />
-                  Дефолтні шаблони (продукція / комплекти × порція / коробка)
+                  Дефолтні шаблони (продукція: порція і коробка; комплекти: порція)
                 </span>
               }
             >
@@ -701,8 +704,7 @@ export default function SettingsLabelTemplates() {
                 override отримають «немає дефолту» до нового вибору.
               </p>
               <div className="grid gap-3 pb-2 sm:grid-cols-2">
-                {AUDIENCES.flatMap((aud) =>
-                  KINDS.map((kind) => {
+                {labelTemplateDefaultSlots().map(({ audience: aud, labelKind: kind }) => {
                     const slotOptions = templates.filter(
                       (row) => row.audience === aud && row.labelKind === kind,
                     );
@@ -750,8 +752,7 @@ export default function SettingsLabelTemplates() {
                         ))}
                     </Select>
                     );
-                  }),
-                )}
+                })}
               </div>
               <Button
                 size="sm"

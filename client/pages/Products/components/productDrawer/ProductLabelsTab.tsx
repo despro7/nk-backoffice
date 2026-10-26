@@ -54,6 +54,10 @@ import {
 } from '@shared/pdfme/builtInLabelTemplates';
 import { loadLabelDesignerAssets } from '@/pages/Settings/labelTemplates/labelPdfmeFonts';
 import { LabelPdfmeViewer } from './label/LabelPdfmeViewer';
+import {
+  isLabelTemplateSlotEnabled,
+  labelTemplateKindsForAudience,
+} from '@shared/utils/labelTemplateDefaults';
 
 interface ProductLabelsTabProps {
   detail: CatalogGoodDetailDto;
@@ -73,7 +77,14 @@ export function ProductLabelsTab({
   overlayZClassName,
 }: ProductLabelsTabProps) {
   const audience = detail.accPolicyId === CATALOG_ACC_POLICY_KIT ? 'kit' : 'good';
+  const labelKindOptions = useMemo(() => labelTemplateKindsForAudience(audience), [audience]);
   const [labelKind, setLabelKind] = useState<ProductLabelKind>('portion');
+
+  useEffect(() => {
+    if (!isLabelTemplateSlotEnabled(audience, labelKind)) {
+      setLabelKind('portion');
+    }
+  }, [audience, labelKind]);
   const [baseInputs, setBaseInputs] = useState<LabelInputMap>(() => emptyLabelInputs());
   const [overrides, setOverrides] = useState<Partial<LabelInputMap>>({});
   const [energyManual, setEnergyManual] = useState(false);
@@ -325,7 +336,10 @@ export function ProductLabelsTab({
     viewingVersion,
   ]);
 
-  const nutritionErrors = useMemo(() => getLabelNutritionErrors(inputs), [inputs]);
+  const nutritionErrors = useMemo(
+    () => getLabelNutritionErrors(inputs, { labelKind, audience }),
+    [inputs, labelKind, audience],
+  );
 
   const patchInput = (key: LabelInputKey, value: string) => {
     setViewingVersion(false);
@@ -541,17 +555,21 @@ export function ProductLabelsTab({
         <div className="flex flex-col gap-3">
           <Card className="border border-default-200 shadow-none">
             <CardBody className="gap-4 p-4">
-              <Tabs
-                selectedKey={labelKind}
-                onSelectionChange={(key) => setLabelKind(key as ProductLabelKind)}
-                size="md"
-                fullWidth
-                color="primary"
-                aria-label="Тип наліпки"
-              >
-                <Tab key="portion" title="Порція" />
-                <Tab key="box" title="Коробка" />
-              </Tabs>
+              {labelKindOptions.length > 1 ? (
+                <Tabs
+                  selectedKey={labelKind}
+                  onSelectionChange={(key) => setLabelKind(key as ProductLabelKind)}
+                  size="md"
+                  fullWidth
+                  color="primary"
+                  aria-label="Тип наліпки"
+                >
+                  <Tab key="portion" title="Порція" />
+                  <Tab key="box" title="Коробка" />
+                </Tabs>
+              ) : (
+                <p className="text-sm font-medium text-default-600">Порція</p>
+              )}
 
               <Select
                 label="Пресет"
@@ -656,7 +674,7 @@ export function ProductLabelsTab({
                   onPress={() => void handleSaveDraft()}
                   isLoading={saving}
                   isDisabled={!selectedBatch || readOnly || viewingVersion}
-                  startContent={<DynamicIcon name="save" size={16} />}
+                  startContent={saving ? null : <DynamicIcon name="save" size={16} />}
                 >
                   Зберегти чернетку
                 </Button>
@@ -665,8 +683,9 @@ export function ProductLabelsTab({
                   variant="flat"
                   className="justify-start"
                   onPress={() => setResetConfirmOpen(true)}
+                  isLoading={resetting}
                   isDisabled={!selectedBatch || readOnly || resetting}
-                  startContent={<DynamicIcon name="refresh-cw" size={16} />}
+                  startContent={resetting ? null : <DynamicIcon name="refresh-cw" size={16} />}
                 >
                   Синхронізувати з картки
                 </Button>
@@ -677,7 +696,7 @@ export function ProductLabelsTab({
                   onPress={() => void handleGenerate()}
                   isLoading={generating}
                   isDisabled={!selectedBatch || readOnly || !isDirty}
-                  startContent={<DynamicIcon name="file-output" size={16} />}
+                  startContent={generating ? null : <DynamicIcon name="file-output" size={16} />}
                 >
                   Згенерувати PDF
                 </Button>
@@ -704,7 +723,7 @@ export function ProductLabelsTab({
                   isLoading={printing}
                   isDisabled={!canUsePublishedPdf}
                   onPress={() => void handlePrintBrowser()}
-                  startContent={<DynamicIcon name="printer" size={16} />}
+                  startContent={printing ? null : <DynamicIcon name="printer" size={16} />}
                 >
                   Друк (браузер)
                 </Button>

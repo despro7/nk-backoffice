@@ -27,10 +27,14 @@ import {
   DEFAULT_LABEL_TEMPLATE_ICON,
   isLabelTemplateIconKey,
 } from '../../../shared/constants/labelTemplateIcons.js';
-import { sanitizeLabelTemplateDefaults } from '../../../shared/utils/labelTemplateDefaults.js';
+import {
+  isLabelTemplateSlotEnabled,
+  labelTemplateDefaultSlots,
+  labelTemplateKindsForAudience,
+  sanitizeLabelTemplateDefaults,
+} from '../../../shared/utils/labelTemplateDefaults.js';
 
 const AUDIENCES: LabelTemplateAudience[] = ['good', 'kit'];
-const KINDS: ProductLabelKind[] = ['portion', 'box'];
 
 function isAudience(value: string): value is LabelTemplateAudience {
   return value === 'good' || value === 'kit';
@@ -106,7 +110,7 @@ export class LabelTemplateService {
     const created: Record<string, string> = {};
 
     for (const audience of AUDIENCES) {
-      for (const labelKind of KINDS) {
+      for (const labelKind of labelTemplateKindsForAudience(audience)) {
         const template = labelKind === 'portion' ? portion : box;
         const name = labelKind === 'portion' ? 'Порція' : 'Коробка';
         const row = await prisma.catalogLabelTemplate.create({
@@ -127,13 +131,23 @@ export class LabelTemplateService {
     }
 
     await prisma.catalogLabelTemplateDefault.createMany({
-      data: AUDIENCES.flatMap((audience) =>
-        KINDS.map((labelKind) => ({
-          audience,
-          labelKind,
-          templateId: created[`${audience}:${labelKind}`],
-        })),
-      ),
+      data: labelTemplateDefaultSlots().map(({ audience, labelKind }) => ({
+        audience,
+        labelKind,
+        templateId: created[`${audience}:${labelKind}`],
+      })),
+    });
+    await this.retireKitBoxLabelSlot();
+  }
+
+  /** Комплекти без коробкових наліпок: прибрати дефолт і заархівувати застарілий пресет. */
+  private async retireKitBoxLabelSlot(): Promise<void> {
+    await prisma.catalogLabelTemplateDefault.deleteMany({
+      where: { audience: 'kit', labelKind: 'box' },
+    });
+    await prisma.catalogLabelTemplate.updateMany({
+      where: { slug: 'box-kit' },
+      data: { isArchived: true },
     });
   }
 
@@ -165,6 +179,7 @@ export class LabelTemplateService {
     includeArchived?: boolean;
   }): Promise<LabelTemplateDto[]> {
     await this.ensureBuiltInTemplates();
+    await this.retireKitBoxLabelSlot();
     await this.upgradeBuiltInLayouts();
     const rows = await prisma.catalogLabelTemplate.findMany({
       where: {
@@ -199,6 +214,10 @@ export class LabelTemplateService {
     updatedBy: number | null,
   ): Promise<LabelTemplateDetailDto> {
     if (!isProductLabelKind(input.labelKind)) throw new Error('Некоректний labelKind');
+    const audience = assertAudience(input.audience);
+    if (!isLabelTemplateSlotEnabled(audience, input.labelKind)) {
+      throw new Error('Для комплектів доступна лише наліпка порції');
+    }
     const template = parseTemplate(input.template);
     const iconKey =
       input.iconKey !== undefined ? parseIconKey(input.iconKey) : DEFAULT_LABEL_TEMPLATE_ICON;
@@ -238,6 +257,11 @@ export class LabelTemplateService {
     const iconKey = input.iconKey !== undefined ? parseIconKey(input.iconKey) : undefined;
     if (input.labelKind && !isProductLabelKind(input.labelKind)) {
       throw new Error('Некоректний labelKind');
+    }
+    const nextAudience = input.audience ? assertAudience(input.audience) : existing.audience;
+    const nextLabelKind = (input.labelKind ?? existing.labelKind) as ProductLabelKind;
+    if (!isLabelTemplateSlotEnabled(nextAudience as LabelTemplateAudience, nextLabelKind)) {
+      throw new Error('Для комплектів доступна лише наліпка порції');
     }
     await prisma.catalogLabelTemplate.update({
       where: { id },
@@ -341,6 +365,7 @@ export class LabelTemplateService {
 
   async getDefaults(): Promise<LabelTemplateDefaults> {
     await this.ensureBuiltInTemplates();
+    await this.retireKitBoxLabelSlot();
     const rows = await prisma.catalogLabelTemplateDefault.findMany({
       include: { template: true },
     });
@@ -350,6 +375,7 @@ export class LabelTemplateService {
     } as LabelTemplateDefaults;
     for (const row of rows) {
       if (!isAudience(row.audience) || !isProductLabelKind(row.labelKind)) continue;
+      if (!isLabelTemplateSlotEnabled(row.audience, row.labelKind)) continue;
       const matches =
         row.template &&
         !row.template.isArchived &&
@@ -370,8 +396,7 @@ export class LabelTemplateService {
     const templates = await this.list({ includeArchived: true });
     const sanitized = sanitizeLabelTemplateDefaults(matrix, templates);
 
-    for (const audience of AUDIENCES) {
-      for (const labelKind of KINDS) {
+    for (const { audience, labelKind } of labelTemplateDefaultSlots()) {
         const templateId = sanitized[audience]?.[labelKind];
         if (!templateId) {
           await prisma.catalogLabelTemplateDefault.deleteMany({
@@ -389,8 +414,8 @@ export class LabelTemplateService {
           create: { audience, labelKind, templateId },
           update: { templateId },
         });
-      }
     }
+    await this.retireKitBoxLabelSlot();
     return this.getDefaults();
   }
 
@@ -415,6 +440,16 @@ export class LabelTemplateService {
     if (!good) throw new Error('Товар не знайдено');
     const audience: LabelTemplateAudience =
       good.accPolicyId === CATALOG_ACC_POLICY_KIT ? 'kit' : 'good';
+    if (!isLabelTemplateSlotEnabled(audience, labelKind)) {
+      return {
+        templateId: null,
+        templateName: null,
+        source: 'none',
+        audience,
+        labelKind,
+        template: null,
+      };
+    }
     const overrideId =
       labelKind === 'portion' ? good.portionLabelTemplateId : good.boxLabelTemplateId;
     if (overrideId) {
@@ -459,6 +494,16 @@ export class LabelTemplateService {
     labelKind: ProductLabelKind,
     templateId: string | null,
   ): Promise<void> {
+    const good = await prisma.catalogGood.findUnique({
+      where: { id: goodId },
+      select: { accPolicyId: true },
+    });
+    if (!good) throw new Error('Товар не знайдено');
+    const audience: LabelTemplateAudience =
+      good.accPolicyId === CATALOG_ACC_POLICY_KIT ? 'kit' : 'good';
+    if (!isLabelTemplateSlotEnabled(audience, labelKind)) {
+      throw new Error('Для комплектів наліпки коробки не застосовуються');
+    }
     if (templateId) {
       const template = await prisma.catalogLabelTemplate.findUnique({ where: { id: templateId } });
       if (!template || template.isArchived) throw new Error('Шаблон не знайдено');

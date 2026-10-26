@@ -23,6 +23,7 @@ import {
   v1PayloadToInputs,
   withAutoEnergy,
 } from '../../../shared/utils/labelInputs.js';
+import { CATALOG_ACC_POLICY_KIT } from '../../../shared/types/catalog.js';
 import { applyLabelOverrides, resolveLabelBaseInputs } from './LabelInputResolver.js';
 import { labelTemplateService } from './LabelTemplateService.js';
 import { generateLabelPdfBuffer } from './pdfme/labelPdfmeRuntime.js';
@@ -338,9 +339,10 @@ export class CatalogLabelService {
   ): Promise<ProductLabelPublishedDto> {
     const good = await prisma.catalogGood.findUnique({
       where: { id: goodId },
-      select: { id: true, isGroup: true },
+      select: { id: true, isGroup: true, accPolicyId: true },
     });
     if (!good || good.isGroup) throw new Error('Товар не знайдено');
+    const audience = good.accPolicyId === CATALOG_ACC_POLICY_KIT ? 'kit' : 'good';
 
     const baseInputs = await resolveLabelBaseInputs({
       goodId,
@@ -352,7 +354,10 @@ export class CatalogLabelService {
       applyLabelOverrides(baseInputs, payload.overrides),
       Boolean(payload.nutritionEnergyManual),
     );
-    const nutritionErrors = getLabelNutritionErrors(inputs);
+    const nutritionErrors = getLabelNutritionErrors(inputs, {
+      labelKind: batch.labelKind,
+      audience,
+    });
     if (nutritionErrors.length > 0) {
       throw new Error(`Поживна цінність не заповнена: ${nutritionErrors[0]}`);
     }

@@ -153,7 +153,7 @@ export function LabelTemplatePreviewProductPicker({
             listboxProps={{
               emptyContent: productIndexLoading
                 ? 'Завантаження індексу товарів…'
-                : 'Лише «Готова продукція» — введіть назву або SKU (мін. 2 символи)',
+                : 'Лише активні товари ГП — введіть назву або SKU (мін. 2 символи)',
             }}
           >
             {(item) => (

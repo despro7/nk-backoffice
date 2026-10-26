@@ -152,7 +152,11 @@ export function nutritionTextFromInputs(
 
 export function getLabelNutritionErrors(
   inputs: Partial<Record<LabelInputKey, string>>,
+  options?: { labelKind?: 'portion' | 'box'; audience?: 'good' | 'kit' },
 ): string[] {
+  if (options?.labelKind === 'box' || options?.audience === 'kit') {
+    return [];
+  }
   return getNutritionValidationErrors(nutritionTextFromInputs(inputs));
 }
 

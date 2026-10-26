@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-10-26 — Наліпки: превʼю Designer, комплекти без коробки, UX синхронізації
+
+**Files:** `ProductLabelsTab.tsx`, `SettingsLabelTemplates.tsx`, `labelTemplateInputs.ts`, `labelTemplateDefaults.ts`, `labelInputs.ts`, `labelMvtVariables.ts`, `CatalogLabelService.ts`, `LabelTemplateService.ts`, `LabelTemplatePreviewProductPicker.tsx`, `useFinishedProductSearchIndex.ts`, `product-labels.md`
+
+- **Превʼю макету:** статичні поля Designer не очищаються при живих даних; попередження про імена — лише для динамічних слотів; префікси «Вжити до» / партія / склад без дубля в pdfme inputs.
+- **Пошук «Дані для перегляду»:** лише активні товари ГП (без архіву).
+- **Комплекти:** слот коробки прибрано з дефолтів, UI картки та валідації КБЖВ; `box-kit` архівується, override box для kit заборонено.
+- **Картка:** кнопки чернетки — спінер замість іконки під час завантаження; sync без дубля терміну на превʼю.
+
+**Документація:** [`product-labels.md`](features/product-labels.md).
+
+---
+
 ## 2026-10-25 — Переміщення mob: збереження полів скану, remark «(сканування)», історія Dilovod
 
 **Files:** `warehouseMovementMobItems.ts`, `warehouseMovementNotes.ts`, `MovementHistoryService.ts`, `WarehouseController.ts`, `useWarehouseMovementV2.ts`, `MovementV2DilovodEditDrawer.tsx`, `useMovementDraftState.ts`, `warehouseHistoryDilovodFrom.ts`, `warehouseHistoryDilovodCheck.ts`, `HistoryAccordionItem.tsx`, `ReturnsHistoryTable.tsx`, `SetReleaseController.ts`, `DilovodService.ts`, `repair-mob-movement-scan-fields.ts`, `warehouse-movement-mob.md`, `warehouse-movement-v2.md`

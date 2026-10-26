@@ -9,11 +9,11 @@
 
 ## Огляд
 
-PDF-етикетки **100×100 мм** для партій готової продукції. Макет задається **pdfme**-шаблонами (Designer у налаштуваннях). Типи: **«Порція»** (`portion`) та **«Коробка»** (`box`).
+PDF-етикетки **100×100 мм** для партій готової продукції. Макет задається **pdfme**-шаблонами (Designer у налаштуваннях). Типи: **«Порція»** (`portion`) та **«Коробка»** (`box`) — **лише для звичайної продукції** (`audience: good`). У **комплектів** (`kit`) є лише порція (окремих коробкових наліпок немає).
 
 | Що | Рішення |
 | --- | --- |
-| Шаблон | `catalog_label_templates` + матриця дефолтів (good/kit × portion/box); override на `catalog_goods` |
+| Шаблон | `catalog_label_templates` + матриця дефолтів: **продукція** — portion + box; **комплекти** — portion; override на `catalog_goods` (`labelTemplateDefaultSlots` у `shared/utils/labelTemplateDefaults.ts`) |
 | Дані на наліпці | `LabelInputMap` (`shared/constants/labelInputKeys.ts`), резолвер `LabelInputResolver` |
 | Чернетка | Одна на `(goodId, batchId, labelKind)`; `updatedBy` + `updatedAt` |
 | Опубліковані PDF | Кожна генерація — `version`, файл у `uploads/catalog-labels/{goodId}/`, `publishedBy` |
@@ -61,7 +61,7 @@ PDF-етикетки **100×100 мм** для партій готової про
 - **Склад і зберігання** — спочатку override-блоки `storefrontDescriptionDoc` (`resolver: ingredients` / `storage`), інакше картка/BOM (`labelStorefrontOverrides.ts`).
 - **Коробка** — окремий box-штрихкод; порційний ШК не змішується з box (`barcodeKind`).
 
-Генерація PDF вимагає валідної поживної цінності (`getLabelNutritionErrors`).
+Генерація PDF вимагає валідної поживної цінності (`getLabelNutritionErrors`), **крім** комплектів і наліпок коробки (КБЖВ не перевіряється).
 
 ---
 
@@ -94,22 +94,26 @@ PDF-етикетки **100×100 мм** для партій готової про
 
 ## UI — картка товару (`ProductLabelsTab`)
 
-1. **Tabs** `Порція | Коробка`.
+1. **Tabs** `Порція | Коробка` (для комплектів — лише порція, без вкладки коробки).
 2. **Пресет** — override або «За замовчуванням (Settings)»; при `templateId === null` підвантажується дефолт через `resolveTemplate`.
 3. **Партія** — `BatchNumbersAutocomplete`; автопідстановка з `published/latest`.
 4. **Версії** — один Select: чернетка (`Чернетка · дата · автор`) і `vN · дата · автор`; перемикання завантажує payload; PDF — режим перегляду, чернетка — редагування.
 5. Під превʼю — `formatProductLabelHistoryCaption` (збережено / згенеровано, автор, партія).
-6. **Дії:** зберегти чернетку · синхронізувати з картки (`seed`) · згенерувати PDF · завантажити / друк (браузер) лише для обраного **PDF** · «Редагувати як чернетку» (клон з PDF).
+6. **Дії:** зберегти чернетку · синхронізувати з картки (`seed`) · згенерувати PDF · завантажити / друк (браузер) лише для обраного **PDF** · «Редагувати як чернетку» (клон з PDF). Під час дії кнопки з іконкою: `isLoading` + `startContent={loading ? null : icon}` (спінер замість іконки, не між іконкою й текстом).
 
-Превʼю: `label/LabelPdfmeViewer.tsx`. Текстові поля — accordion з `LABEL_EDITABLE_KEYS`.
+Превʼю: `label/LabelPdfmeViewer.tsx` (`resolvePdfmeInputs` — без дубля префікса «Вжити до:», якщо він уже в `content` поля шаблону). Текстові поля — accordion з `LABEL_EDITABLE_KEYS`.
 
 ---
 
 ## UI — налаштування шаблонів
 
-`client/pages/SettingsLabelTemplates.tsx` — список пресетів, pdfme Designer (100×100 мм), матриця дефолтів, overrides по товарах, живий preview (індекс ГП `warehouse-search-index` + партія, `GET …/preview-inputs`).
+`client/pages/SettingsLabelTemplates.tsx` — список пресетів, pdfme Designer (100×100 мм), матриця дефолтів (3 комірки: good×portion/box, kit×portion), overrides по товарах, живий preview.
 
-Допоміжні модулі: `client/pages/Settings/labelTemplates/*`, `shared/pdfme/*`.
+**Живі дані в Designer:** `LabelTemplatePreviewProductPicker` — пошук лише **активних** товарів ГП (без архіву / `delMark`, як `isWarehouseProductArchived`); партія → `GET …/preview-inputs`. Підстановка в макет: `resolvePdfmeInputs` + `applyLabelPreviewInputsToTemplate` — **статичні** поля (кастомне ім’я, `readOnly`, текст без MVT) не затираються; toast про невідомі імена — лише для **динамічних** слотів (`unknownDynamicSchemaNames`). Префікси в шаблоні («Вжити до:», «Номер партії:», «Склад:») знімаються з даних картки через `stripLabelTextPrefix`.
+
+Допоміжні модулі: `client/pages/Settings/labelTemplates/*`, `shared/pdfme/*`, `shared/utils/labelTemplateInputs.ts`.
+
+Сервер при старті списку шаблонів: `retireKitBoxLabelSlot` — видаляє дефолт `kit/box`, архівує вбудований `box-kit`.
 
 ---
 
@@ -170,6 +174,7 @@ client/
 - `shared/utils/labelInputs.spec.ts`
 - `shared/utils/productLabelHistory.spec.ts`
 - `shared/utils/labelTemplateDefaults.spec.ts`
+- `shared/utils/labelTemplateInputs.spec.ts`
 - `server/modules/Products/CatalogBoxBarcodeService.spec.ts`
 - `server/modules/Products/pdfme/labelPdfmeRuntime.spec.ts`
 - `shared/pdfme/*.spec.ts`

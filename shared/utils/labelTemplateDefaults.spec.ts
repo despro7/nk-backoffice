@@ -29,4 +29,22 @@ describe('sanitizeLabelTemplateDefaults', () => {
     );
     expect(matrix.good.box).toBeNull();
   });
+
+  it('clears kit box default slot', () => {
+    const matrix = sanitizeLabelTemplateDefaults(
+      {
+        good: { portion: null, box: null },
+        kit: { portion: null, box: 'box-good' },
+      },
+      [
+        {
+          ...templates[0],
+          id: 'box-good',
+          labelKind: 'box',
+          audience: 'kit',
+        },
+      ],
+    );
+    expect(matrix.kit.box).toBeNull();
+  });
 });

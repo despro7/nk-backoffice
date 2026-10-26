@@ -71,6 +71,55 @@ describe('resolvePdfmeInputs', () => {
     expect(pdfme.nutrition_proteins).not.toContain('Білки 2,17г');
   });
 
+  it('does not blank static custom text fields', () => {
+    const logical = buildLabelInputs({
+      name: 'Набір',
+      ingredientsText: 'картопля',
+      nutrition: { proteins: '1', fats: '1', carbs: '1', energy: '10' },
+      weightKg: 1,
+      barcode: '1',
+      batchNumber: 'K-1',
+      expiresAt: '08.2027',
+    });
+    const pdfme = resolvePdfmeInputs(
+      {
+        basePdf: { width: 100, height: 100, padding: [0, 0, 0, 0] },
+        schemas: [
+          [
+            {
+              name: 'ingredients_title',
+              type: 'text',
+              content: 'Склад комплекту:',
+              readOnly: true,
+            },
+          ],
+        ],
+      },
+      logical,
+    );
+    expect(pdfme.ingredients_title).toBeUndefined();
+  });
+
+  it('strips expiry label when template already has static prefix', () => {
+    const logical = buildLabelInputs({
+      name: 'Суп',
+      ingredientsText: 'вода',
+      nutrition: { proteins: '1', fats: '1', carbs: '1', energy: '10' },
+      weightKg: 0.4,
+      barcode: '1',
+      batchNumber: '61007',
+      expiresAt: '08.2026',
+    });
+    const pdfme = resolvePdfmeInputs(
+      {
+        basePdf: { width: 100, height: 100, padding: [0, 0, 0, 0] },
+        schemas: [[{ name: 'expires_at', type: 'text', content: 'Вжити до:' }]],
+      },
+      logical,
+    );
+    expect(pdfme.expires_at).toBe('08.2026');
+  });
+
   it('includes every name from variables[] even if absent in text', () => {
     const pdfme = resolvePdfmeInputs(
       {
