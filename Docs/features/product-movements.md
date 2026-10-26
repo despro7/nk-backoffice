@@ -1,6 +1,6 @@
 # Рухи по товару
 
-**Дата:** 2026-10-05 (оновлено 2026-10-22)  
+**Дата:** 2026-10-05 (оновлено 2026-10-26)  
 **Маршрут:** `/reports/product-movements` (`STOREKEEPER`+)  
 **Дозвіл:** `page.reports.productMovements`  
 **API:** `GET /api/reports/product-movements/meta`, `POST /api/reports/product-movements`
@@ -34,7 +34,7 @@
 4. Сервер:
    - резолвить товар за `sku` або `goodId`;
    - паралельно завантажує рядки рухів і початкові залишки (`balanceAndTurnover` на день перед `startDate`);
-   - групує по партії (`goodPart`), рахує running balance;
+   - групує по партії (`goodPart`), для **комплектації/розукомплектування** згортає дробові рядки регістру одного документа в один рух (цілі порції); інші документи не змішуються, рахує running balance;
    - партії без рухів за період, але з ненульовим opening balance — у блок «Старі партії».
 
 Без товару (`sku` / `goodId`) запит відхиляється.
@@ -52,6 +52,7 @@
   2. початковий залишок, надходження, витрата, залишок.
 - **Таблиця** — `ProductMovementsTable`: HeroUI Table, sticky header, іконки типів документів, accordion «Старі партії».
   - Колонка «Дата» — `ДД.ММ.РРРР`; Tooltip — повна дата+час (`dateTime` з API).
+  - **Клік по документу** — `useWarehouseDocumentEditDrawer().open({ dilovodDocumentId, documentLabel, documentTypeId })` → nested drawer редагування / перегляду (переміщення, комплектація, списання, оприбуткування, повернення, відвантаження). Див. [`warehouse-document-edit-from-movements.md`](warehouse-document-edit-from-movements.md).
 
 ### Drawer (глобальний)
 
@@ -126,6 +127,7 @@ interface ProductMovementsOpenParams {
 - Shape регістру — через `dilovodMetadataService.getRegisterShape('goods')`, імена вимірів не хардкодяться.
 - **Кеш довідників** — `catalogs.storages` і `catalogs.firms` в пам'яті (TTL 5 хв) + dedup in-flight promise.
 - **Паралелізація** — `fetchMovementRows` і `fetchOpeningBalances` через `Promise.all`.
+- **Згортання комплектації** — перед групуванням по партії: `collapseProductMovementLines` (`shared/utils/productMovementCollapse.ts`) для документів комплектації/розукомплектування; кількість — `normalizePortionQty` (`productMovementQty.ts`).
 - **Резолв партій** — `extractGoodPartIdPresentation` / `extractBatchLabelFromGoodPartHeader` у `DilovodUtils.ts` (підтримка `id__pr`, `id.pr`, вкладених структур Dilovod).
 - Рядок руху: `date` (день) + `dateTime` (день+час з `period` Dilovod) для Tooltip у таблиці.
 
@@ -147,6 +149,7 @@ interface ProductMovementsOpenParams {
 
 ## Пов'язана документація
 
-- [`order-details-result-drawer.md`](order-details-result-drawer.md) — таблиця товарів у деталях замовлення + кнопка рухів
+- [`warehouse-document-edit-from-movements.md`](warehouse-document-edit-from-movements.md) — nested drawer документів з таблиці рухів
+- [`order-details-result-drawer.md`](order-details-result-drawer.md) — таблиця товарів у деталях замовлення + кнопка рухів (`OrderDetailsContent`)
 - [`warehouse-statement.md`](warehouse-statement.md) — споріднений звіт по регістру `goods`
 - [`warehouse-movement-mob.md`](warehouse-movement-mob.md) — мобільне переміщення, точка входу в Drawer

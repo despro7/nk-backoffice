@@ -1,8 +1,8 @@
 # Деталі замовлення в ResultDrawer
 
-**Дата:** 2026-10-15  
-**Компонент:** `client/components/ResultDrawer.tsx` (`type="orderDetails"`)  
-**Вхід:** таблиця SalesDrive-замовлень → «Деталі»
+**Дата:** 2026-10-15 (оновлено 2026-10-26)  
+**Компонент:** `client/components/order-details/OrderDetailsContent.tsx` (у `ResultDrawer` при `type="orderDetails"`, у drawer відвантаження з рухів)  
+**Вхід:** таблиця SalesDrive-замовлень → «Деталі»; або клік «Відвантаження» у звіті рухів (якщо знайдено замовлення в backoffice)
 
 ---
 

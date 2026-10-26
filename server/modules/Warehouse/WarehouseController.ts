@@ -24,6 +24,7 @@ import {
   parseMovementHistoryListQuery,
 } from './movementV2HistoryList.js';
 import { movementV2HistorySyncService } from './MovementV2HistorySync.js';
+import { warehouseDocumentEditContextService } from './WarehouseDocumentEditContextService.js';
 import type { WarehouseProductByBarcodeResponse } from '../../../shared/types/warehouse.js';
 import { warehouseBatchesService } from './WarehouseBatchesService.js';
 import { productsCatalogService } from '../Products/ProductsCatalogService.js';
@@ -1646,6 +1647,33 @@ router.put('/:id', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('🚨 [Warehouse] Error updating draft:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/warehouse/document-edit/:dilovodDocumentId — контекст для drawer редагування / перегляду
+router.get('/document-edit/:dilovodDocumentId', authenticateToken, async (req, res) => {
+  try {
+    const dilovodDocumentId = String(req.params.dilovodDocumentId ?? '').trim();
+    const documentLabel = String(req.query.documentLabel ?? '').trim();
+    const documentTypeId = String(req.query.documentTypeId ?? '').trim() || undefined;
+
+    if (!dilovodDocumentId) {
+      return res.status(400).json({ success: false, error: 'dilovodDocumentId обовʼязковий' });
+    }
+
+    const data = await warehouseDocumentEditContextService.getContext({
+      dilovodDocumentId,
+      documentLabel,
+      documentTypeId,
+    });
+
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error('[Warehouse] document-edit context error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Внутрішня помилка сервера',
+    });
   }
 });
 

@@ -1,6 +1,7 @@
 import { CalendarDate, getLocalTimeZone, today } from '@internationalized/date';
 import type { DateRange } from '@react-types/datepicker';
 import { CATALOG_FINISHED_PRODUCTS_FOLDER_NAME } from '@shared/types/catalog';
+import { normalizePortionQty } from '@shared/utils/productMovementQty';
 import { createStandardDatePresets } from '@/lib/dateReportingUtils';
 import type {
   ProductMovementsFilterState,
@@ -303,8 +304,10 @@ export function createDatePresets() {
 }
 
 export function formatQty(value: number | null | undefined): string {
-  if (value == null || Math.abs(value) < 1e-9) return '';
-  return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/\.?0+$/, '');
+  if (value == null) return '';
+  const normalized = normalizePortionQty(value);
+  if (Math.abs(normalized) < 1e-9) return '';
+  return Number.isInteger(normalized) ? String(normalized) : normalized.toFixed(3).replace(/\.?0+$/, '');
 }
 
 export function formatGroupDisplayLabel(label: string): string {

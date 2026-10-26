@@ -28,7 +28,7 @@ export function WarehouseDocumentEditDrawerProvider({ children }: { children: Re
         return;
       }
       const kind = resolveWarehouseDocumentKind(next.documentLabel, next.documentTypeId);
-      if (canEditWarehouseDocumentKind(kind, hasPermission) === false && kind === 'goodMoving') {
+      if (kind === 'goodMoving' && !canEditWarehouseDocumentKind(kind, hasPermission)) {
         ToastService.show({ title: 'Немає прав на редагування переміщень', color: 'warning' });
         return;
       }

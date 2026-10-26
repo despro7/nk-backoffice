@@ -32,6 +32,12 @@ import {
   unwrapDilovodId,
   unwrapDilovodName,
 } from './DilovodUtils.js';
+import {
+  collapseProductMovementEffectsByDocument,
+  isMeaningfulCollapsedMovementLine,
+  type ProductMovementRegisterEffect,
+} from '../../../shared/utils/productMovementCollapse.js';
+import { normalizePortionQty } from '../../../shared/utils/productMovementQty.js';
 
 const DATE_YMD = /^\d{4}-\d{2}-\d{2}$/;
 const IL_CHUNK = 50;
@@ -402,31 +408,50 @@ export class ProductMovementsService {
 
     for (const groupKey of orderedKeys) {
       const rows = buckets.get(groupKey) ?? [];
-      let balance = openingByGroup.get(groupKey) ?? 0;
-      const openingBalance = balance;
+      const openingBalance = normalizePortionQty(openingByGroup.get(groupKey) ?? 0);
+      let balance = openingBalance;
       let totalReceipt = 0;
       let totalExpense = 0;
       const lines: ProductMovementsLine[] = [];
 
-      let rowNum = 0;
+      const registerEffects: ProductMovementRegisterEffect[] = [];
       for (const row of rows) {
         const { documentLabel, receiptQty, expenseQty, signedQty } = evaluateMovementRow(row, qtyName);
         if (!isMeaningfulMovementEffect({ receiptQty, expenseQty, signedQty })) continue;
 
-        balance += signedQty;
-        if (receiptQty != null) totalReceipt += receiptQty;
-        if (expenseQty != null) totalExpense += expenseQty;
-        rowNum += 1;
-
         const recorderId = str(row.recorder ?? row[resolved.recorderAttributeName as string]);
-        lines.push({
-          rowNum,
+        registerEffects.push({
+          sortPeriod: String(row.period ?? ''),
           date: formatDisplayDate(row.period),
           dateTime: formatDisplayDateTime(row.period),
           documentId: recorderId || null,
           documentLabel,
           receiptQty,
           expenseQty,
+          signedQty,
+        });
+      }
+
+      const collapsedLines = collapseProductMovementEffectsByDocument(registerEffects);
+      let rowNum = 0;
+      for (const collapsed of collapsedLines) {
+        if (!isMeaningfulCollapsedMovementLine(collapsed)) {
+          continue;
+        }
+
+        balance = normalizePortionQty(balance + collapsed.signedQty);
+        if (collapsed.receiptQty != null) totalReceipt += collapsed.receiptQty;
+        if (collapsed.expenseQty != null) totalExpense += collapsed.expenseQty;
+        rowNum += 1;
+
+        lines.push({
+          rowNum,
+          date: collapsed.date,
+          dateTime: collapsed.dateTime,
+          documentId: collapsed.documentId,
+          documentLabel: collapsed.documentLabel,
+          receiptQty: collapsed.receiptQty,
+          expenseQty: collapsed.expenseQty,
           balanceQty: balance,
         });
       }
@@ -437,8 +462,8 @@ export class ProductMovementsService {
         openingBalance,
         lines,
         totals: {
-          receiptQty: totalReceipt,
-          expenseQty: totalExpense,
+          receiptQty: normalizePortionQty(totalReceipt),
+          expenseQty: normalizePortionQty(totalExpense),
           balanceQty: balance,
         },
       });
