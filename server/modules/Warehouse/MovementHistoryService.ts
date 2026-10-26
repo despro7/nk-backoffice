@@ -231,9 +231,7 @@ export class MovementHistoryService {
         where: { dilovodDocId },
         select: { items: true },
       });
-      const existingItems = movement
-        ? (WarehouseService.parseItems(movement.items) as Record<string, unknown>[])
-        : [];
+      const existingItems = movement ? WarehouseService.parseItems(movement.items) : [];
       if (isMobMovementStoredItems(existingItems)) {
         console.log(
           `💾 [MovementHistoryService] skip persistDetailsToDB for ${dilovodDocId}`

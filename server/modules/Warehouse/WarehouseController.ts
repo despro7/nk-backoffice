@@ -36,6 +36,7 @@ import {
 import {
   isMobMovementStoredItems,
   mergeIncomingPutItemsPreservingMobScan,
+  type MovementStoredItem,
 } from '../../../shared/utils/warehouseMovementMobItems.js';
 import {
   buildEffectiveMovementNotes,
@@ -1570,10 +1571,12 @@ router.put('/:id', authenticateToken, async (req, res) => {
 
     let itemsToSave = items;
     if (Array.isArray(items)) {
-      const storedItems = WarehouseService.parseItems(existingDraft.items) as Record<string, unknown>[];
+      const storedItems = WarehouseService.parseItems(
+        existingDraft.items,
+      ) as unknown as MovementStoredItem[];
       itemsToSave = mergeIncomingPutItemsPreservingMobScan(
         storedItems,
-        items as Record<string, unknown>[],
+        items as unknown as MovementStoredItem[],
       );
     }
 
