@@ -5,6 +5,7 @@ import path from "path";
 import tailwindcss from "@tailwindcss/vite";
 import type { Application } from "express";
 import { pdfmeDesignerRotatedDragPatch } from "./scripts/vite/pdfmeDesignerRotatedDragPatch";
+import { pdfmeClientAliases } from "./scripts/vite/pdfmeClientResolve";
 
 const disableHmr = process.env.VITE_DISABLE_HMR === "1";
 const projectRoot = __dirname;
@@ -57,6 +58,7 @@ export default defineConfig(({ mode }) => ({
     alias: {
       "@": path.resolve(__dirname, "./client"),
       "@shared": path.resolve(__dirname, "./shared"),
+      ...pdfmeClientAliases,
     },
   },
   define: {

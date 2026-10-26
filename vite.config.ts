@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import tailwindcss from "@tailwindcss/vite";
 import { pdfmeDesignerRotatedDragPatch } from "./scripts/vite/pdfmeDesignerRotatedDragPatch";
+import { pdfmeClientAliases } from "./scripts/vite/pdfmeClientResolve";
 
 export default defineConfig(({ mode }) => ({
   server: {
@@ -34,6 +35,7 @@ export default defineConfig(({ mode }) => ({
           if (id.includes("@tiptap")) return "vendor-tiptap";
           if (id.includes("/xlsx/")) return "vendor-xlsx";
           if (id.includes("@react-pdf")) return "vendor-react-pdf";
+          if (id.includes("@pdfme")) return "vendor-pdfme";
           if (id.includes("@zxing")) return "vendor-zxing";
           if (id.includes("lucide-react")) return "vendor-lucide";
           if (id.includes("framer-motion") || id.includes("/motion/")) return "vendor-motion";
@@ -47,6 +49,7 @@ export default defineConfig(({ mode }) => ({
     alias: {
       "@": path.resolve(__dirname, "./client"),
       "@shared": path.resolve(__dirname, "./shared"),
+      ...pdfmeClientAliases,
     },
   },
   define: {

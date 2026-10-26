@@ -123,6 +123,10 @@ PDF-етикетки **100×100 мм** для партій готової про
 
 Legacy `@react-pdf/renderer` для наліпок **знято**; react-pdf лишається для інших документів (техкарта тощо), якщо використовується.
 
+### Client build (Vite)
+
+`@pdfme/ui` тягне `@pdfme/converter` → `clawpdf` (pdfium, Node API) — без обхідного шляху production build падає з OOM. У `vite.config.ts` / `vite.config.dev.ts` alias `@pdfme/converter` → `client/shims/pdfmeConverterBrowserStub.ts` (імпорт PDF у Designer не підтримується в браузері; шаблони з JSON 100×100 мм). `build:client` — heap 8 GB.
+
 ---
 
 ## Склад і термін придатності

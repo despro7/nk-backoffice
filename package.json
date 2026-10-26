@@ -21,7 +21,7 @@
     "dev:phone": "VITE_DISABLE_HMR=1 npm run dev",
     "dev:server": "tsx watch --tsconfig tsconfig.server.json server/index.ts",
     "build": "npm run build:client && npm run build:server",
-    "build:client": "node scripts/generate-version.cjs && vite build",
+    "build:client": "node scripts/generate-version.cjs && node --max-old-space-size=8192 ./node_modules/vite/bin/vite.js build",
     "build:server": "tsc -p tsconfig.server.json",
     "build:prod": "npm run db:generate && npm run build",
     "start": "node dist/server/index.js",
