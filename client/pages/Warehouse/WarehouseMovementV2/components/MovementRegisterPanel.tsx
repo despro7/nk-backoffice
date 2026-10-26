@@ -18,6 +18,8 @@ interface Props {
   overlayZClassName?: string;
   batchPickerShouldBlockScroll?: boolean;
   compactSpacing?: boolean;
+  /** У drawer — inline dropdown, щоб клік по товару не закривав ResizableAppDrawer */
+  inlineProductSearchDropdown?: boolean;
 }
 
 export default function MovementRegisterPanel({
@@ -32,6 +34,7 @@ export default function MovementRegisterPanel({
   overlayZClassName,
   batchPickerShouldBlockScroll,
   compactSpacing = false,
+  inlineProductSearchDropdown = false,
 }: Props) {
   const excludeSkus = lines.map((line) => line.sku);
   const [showArchivedProducts, setShowArchivedProducts] = useState(false);
@@ -90,6 +93,7 @@ export default function MovementRegisterPanel({
             stockAsOfDate={movementDateTime}
             filters={{ includeArchived: showArchivedProducts }}
             visibleMeta={['sku', 'stock', 'folder', 'batch', 'updatedAt']}
+            dropdownPlacement={inlineProductSearchDropdown ? 'inline' : 'portal'}
           />
         </div>
       </Card>

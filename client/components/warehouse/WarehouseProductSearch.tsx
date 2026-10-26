@@ -24,6 +24,8 @@ interface Props {
   visibleMeta?: WarehouseProductSearchMetaField[];
   placeholder?: string;
   disabled?: boolean;
+  /** `inline` — список під input (у drawer); `portal` — fixed на document.body */
+  dropdownPlacement?: 'portal' | 'inline';
 }
 
 const DEFAULT_META: WarehouseProductSearchMetaField[] = ['sku', 'folder', 'stock', 'updatedAt'];
@@ -72,7 +74,9 @@ export default function WarehouseProductSearch({
   visibleMeta = DEFAULT_META,
   placeholder = 'Пошук за назвою, SKU, штрихкодом або партією',
   disabled = false,
+  dropdownPlacement = 'portal',
 }: Props) {
+  const usePortalDropdown = dropdownPlacement !== 'inline';
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const [stockMap, setStockMap] = useState<Record<string, WarehouseProductStockBreakdown>>({});
@@ -177,7 +181,7 @@ export default function WarehouseProductSearch({
   }, []);
 
   useLayoutEffect(() => {
-    if (!showList) {
+    if (!usePortalDropdown || !showList) {
       setDropdownRect(null);
       return;
     }
@@ -188,20 +192,27 @@ export default function WarehouseProductSearch({
       window.removeEventListener('scroll', updateDropdownRect, true);
       window.removeEventListener('resize', updateDropdownRect);
     };
-  }, [showList, results.length, loading, updateDropdownRect]);
+  }, [showList, results.length, loading, updateDropdownRect, usePortalDropdown]);
 
-  const listbox = showList && dropdownRect ? (
+  const listboxReady = showList && (usePortalDropdown ? Boolean(dropdownRect) : true);
+
+  const listbox = listboxReady ? (
     <div
       ref={listboxRef}
       role="listbox"
-      style={{
+      onMouseDown={(event) => event.stopPropagation()}
+      style={usePortalDropdown && dropdownRect ? {
         position: 'fixed',
         top: dropdownRect.top,
         left: dropdownRect.left,
         width: dropdownRect.width,
         zIndex: 9999,
-      }}
-      className="max-h-80 p-2 overflow-auto rounded-lg bg-white shadow-medium scrollbar-thin-transparent"
+      } : undefined}
+      className={
+        usePortalDropdown
+          ? 'max-h-80 p-2 overflow-auto rounded-lg bg-white shadow-medium scrollbar-thin-transparent'
+          : 'absolute left-0 right-0 top-full z-50 mt-1 max-h-80 p-2 overflow-auto rounded-lg border border-gray-200 bg-white shadow-medium scrollbar-thin-transparent'
+      }
     >
       {loading && results.length === 0 && (
         <div className="flex items-center gap-2 px-3 py-4 text-sm text-gray-500">
@@ -230,7 +241,11 @@ export default function WarehouseProductSearch({
               faded ? 'opacity-60' : ''
             } ${active ? 'bg-primary/10' : 'hover:bg-gray-50'}`}
             onMouseEnter={() => setActiveIndex(index)}
-            onClick={() => pick(hit)}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={(event) => {
+              event.stopPropagation();
+              pick(hit);
+            }}
           >
             <div className="flex items-start gap-2">
               <div className="text-sm font-medium text-gray-900 min-w-0">{hit.name}</div>
@@ -376,7 +391,7 @@ export default function WarehouseProductSearch({
         }}
       />
 
-      {listbox && createPortal(listbox, document.body)}
+      {listbox && (usePortalDropdown ? createPortal(listbox, document.body) : listbox)}
     </div>
   );
 }

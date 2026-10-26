@@ -5,6 +5,14 @@
 
 ---
 
+## 2026-10-26 — Переміщення v2: пошук товару в drawer без закриття панелі
+
+**Files:** `WarehouseProductSearch.tsx`, `MovementRegisterPanel.tsx`, `MovementV2EditorPanel.tsx`, `warehouse-movement-v2.md`
+
+- **Drawer edit:** inline dropdown замість portal — вибір товару з пошуку не тригерить dismiss HeroUI Drawer.
+
+---
+
 ## 2026-10-26 — Переміщення v2: accGood наборів, партії, історія (видалення + дати)
 
 **Files:** `movementV2Catalog.ts`, `productIsSet.ts`, `WarehouseController.ts` (`includeNegativeQty`), `MovementV2HistoryTab`, `WarehouseProductBatchesPanel`, `BatchNumbersAutocomplete`, `warehouse-movement-v2.md`

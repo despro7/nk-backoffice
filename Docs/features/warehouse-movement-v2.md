@@ -27,6 +27,7 @@
 |-----------|--------|
 | Архів | Товар у папці «Архів – …» або `delMark`/`isOutdated` — `isWarehouseProductArchived()` (`shared/types/warehouseProductSearch.ts`). Без перемикача «Показувати архівні» — приховані; з перемикачем — жовта іконка archive біля назви. |
 | Залишки | Один запит snapshot для **усіх** SKU поточної сторінки результатів (до `limit`, за замовч. 25), не обрізання 15. |
+| Dropdown | За замовч. `dropdownPlacement="portal"` (fixed на `body`); у drawer редагування — `inline` |
 | UI мета | Папка з іконкою folder; GP/MS badges; `updatedAt` (картка) vs `asOfDate` (залишки); напівпрозорість при нульовому/від’ємному залишку. |
 | Клавіатура | Listbox скролиться лише при ArrowUp/Down, не при hover. |
 | endContent | Оновити + очистити (окремі tooltip). |
@@ -69,6 +70,7 @@
 | Завантаження | `GET /api/warehouse/details/:id?forEdit=true` (Dilovod-first) |
 | Footer | **Скасувати** → `onClose` (без збереження); **Зберегти та відправити** → `useMovementV2SendFlow` |
 | UX drawer | Без «Параметри переміщення»; `compactSummarySpacing` + `hideInlineActions` → компактні відступи реєстру/summary (`compactLayout` у `MovementV2EditorPanel`); дії лише в footer |
+| Пошук товару | У drawer — `WarehouseProductSearch` з `dropdownPlacement="inline"` (список під полем, не portal на `body`), щоб клік по результату не закривав `ResizableAppDrawer` (HeroUI dismiss «outside») |
 | Права | `ACTION_WAREHOUSE_MOVEMENT_EDIT` |
 | Документи mob | Якщо запис зі скану (`linkedMobScan` / mob-`items`), drawer показує підказку; збереження не затирає ШК/partію — див. [mob — збереження полів скану](./warehouse-movement-mob.md#збереження-полів-скану-при-правках-v2). Strip `remark` з Dilovod: опційно `(сканування)` у regex. |
 

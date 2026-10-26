@@ -85,6 +85,7 @@ export default function MovementV2EditorPanel({
         overlayZClassName={modalOverlayZClassName}
         batchPickerShouldBlockScroll={modalOverlayZClassName ? false : undefined}
         compactSpacing={compactLayout}
+        inlineProductSearchDropdown={hideInlineActions}
       />
 
       <MovementSummaryPanel
