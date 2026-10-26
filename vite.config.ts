@@ -4,6 +4,7 @@ import path from "path";
 import tailwindcss from "@tailwindcss/vite";
 import { pdfmeDesignerRotatedDragPatch } from "./scripts/vite/pdfmeDesignerRotatedDragPatch";
 import { pdfmeClientAliases } from "./scripts/vite/pdfmeClientResolve";
+import { pdfmeClientPrebundle, suppressClientBuildNoise } from "./scripts/vite/pdfmeClientPrebundle";
 
 export default defineConfig(({ mode }) => ({
   server: {
@@ -24,10 +25,15 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     outDir: "dist/client",
-    chunkSizeWarningLimit: 1000,
+    reportCompressedSize: false,
+    chunkSizeWarningLimit: 8000,
     rollupOptions: {
+      onwarn(warning, warn) {
+        suppressClientBuildNoise(warning, warn);
+      },
       output: {
         manualChunks(id) {
+          if (id.includes("pdfme-client-bundle")) return "vendor-pdfme";
           if (!id.includes("node_modules")) return;
 
           if (id.includes("@heroui")) return "vendor-heroui";
@@ -44,7 +50,7 @@ export default defineConfig(({ mode }) => ({
       },
     },
   },
-  plugins: [pdfmeDesignerRotatedDragPatch(), react(), tailwindcss()],
+  plugins: [pdfmeClientPrebundle(), pdfmeDesignerRotatedDragPatch(), react(), tailwindcss()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./client"),

@@ -125,7 +125,7 @@ Legacy `@react-pdf/renderer` для наліпок **знято**; react-pdf л�
 
 ### Client build (Vite)
 
-`@pdfme/ui` тягне `@pdfme/converter` → `clawpdf` (pdfium, Node API) — без обхідного шляху production build падає з OOM. У `vite.config.ts` / `vite.config.dev.ts` alias `@pdfme/converter` → `client/shims/pdfmeConverterBrowserStub.ts` (імпорт PDF у Designer не підтримується в браузері; шаблони з JSON 100×100 мм). `build:client` — heap 8 GB.
+`@pdfme/ui` тягне `@pdfme/converter` → `clawpdf` (pdfium, Node API) — без обхідного шляху production build падає з OOM. У Vite alias `@pdfme/converter` → `client/shims/pdfmeConverterBrowserStub.ts`. Перед Rollup `scripts/vite/pdfmeClientPrebundle.ts` збирає `@pdfme/ui` і `@pdfme/schemas` одним esbuild-бандлом (кеш `node_modules/.cache/pdfme-client-bundle`), щоб не парсити zod і не ловити жовті `INVALID_ANNOTATION`. `build:client` — heap 8 GB, без gzip-звіту. Імпорт стороннього PDF у Designer у браузері не підтримується.
 
 ---
 
