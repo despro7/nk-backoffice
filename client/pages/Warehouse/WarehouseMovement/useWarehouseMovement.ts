@@ -66,7 +66,13 @@ export interface UseWarehouseMovementReturn {
 
   // Handlers
   loadProducts: () => Promise<MovementProduct[]>;
-  refreshBatchQuantities: (prods: MovementProduct[], selectedIds: Set<string>, asOfDate?: Date) => Promise<void>;
+  refreshBatchQuantities: (
+    prods: MovementProduct[],
+    selectedIds: Set<string>,
+    asOfDate?: Date,
+    sourceStorageId?: string,
+    firmId?: string,
+  ) => Promise<void>;
   refreshStockData: (
     allProds: MovementProduct[],
     asOfDate?: Date,
@@ -412,7 +418,16 @@ export const useWarehouseMovement = (options?: UseWarehouseMovementOptions): Use
   useEffect(() => {
     if (initPhaseRef.current) return;
     if (products$.products.length > 0) {
-      products$.refreshStockData(products$.products, undefined, storage, storageTo);
+      const asOfDate = selectedDateTimeRef.current ?? undefined;
+      products$.refreshStockData(products$.products, asOfDate, storage, storageTo);
+      if (products$.selectedProductIds.size > 0) {
+        void products$.refreshBatchQuantities(
+          products$.products,
+          products$.selectedProductIds,
+          asOfDate,
+          storage,
+        );
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storage, storageTo]);

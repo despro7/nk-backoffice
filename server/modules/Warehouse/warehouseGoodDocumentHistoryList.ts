@@ -3,13 +3,19 @@ import { prisma } from '../../lib/utils.js';
 import type { GoodDocHistoryKind } from '../../../shared/types/warehouseGoodDocument.js';
 import { getAllowedGoodDocumentStorageIds } from './warehouseGoodDocumentStorageFilter.js';
 import { normalizeItemsArray, safeParseItems } from './historyNormalize.js';
+import {
+  buildPrismaDateRangeFilter,
+  buildPrismaSearchOr,
+  parseWarehouseDocHistoryListQuery,
+  type WarehouseDocHistoryListQuery,
+} from '../../../shared/utils/warehouseDocHistoryListQuery.js';
 
 export type GoodDocHistoryStatusFilter = 'active' | 'deleted';
 
-export interface GoodDocHistoryListQuery {
+export interface GoodDocHistoryListQuery extends WarehouseDocHistoryListQuery {
+  status: GoodDocHistoryStatusFilter;
   page: number;
   limit: number;
-  status: GoodDocHistoryStatusFilter;
 }
 
 export interface GoodDocHistoryListResult {
@@ -23,18 +29,27 @@ export interface GoodDocHistoryListResult {
   };
 }
 
-/** Найновіші документи зверху (дата операції, не час sync у БД). */
-const WRITE_OFF_HISTORY_ORDER: Prisma.WarehouseWriteOffHistoryOrderByWithRelationInput[] = [
-  { writeOffDate: 'desc' },
-  { createdAt: 'desc' },
-  { id: 'desc' },
-];
-
-const SURPLUS_HISTORY_ORDER: Prisma.WarehouseSurplusHistoryOrderByWithRelationInput[] = [
-  { surplusDate: 'desc' },
-  { createdAt: 'desc' },
-  { id: 'desc' },
-];
+function resolveOrderBy(
+  kind: GoodDocHistoryKind,
+  query: GoodDocHistoryListQuery,
+): Prisma.WarehouseWriteOffHistoryOrderByWithRelationInput[]
+  | Prisma.WarehouseSurplusHistoryOrderByWithRelationInput[] {
+  const sortOrder = query.sortOrder === 'asc' ? 'asc' : 'desc';
+  const sortBy = query.sortBy ?? 'operDate';
+  if (sortBy === 'createdAt') {
+    return [{ createdAt: sortOrder }, { id: sortOrder }];
+  }
+  if (sortBy === 'docNumber') {
+    if (kind === 'writeOff') {
+      return [{ docNumber: sortOrder }, { writeOffDate: 'desc' }, { id: 'desc' }];
+    }
+    return [{ docNumber: sortOrder }, { surplusDate: 'desc' }, { id: 'desc' }];
+  }
+  if (kind === 'writeOff') {
+    return [{ writeOffDate: sortOrder }, { createdAt: 'desc' }, { id: 'desc' }];
+  }
+  return [{ surplusDate: sortOrder }, { createdAt: 'desc' }, { id: 'desc' }];
+}
 
 function buildStorageIn(allowed: string[]): string[] | undefined {
   if (allowed.length === 0) return undefined;
@@ -43,16 +58,41 @@ function buildStorageIn(allowed: string[]): string[] | undefined {
 
 async function buildHistoryWhere(
   kind: GoodDocHistoryKind,
-  status: GoodDocHistoryStatusFilter,
+  query: GoodDocHistoryListQuery,
 ): Promise<Prisma.WarehouseWriteOffHistoryWhereInput | Prisma.WarehouseSurplusHistoryWhereInput> {
   const allowedStorageIds = await getAllowedGoodDocumentStorageIds();
   const storageIn = buildStorageIn(allowedStorageIds);
-  const statusWhere = status === 'deleted'
+  const statusWhere = query.status === 'deleted'
     ? { status: 'deleted' as const }
     : { status: { not: 'deleted' as const } };
+
+  const operDateColumn = kind === 'writeOff' ? 'writeOffDate' : 'surplusDate';
+  const dateFilter = buildPrismaDateRangeFilter(
+    query.dateField ?? 'operDate',
+    operDateColumn,
+    query.dateFrom,
+    query.dateTo,
+  );
+
+  const searchFields = kind === 'writeOff'
+    ? ['docNumber', 'writeOffNumber', 'comment', 'remark']
+    : ['docNumber', 'surplusNumber', 'comment', 'remark'];
+  const searchOr = buildPrismaSearchOr<Prisma.WarehouseWriteOffHistoryWhereInput>(
+    query.search,
+    searchFields,
+    'items',
+  );
+
+  const andClauses: Prisma.WarehouseWriteOffHistoryWhereInput[] = [];
+  if (dateFilter) andClauses.push(dateFilter as Prisma.WarehouseWriteOffHistoryWhereInput);
+  if (searchOr && searchOr.length > 0) {
+    andClauses.push({ OR: searchOr });
+  }
+
   return {
     ...statusWhere,
     ...(storageIn ? { storageId: { in: storageIn } } : {}),
+    ...(andClauses.length > 0 ? { AND: andClauses } : {}),
   };
 }
 
@@ -61,13 +101,14 @@ export async function getGoodDocumentHistoryPageDilovodIds(
   kind: GoodDocHistoryKind,
   query: GoodDocHistoryListQuery,
 ): Promise<string[]> {
-  const { page, limit, status } = query;
-  const where = await buildHistoryWhere(kind, status);
+  const { page, limit } = query;
+  const where = await buildHistoryWhere(kind, query);
+  const orderBy = resolveOrderBy(kind, query);
 
   if (kind === 'writeOff') {
     const rows = await prisma.warehouseWriteOffHistory.findMany({
       where: where as Prisma.WarehouseWriteOffHistoryWhereInput,
-      orderBy: WRITE_OFF_HISTORY_ORDER,
+      orderBy: orderBy as Prisma.WarehouseWriteOffHistoryOrderByWithRelationInput[],
       skip: (page - 1) * limit,
       take: limit,
       select: { writeOffNumber: true },
@@ -79,7 +120,7 @@ export async function getGoodDocumentHistoryPageDilovodIds(
 
   const rows = await prisma.warehouseSurplusHistory.findMany({
     where: where as Prisma.WarehouseSurplusHistoryWhereInput,
-    orderBy: SURPLUS_HISTORY_ORDER,
+    orderBy: orderBy as Prisma.WarehouseSurplusHistoryOrderByWithRelationInput[],
     skip: (page - 1) * limit,
     take: limit,
     select: { surplusNumber: true },
@@ -93,7 +134,7 @@ export async function countGoodDocumentHistory(
   kind: GoodDocHistoryKind,
   status: GoodDocHistoryStatusFilter = 'active',
 ): Promise<number> {
-  const where = await buildHistoryWhere(kind, status);
+  const where = await buildHistoryWhere(kind, { page: 1, limit: 1, status });
   if (kind === 'writeOff') {
     return prisma.warehouseWriteOffHistory.count({
       where: where as Prisma.WarehouseWriteOffHistoryWhereInput,
@@ -152,16 +193,18 @@ export async function listGoodDocumentHistory(
   kind: GoodDocHistoryKind,
   query: GoodDocHistoryListQuery,
 ): Promise<GoodDocHistoryListResult> {
-  const { page, limit, status } = query;
+  const { page, limit } = query;
   const firmsMap = await loadFirmsMap();
+  const where = await buildHistoryWhere(kind, query);
+  const orderBy = resolveOrderBy(kind, query);
 
   if (kind === 'writeOff') {
-    const where = await buildHistoryWhere(kind, status) as Prisma.WarehouseWriteOffHistoryWhereInput;
+    const writeOffWhere = where as Prisma.WarehouseWriteOffHistoryWhereInput;
     const [total, rows] = await Promise.all([
-      prisma.warehouseWriteOffHistory.count({ where }),
+      prisma.warehouseWriteOffHistory.count({ where: writeOffWhere }),
       prisma.warehouseWriteOffHistory.findMany({
-        where,
-        orderBy: WRITE_OFF_HISTORY_ORDER,
+        where: writeOffWhere,
+        orderBy: orderBy as Prisma.WarehouseWriteOffHistoryOrderByWithRelationInput[],
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -178,12 +221,12 @@ export async function listGoodDocumentHistory(
     };
   }
 
-  const surplusWhere = await buildHistoryWhere(kind, status) as Prisma.WarehouseSurplusHistoryWhereInput;
+  const surplusWhere = where as Prisma.WarehouseSurplusHistoryWhereInput;
   const [total, rows] = await Promise.all([
     prisma.warehouseSurplusHistory.count({ where: surplusWhere }),
     prisma.warehouseSurplusHistory.findMany({
       where: surplusWhere,
-      orderBy: SURPLUS_HISTORY_ORDER,
+      orderBy: orderBy as Prisma.WarehouseSurplusHistoryOrderByWithRelationInput[],
       skip: (page - 1) * limit,
       take: limit,
     }),
@@ -202,8 +245,11 @@ export async function listGoodDocumentHistory(
 }
 
 export function parseGoodDocHistoryListQuery(req: { query: Record<string, unknown> }): GoodDocHistoryListQuery {
-  const page = Math.max(1, Number(req.query.page) || 1);
-  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 10));
-  const status = String(req.query.status ?? 'active').toLowerCase() === 'deleted' ? 'deleted' : 'active';
-  return { page, limit, status };
+  const parsed = parseWarehouseDocHistoryListQuery(req.query);
+  return {
+    ...parsed,
+    page: parsed.page ?? 1,
+    limit: parsed.limit ?? 10,
+    status: parsed.status === 'deleted' ? 'deleted' : 'active',
+  };
 }

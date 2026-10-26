@@ -1,48 +1,105 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/utils.js';
 import { normalizeItemsArray, safeParseItems, sumHistoryItemsQuantity } from './historyNormalize.js';
+import {
+  buildPrismaSearchOr,
+  kyivDayBounds,
+  parseWarehouseDocHistoryListQuery,
+  type WarehouseDocHistoryListQuery,
+} from '../../../shared/utils/warehouseDocHistoryListQuery.js';
 
 export type MovementHistoryStatusFilter = 'active' | 'deleted';
 
-export interface MovementHistoryListQuery {
+export interface MovementHistoryListQuery extends WarehouseDocHistoryListQuery {
   page: number;
   limit: number;
   status: MovementHistoryStatusFilter;
+  /** @deprecated use dateFrom */
   from?: string;
+  /** @deprecated use dateTo */
   to?: string;
 }
 
 const ACTIVE_STATUSES = ['finalized', 'pending_receipt', 'active'] as const;
 
-const MOVEMENT_HISTORY_ORDER: Prisma.WarehouseMovementOrderByWithRelationInput[] = [
-  { movementDate: 'desc' },
-  { draftCreatedAt: 'desc' },
-  { id: 'desc' },
-];
+function resolveOrderBy(query: MovementHistoryListQuery): Prisma.WarehouseMovementOrderByWithRelationInput[] {
+  const sortOrder = query.sortOrder === 'asc' ? 'asc' : 'desc';
+  const sortBy = query.sortBy ?? 'operDate';
+  if (sortBy === 'createdAt') {
+    return [{ draftCreatedAt: sortOrder }, { id: sortOrder }];
+  }
+  if (sortBy === 'docNumber') {
+    return [{ internalDocNumber: sortOrder }, { docNumber: sortOrder }, { id: 'desc' }];
+  }
+  return [{ movementDate: sortOrder }, { draftCreatedAt: 'desc' }, { id: 'desc' }];
+}
+
+function buildMovementDateFilter(query: MovementHistoryListQuery): Prisma.WarehouseMovementWhereInput | null {
+  const from = String(query.dateFrom ?? query.from ?? '').trim();
+  const to = String(query.dateTo ?? query.to ?? '').trim();
+  if (!from && !to) return null;
+
+  const dateField = query.dateField === 'createdAt' ? 'createdAt' : 'operDate';
+  if (dateField === 'createdAt') {
+    const range: { gte?: Date; lte?: Date } = {};
+    if (from) {
+      const bounds = kyivDayBounds(from);
+      if (bounds) range.gte = bounds.start;
+    }
+    if (to) {
+      const bounds = kyivDayBounds(to);
+      if (bounds) range.lte = bounds.end;
+    }
+    if (!range.gte && !range.lte) return null;
+    return { draftCreatedAt: range };
+  }
+
+  const dateFilter: { gte?: Date; lte?: Date } = {};
+  if (from) {
+    const bounds = kyivDayBounds(from);
+    if (bounds) dateFilter.gte = bounds.start;
+  }
+  if (to) {
+    const bounds = kyivDayBounds(to);
+    if (bounds) dateFilter.lte = bounds.end;
+  }
+  if (!dateFilter.gte && !dateFilter.lte) return null;
+
+  return {
+    OR: [
+      { movementDate: dateFilter },
+      {
+        AND: [
+          { movementDate: null },
+          { draftCreatedAt: dateFilter },
+        ],
+      },
+    ],
+  };
+}
 
 function buildWhere(query: MovementHistoryListQuery): Prisma.WarehouseMovementWhereInput {
   const where: Prisma.WarehouseMovementWhereInput = query.status === 'deleted'
     ? { status: 'deleted' }
     : { status: { in: [...ACTIVE_STATUSES] } };
 
-  const { from, to } = query;
-  if (from || to) {
-    const dateFilter: { gte?: Date; lte?: Date } = {};
-    if (from) dateFilter.gte = new Date(`${from}T00:00:00`);
-    if (to) dateFilter.lte = new Date(`${to}T23:59:59.999`);
+  const andClauses: Prisma.WarehouseMovementWhereInput[] = [];
+  const dateClause = buildMovementDateFilter(query);
+  if (dateClause) andClauses.push(dateClause);
+
+  const searchOr = buildPrismaSearchOr<Prisma.WarehouseMovementWhereInput>(
+    query.search,
+    ['internalDocNumber', 'docNumber', 'dilovodDocId', 'notes'],
+    'items',
+  );
+  if (searchOr && searchOr.length > 0) {
+    andClauses.push({ OR: searchOr });
+  }
+
+  if (andClauses.length > 0) {
     where.AND = [
       ...(Array.isArray(where.AND) ? where.AND : []),
-      {
-        OR: [
-          { movementDate: dateFilter },
-          {
-            AND: [
-              { movementDate: null },
-              { draftCreatedAt: dateFilter },
-            ],
-          },
-        ],
-      },
+      ...andClauses,
     ];
   }
 
@@ -50,12 +107,15 @@ function buildWhere(query: MovementHistoryListQuery): Prisma.WarehouseMovementWh
 }
 
 export function parseMovementHistoryListQuery(req: { query: Record<string, unknown> }): MovementHistoryListQuery {
-  const page = Math.max(1, Number(req.query.page) || 1);
-  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 10));
-  const status = String(req.query.status ?? 'active').toLowerCase() === 'deleted' ? 'deleted' : 'active';
-  const from = typeof req.query.from === 'string' && req.query.from.trim() ? req.query.from.trim() : undefined;
-  const to = typeof req.query.to === 'string' && req.query.to.trim() ? req.query.to.trim() : undefined;
-  return { page, limit, status, from, to };
+  const parsed = parseWarehouseDocHistoryListQuery(req.query);
+  return {
+    ...parsed,
+    page: parsed.page ?? 1,
+    limit: parsed.limit ?? 10,
+    status: parsed.status === 'deleted' ? 'deleted' : 'active',
+    from: typeof req.query.from === 'string' ? req.query.from.trim() : undefined,
+    to: typeof req.query.to === 'string' ? req.query.to.trim() : undefined,
+  };
 }
 
 export async function getMovementHistoryPageDilovodIds(
@@ -64,7 +124,7 @@ export async function getMovementHistoryPageDilovodIds(
   const where = buildWhere(query);
   const rows = await prisma.warehouseMovement.findMany({
     where,
-    orderBy: MOVEMENT_HISTORY_ORDER,
+    orderBy: resolveOrderBy(query),
     skip: (query.page - 1) * query.limit,
     take: query.limit,
     select: { dilovodDocId: true },
@@ -111,7 +171,7 @@ export async function listMovementHistory(query: MovementHistoryListQuery) {
     prisma.warehouseMovement.count({ where }),
     prisma.warehouseMovement.findMany({
       where,
-      orderBy: MOVEMENT_HISTORY_ORDER,
+      orderBy: resolveOrderBy(query),
       skip: (page - 1) * limit,
       take: limit,
       select: {

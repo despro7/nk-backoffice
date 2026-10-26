@@ -116,7 +116,7 @@ Switch у шапці сторінки. Двокроковий wizard:
 
 #### Фільтри історії
 
-- `ReleaseHistoryToolbarFilters.tsx` — пошук, діапазон дат, мультиселект типів операцій, сорт; «Скинути» на другому рядку в `ReleaseHistoryTab`.
+- `ReleaseHistoryToolbarFilters.tsx` — пошук, діапазон дат, мультиселект типів операцій, сорт; «Скинути» на другому рядку в `ReleaseHistoryTab`. Інші Dilovod-розділи використовують спільний toolbar без типів операцій — [`warehouse-doc-history-filters.md`](warehouse-doc-history-filters.md).
 
 #### Адмін: видалення та обʼєднання
 

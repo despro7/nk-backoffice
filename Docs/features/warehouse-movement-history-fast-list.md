@@ -31,7 +31,9 @@
 |-------|------|
 | `page`, `limit` | Пагінація (limit ≤ 100) |
 | `status` | `active` (finalized, pending_receipt, active) або `deleted` |
-| `from`, `to` | Фільтр за `movementDate` (або `draftCreatedAt`, якщо дати переміщення немає), формат `YYYY-MM-DD` |
+| `dateFrom`, `dateTo` | Фільтр за датою (`dateField`: `operDate` → `movementDate` / fallback `draftCreatedAt`; `createdAt` → `draftCreatedAt`), `YYYY-MM-DD` |
+| `from`, `to` | Legacy-аліаси для `dateFrom` / `dateTo` |
+| `search`, `sortBy`, `sortOrder`, `dateField` | Див. [`warehouse-doc-history-filters.md`](warehouse-doc-history-filters.md) |
 | `sync` | `true` — перед списком синхронізувати шапки з Dilovod |
 | `forceFullList` | `true` — примусово повний список goodMoving (ігнорує «вже сьогодні») |
 
@@ -59,7 +61,7 @@
 - Рядок історії переміщення: номер документу в заголовку, `MovementMobDirectionBadges` замість довгих назв складів, без іконки типу операції (див. [warehouse-movement-v2.md](./warehouse-movement-v2.md)).
 - Перше відкриття табу «Історія»: `loadHistory(1, limit, true)` — sync на сервері розумний (не обовʼязково повний Dilovod).
 - «Оновити»: `sync=true`, `forceFullList=true`.
-- Зміна діапазону дат: `loadHistory(1, limit, true, false, range)`.
+- Зміна фільтрів (пошук, дати, сорт): `loadHistory(1, limit, true, false, historyFilters)`.
 - Пагінація без повторного повного sync: `loadHistory(page, limit, false)`.
 
 ## Файли

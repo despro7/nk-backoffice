@@ -1,4 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { fetchWarehouseDocHistoryPage } from '@/pages/Warehouse/shared/fetchWarehouseDocHistoryPage';
+import {
+  DEFAULT_WAREHOUSE_DOC_HISTORY_FILTERS,
+  type WarehouseDocHistoryFilters,
+} from '@shared/utils/warehouseDocHistoryListQuery';
 import { useApi } from '@/hooks/useApi';
 import { ToastService } from '@/services/ToastService';
 import type { WarehouseProductSearchHit } from '@shared/types/warehouseProductSearch';
@@ -53,6 +58,9 @@ export default function useWarehouseMovementV2() {
   const [archiveSessions, setArchiveSessions] = useState<any[]>([]);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [archivePagination, setArchivePagination] = useState<MovementV2HistoryPagination>(DEFAULT_PAGINATION);
+  const [historyFilters, setHistoryFilters] = useState<WarehouseDocHistoryFilters>(DEFAULT_WAREHOUSE_DOC_HISTORY_FILTERS);
+  const historyFiltersRef = useRef(historyFilters);
+  historyFiltersRef.current = historyFilters;
 
   const lastSavedSnapshotRef = useRef('');
 
@@ -69,7 +77,8 @@ export default function useWarehouseMovementV2() {
       ToastService.show({ title: 'Товар уже в реєстрі', color: 'warning' });
       return;
     }
-    const dilovodId = await resolveDilovodId(hit.sku);
+    const fromHit = String(hit.catalogGoodId ?? '').trim();
+    const dilovodId = fromHit || await resolveDilovodId(hit.sku);
     const initialBatches: ReleaseComponentBatch[] = hit.batchId
       ? [{
         batchId: hit.batchId,
@@ -193,26 +202,18 @@ export default function useWarehouseMovementV2() {
     limit: number,
     sync = false,
     forceFullList = false,
-    range?: { from?: string; to?: string },
-  ) => {
-    const url = new URL(MOVEMENT_HISTORY_API, window.location.origin);
-    url.searchParams.set('status', status);
-    url.searchParams.set('page', String(page));
-    url.searchParams.set('limit', String(limit));
-    url.searchParams.set('sync', sync ? 'true' : 'false');
-    if (forceFullList) url.searchParams.set('forceFullList', 'true');
-    if (range?.from) url.searchParams.set('from', range.from);
-    if (range?.to) url.searchParams.set('to', range.to);
-    const response = await fetch(url.toString(), { credentials: 'include' });
-    const json = await response.json().catch(() => ({}));
-    if (!response.ok || !json?.success) {
-      throw new Error(json?.error || 'Не вдалося завантажити історію');
-    }
-    return {
-      records: Array.isArray(json.data) ? json.data : [],
-      pagination: json.pagination ?? { ...DEFAULT_PAGINATION, page, limit },
-    };
-  }, []);
+    filters: WarehouseDocHistoryFilters = historyFiltersRef.current,
+  ) => fetchWarehouseDocHistoryPage(
+    MOVEMENT_HISTORY_API,
+    status,
+    page,
+    limit,
+    filters,
+    {
+      sync: sync ? 'true' : 'false',
+      ...(forceFullList ? { forceFullList: 'true' } : {}),
+    },
+  ), []);
 
   const loadHistoryRecordDetails = useCallback(async (
     record: { id: number | string },
@@ -256,11 +257,11 @@ export default function useWarehouseMovementV2() {
     limit = historyPagination.limit,
     sync = false,
     forceFullList = false,
-    range?: { from?: string; to?: string },
+    filters: WarehouseDocHistoryFilters = historyFiltersRef.current,
   ) => {
     setHistoryLoading(true);
     try {
-      const result = await fetchHistoryPage('active', page, limit, sync, forceFullList, range);
+      const result = await fetchHistoryPage('active', page, limit, sync, forceFullList, filters);
       setHistory(result.records);
       setHistoryPagination(result.pagination);
       void lazyEnrichHistoryPage(result.records, loadHistoryRecordDetails);
@@ -369,6 +370,8 @@ export default function useWarehouseMovementV2() {
     history,
     historyLoading,
     historyPagination,
+    historyFilters,
+    setHistoryFilters,
     loadHistory,
     loadHistoryRecordDetails,
     historyDetailsLoading,

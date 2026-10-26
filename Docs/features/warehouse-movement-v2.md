@@ -10,7 +10,7 @@
 | Вкладка | Опис |
 |--------|------|
 | Переміщення | Напрям (склади + дата/час), реєстр позицій, summary, відправка в Dilovod |
-| Історія | Пагінований список + фільтр дат — [швидкий список](./warehouse-movement-history-fast-list.md) |
+| Історія | Пагінований список + [фільтри історії](./warehouse-doc-history-filters.md) — [швидкий список](./warehouse-movement-history-fast-list.md) |
 | Архів | Видалені записи (admin) |
 
 ## Форма переміщення
@@ -32,6 +32,8 @@
 | endContent | Оновити + очистити (окремі tooltip). |
 
 Перемикач архіву: `MovementRegisterPanel` → `filters.includeArchived`.
+
+При додаванні з пошуку `dilovodId` рядка береться з `catalogGoodId` індексу (архівні SKU не проходять через `GET /api/products` без `showOutdated`). Перед відправкою сервер дозаповнює відсутній `dilovodId` з каталогу (`WarehousePayloadBuilder.enrichSummaryItemsDilovodIds`).
 
 ## Історія (UI)
 

@@ -14,6 +14,7 @@ import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { ToastService } from '@/services/ToastService';
 import { pluralize } from '@/lib';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
+import { WarehouseDocHistoryToolbarFilters } from '../shared/WarehouseDocHistoryToolbarFilters';
 
 const SURPLUS_REASONS = [
   'Інвентаризація (надлишок)',
@@ -43,6 +44,10 @@ export default function WarehouseSurplus() {
   });
 
   useEffect(() => {
+    returns.setDocumentStorageId?.(selectedStorage ?? null);
+  }, [selectedStorage, returns.setDocumentStorageId]);
+
+  useEffect(() => {
     returns.loadAvailableFirms?.();
   }, []);
 
@@ -69,24 +74,36 @@ export default function WarehouseSurplus() {
         <p className="text-sm text-gray-500">Оприбуткування надлишків товарів у Dilovod (пошук за назвою, SKU або ШК).</p>
       </div>
 
-      <PageTabs
-        className="mb-4"
-        selectedKey={pageTab}
-        onSelectionChange={(key) => {
-          const tab = key as 'main' | 'history' | 'archive';
-          setPageTab(tab);
-          if (tab === 'history' && surplus.history.length === 0) {
-            void surplus.loadHistory(1, surplus.historyPagination?.limit ?? 10, true);
-          }
-          if (tab === 'archive' && isAdmin() && surplus.archiveRecords.length === 0) {
-            void surplus.loadArchive();
-          }
-        }}
-      >
-        <Tab key="main" title="Оприбуткування" />
-        <Tab key="history" title="Історія" />
-        {isAdmin() && <Tab key="archive" title="Архів" />}
-      </PageTabs>
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <PageTabs
+          className="min-w-0"
+          selectedKey={pageTab}
+          onSelectionChange={(key) => {
+            const tab = key as 'main' | 'history' | 'archive';
+            setPageTab(tab);
+            if (tab === 'history' && surplus.history.length === 0) {
+              void surplus.loadHistory(1, surplus.historyPagination?.limit ?? 10, true);
+            }
+            if (tab === 'archive' && isAdmin() && surplus.archiveRecords.length === 0) {
+              void surplus.loadArchive();
+            }
+          }}
+        >
+          <Tab key="main" title="Оприбуткування" />
+          <Tab key="history" title="Історія" />
+          {isAdmin() && <Tab key="archive" title="Архів" />}
+        </PageTabs>
+        {pageTab === 'history' ? (
+          <WarehouseDocHistoryToolbarFilters
+            className="w-full lg:w-auto lg:flex-1 lg:justify-end"
+            filters={surplus.historyFilters}
+            onFiltersChange={(filters) => {
+              surplus.setHistoryFilters(filters);
+              void surplus.loadHistory(1, surplus.historyPagination?.limit ?? 10, true, false, filters);
+            }}
+          />
+        ) : null}
+      </div>
 
       {pageTab === 'main' && (
         <>
@@ -179,6 +196,12 @@ export default function WarehouseSurplus() {
           records={surplus.history}
           loading={surplus.historyLoading}
           pagination={surplus.historyPagination}
+          showHistoryFilters
+          historyFilters={surplus.historyFilters}
+          onHistoryFiltersChange={(filters) => {
+            surplus.setHistoryFilters(filters);
+            void surplus.loadHistory(1, surplus.historyPagination?.limit ?? 10, true, false, filters);
+          }}
           onPageChange={(page) => void surplus.loadHistory(page, surplus.historyPagination?.limit ?? 10)}
           onLimitChange={(limit) => void surplus.loadHistory(1, limit)}
           onRefresh={() => void surplus.loadHistory(

@@ -307,6 +307,7 @@ function syncComponentBatchesForSetQuantity(
   componentsSnapshot: unknown,
   newSetQuantity: number,
   oldSetQuantity?: number | null,
+  respectBatchStock = true,
 ): ReleaseComponentAllocation[] {
   if (newSetQuantity <= 0 || componentBatches.length === 0) {
     return componentBatches;
@@ -328,15 +329,16 @@ function syncComponentBatchesForSetQuantity(
     }
 
     const scaled = batches.map((batch) => {
-      const batchStock = getBatchStockLimit(batch);
+      const batchStock = respectBatchStock ? getBatchStockLimit(batch) : Number.POSITIVE_INFINITY;
       const raw = scaleFactor !== null
         ? Number(batch.quantity ?? 0) * scaleFactor
         : oldAllocated > 0
           ? (Number(batch.quantity ?? 0) * newRequired) / oldAllocated
           : 0;
+      const rounded = Math.max(0, Math.round(raw));
       return {
         ...batch,
-        quantity: Math.min(batchStock, Math.max(0, Math.round(raw))),
+        quantity: respectBatchStock ? Math.min(batchStock, rounded) : rounded,
       };
     });
 
@@ -345,6 +347,11 @@ function syncComponentBatchesForSetQuantity(
       const adjustable = scaled
         .map((batch, index) => ({ batch, index }))
         .sort((left, right) => {
+          if (!respectBatchStock) {
+            return diff > 0
+              ? right.batch.quantity - left.batch.quantity
+              : left.batch.quantity - right.batch.quantity;
+          }
           const leftRoom = getBatchStockLimit(left.batch) - left.batch.quantity;
           const rightRoom = getBatchStockLimit(right.batch) - right.batch.quantity;
           return diff > 0 ? rightRoom - leftRoom : left.batch.quantity - right.batch.quantity;
@@ -353,9 +360,11 @@ function syncComponentBatchesForSetQuantity(
       for (const { index } of adjustable) {
         if (diff === 0) break;
         const batch = scaled[index];
-        const stock = getBatchStockLimit(batch);
+        const stock = respectBatchStock ? getBatchStockLimit(batch) : Number.POSITIVE_INFINITY;
         if (diff > 0) {
-          const add = Math.min(diff, stock - batch.quantity);
+          const add = respectBatchStock
+            ? Math.min(diff, stock - batch.quantity)
+            : diff;
           if (add <= 0) continue;
           scaled[index] = { ...batch, quantity: batch.quantity + add };
           diff -= add;
@@ -729,6 +738,7 @@ export default function useReleaseSets() {
               target.componentsSnapshot,
               newQuantity,
               prevQuantity,
+              operationKey !== 'goodUnKit',
             );
           });
         } else if (Number.isFinite(newQuantity) && newQuantity > 0) {
@@ -968,6 +978,8 @@ export default function useReleaseSets() {
         allocations,
         activeItem?.componentsSnapshot,
         safeQuantity,
+        undefined,
+        operationKey !== 'goodUnKit',
       );
     }
 
@@ -1525,6 +1537,7 @@ export default function useReleaseSets() {
       activeComponentsSnapshot,
       quantity,
       prevQuantity,
+      operationKey !== 'goodUnKit',
     ));
   }, [
     activeSetId,

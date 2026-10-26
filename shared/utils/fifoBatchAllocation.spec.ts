@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { allocateBatchesFifo, fifoBatchTimestamp, sortBatchesFifo } from './fifoBatchAllocation.js';
+import {
+  allocateBatchesFifo,
+  allocateBatchesFifoTarget,
+  fifoBatchTimestamp,
+  sortBatchesFifo,
+} from './fifoBatchAllocation.js';
 
 const NOW = new Date('2026-10-08T12:00:00Z');
 
@@ -32,6 +37,20 @@ describe('fifoBatchAllocation', () => {
     ], NOW);
 
     expect(sorted.map((batch) => batch.batchId)).toEqual(['b', 'a']);
+  });
+
+  it('allocateBatchesFifoTarget credits full required on oldest batch ignoring stock cap', () => {
+    const allocated = allocateBatchesFifoTarget([
+      { batchId: '2', batchNumber: '60917', quantity: 5 },
+      { batchId: '1', batchNumber: '60814', quantity: 0 },
+    ], 100, NOW);
+
+    expect(allocated).toEqual([{
+      batchId: '1',
+      batchNumber: '60814',
+      quantity: 100,
+      batchStock: 0,
+    }]);
   });
 
   it('puts batches without a date after dated ones', () => {

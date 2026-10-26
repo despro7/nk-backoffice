@@ -500,7 +500,7 @@ export const useMovementDraftState = (
             })),
         );
 
-        await refreshBatchQuantities(updated, selectedIds, docParsedDate);
+        await refreshBatchQuantities(updated, selectedIds, docParsedDate, doc.storage || undefined);
 
         LoggingService.warehouseMovementLog(
           `✅ Переміщення #${doc.number} завантажено для редагування`,

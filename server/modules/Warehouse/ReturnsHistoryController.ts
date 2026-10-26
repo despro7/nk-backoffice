@@ -5,6 +5,7 @@ import { safeParseItems, normalizeItemsArray } from './historyNormalize.js';
 import { salesDriveService } from '../../services/salesDriveService.js';
 import { authenticateToken, requirePermission } from '../../middleware/auth.js';
 import { parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
+import { listReturnsHistory, parseReturnsHistoryListQuery } from './returnsHistoryList.js';
 
 const parseLocalDate = (value: unknown): Date | null => parseKyivDateTime(value);
 
@@ -332,27 +333,15 @@ overrideFirmId,
 router.get('/history', authenticateToken, async (req, res) => {
   try {
     const userId = (req as any).user?.userId || (req as any).user?.id;
-    const userRole = (req as any).user?.role;
 
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const history = await prisma.warehouseReturnHistory.findMany({
-      where: {
-        // Всі записи (читання для всіх, видалення тільки для адміна)
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+    const listQuery = parseReturnsHistoryListQuery(req);
+    const { rows, pagination } = await listReturnsHistory(listQuery);
+    const withAuthors = await resolveAuthorNames(rows as any[]);
 
-    // Розшифрувати імена авторів
-    const withAuthors = await resolveAuthorNames(history as any[]);
-
-    // Додати дружню назву фірми та нормалізовані items
-    // Щоб уникнути повторних викликів до DilovodService.getFirms (який логує при читанні кешу),
-    // завантажуємо всі фірми один раз через singleton (з TTL-кешем) і використовуємо локальну мапу.
     let firmsMap: Map<string, string> = new Map();
     try {
       const { dilovodService } = await import('../../services/dilovod/DilovodService.js');
@@ -364,19 +353,16 @@ router.get('/history', authenticateToken, async (req, res) => {
       console.warn('[ReturnsHistory] Failed to preload firms for display names:', e);
     }
 
-    const enrichedHistory = await Promise.all(withAuthors.map(async (rec: any) => {
-      const parsed = safeParseItems(rec.items);
-      const itemsNormalized = normalizeItemsArray(parsed);
+    const enrichedHistory = withAuthors.map((rec: any) => {
       const idStr = rec.firmId != null ? String(rec.firmId) : null;
       const firmDisplay = idStr ? (firmsMap.get(idStr) ?? idStr) : null;
       return {
         ...rec,
         firmDisplayName: firmDisplay,
-        itemsNormalized,
       };
-    }));
+    });
 
-    res.json({ success: true, data: enrichedHistory });
+    res.json({ success: true, data: enrichedHistory, pagination });
   } catch (error) {
     console.log('Error fetching return history:', error);
     res.status(500).json({ error: 'Internal server error' });

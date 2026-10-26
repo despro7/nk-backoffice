@@ -122,6 +122,31 @@ export class WarehousePayloadBuilder {
   }
 
   // --------------------------------------------------------------------------
+  // Підставити dilovodId з каталогу (напр. архівні SKU, додані з warehouse search)
+  // --------------------------------------------------------------------------
+  static async enrichSummaryItemsDilovodIds(
+    summaryItems: PayloadMovementProduct[],
+  ): Promise<PayloadMovementProduct[]> {
+    const missingSkus = summaryItems
+      .filter((item) => !String(item.dilovodId ?? '').trim())
+      .map((item) => String(item.sku ?? '').trim())
+      .filter((sku) => sku.length > 0);
+    if (missingSkus.length === 0) return summaryItems;
+
+    const { catalogOpsLookup } = await import('../Products/CatalogOpsLookup.js');
+    const bySku = await catalogOpsLookup.getBySkus(missingSkus);
+
+    return summaryItems.map((item) => {
+      if (String(item.dilovodId ?? '').trim()) return item;
+      const sku = String(item.sku ?? '').trim();
+      const ops = bySku.get(sku) ?? bySku.get(sku.toLowerCase());
+      const dilovodId = ops?.dilovodId ? String(ops.dilovodId).trim() : null;
+      if (!dilovodId) return item;
+      return { ...item, dilovodId };
+    });
+  }
+
+  // --------------------------------------------------------------------------
   // Валідація що всі товари мають dilovodId
   // --------------------------------------------------------------------------
   static validateDilovodIds(summaryItems: PayloadMovementProduct[]): { valid: boolean; errors: string[] } {

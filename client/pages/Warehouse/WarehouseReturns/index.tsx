@@ -19,6 +19,15 @@ import { ReturnsHistoryService } from '@/services/ReturnsHistoryService';
 import { DateTimePicker } from '@/components/DateTimePicker';
 import { formatKyivDateTime, parseKyivDateTime } from '@shared/utils/kyivDateTime';
 import { isMonolithicForReturn, type ReturnHistoryRecord } from './WarehouseReturnsTypes';
+import { WarehouseDocHistoryToolbarFilters } from '../shared/WarehouseDocHistoryToolbarFilters';
+import {
+  DEFAULT_WAREHOUSE_DOC_HISTORY_FILTERS,
+  type WarehouseDocHistoryFilters,
+} from '@shared/utils/warehouseDocHistoryListQuery';
+import {
+  DEFAULT_WAREHOUSE_DOC_HISTORY_PAGINATION,
+  type WarehouseDocHistoryPagination,
+} from '../shared/warehouseDocHistoryTypes';
 
 const RETURN_REASONS: string[] = [
   '😩 Брак товару',
@@ -77,6 +86,8 @@ export default function WarehouseReturns() {
   const [isLoadingPayload, setIsLoadingPayload] = useState(false);
   const [history, setHistory] = useState<ReturnHistoryRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyPagination, setHistoryPagination] = useState<WarehouseDocHistoryPagination>(DEFAULT_WAREHOUSE_DOC_HISTORY_PAGINATION);
+  const [historyFilters, setHistoryFilters] = useState<WarehouseDocHistoryFilters>(DEFAULT_WAREHOUSE_DOC_HISTORY_FILTERS);
   const [activeTab, setActiveTab] = useState<'main' | 'history'>('main');
 
   // When a return is successfully sent, ensure main tab shows updated (cleared) state
@@ -168,11 +179,16 @@ const dateValue = (() => {
   };
 
   // Обробники для історії повернень
-  const loadHistory = async () => {
+  const loadHistory = async (
+    page = historyPagination.page,
+    limit = historyPagination.limit,
+    filters: WarehouseDocHistoryFilters = historyFilters,
+  ) => {
     setHistoryLoading(true);
     try {
-      const data = await ReturnsHistoryService.getHistory();
-      setHistory(data);
+      const result = await ReturnsHistoryService.getHistoryPage(page, limit, filters);
+      setHistory(result.records);
+      setHistoryPagination(result.pagination);
     } catch (error) {
       console.error('[WarehouseReturns] loadHistory error:', error);
       ToastService.show({ title: 'Помилка завантаження історії', description: 'Не вдалось завантажити історію повернень', color: 'danger' });
@@ -343,16 +359,32 @@ const dateValue = (() => {
         <p className="text-sm text-gray-500">Швидкий інтерфейс для оприбуткування повернень клієнтів у Dilovod.</p>
       </div>
 
-      <PageTabs className="mb-4" selectedKey={activeTab} onSelectionChange={(key) => {
-        const tab = key as 'main' | 'history';
-        setActiveTab(tab);
-        if (tab === 'history') {
-          loadHistory();
-        }
-      }}>
-        <Tab key="main" title="Оприбуткування" />
-        <Tab key="history" title="Історія" />
-      </PageTabs>
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <PageTabs
+          className="min-w-0"
+          selectedKey={activeTab}
+          onSelectionChange={(key) => {
+            const tab = key as 'main' | 'history';
+            setActiveTab(tab);
+            if (tab === 'history' && history.length === 0) {
+              void loadHistory(1, historyPagination.limit);
+            }
+          }}
+        >
+          <Tab key="main" title="Оприбуткування" />
+          <Tab key="history" title="Історія" />
+        </PageTabs>
+        {activeTab === 'history' ? (
+          <WarehouseDocHistoryToolbarFilters
+            className="w-full lg:w-auto lg:flex-1 lg:justify-end"
+            filters={historyFilters}
+            onFiltersChange={(filters) => {
+              setHistoryFilters(filters);
+              void loadHistory(1, historyPagination.limit, filters);
+            }}
+          />
+        ) : null}
+      </div>
       
       <div key={activeTab}>
         {activeTab === 'main' && (
@@ -627,7 +659,16 @@ const dateValue = (() => {
           <ReturnsHistoryTab
             records={history}
             loading={historyLoading}
-            onRefresh={loadHistory}
+            pagination={historyPagination}
+            showHistoryFilters
+            historyFilters={historyFilters}
+            onHistoryFiltersChange={(filters) => {
+              setHistoryFilters(filters);
+              void loadHistory(1, historyPagination.limit, filters);
+            }}
+            onPageChange={(page) => void loadHistory(page, historyPagination.limit)}
+            onLimitChange={(limit) => void loadHistory(1, limit)}
+            onRefresh={() => void loadHistory(historyPagination.page, historyPagination.limit)}
             onLoadRecord={handleLoadSession}
             onDeleteRecord={handleDeleteSession}
           />

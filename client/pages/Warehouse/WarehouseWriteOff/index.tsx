@@ -20,6 +20,7 @@ import { useDebug } from '@/contexts/debug-context';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { pluralize } from '@/lib';
 import { formatKyivDateTime } from '@shared/utils/kyivDateTime';
+import { WarehouseDocHistoryToolbarFilters } from '../shared/WarehouseDocHistoryToolbarFilters';
 
 export default function WarehouseWriteOff() {
   const returns = useWarehouseReturns();
@@ -31,6 +32,10 @@ export default function WarehouseWriteOff() {
   const [selectedOrderExternalId, setSelectedOrderExternalId] = useState<string | null>(null);
   // orderDetails now managed by `writeoff.orderDetails`
   const { storages, selectedStorage, setSelectedStorage, selectedStorageName } = useWarehouseParams({ returns, externalStorages: writeoff.storages });
+
+  useEffect(() => {
+    returns.setDocumentStorageId?.(selectedStorage ?? null);
+  }, [selectedStorage, returns.setDocumentStorageId]);
 
   useEffect(() => { void writeoff.loadOrderDetails(selectedOrderExternalId); }, [selectedOrderExternalId]);
 
@@ -112,20 +117,36 @@ export default function WarehouseWriteOff() {
         <p className="text-sm text-gray-500">Зручний інтерфейс для списання товарів у Dilovod.</p>
       </div>
 
-      <PageTabs className="mb-4" selectedKey={pageTab} onSelectionChange={(key) => {
-        const tab = key as 'main' | 'history' | 'archive';
-        setPageTab(tab);
-        if (tab === 'history' && writeoff.history?.length === 0) {
-          void writeoff.loadHistory?.(1, writeoff.historyPagination?.limit ?? 10, true);
-        }
-        if (tab === 'archive' && isAdmin() && writeoff.archiveRecords?.length === 0) {
-          void writeoff.loadArchive?.();
-        }
-      }}>
-        <Tab key="main" title="Списання" />
-        <Tab key="history" title="Історія" />
-        {isAdmin() && <Tab key="archive" title="Архів" />}
-      </PageTabs>
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <PageTabs
+          className="min-w-0"
+          selectedKey={pageTab}
+          onSelectionChange={(key) => {
+            const tab = key as 'main' | 'history' | 'archive';
+            setPageTab(tab);
+            if (tab === 'history' && writeoff.history?.length === 0) {
+              void writeoff.loadHistory?.(1, writeoff.historyPagination?.limit ?? 10, true);
+            }
+            if (tab === 'archive' && isAdmin() && writeoff.archiveRecords?.length === 0) {
+              void writeoff.loadArchive?.();
+            }
+          }}
+        >
+          <Tab key="main" title="Списання" />
+          <Tab key="history" title="Історія" />
+          {isAdmin() && <Tab key="archive" title="Архів" />}
+        </PageTabs>
+        {pageTab === 'history' && writeoff.historyFilters && writeoff.setHistoryFilters ? (
+          <WarehouseDocHistoryToolbarFilters
+            className="w-full lg:w-auto lg:flex-1 lg:justify-end"
+            filters={writeoff.historyFilters}
+            onFiltersChange={(filters) => {
+              writeoff.setHistoryFilters(filters);
+              void writeoff.loadHistory?.(1, writeoff.historyPagination?.limit ?? 10, true, false, filters);
+            }}
+          />
+        ) : null}
+      </div>
 
       {pageTab === 'main' && (
         <>
@@ -244,6 +265,12 @@ export default function WarehouseWriteOff() {
           records={writeoff.history || []}
           loading={writeoff.historyLoading}
           pagination={writeoff.historyPagination}
+          showHistoryFilters
+          historyFilters={writeoff.historyFilters}
+          onHistoryFiltersChange={(filters) => {
+            writeoff.setHistoryFilters?.(filters);
+            void writeoff.loadHistory?.(1, writeoff.historyPagination?.limit ?? 10, true, false, filters);
+          }}
           onPageChange={(page) => void writeoff.loadHistory?.(page, writeoff.historyPagination?.limit ?? 10)}
           onLimitChange={(limit) => void writeoff.loadHistory?.(1, limit)}
           onRefresh={() => void writeoff.loadHistory?.(

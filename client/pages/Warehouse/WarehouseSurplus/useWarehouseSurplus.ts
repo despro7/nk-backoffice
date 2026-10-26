@@ -1,4 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { fetchWarehouseDocHistoryPage } from '@/pages/Warehouse/shared/fetchWarehouseDocHistoryPage';
+import {
+  DEFAULT_WAREHOUSE_DOC_HISTORY_FILTERS,
+  type WarehouseDocHistoryFilters,
+} from '@shared/utils/warehouseDocHistoryListQuery';
 import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 import { lazyEnrichHistoryPage } from '@/pages/Warehouse/shared/lazyEnrichHistoryPage';
 import {
@@ -36,6 +41,9 @@ export default function useWarehouseSurplus(opts: { returns?: any } = {}) {
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [editingRecord, setEditingRecord] = useState<EditingWarehouseSurplus | null>(null);
   const [historyDetailsLoading, setHistoryDetailsLoading] = useState<Record<string, boolean>>({});
+  const [historyFilters, setHistoryFilters] = useState<WarehouseDocHistoryFilters>(DEFAULT_WAREHOUSE_DOC_HISTORY_FILTERS);
+  const historyFiltersRef = useRef(historyFilters);
+  historyFiltersRef.current = historyFilters;
 
   const parseHistoryItems = (record: { items?: unknown }) => {
     if (Array.isArray(record.items)) return record.items;
@@ -141,23 +149,18 @@ export default function useWarehouseSurplus(opts: { returns?: any } = {}) {
     limit: number,
     sync = false,
     forceFullList = false,
-  ) => {
-    const url = new URL(`${API}/history`, window.location.origin);
-    url.searchParams.set('status', status);
-    url.searchParams.set('page', String(page));
-    url.searchParams.set('limit', String(limit));
-    url.searchParams.set('sync', sync ? 'true' : 'false');
-    if (forceFullList) url.searchParams.set('forceFullList', 'true');
-    const res = await fetch(url.toString(), { credentials: 'include' });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json?.success) {
-      throw new Error(json?.error || 'Не вдалося завантажити історію');
-    }
-    return {
-      records: Array.isArray(json.data) ? json.data : [],
-      pagination: json.pagination ?? { ...DEFAULT_WAREHOUSE_DOC_HISTORY_PAGINATION, page, limit },
-    };
-  };
+    filters: WarehouseDocHistoryFilters = historyFiltersRef.current,
+  ) => fetchWarehouseDocHistoryPage(
+    `${API}/history`,
+    status,
+    page,
+    limit,
+    filters,
+    {
+      sync: sync ? 'true' : 'false',
+      ...(forceFullList ? { forceFullList: 'true' } : {}),
+    },
+  );
 
   const loadArchive = async (page = archivePagination.page, limit = archivePagination.limit) => {
     setArchiveLoading(true);
@@ -214,10 +217,11 @@ export default function useWarehouseSurplus(opts: { returns?: any } = {}) {
     limit = historyPagination.limit,
     sync = false,
     forceFullList = false,
+    filters: WarehouseDocHistoryFilters = historyFiltersRef.current,
   ) => {
     setHistoryLoading(true);
     try {
-      const result = await fetchHistoryPage('active', page, limit, sync, forceFullList);
+      const result = await fetchHistoryPage('active', page, limit, sync, forceFullList, filters);
       setHistory(result.records);
       setHistoryPagination(result.pagination);
       void lazyEnrichHistoryPage(result.records, loadHistoryRecordDetails);
@@ -318,6 +322,8 @@ export default function useWarehouseSurplus(opts: { returns?: any } = {}) {
     isSubmitting,
     history,
     loadHistory,
+    historyFilters,
+    setHistoryFilters,
     historyPagination,
     historyLoading,
     archiveRecords,

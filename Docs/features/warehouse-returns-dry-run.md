@@ -88,6 +88,11 @@ API-прапорець `includeNonPositiveQty` враховується в кл�
 - `Docs/features/warehouse-returns-dry-run.md` описує архітектуру та API нового розділу повернень.
 - Цей розділ доповнює основну функціональність Warehouse Returns і служить як технічний довідник для подальших змін.
 
+## Історія повернень
+
+- `GET /api/warehouse/returns/history` — пагінація + фільтри (див. [`warehouse-doc-history-filters.md`](warehouse-doc-history-filters.md)); `returnsHistoryList.ts`.
+- UI: `ReturnsHistoryTab`, toolbar біля табів, `ReturnsHistoryService.getHistoryPage`.
+
 ## Файли
 
 - `client/pages/Warehouse/WarehouseReturns/index.tsx`

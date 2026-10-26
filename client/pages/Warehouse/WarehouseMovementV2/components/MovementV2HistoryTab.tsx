@@ -5,6 +5,12 @@ import HistoryAccordionItem from '../../shared/HistoryAccordionItem';
 import { WarehouseHistoryTabBody } from '../../shared/WarehouseHistoryTabBody';
 import { normalizeItemsArray } from '../../shared/historyNormalize';
 import type { MovementV2HistoryPagination } from '../types';
+import type { WarehouseDocHistoryFilters } from '@shared/utils/warehouseDocHistoryListQuery';
+import {
+  DEFAULT_WAREHOUSE_DOC_HISTORY_FILTERS,
+  WarehouseDocHistoryResetFiltersButton,
+  WarehouseDocHistorySortSelect,
+} from '../../shared/WarehouseDocHistoryToolbarFilters';
 
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50];
 
@@ -21,6 +27,9 @@ interface Props {
   title?: string;
   emptyMessage?: string;
   variant?: 'movement' | 'archive';
+  historyFilters?: WarehouseDocHistoryFilters;
+  onHistoryFiltersChange?: (filters: WarehouseDocHistoryFilters) => void;
+  showHistoryFilters?: boolean;
 }
 
 function mapMovementHistoryRecord(record: any) {
@@ -65,6 +74,9 @@ export default function MovementV2HistoryTab({
   title = 'Історія переміщень',
   emptyMessage = 'Немає записів',
   variant = 'movement',
+  historyFilters,
+  onHistoryFiltersChange,
+  showHistoryFilters = false,
 }: Props) {
   const mapped = useMemo(
     () => records.map(mapMovementHistoryRecord),
@@ -80,20 +92,34 @@ export default function MovementV2HistoryTab({
 
   return (
     <>
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="mb-4 flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-base font-semibold text-gray-800">
           {title} {total > 0 && `(${total})`}
         </h2>
-        <Button
-          size="sm"
-          variant="flat"
-          color="secondary"
-          className="bg-blue-200 text-blue-900 hover:opacity-90"
-          onPress={onRefresh}
-          startContent={<DynamicIcon name="refresh-cw" className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />}
-        >
-          Оновити
-        </Button>
+        <div className="flex flex-wrap items-center justify-end gap-2 flex-1">
+          {showHistoryFilters && historyFilters && onHistoryFiltersChange ? (
+            <WarehouseDocHistorySortSelect
+              filters={historyFilters}
+              onFiltersChange={onHistoryFiltersChange}
+            />
+          ) : null}
+          <Button
+            size="sm"
+            variant="flat"
+            color="secondary"
+            className="bg-blue-200 text-blue-900 hover:opacity-90 shrink-0"
+            onPress={onRefresh}
+            startContent={<DynamicIcon name="refresh-cw" className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />}
+          >
+            Оновити
+          </Button>
+          {showHistoryFilters && historyFilters && onHistoryFiltersChange ? (
+            <WarehouseDocHistoryResetFiltersButton
+              filters={historyFilters}
+              onReset={() => onHistoryFiltersChange({ ...DEFAULT_WAREHOUSE_DOC_HISTORY_FILTERS })}
+            />
+          ) : null}
+        </div>
       </div>
 
       <WarehouseHistoryTabBody

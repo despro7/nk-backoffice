@@ -82,7 +82,8 @@ export async function exportWarehouseMovementToDilovod(
   const effectiveSourceWarehouse = params.sourceWarehouse ?? draft.sourceWarehouse;
   const effectiveDestinationWarehouse = params.destinationWarehouse ?? draft.destinationWarehouse;
 
-  const idValidation = WarehousePayloadBuilder.validateDilovodIds(summaryItems);
+  const summaryWithIds = await WarehousePayloadBuilder.enrichSummaryItemsDilovodIds(summaryItems);
+  const idValidation = WarehousePayloadBuilder.validateDilovodIds(summaryWithIds);
   if (!idValidation.valid) {
     console.error('🚨 [Warehouse] 422: немає ID Діловода', idValidation.errors);
     return {
@@ -96,7 +97,7 @@ export async function exportWarehouseMovementToDilovod(
     };
   }
 
-  const missingBatchIds = validateBatchIds(summaryItems);
+  const missingBatchIds = validateBatchIds(summaryWithIds);
   if (missingBatchIds.length > 0) {
     console.error('🚨 [Warehouse] 422: немає goodPart', missingBatchIds);
     return {
@@ -133,7 +134,7 @@ export async function exportWarehouseMovementToDilovod(
       sourceWarehouse: effectiveSourceWarehouse,
       destinationWarehouse: effectiveDestinationWarehouse,
     },
-    summaryItems,
+    summaryItems: summaryWithIds,
     settings,
     movementDate: docDate,
     authorDilovodId,

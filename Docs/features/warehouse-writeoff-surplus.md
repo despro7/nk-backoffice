@@ -62,7 +62,7 @@ Payload збирає `buildGoodDocumentPayload` (`server/modules/Warehouse/wareh
 
 - Списання: `client/pages/Warehouse/WarehouseWriteOff/`.
 - Оприбуткування: `WarehouseSurplus/` — перевикористовує панелі пошуку/рядків з `variant="surplus"` (зелена тема, ліміт кількості **999**).
-- Історія: `WarehouseGoodDocumentHistoryTab` + `HistoryAccordionItem`.
+- Історія: `WarehouseGoodDocumentHistoryTab` + `HistoryAccordionItem`; фільтри та query — [`warehouse-doc-history-filters.md`](warehouse-doc-history-filters.md).
 - Пошук товару: назва, SKU, штрихкод (плейсхолдер з «ШК»).
 - Партії в dropdown: `filterWarehouseSelectableBatches` — без локальних `virtual:` і системних auto-batch; **віртуальні document-партії з балансу Dilovod показуємо** (ручний вибір для зведення). Реальні `catalogs.goodParts` сортуються першими.
 - Автопідстановка рядка: `pickDefaultRealWarehouseBatch` — лише реальна `catalogs.goodParts` (якщо реальних немає і партія одна — беремо її).

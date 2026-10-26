@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-10-26 — Склад: єдині фільтри історії Dilovod; dilovodId для архівних SKU у переміщенні v2
+
+**Files:** `warehouseDocHistoryListQuery.ts`, `WarehouseDocHistoryToolbarFilters.tsx`, `warehouseGoodDocumentHistoryList.ts`, `returnsHistoryList.ts`, `movementV2HistoryList.ts`, `WarehousePayloadBuilder.ts`, `WarehouseMovementExport.ts`, `fifoBatchAllocation.ts`, write-off/surplus/returns/movement-v2/release UI, `warehouse-doc-history-filters.md`
+
+- **Історія:** спільні пошук, діапазон дат, поле дати, сортування для повернень, списань, оприбуткувань, переміщення v2 (еталон UX — комплектація).
+- **Повернення:** `GET /history` з пагінацією та фільтрами замість повного списку.
+- **Переміщення v2:** `catalogGoodId` при додаванні з warehouse search; серверний `enrichSummaryItemsDilovodIds` перед export.
+- **Розукомплектування:** `allocateBatchesFifoTarget` — цільова кількість на найстарішу партію без обмеження залишком (`ReleaseComponentBatchesPanel`).
+
+**Документація:** [`warehouse-doc-history-filters.md`](features/warehouse-doc-history-filters.md).
+
+---
+
 ## 2026-10-26 — Наліпки: пріоритет чернетки; склад з BOM за обʼємом
 
 **Files:** `ProductLabelsTab.tsx`, `ProductLabelService.ts`, `CatalogLabelService.ts`, `ProductLabelsController.ts`, `storefrontDescription.ts`, `product-labels.md`, `products-catalog-2.0.md`, `woocommerce-storefront-phase1.md`

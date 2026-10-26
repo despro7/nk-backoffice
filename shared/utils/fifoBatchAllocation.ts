@@ -108,3 +108,30 @@ export function allocateBatchesFifo(
 
   return allocated;
 }
+
+/**
+ * Розукомплектування: зарахувати потрібну кількість на цільову партію без обмеження поточним залишком.
+ * Усі порції йдуть на найстарішу (FIFO) реальну партію; решту рядків користувач ділить вручну.
+ */
+export function allocateBatchesFifoTarget(
+  batches: FifoBatchCandidate[],
+  requiredQuantity: number,
+  now: Date = new Date(),
+): FifoAllocatedBatch[] {
+  const required = Number(requiredQuantity);
+  if (!Number.isFinite(required) || required <= 0) return [];
+
+  const sorted = sortBatchesFifo(batches, now);
+  const first = sorted[0];
+  if (!first) return [];
+
+  const stock = Number(first.quantity);
+  const batchStock = Number.isFinite(stock) ? stock : 0;
+
+  return [{
+    batchId: first.batchId,
+    batchNumber: first.batchNumber,
+    quantity: required,
+    batchStock,
+  }];
+}

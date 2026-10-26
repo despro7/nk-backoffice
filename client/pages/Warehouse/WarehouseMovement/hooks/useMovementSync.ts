@@ -43,6 +43,8 @@ export interface UseMovementSyncReturn {
       prods: MovementProduct[],
       selectedIds: Set<string>,
       asOfDate?: Date,
+      sourceStorageId?: string,
+      firmId?: string,
     ) => Promise<void>,
     setSelectedDateTime: (date: Date) => void,
     /** Якщо 'movement' — перераховує залишки на нову дату; якщо 'now' — не змінює дату залишків */
@@ -213,6 +215,8 @@ export const useMovementSync = (
         prods: MovementProduct[],
         selectedIds: Set<string>,
         asOfDate?: Date,
+        sourceStorageId?: string,
+        firmId?: string,
       ) => Promise<void>,
       setSelectedDateTime: (date: Date) => void,
       stockDateMode: 'movement' | 'now' = 'now',
@@ -255,7 +259,7 @@ export const useMovementSync = (
       dateDebounceRef.current = setTimeout(() => {
         dateDebounceRef.current = null;
         setIsRefreshingBatches(true);
-        refreshBatchQuantities(products, selectedProductIds, date).finally(() => {
+        refreshBatchQuantities(products, selectedProductIds, date, sourceStorageId).finally(() => {
           setIsRefreshingBatches(false);
         });
       }, 1000);

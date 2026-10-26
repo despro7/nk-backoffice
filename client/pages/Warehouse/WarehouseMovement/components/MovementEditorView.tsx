@@ -70,7 +70,7 @@ export function MovementEditorView({
     const asOfDate = mode === 'movement' ? mov.selectedDateTime : undefined;
     mov.refreshStockData(mov.products, asOfDate, mov.storage, mov.storageTo);
     if (mov.selectedProductIds.size > 0) {
-      mov.refreshBatchQuantities(mov.products, mov.selectedProductIds, asOfDate);
+      mov.refreshBatchQuantities(mov.products, mov.selectedProductIds, asOfDate, mov.storage);
     }
   }, [mov]);
 

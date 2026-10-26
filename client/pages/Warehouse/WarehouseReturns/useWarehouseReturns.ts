@@ -92,6 +92,18 @@ export function useWarehouseReturns() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [monolithicCategoryIds, setMonolithicCategoryIds] = useState<number[]>([]);
+  /** Склад документа (списання / оприбуткування) — для фільтра партій і перезавантаження при зміні параметрів */
+  const [documentStorageId, setDocumentStorageId] = useState<string | null>(null);
+
+  const clearItemsBatchSelection = useCallback((current: ReturnItem[]): ReturnItem[] => (
+    current.map((it) => ({
+      ...it,
+      availableBatches: null,
+      usedNonPositiveBatchFallback: false,
+      selectedBatchKey: null,
+      selectedBatchId: null,
+    }))
+  ), []);
 
   const resetReturnDetails = useCallback(() => {
     setSelectedOrderId(null);
@@ -213,9 +225,19 @@ export function useWarehouseReturns() {
     }
   }, [apiCall]);
 
-  const loadBatchNumbersForItems = useCallback(async (orderFirmId: string | null, itemsToLoad: ReturnItem[], asOfDate?: Date) => {
+  type BatchLoadContext = {
+    firmId: string | null;
+    storageId?: string | null;
+    asOfDate?: Date;
+  };
+
+  const loadBatchNumbersForItems = useCallback(async (
+    itemsToLoad: ReturnItem[],
+    context: BatchLoadContext,
+  ) => {
     const itemsNeedingBatches = itemsToLoad.filter((item) => item.availableBatches === null);
     if (itemsNeedingBatches.length === 0) return;
+    const { firmId: orderFirmId, storageId, asOfDate } = context;
 
     const skuToItems = new Map<string, string[]>();
     for (const item of itemsNeedingBatches) {
@@ -250,7 +272,12 @@ export function useWarehouseReturns() {
     const fetchBatchesForSku = async (sku: string, includeNonPositiveQty: boolean): Promise<ReturnBatch[]> => {
       const url = new URL(`/api/warehouse/batch-numbers/${encodeURIComponent(sku)}`, window.location.origin);
       if (orderFirmId) url.searchParams.set('firmId', orderFirmId);
-      url.searchParams.set('onlySmallStorage', 'true');
+      const effectiveStorageId = storageId?.trim() || '';
+      if (effectiveStorageId) {
+        url.searchParams.set('storageId', effectiveStorageId);
+      } else {
+        url.searchParams.set('onlySmallStorage', 'true');
+      }
       if (includeNonPositiveQty) url.searchParams.set('includeNonPositiveQty', 'true');
       if (asOfDate) url.searchParams.set('asOfDate', asOfDate.toISOString());
       const response = await fetch(url.toString(), {
@@ -323,22 +350,44 @@ export function useWarehouseReturns() {
       });
   }, [apiCall]);
 
-  // Скидання партій при зміні фірми / дати документа (не при додаванні позицій)
+  // Скидання партій при зміні фірми відвантаження / дати (повернення з замовлення)
   useEffect(() => {
     if (items.length === 0) return;
-    setItems((current) =>
-      current.map((it) => ({ ...it, availableBatches: null, usedNonPositiveBatchFallback: false })),
-    );
+    setItems((current) => clearItemsBatchSelection(current));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shipFirmId, dilovodSaleExportDate, returnDate]);
+
+  // Списання / оприбуткування: склад і фірма документа (receiveFirmId)
+  useEffect(() => {
+    if (items.length === 0 || !documentStorageId) return;
+    setItems((current) => clearItemsBatchSelection(current));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentStorageId, receiveFirmId]);
 
   // Дозавантаження партій лише для позицій без availableBatches
   useEffect(() => {
     if (items.length === 0) return;
     if (!items.some((it) => it.availableBatches === null)) return;
-    const batchDate = dilovodSaleExportDate ? new Date(dilovodSaleExportDate) : returnDate ? new Date(returnDate) : undefined;
-    void loadBatchNumbersForItems(shipFirmId, items, batchDate);
-  }, [items, shipFirmId, dilovodSaleExportDate, returnDate, loadBatchNumbersForItems]);
+    const batchDate = dilovodSaleExportDate
+      ? new Date(dilovodSaleExportDate)
+      : returnDate
+        ? (parseKyivDateTime(returnDate) ?? new Date(returnDate))
+        : undefined;
+    const firmId = documentStorageId ? receiveFirmId : shipFirmId;
+    void loadBatchNumbersForItems(items, {
+      firmId,
+      storageId: documentStorageId,
+      asOfDate: batchDate,
+    });
+  }, [
+    items,
+    shipFirmId,
+    receiveFirmId,
+    documentStorageId,
+    dilovodSaleExportDate,
+    returnDate,
+    loadBatchNumbersForItems,
+  ]);
 
   const loadOrderForReturn = useCallback(async (orderId: number) => {
     setIsLoading(true);
@@ -417,7 +466,11 @@ export function useWarehouseReturns() {
       setCustomReason('');
       setReturnAmount('');
       const batchDate = payload.dilovodSaleExportDate ? new Date(payload.dilovodSaleExportDate) : payload.orderDate ? new Date(payload.orderDate) : undefined;
-      void loadBatchNumbersForItems(payload.firmId, preparedItems, batchDate);
+      void loadBatchNumbersForItems(preparedItems, {
+        firmId: payload.firmId,
+        storageId: null,
+        asOfDate: batchDate,
+      });
 
       // If some items lack prices (0), try to fetch costPerItem from products table
       try {
@@ -658,6 +711,8 @@ export function useWarehouseReturns() {
     setShipFirmName,
     setReceiveFirmId,
     setReceiveFirmName,
+    documentStorageId,
+    setDocumentStorageId,
     comment,
     setComment,
     ttn,

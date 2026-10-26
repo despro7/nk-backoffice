@@ -1,3 +1,11 @@
+export type {
+  WarehouseDocHistoryFilters,
+} from '@shared/utils/warehouseDocHistoryListQuery';
+
+export {
+  DEFAULT_WAREHOUSE_DOC_HISTORY_FILTERS,
+} from '@shared/utils/warehouseDocHistoryListQuery';
+
 export interface WarehouseDocHistoryPagination {
   page: number;
   limit: number;

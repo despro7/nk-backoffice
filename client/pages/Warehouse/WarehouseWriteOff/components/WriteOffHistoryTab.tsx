@@ -1,5 +1,5 @@
 import type { ReturnHistoryRecord } from '../../WarehouseReturns/WarehouseReturnsTypes';
-import type { WarehouseDocHistoryPagination } from '../../shared/warehouseDocHistoryTypes';
+import type { WarehouseDocHistoryPagination, WarehouseDocHistoryFilters } from '../../shared/warehouseDocHistoryTypes';
 import { WarehouseGoodDocumentHistoryTab } from '../../shared/WarehouseGoodDocumentHistoryTab';
 
 interface WriteOffHistoryTabProps {
@@ -15,6 +15,9 @@ interface WriteOffHistoryTabProps {
   onDeleteRecord?: (recordId: string) => Promise<void>;
   onLoadRecord?: (record: ReturnHistoryRecord) => Promise<void>;
   detailsLoading?: Record<string, boolean>;
+  historyFilters?: WarehouseDocHistoryFilters;
+  onHistoryFiltersChange?: (filters: WarehouseDocHistoryFilters) => void;
+  showHistoryFilters?: boolean;
 }
 
 export const WriteOffHistoryTab = (props: WriteOffHistoryTabProps) => (

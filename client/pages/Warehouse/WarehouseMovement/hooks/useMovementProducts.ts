@@ -32,6 +32,8 @@ export interface UseMovementProductsReturn {
     prods: MovementProduct[],
     selectedIds: Set<string>,
     asOfDate?: Date,
+    sourceStorageId?: string,
+    firmId?: string,
   ) => Promise<void>;
   loadDraftIntoProducts: (prods: MovementProduct[], draftItems: any[], asOfDate?: Date) => Promise<void>;
   /** Оновлює stockData (mainStock/smallStock + sourceStock/destStock) для всіх товарів на задану дату */
@@ -180,6 +182,8 @@ export const useMovementProducts = (
       prods: MovementProduct[],
       selectedIds: Set<string>,
       asOfDate?: Date,
+      sourceStorageId?: string,
+      firmId?: string,
     ): Promise<void> => {
       const selectedProds = prods.filter(
         p => selectedIds.has(p.id) && p.details.batches.length > 0,
@@ -204,6 +208,12 @@ export const useMovementProducts = (
           if (asOfDate) {
             url.searchParams.set('asOfDate', asOfDate.toISOString());
           }
+          if (sourceStorageId?.trim()) {
+            url.searchParams.set('storageId', sourceStorageId.trim());
+          }
+          if (firmId?.trim()) {
+            url.searchParams.set('firmId', firmId.trim());
+          }
           const response = await fetch(url.toString(), {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' },
@@ -214,8 +224,11 @@ export const useMovementProducts = (
 
           const batchMap = new Map<string, { quantity: number; batchId: string }>();
           (data.batches || []).forEach(
-            (b: { batchId: string; batchNumber: string; quantity: number }) => {
-              batchMap.set(b.batchNumber, { quantity: b.quantity, batchId: b.batchId });
+            (b: { batchId: string; batchNumber: string; quantity: number; storage?: string }) => {
+              const key = sourceStorageId?.trim()
+                ? b.batchNumber
+                : `${b.batchNumber}::${b.storage ?? ''}`;
+              batchMap.set(key, { quantity: b.quantity, batchId: b.batchId });
             },
           );
           quantityMap.set(product.sku, batchMap);
@@ -248,7 +261,10 @@ export const useMovementProducts = (
           if (baseBatches.length === 0) return product;
 
           const updatedBatches = baseBatches.map(batch => {
-            const fromApi = batchMap.get(batch.batchNumber);
+            const lookupKey = sourceStorageId?.trim()
+              ? batch.batchNumber
+              : `${batch.batchNumber}::${batch.storage ?? ''}`;
+            const fromApi = batchMap.get(lookupKey) ?? batchMap.get(batch.batchNumber);
             return {
               ...batch,
               quantity: fromApi?.quantity ?? batch.quantity,

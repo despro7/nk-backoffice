@@ -1,4 +1,7 @@
 import type { ReturnHistoryRecord } from '@/pages/Warehouse/WarehouseReturns/WarehouseReturnsTypes';
+import { fetchWarehouseDocHistoryPage } from '@/pages/Warehouse/shared/fetchWarehouseDocHistoryPage';
+import type { WarehouseDocHistoryFilters } from '@shared/utils/warehouseDocHistoryListQuery';
+import type { WarehouseDocHistoryPagination } from '@/pages/Warehouse/shared/warehouseDocHistoryTypes';
 
 // ---------------------------------------------------------------------------
 // ReturnsHistoryService — сервіс для роботи з історією повернень
@@ -6,26 +9,44 @@ import type { ReturnHistoryRecord } from '@/pages/Warehouse/WarehouseReturns/War
 
 export class ReturnsHistoryService {
   /**
-   * Отримати історію повернень
+   * Отримати історію повернень (пагінація + фільтри)
    */
-  static async getHistory(): Promise<ReturnHistoryRecord[]> {
+  static async getHistoryPage(
+    page: number,
+    limit: number,
+    filters: WarehouseDocHistoryFilters,
+  ): Promise<{ records: ReturnHistoryRecord[]; pagination: WarehouseDocHistoryPagination }> {
     try {
-      const response = await fetch('/api/warehouse/returns/history', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error('Не вдалось завантажити історію повернень');
-      }
-
-      const data = await response.json();
-      return data.data || [];
+      const result = await fetchWarehouseDocHistoryPage(
+        '/api/warehouse/returns/history',
+        'active',
+        page,
+        limit,
+        filters,
+      );
+      return {
+        records: result.records as ReturnHistoryRecord[],
+        pagination: result.pagination,
+      };
     } catch (error) {
-      console.error('[ReturnsHistoryService] getHistory error:', error);
+      console.error('[ReturnsHistoryService] getHistoryPage error:', error);
       throw error;
     }
+  }
+
+  /**
+   * @deprecated використовуйте getHistoryPage
+   */
+  static async getHistory(): Promise<ReturnHistoryRecord[]> {
+    const { records } = await this.getHistoryPage(1, 100, {
+      search: '',
+      dateFrom: null,
+      dateTo: null,
+      dateField: 'operDate',
+      sortBy: 'operDate',
+      sortOrder: 'desc',
+    });
+    return records;
   }
 
   /**
@@ -85,8 +106,15 @@ export class ReturnsHistoryService {
    */
   static async loadRecord(id: string): Promise<ReturnHistoryRecord | null> {
     try {
-      const history = await this.getHistory();
-      return history.find((r) => r.id === id) || null;
+      const { records } = await this.getHistoryPage(1, 100, {
+        search: '',
+        dateFrom: null,
+        dateTo: null,
+        dateField: 'operDate',
+        sortBy: 'operDate',
+        sortOrder: 'desc',
+      });
+      return records.find((r) => String(r.id) === String(id)) || null;
     } catch (error) {
       console.error('[ReturnsHistoryService] loadRecord error:', error);
       return null;
