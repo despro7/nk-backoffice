@@ -1,7 +1,15 @@
-import React, { useEffect, useState, ReactNode } from 'react';
+import React, { useCallback, useEffect, useState, ReactNode } from 'react';
 import { useAuth } from './auth-context';
 import { useDebug, DebugContext } from './debug-context';
-import { ToastService } from '@/services/ToastService';
+import { playSoundChoice } from '@/lib/soundUtils';
+
+function playDebugModeToggleSound(enabled: boolean): void {
+  if (enabled) {
+    playSoundChoice('scan', 'success');
+  } else {
+    playSoundChoice('tick', 'pending');
+  }
+}
 
 interface DebugProviderProps {
   children: ReactNode;
@@ -29,12 +37,7 @@ function DebugModeHotkeyListener() {
       if (event.target instanceof HTMLElement && event.target.closest('[role="grid"]')) return;
 
       event.preventDefault();
-      const next = !isDebugMode;
-      setDebugMode(next);
-      ToastService.show({
-        title: next ? 'Debug mode увімкнено' : 'Debug mode вимкнено',
-        color: next ? 'danger' : 'default',
-      });
+      setDebugMode(!isDebugMode);
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -47,9 +50,13 @@ function DebugModeHotkeyListener() {
 export function DebugProvider({ children }: DebugProviderProps) {
   const [isDebugMode, setIsDebugMode] = useState(false);
 
-  const setDebugMode = (enabled: boolean) => {
-    setIsDebugMode(enabled);
-  };
+  const setDebugMode = useCallback((enabled: boolean) => {
+    setIsDebugMode((prev) => {
+      if (prev === enabled) return prev;
+      playDebugModeToggleSound(enabled);
+      return enabled;
+    });
+  }, []);
 
   return (
     <DebugContext.Provider value={{ isDebugMode, setDebugMode }}>

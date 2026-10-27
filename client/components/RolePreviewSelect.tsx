@@ -5,6 +5,7 @@ import { useRolePreview } from '../contexts/role-preview-context';
 import { ROLES } from '@shared/constants/roles';
 import { canAccessRoute } from '@shared/constants/permissions';
 import { findAppRouteByPath } from '@/routes.config';
+import { sortRolePreviewOptions } from '@/lib/rolePreviewOptions';
 import { cn } from '../lib/utils';
 
 interface RolePreviewSelectProps {
@@ -20,7 +21,7 @@ export const RolePreviewSelect: React.FC<RolePreviewSelectProps> = ({ className 
     return null;
   }
 
-  const options = [...previewRoles].sort((a, b) => b.rank - a.rank);
+  const options = sortRolePreviewOptions(previewRoles);
   const selectedRole = effectiveRole || ROLES.ADMIN;
 
   const handleSelectionChange = (keys: 'all' | Set<React.Key>) => {
@@ -57,9 +58,14 @@ export const RolePreviewSelect: React.FC<RolePreviewSelectProps> = ({ className 
         value: cn('text-sm font-medium'),
       }}
     >
-      {options.map((option) => (
+      {options.map((option, index) => (
         <SelectItem key={option.slug} textValue={option.name}>
-          {option.name}
+          <span className="flex w-full items-center justify-between gap-2">
+            <span className="truncate">{option.name}</span>
+            {index < 9 ? (
+              <span className="shrink-0 font-mono text-xs text-default-400">⌘⌃{index + 1}</span>
+            ) : null}
+          </span>
         </SelectItem>
       ))}
     </Select>

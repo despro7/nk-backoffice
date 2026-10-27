@@ -12,7 +12,8 @@ import {
 } from '@/lib/rolePreviewFetch';
 import { PERMISSIONS_REVISION_EVENT } from '@/lib/notifyPermissionsChanged';
 import { findAppRouteByPath } from '@/routes.config';
-import { ToastService } from '@/services/ToastService';
+import { playSoundChoice } from '@/lib/soundUtils';
+import { sortRolePreviewOptions } from '@/lib/rolePreviewOptions';
 import type { RoleDto } from '@shared/types/role';
 
 const STORAGE_KEY = 'rolePreview';
@@ -44,9 +45,12 @@ function RolePreviewHotkeyListener() {
   useEffect(() => {
     if (!isRealAdmin || previewRoles.length === 0) return;
 
-    const options = [...previewRoles].sort((a, b) => b.rank - a.rank);
+    const options = sortRolePreviewOptions(previewRoles);
 
     const applyPreviewRole = (slug: string) => {
+      const currentSlug = effectiveRole || ROLES.ADMIN;
+      if (slug === currentSlug) return;
+
       setPreviewRole(slug === ROLES.ADMIN ? null : slug);
 
       const selected = options.find((option) => option.slug === slug);
@@ -55,29 +59,24 @@ function RolePreviewHotkeyListener() {
         navigate('/', { replace: true });
       }
 
-      ToastService.show({
-        title: `Перегляд: ${selected?.name ?? slug}`,
-        color: slug === ROLES.ADMIN ? 'default' : 'warning',
-      });
-    };
-
-    const cyclePreviewRole = (direction: 'forward' | 'backward') => {
-      const currentSlug = effectiveRole || ROLES.ADMIN;
-      const currentIndex = options.findIndex((option) => option.slug === currentSlug);
-      if (currentIndex === -1) return;
-
-      const delta = direction === 'forward' ? 1 : -1;
-      const nextIndex = (currentIndex + delta + options.length) % options.length;
-      applyPreviewRole(options[nextIndex].slug);
+      if (slug === ROLES.ADMIN) {
+        playSoundChoice('tick', 'pending');
+      } else {
+        playSoundChoice('scan', 'success');
+      }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'F2' && event.key !== 'F3') return;
-      if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      if (!event.metaKey || !event.ctrlKey || event.altKey || event.shiftKey) return;
       if (isEditableKeyboardTarget(event.target)) return;
+      if (!/^[1-9]$/.test(event.key)) return;
+
+      const index = Number.parseInt(event.key, 10) - 1;
+      const target = options[index];
+      if (!target) return;
 
       event.preventDefault();
-      cyclePreviewRole(event.key === 'F3' ? 'forward' : 'backward');
+      applyPreviewRole(target.slug);
     };
 
     window.addEventListener('keydown', handleKeyDown);

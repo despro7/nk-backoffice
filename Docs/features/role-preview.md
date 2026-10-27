@@ -38,9 +38,23 @@
 
 У хедері Debug mode **немає**. У профілі користувача під час прев’ю показується «{роль} · перегляд».
 
+### Гарячі клавіші (лише реальний адмін)
+
+Не спрацьовують у полях вводу (`input`, `textarea`, `select`, contenteditable). На табелі **F2** зарезервовано для редагування годин — Debug mode там не перемикається.
+
+| Дія | Комбінація | Зворотний зв’язок |
+| --- | --- | --- |
+| **Debug mode** увімк / вимк | **F2** | звук `scan` (увімк) / `tick` (вимк), без toast |
+| **Роль прев’ю** за номером у списку | **⌘+Ctrl+1…9** (Windows: **Ctrl+Win+1…9**) | `scan` при виборі ролі ≠ адмін, `tick` при поверненні на адміна |
+
+Порядок цифр збігається з селектом «Роль»: від вищого `rank` до нижчого (**1** — зазвичай «Адміністратор», скидає прев’ю). У списку ролей показано підказки **⌘⌃N**. Якщо ролей більше дев’яти, гарячі клавіші лише для перших дев’яти.
+
+Спільний порядок опцій: `client/lib/rolePreviewOptions.ts` (`sortRolePreviewOptions`).
+
 Куди дивитись:
 
-- Контекст: `client/contexts/RolePreviewContext.tsx`
+- Контекст і hotkeys прев’ю: `client/contexts/RolePreviewContext.tsx`
+- Debug mode (F2, звуки): `client/contexts/DebugContext.tsx`, `client/components/DebugModeSwitch.tsx`
 - Селект: `client/components/RolePreviewSelect.tsx`
 - Спойлер сайдбару: `client/components/SidebarAdminFooter.tsx`
 - Доступ у UI: `client/hooks/useRoleAccess.ts`, `ProtectedRoute`, `Sidebar`, `MobileTabBar`, `MobileHeader`

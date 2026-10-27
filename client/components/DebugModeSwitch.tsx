@@ -51,7 +51,7 @@ export const DebugModeSwitch: React.FC<DebugModeSwitchProps> = ({
         <span className={`text-sm font-medium transition-color duration-300 
           ${isDebugMode ? 'text-danger' : 'text-slate-600/80'}
           ${transitionMode ? 'opacity-70' : 'opacity-100'}`}>
-          Debug mode
+          Debug mode (F2)
         </span>
       </Switch>
     </div>

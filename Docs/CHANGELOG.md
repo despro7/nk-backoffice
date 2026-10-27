@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-10-28 — Адмін: Debug mode і прев’ю ролі — звуки та гарячі клавіші
+
+**Files:** `DebugContext.tsx`, `DebugModeSwitch.tsx`, `RolePreviewContext.tsx`, `RolePreviewSelect.tsx`, `rolePreviewOptions.ts`, `role-preview.md`
+
+- **Debug mode:** перемикання **F2** без toast; звуки як у mob-переміщенні (`scan` / `tick`); підпис свіча «Debug mode (F2)».
+- **Прев’ю ролі:** **⌘+Ctrl+1…9** за порядком у селекті (1 — адмін); замість циклу ⌘+F2/F3 і toast — ті самі звуки; підказки в dropdown.
+
+**Документація:** [`role-preview.md`](features/role-preview.md).
+
+---
+
 ## 2026-10-27 — Склад: історія (бейджі, Dilovod-помилки, mob↔v2), повернення (сортування)
 
 **Files:** `HistoryAccordionItem.tsx`, `HistoryItemsTable.tsx`, `ReturnsHistoryTable.tsx`, `returnsHistoryList.ts`, `returnHistoryOperDate.ts`, `MovementHistoryService.ts`, `warehouseMovementMobItems.ts`, `MovementMobAlternateInterfaceNotice.tsx`, `dilovodInsufficientStockParse.ts`, `warehouse-doc-history-filters.md`, `warehouse-movement-mob.md`
