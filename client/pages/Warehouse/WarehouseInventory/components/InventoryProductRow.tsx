@@ -13,6 +13,10 @@ import {
 import type { InventoryProduct, InventoryWarehouseScope } from '../WarehouseInventoryTypes';
 import { itemHasEnteredCountsForScope } from '../WarehouseInventoryUtils';
 import { inventoryRowDomId, scrollInventoryRowIntoViewIfNeeded, type InventoryRowKind } from '../inventoryRowScroll';
+import {
+  InventoryCatalogStatusBadges,
+  inventoryCatalogItemNeedsStockToShow,
+} from './InventoryCatalogStatusBadges';
 
 // ---------------------------------------------------------------------------
 // ProductRow — рядок-акордіон для одного товару або матеріалу
@@ -128,7 +132,7 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
   const warehouseSectionLabel = warehouseScope === 'gp' ? 'Склад готової продукції' : 'Малий склад';
   const isPortionsUnit = product.unit === 'portions';
   const isBalanceRefreshing = Boolean(product.isBalanceRefreshing);
-  const isOutdated = Boolean(product.isOutdated);
+  const isMutedCatalog = inventoryCatalogItemNeedsStockToShow(product);
 
   // Ref для першого StepperInput — для автофокусу при відкритті
   const firstInputRef = useRef<HTMLInputElement>(null);
@@ -194,23 +198,15 @@ export const ProductRow = ({ product, index, isOpen, onToggle, onChange, onCheck
         {/* Назва */}
         <div className="flex flex-1 gap-5 pl-1">
           <div className="flex flex-col">
-            <span className="inline text-lg leading-tight font-semibold text-neutral-800">
+            <span className={`inline text-lg leading-tight font-semibold ${isMutedCatalog ? 'text-neutral-600' : 'text-neutral-800'}`}>
               {product.name}
-              {isOutdated && (
-              <>
-                &nbsp;&nbsp;<span className="inline-block relative -top-0.5 text-[10px] font-medium px-1.5 py-1 mr-1 rounded-full bg-red-600 border-1 border-red-600 text-white leading-none">
-                  <Tooltip content="Товар відключений в магазині" placement="top" offset={10} showArrow classNames={{ base: 'before:bg-danger before:rounded-[3px]', content: 'bg-danger border-0 text-white text-xs' }}>
-                  OFF
-                  </Tooltip>
-                </span>
-              </>
-              )}
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap mt-0.5">
               <span className="text-xs text-gray-400">sku <span className="font-medium">{product.sku}</span></span>
               {product.portionsPerBox ? (
-                <span className="text-xs text-gray-400 pl-2 border-l-1">в коробці: <span className="font-medium">{product.portionsPerBox}</span></span>
-              ) : ''}
+                <span className="text-xs text-gray-400 pl-2 border-l-1 border-gray-200">в коробці: <span className="font-medium">{product.portionsPerBox}</span></span>
+              ) : null}
+              <InventoryCatalogStatusBadges item={product} className="ml-1 align-middle" />
             </div>
           </div>
         </div>

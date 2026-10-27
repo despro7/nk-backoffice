@@ -74,17 +74,12 @@
 
 ## Логіка підрахунку по дню
 
-Рахунок прив’язаний саме до інвентаризаційного дня, а не до моменту створення запису історії:
+Рахунок прив’язаний до **календарного дня Europe/Kyiv** (`dayKey`, формат `YYYY-MM-DD`), а не до окремої сесії МС чи ГП.
 
-```ts
-const asOf = new Date(e.date);
-const startOfDay = new Date(asOf);
-startOfDay.setHours(0, 0, 0, 0);
-const endOfDay = new Date(startOfDay);
-endOfDay.setDate(endOfDay.getDate() + 1);
-```
+- Зведення залишків по SKU: `shared/utils/mergeProductHistoryEntriesByDay.ts` — для кожного `dayKey` одна пара шарів МС+ГП (як у `mergeInventoryGroupItems`), якщо обидві сесії належать одному дню Kyiv.
+- Вікно для рухів у БД: `kyivDayRangeExclusiveFromYmd(dayKey)` у `shared/utils/kyivDateTime.ts`; агрегація — `server/modules/Warehouse/inventoryProductHistoryMovements.ts` (`computeInventoryProductHistoryDayMovements`).
 
-Це означає, що для кожного рядка історії ми дивимося всі рухи в межах того самого календарного дня, коли була зафіксована інвентаризація.
+Тобто для рядка реєстру з `dayKey = 2026-10-26` підсумовуються всі рухи з `[00:00, 00:00 наступного дня)` за Kyiv, незалежно від того, скільки сесій інвентаризації того дня збережено в `warehouse_inventory`.
 
 ---
 
@@ -102,6 +97,7 @@ endOfDay.setDate(endOfDay.getDate() + 1);
 ```json
 {
   "sessionId": 123,
+  "dayKey": "2026-06-26",
   "date": "2026-06-26T09:00:00.000Z",
   "systemBalance": 48,
   "actual": 45,

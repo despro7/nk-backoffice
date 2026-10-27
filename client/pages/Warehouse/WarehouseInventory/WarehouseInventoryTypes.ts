@@ -13,7 +13,10 @@ export interface InventoryProduct {
   sku: string;
   name: string;
   categoryName?: string;
+  /** Товар у каталозі в папці «Архів – …». */
   isOutdated?: boolean;
+  /** Не публікується на сайті (OFF). */
+  doNotPublish?: boolean;
   systemBalance: number; // Залишок за системою (порції або штуки)
   isBalanceRefreshing?: boolean; // Локальний loader для оновлення залишку на дату
   actualCount: number | null; // Фактична кількість (порції або штуки)
@@ -45,6 +48,8 @@ export interface InventorySession {
 
 export interface ProductHistoryEntry {
   sessionId: number;
+  /** Календарний день Kyiv (YYYY-MM-DD) — один рядок реєстру на день */
+  dayKey?: string;
   date: string;
   systemBalance: number | null;
   actual: number | null;

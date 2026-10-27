@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDate } from '@/lib/formatUtils';
@@ -9,6 +9,7 @@ import { totalPortions, totalPortionsGp } from '../WarehouseInventoryUtils';
 import { resolveSessionWarehouseScope } from '../inventoryHistoryGroups';
 import { computeInventorySessionStats } from '../inventorySessionStats';
 import InventoryTableSection from './InventoryTableSection';
+import MovementMobProductEditDrawer from '@/pages/Warehouse/WarehouseMovementMob/components/MovementMobProductEditDrawer';
 import InventoryRefreshReportModal from './InventoryRefreshReportModal';
 import useRowHistory from '../useRowHistory';
 import useUserNames from '@/hooks/useUserNames';
@@ -44,6 +45,14 @@ export const InventorySessionDetailPanel = ({
   onClose,
   compactHeader = false,
 }: InventorySessionDetailPanelProps) => {
+  const [productEditGoodId, setProductEditGoodId] = useState<string | null>(null);
+  const handleOpenProductEdit = useCallback((catalogGoodId: string) => {
+    setProductEditGoodId(catalogGoodId);
+  }, []);
+  const handleCloseProductEdit = useCallback(() => {
+    setProductEditGoodId(null);
+  }, []);
+
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [loadingDelete, setLoadingDelete] = useState(false);
   const [loadingRefresh, setLoadingRefresh] = useState(false);
@@ -283,6 +292,7 @@ export const InventorySessionDetailPanel = ({
             rowHistoryCache={rowHistoryCache}
             rowHistoryLoading={loadingSku}
             setCompositionBySku={setCompositionBySku}
+            onOpenProductEdit={handleOpenProductEdit}
             summary={{
               systemTotal: dSetSystem, actualSum: st.setHasActual ? dSetActualSum : null, hasActual: st.setHasActual,
               devShortfall: st.setDevShortfall, devSurplus: st.setDevSurplus,
@@ -305,6 +315,7 @@ export const InventorySessionDetailPanel = ({
             rowHistoryCache={rowHistoryCache}
             rowHistoryLoading={loadingSku}
             setCompositionBySku={setCompositionBySku}
+            onOpenProductEdit={handleOpenProductEdit}
             summary={{
               systemTotal: dProductSystem, actualSum: st.productHasActual ? dProductActualSum : null, hasActual: st.productHasActual,
               devShortfall: st.productDevShortfall, devSurplus: st.productDevSurplus,
@@ -327,6 +338,7 @@ export const InventorySessionDetailPanel = ({
             rowHistoryCache={rowHistoryCache}
             rowHistoryLoading={loadingSku}
             setCompositionBySku={setCompositionBySku}
+            onOpenProductEdit={handleOpenProductEdit}
             summary={{
               systemTotal: dMaterialSystem, actualSum: st.materialHasActual ? dMaterialActualSum : null, hasActual: st.materialHasActual,
               devShortfall: st.materialDevShortfall, devSurplus: st.materialDevSurplus,
@@ -337,6 +349,12 @@ export const InventorySessionDetailPanel = ({
           />
         )}
       </div>
+
+      <MovementMobProductEditDrawer
+        catalogGoodId={productEditGoodId}
+        open={Boolean(productEditGoodId)}
+        onClose={handleCloseProductEdit}
+      />
 
       <InventoryRefreshReportModal
         isOpen={isRefreshModalOpen}

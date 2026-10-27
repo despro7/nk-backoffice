@@ -33,6 +33,15 @@ function session(partial: Partial<InventorySession> & Pick<InventorySession, 'id
 }
 
 describe('buildInventoryHistoryDisplayEntries', () => {
+  it('не зводить МС і ГП різних календарних днів', () => {
+    const entries = buildInventoryHistoryDisplayEntries([
+      session({ id: '1', warehouse: 'small', inventoryDate: '2026-10-26T12:00:00.000Z' }),
+      session({ id: '2', warehouse: 'gp', inventoryDate: '2026-10-27T12:00:00.000Z' }),
+    ]);
+    expect(entries).toHaveLength(2);
+    expect(entries.every((entry) => entry.kind === 'single')).toBe(true);
+  });
+
   it('лишає пару разом, якщо один склад редагується', () => {
     const entries = buildInventoryHistoryDisplayEntries([
       session({ id: '1', warehouse: 'small', status: 'revising', inventoryDate: '2026-10-18T07:30:00.000Z' }),

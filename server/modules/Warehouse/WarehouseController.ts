@@ -48,6 +48,11 @@ import {
   repairWarehouseInventorySession,
   resolveInventorySessionWarehouseScope,
 } from '../../../shared/utils/inventorySessionWarehouse.js';
+import {
+  buildProductHistoryBalanceSnapshotsByDay,
+  type InventoryProductHistorySessionInput,
+} from '../../../shared/utils/mergeProductHistoryEntriesByDay.js';
+import { computeInventoryProductHistoryDayMovements } from './inventoryProductHistoryMovements.js';
 
 const router = Router();
 const warehouseOperate = requirePermission('warehouse', 'operate', 'Створювати/відправляти складські документи');
@@ -2425,6 +2430,21 @@ router.get('/inventory/materials', authenticateToken, async (req, res) => {
   }
 });
 
+// POST /api/warehouse/inventory/catalog-flags — isOutdated (архів) / doNotPublish (OFF) за SKU
+router.post('/inventory/catalog-flags', authenticateToken, async (req, res) => {
+  try {
+    const raw = req.body?.skus;
+    const skus = Array.isArray(raw)
+      ? raw.map((sku) => String(sku ?? '').trim()).filter(Boolean)
+      : [];
+    const flags = await productsCatalogService.getInventoryCatalogFlagsBySkus(skus);
+    res.json({ flags });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error fetching catalog flags:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/warehouse/inventory/sets
 // catalog_goods у «Готова продукція», accPolicy kit + BOM.
 router.get('/inventory/sets', authenticateToken, async (req, res) => {
@@ -3130,414 +3150,40 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
         createdAt: { gte: fromDate },
       },
       orderBy: { inventoryDate: 'desc' },
-      select: { id: true, inventoryDate: true, createdAt: true, items: true },
+      select: { id: true, inventoryDate: true, createdAt: true, items: true, warehouse: true, status: true },
     });
 
-    const entries: Array<{
-      sessionId: number;
-      date: string;
-      systemBalance: number | null;
-      actual: number | null;
-      deviation: number | null;
-      systemBalanceGp: number | null;
-      actualGp: number | null;
-      deviationGp: number | null;
-      // Додаткові поля для Tooltip
-      systemBalanceGpBoxCount: number | null;
-      systemBalanceGpActualCount: number | null;
-      actualGpBoxCount: number | null;
-      actualGpActualCount: number | null;
-    }> = [];
-
-    for (const session of sessions) {
-      let items: any[] = [];
+    const historySessions = sessions.map((session) => {
+      let items: unknown[] = [];
       try {
         items = session.items ? JSON.parse(session.items) : [];
       } catch {
-        continue;
+        items = [];
       }
+      return {
+        id: String(session.id),
+        inventoryDate: session.inventoryDate,
+        createdAt: session.createdAt,
+        warehouse: session.warehouse,
+        status: session.status,
+        items: Array.isArray(items) ? items : [],
+      };
+    });
 
-      const item = items.find((it: any) => it && String(it.sku).trim() === normalizedSku);
-      if (!item) continue;
+    const balanceSnapshots = buildProductHistoryBalanceSnapshotsByDay(
+      normalizedSku,
+      historySessions as InventoryProductHistorySessionInput[],
+    );
 
-      const systemBalance: number | null = typeof item.systemBalance === 'number' ? item.systemBalance : null;
-
-      // Обчислення фактичного залишку (аналог totalPortions на фронтенді)
-      let actual: number | null = null;
-      if (item.unit === 'portions' && item.portionsPerBox != null && Number(item.portionsPerBox) > 0) {
-        const bc = typeof item.boxCount === 'number' ? item.boxCount : null;
-        const ac = typeof item.actualCount === 'number' ? item.actualCount : null;
-        if (bc !== null || ac !== null) {
-          actual = (bc ?? 0) * Number(item.portionsPerBox) + (ac ?? 0);
-        }
-      } else if (typeof item.actualCount === 'number') {
-        actual = item.actualCount;
-      }
-
-      const deviation = actual !== null && systemBalance !== null ? actual - systemBalance : null;
-
-      // === ГП (склад готової продукції) обчислення ===
-      const systemBalanceGp: number | null = typeof item.systemBalanceGp === 'number' ? item.systemBalanceGp : null;
-
-      let actualGp: number | null = null;
-      let boxCountGp: number | null = null;
-      let actualCountGp: number | null = null;
-
-      if (item.unit === 'portions' && item.portionsPerBox != null && Number(item.portionsPerBox) > 0) {
-        const bcGp = typeof item.boxCountGp === 'number' ? item.boxCountGp : null;
-        const acGp = typeof item.actualCountGp === 'number' ? item.actualCountGp : null;
-        if (bcGp !== null || acGp !== null) {
-          boxCountGp = bcGp;
-          actualCountGp = acGp;
-          actualGp = (bcGp ?? 0) * Number(item.portionsPerBox) + (acGp ?? 0);
-        }
-      } else if (typeof item.actualCountGp === 'number') {
-        actualGp = item.actualCountGp;
-      }
-
-      const deviationGp = actualGp !== null && systemBalanceGp !== null ? actualGp - systemBalanceGp : null;
-      // === кінець ГП обчислення ===
-
-      entries.push({
-        sessionId: session.id,
-        date: (session.inventoryDate ?? session.createdAt).toISOString(),
-        systemBalance,
-        actual,
-        deviation,
-        systemBalanceGp,
-        actualGp,
-        deviationGp,
-        // Tooltip дані: для системного балансу ГП
-        systemBalanceGpBoxCount: boxCountGp,
-        systemBalanceGpActualCount: actualCountGp,
-        // Tooltip дані: для фактичного залишку ГП
-        actualGpBoxCount: boxCountGp,
-        actualGpActualCount: actualCountGp,
-      });
-    }
-
-    // For each entry, compute movement totals (kit / shipped / returned / writtenOff) within the same inventory day.
-    // Monolithic sets may be present only in payloadData.shipment.bySku, so we keep that as a fallback source.
-    const enrichedEntries = await Promise.all(entries.map(async (e) => {
-      try {
-        const asOf = new Date(e.date);
-        // define day window [startOfDay, endOfDay)
-        const startOfDay = new Date(asOf);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(startOfDay);
-        endOfDay.setDate(endOfDay.getDate() + 1);
-
-        // Shipments: aggregate from orders with dilovodSaleExportDate in the same day.
-        // We prefer cached processedItems in orders_cache (contains orderedQuantity per SKU),
-        // fallback to parsing order.items when cache missing.
-        const orders = await prisma.order.findMany({
-          where: { dilovodSaleExportDate: { gte: startOfDay, lt: endOfDay } },
-          select: { externalId: true, payloadData: true, items: true },
-        });
-
-        const orderExternalIds = orders.map(o => o.externalId).filter(Boolean);
-        let shipped = 0;
-        if (orderExternalIds.length > 0) {
-          const caches = await prisma.ordersCache.findMany({
-            where: { externalId: { in: orderExternalIds } },
-            select: { externalId: true, processedItems: true },
-          });
-
-          const cachedItemsByExternalId = new Map<string, Array<{ sku?: string; name?: string; orderedQuantity?: number; quantity?: number }>>();
-          for (const cache of caches) {
-            if (!cache.processedItems) continue;
-            try {
-              const parsed = JSON.parse(cache.processedItems);
-              if (Array.isArray(parsed)) {
-                cachedItemsByExternalId.set(cache.externalId, parsed);
-              }
-            } catch {
-              // ignore malformed cache
-            }
-          }
-
-          // Same mono/regular split as shipment reports: leaf SKUs exclude monolithic components.
-          const allSkus = collectSkusFromOrders(orders, cachedItemsByExternalId, true);
-          const productDescriptors = await getReportProductDescriptors(allSkus);
-          recomputeSetPortions(productDescriptors);
-
-          for (const order of orders) {
-            const cachedItems = cachedItemsByExternalId.get(order.externalId) ?? null;
-            shipped += computeShippedQuantityForSku(order, cachedItems, normalizedSku, productDescriptors);
-          }
-        }
-
-        const [smallStorageSetting, mainStorageSetting] = await Promise.all([
-          prisma.settingsBase.findUnique({ where: { key: 'dilovod_small_storage_id' } }),
-          prisma.settingsBase.findUnique({ where: { key: 'dilovod_main_storage_id' } }),
-        ]);
-        const smallStorageId = smallStorageSetting?.value || '1100700000001019';
-        const mainStorageId = mainStorageSetting?.value || '1100700000001005';
-
-        // Комплектування / розкомплектація:
-        // - для набору (setSku): +kit / -unkit
-        // - для компонента: -kit / +unkit (порції, що пішли в комплект або повернулись)
-        // Розподіл по складах через release.storageId (null → ГП).
-        const kitReleases = await prisma.warehouseReleaseSet.findMany({
-          where: {
-            status: { not: 'deleted' },
-            operationType: { in: ['kit', 'unkit'] },
-            OR: [
-              { operDate: { gte: startOfDay, lt: endOfDay } },
-              { createdAt: { gte: startOfDay, lt: endOfDay } },
-            ],
-          },
-          select: {
-            quantity: true,
-            operationType: true,
-            createdAt: true,
-            operDate: true,
-            items: true,
-            setSku: true,
-            storageId: true,
-          },
-        });
-
-        const getReleaseOperationDate = (release: {
-          operDate: Date | null;
-          createdAt: Date;
-          items: unknown;
-        }): Date => {
-          const items = Array.isArray(release.items) ? release.items : safeParseItems(release.items);
-          const first = items[0] as { operationDate?: string; operation_date?: string } | undefined;
-          const operationDateRaw = release.operDate || first?.operationDate || first?.operation_date || null;
-          return operationDateRaw ? new Date(operationDateRaw) : release.createdAt;
-        };
-
-        const getSetNameFromRelease = (releaseItems: unknown): string | null => {
-          const items = Array.isArray(releaseItems) ? releaseItems : safeParseItems(releaseItems);
-          const first = items[0] as { name?: string; title?: string; setName?: string } | undefined;
-          const name = first?.name ?? first?.title ?? first?.setName ?? null;
-          return name ? String(name).trim() || null : null;
-        };
-
-        const getComponentQtyFromRelease = (releaseItems: unknown, sku: string, setQuantity: number): number => {
-          const items = Array.isArray(releaseItems) ? releaseItems : safeParseItems(releaseItems);
-          let total = 0;
-          for (const setItem of items) {
-            if (!setItem || typeof setItem !== 'object') continue;
-            const quantityMode =
-              String((setItem as { components_quantity_mode?: unknown }).components_quantity_mode ?? '')
-                .toLowerCase() === 'total'
-                ? 'total'
-                : 'per_set';
-            const itemSetQty = Number((setItem as { quantity?: unknown }).quantity ?? setQuantity) || setQuantity || 0;
-            const compsRaw =
-              (setItem as { components_snapshot?: unknown; componentsSnapshot?: unknown }).components_snapshot ??
-              (setItem as { componentsSnapshot?: unknown }).componentsSnapshot ??
-              [];
-            if (!Array.isArray(compsRaw)) continue;
-            for (const component of compsRaw) {
-              if (!component || typeof component !== 'object') continue;
-              const componentSku = String(
-                (component as { sku?: unknown; id?: unknown }).sku ??
-                  (component as { id?: unknown }).id ??
-                  '',
-              ).trim();
-              if (componentSku !== sku) continue;
-              const rawQty = Number(
-                (component as { quantity?: unknown; qty?: unknown }).quantity ??
-                  (component as { qty?: unknown }).qty ??
-                  0,
-              );
-              if (!Number.isFinite(rawQty) || rawQty === 0) continue;
-              total += quantityMode === 'total' ? rawQty : rawQty * itemSetQty;
-            }
-          }
-          return total;
-        };
-
-        let kit = 0;
-        let kitGp = 0;
-        const kitDetails: Array<{
-          setSku: string;
-          setName: string | null;
-          operationType: 'kit' | 'unkit';
-          quantity: number;
-          signedQuantity: number;
-          storage: 'ms' | 'gp';
-        }> = [];
-
-        const resolveKitStorage = (storageId: string | null | undefined): 'ms' | 'gp' => {
-          const resolved = storageId || mainStorageId;
-          return resolved === smallStorageId ? 'ms' : 'gp';
-        };
-
-        const addKitToStorage = (storageId: string | null | undefined, signedQty: number) => {
-          if (!signedQty) return;
-          if (resolveKitStorage(storageId) === 'ms') kit += signedQty;
-          else kitGp += signedQty;
-        };
-
-        for (const release of kitReleases) {
-          const operationDate = getReleaseOperationDate(release);
-          if (operationDate < startOfDay || operationDate >= endOfDay) continue;
-
-          const isUnkit = release.operationType === 'unkit';
-          const releaseSetSku = String(release.setSku ?? '').trim();
-
-          if (releaseSetSku === normalizedSku) {
-            const quantity = Number(release.quantity) || 0;
-            addKitToStorage(release.storageId, isUnkit ? -quantity : quantity);
-            continue;
-          }
-
-          const componentQty = getComponentQtyFromRelease(
-            release.items,
-            normalizedSku,
-            Number(release.quantity) || 0,
-          );
-          if (componentQty === 0) continue;
-          // kit споживає компоненти (−), unkit повертає (+)
-          const signedQuantity = isUnkit ? componentQty : -componentQty;
-          addKitToStorage(release.storageId, signedQuantity);
-          kitDetails.push({
-            setSku: releaseSetSku || '—',
-            setName: getSetNameFromRelease(release.items),
-            operationType: isUnkit ? 'unkit' : 'kit',
-            quantity: componentQty,
-            signedQuantity,
-            storage: resolveKitStorage(release.storageId),
-          });
-        }
-
-        // Fetch return records.
-        // Повернення завжди йдуть на малий склад (МС).
-        // Фолбек на createdAt, якщо returnDate === null (історичні записи без дати повернення).
-        const returns = await prisma.warehouseReturnHistory.findMany({
-          where: {
-            OR: [
-              { returnDate: { gte: startOfDay, lt: endOfDay } },
-              { AND: [{ returnDate: null }, { createdAt: { gte: startOfDay, lt: endOfDay } }] },
-            ],
-          },
-          select: { items: true },
-        });
-
-        // Fetch write-off records.
-        // Списання можуть йти з МС або ГП — ділимо за storageId.
-        // Фолбек на createdAt, якщо writeOffDate === null.
-        const writeoffs = await prisma.warehouseWriteOffHistory.findMany({
-          where: {
-            OR: [
-              { writeOffDate: { gte: startOfDay, lt: endOfDay } },
-              { AND: [{ writeOffDate: null }, { createdAt: { gte: startOfDay, lt: endOfDay } }] },
-            ],
-          },
-          select: { items: true, storageId: true },
-        });
-
-        const returned = sumQuantityForSku(returns, sku);
-
-        let writtenOff = 0;
-        let writtenOffGp = 0;
-        for (const row of writeoffs) {
-          const qty = sumQuantityForSku([row], sku);
-          if (qty <= 0) continue;
-          const resolvedStorage = row.storageId || smallStorageId;
-          if (resolvedStorage === mainStorageId) writtenOffGp += qty;
-          else writtenOff += qty;
-        }
-
-        // Переміщення: окремо для МС і ГП.
-        // + якщо товар прийшов НА склад, − якщо пішов Зі складу.
-        let moved = 0;
-        let movedGp = 0;
-        try {
-          const movements = await prisma.warehouseMovement.findMany({
-            where: {
-              status: { not: 'deleted' },
-              movementDate: { gte: startOfDay, lt: endOfDay },
-              OR: [
-                { sourceWarehouse: { in: [smallStorageId, mainStorageId] } },
-                { destinationWarehouse: { in: [smallStorageId, mainStorageId] } },
-              ],
-            },
-            select: { sourceWarehouse: true, destinationWarehouse: true, items: true },
-          });
-
-          // Збираємо всі SKU з переміщень, щоб одним запитом підтягнути portionsPerBox
-          const movementSkus = new Set<string>();
-          for (const movement of movements) {
-            const items = safeParseItems(movement.items);
-            for (const it of items) {
-              const s = String((it as any)?.sku ?? '').trim();
-              if (s) movementSkus.add(s);
-            }
-          }
-          let portionsPerBoxBySku = new Map<string, number>();
-          if (movementSkus.size > 0) {
-            const found = await catalogOpsLookup.getBySkus([...movementSkus]);
-            portionsPerBoxBySku = new Map(
-              catalogOpsLookup.listUnique(found).map((p) => [p.sku, Number(p.portionsPerBox) || 1]),
-            );
-          }
-
-          // Обчислює кількість позиції переміщення у порціях.
-          // Пріоритет: totalPortions (готове поле) → portionQuantity + boxQuantity * portionsPerBox.
-          // Враховуємо, що portionQuantity може бути 0 (коли товар йде лише коробками).
-          const calcMovementQty = (item: any): number => {
-            if (item == null || typeof item !== 'object') return 0;
-            const itemSku = String(item.sku ?? '').trim();
-            if (itemSku !== normalizedSku) return 0;
-            if (typeof item.totalPortions === 'number' && item.totalPortions !== 0) {
-              return item.totalPortions;
-            }
-            const ppb = portionsPerBoxBySku.get(itemSku) ?? 1;
-            const portions = Number(item.portionQuantity) || 0;
-            const boxes = Number(item.boxQuantity) || 0;
-            return portions + boxes * ppb;
-          };
-
-          for (const movement of movements) {
-            const items = safeParseItems(movement.items);
-            let qty = 0;
-            for (const it of items) {
-              qty += calcMovementQty(it);
-            }
-            if (qty === 0) continue;
-
-            if (movement.destinationWarehouse === smallStorageId) moved += qty;
-            if (movement.sourceWarehouse === smallStorageId) moved -= qty;
-            if (movement.destinationWarehouse === mainStorageId) movedGp += qty;
-            if (movement.sourceWarehouse === mainStorageId) movedGp -= qty;
-          }
-        } catch {
-          // ігноруємо помилки переміщень — не ламаємо решту історії
-        }
-
+    const enrichedEntries = await Promise.all(
+      balanceSnapshots.map(async (snapshot) => {
+        const movements = await computeInventoryProductHistoryDayMovements(normalizedSku, snapshot.dayKey);
         return {
-          ...e,
-          kit,
-          kitGp,
-          kitDetails,
-          shipped,
-          moved,
-          movedGp,
-          returned,
-          writtenOff,
-          writtenOffGp,
+          ...snapshot,
+          ...movements,
         };
-      } catch (err) {
-        return {
-          ...e,
-          kit: 0,
-          kitGp: 0,
-          kitDetails: [],
-          shipped: 0,
-          moved: 0,
-          movedGp: 0,
-          returned: 0,
-          writtenOff: 0,
-          writtenOffGp: 0,
-        };
-      }
-    }));
+      }),
+    );
 
     res.json({ sku, entries: enrichedEntries });
   } catch (error) {

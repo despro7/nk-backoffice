@@ -103,3 +103,24 @@ export function formatKyivDateTime(date: Date): string {
     .toLocaleString('sv-SE', { timeZone: KYIV_TZ, hour12: false })
     .replace('T', ' ');
 }
+
+/** Календарний день Kyiv: [start, endExclusive) для фільтрів БД. */
+export function kyivDayRangeExclusiveFromYmd(dayYmd: string): { start: Date; endExclusive: Date } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dayYmd).trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  const start = zonedWallTimeToUtc(year, month, day, 0, 0, 0);
+  const next = new Date(Date.UTC(year, month - 1, day + 1));
+  const endExclusive = zonedWallTimeToUtc(
+    next.getUTCFullYear(),
+    next.getUTCMonth() + 1,
+    next.getUTCDate(),
+    0,
+    0,
+    0,
+  );
+  return { start, endExclusive };
+}

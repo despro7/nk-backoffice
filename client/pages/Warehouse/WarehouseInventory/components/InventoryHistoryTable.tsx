@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect, useMemo, type ReactNode } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback, type ReactNode } from 'react';
 import { Button, Chip, Dropdown, DropdownItem, DropdownMenu, DropdownTrigger, Pagination, Select, SelectItem } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { formatDate, formatDateLong, formatTimeOnly } from '@/lib/formatUtils';
+import { formatDate, formatTimeOnly } from '@/lib/formatUtils';
 import { useAuth } from '@/contexts/auth-context';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PERMISSIONS } from '@shared/constants/permissions';
@@ -12,7 +12,9 @@ import { ToastService } from '@/services/ToastService';
 import { StockBadge } from '@/components/StockBadge';
 import InventoryRefreshReportModal from './InventoryRefreshReportModal';
 import InventoryTableSection from './InventoryTableSection';
+import MovementMobProductEditDrawer from '@/pages/Warehouse/WarehouseMovementMob/components/MovementMobProductEditDrawer';
 import useUserNames from '@/hooks/useUserNames';
+import { kyivCalendarDayKeyFromSession } from '@shared/utils/inventoryHistoryGroups';
 import { buildInventoryGroupStatusMarks, buildInventoryHistoryDisplayEntries, mergeInventoryGroupItems, resolveSessionWarehouseScope } from '../inventoryHistoryGroups';
 import { computeInventorySessionStats } from '../inventorySessionStats';
 
@@ -22,6 +24,42 @@ type SortColumn = 'sku' | 'name' | 'systemBalance' | 'actual' | 'deviation' | 's
 type SortDirection = 'ascending' | 'descending';
 
 type WarehouseBadgeLabel = 'МС' | 'ГП' | 'МС + ГП';
+
+function inventorySessionDayKey(session: InventorySession): string {
+  return kyivCalendarDayKeyFromSession({
+    id: String(session.id),
+    inventoryDate: session.inventoryDate,
+    createdAt: session.createdAt,
+  });
+}
+
+function formatDateLongKyiv(dateString: string): string {
+  if (!dateString) return '-';
+  return new Date(dateString).toLocaleDateString('uk-UA', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'Europe/Kyiv',
+  });
+}
+
+/** Зведена пара: один календарний день (Kyiv) — дата • час МС / час ГП. */
+function inventoryHeaderDateLabel(
+  isGroup: boolean,
+  msSession: InventorySession,
+  gpSession: InventorySession | null,
+): string {
+  const msDate = formatDateLongKyiv(msSession.inventoryDate);
+  const msTime = formatTimeOnly(msSession.inventoryDate);
+  if (!isGroup || !gpSession) {
+    return `${msDate} • ${msTime}`;
+  }
+  if (inventorySessionDayKey(msSession) !== inventorySessionDayKey(gpSession)) {
+    return `${msDate} • ${msTime}`;
+  }
+  const gpTime = formatTimeOnly(gpSession.inventoryDate);
+  return `${msDate} • ${msTime} / ${gpTime}`;
+}
 
 function WarehouseHistoryBadge({ label }: { label: WarehouseBadgeLabel }) {
   return (
@@ -143,6 +181,13 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
   const [refreshSessionIds, setRefreshSessionIds] = useState<string[]>([]);
   const [refreshWarehouseScope, setRefreshWarehouseScope] = useState<InventoryWarehouseScope | 'multi'>('small');
   const [isApplying, setIsApplying] = useState(false);
+  const [productEditGoodId, setProductEditGoodId] = useState<string | null>(null);
+  const handleOpenProductEdit = useCallback((catalogGoodId: string) => {
+    setProductEditGoodId(catalogGoodId);
+  }, []);
+  const handleCloseProductEdit = useCallback(() => {
+    setProductEditGoodId(null);
+  }, []);
 
   const displayEntries = useMemo(() => buildInventoryHistoryDisplayEntries(sessions), [sessions]);
 
@@ -317,7 +362,7 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
           ? 'МС + ГП'
           : (resolveSessionWarehouseScope(session) === 'gp' ? 'ГП' : 'МС');
 
-        const headerDateLabel = formatDateLong(session.inventoryDate) + ' • ' + formatTimeOnly(session.inventoryDate);
+        const headerDateLabel = inventoryHeaderDateLabel(isGroup, msSession, isGroup ? gpSession : null);
 
         const scopeOptions: ScopeActionOption[] = sessionsInEntry.map((sess) => ({
           session: sess,
@@ -529,6 +574,7 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                           rowHistoryCache={rowHistoryCache}
                           rowHistoryLoading={loadingSku}
                           setCompositionBySku={setCompositionBySku}
+                          onOpenProductEdit={handleOpenProductEdit}
                           summary={{
                             systemTotal: dSetSystem, actualSum: st.setHasActual ? dSetActualSum : null, hasActual: st.setHasActual,
                             devShortfall: st.setDevShortfall, devSurplus: st.setDevSurplus,
@@ -551,6 +597,7 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                           rowHistoryCache={rowHistoryCache}
                           rowHistoryLoading={loadingSku}
                           setCompositionBySku={setCompositionBySku}
+                          onOpenProductEdit={handleOpenProductEdit}
                           summary={{
                             systemTotal: dProductSystem, actualSum: st.productHasActual ? dProductActualSum : null, hasActual: st.productHasActual,
                             devShortfall: st.productDevShortfall, devSurplus: st.productDevSurplus,
@@ -573,6 +620,7 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                           rowHistoryCache={rowHistoryCache}
                           rowHistoryLoading={loadingSku}
                           setCompositionBySku={setCompositionBySku}
+                          onOpenProductEdit={handleOpenProductEdit}
                           summary={{
                             systemTotal: dMaterialSystem, actualSum: st.materialHasActual ? dMaterialActualSum : null, hasActual: st.materialHasActual,
                             devShortfall: st.materialDevShortfall, devSurplus: st.materialDevSurplus,
@@ -628,6 +676,12 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
           </div>
         </div>
       )}
+
+      <MovementMobProductEditDrawer
+        catalogGoodId={productEditGoodId}
+        open={Boolean(productEditGoodId)}
+        onClose={handleCloseProductEdit}
+      />
 
       <InventoryRefreshReportModal
         isOpen={isRefreshModalOpen}

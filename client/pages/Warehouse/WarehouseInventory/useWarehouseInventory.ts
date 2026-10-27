@@ -23,6 +23,7 @@ import {
   toInventoryReserveData,
   type InventoryReserveData,
 } from './inventoryReserveDraft';
+import { enrichInventorySessionsWithCatalogFlags } from './inventoryCatalogFlagsEnrichment';
 
 type InventoryAccordionKind = InventoryRowKind;
 type LastOpenedInventoryRow = { kind: InventoryAccordionKind; id: string };
@@ -336,6 +337,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
         name: p.name,
         categoryName: p.categoryName ?? 'Без категорії',
         isOutdated: !!p.isOutdated,
+        doNotPublish: !!p.doNotPublish,
         systemBalance: p.systemBalance,
         systemBalanceGp: p.systemBalanceGp ?? 0,
         isBalanceRefreshing: false,
@@ -372,6 +374,8 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
         id: m.id,
         sku: m.sku,
         name: m.name,
+        isOutdated: !!m.isOutdated,
+        doNotPublish: !!m.doNotPublish,
         systemBalance: m.systemBalance,
         systemBalanceGp: m.systemBalanceGp ?? 0,
         isBalanceRefreshing: false,
@@ -415,6 +419,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
         sku: s.sku,
         name: s.name,
         isOutdated: !!s.isOutdated,
+        doNotPublish: !!s.doNotPublish,
         systemBalance: s.systemBalance,
         systemBalanceGp: s.systemBalanceGp ?? 0,
         isBalanceRefreshing: false,
@@ -561,7 +566,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
       if (!res.ok) return;
       const data = await res.json();
       const sessions: InventorySession[] = (data.sessions ?? []).map(mapInventorySessionFromApi);
-      setHistorySessions(sessions);
+      setHistorySessions(await enrichInventorySessionsWithCatalogFlags(sessions));
     } catch {
       // Тихо ігноруємо
     } finally {
@@ -580,7 +585,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
       if (!res.ok) return;
       const data = await res.json();
       const sessions: InventorySession[] = (data.sessions ?? []).map(mapInventorySessionFromApi);
-      setArchiveSessions(sessions);
+      setArchiveSessions(await enrichInventorySessionsWithCatalogFlags(sessions));
     } catch {
       // Ігноруємо помилки — покажемо пустий список
     } finally {
@@ -598,8 +603,14 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
   const hasStockSomewhere = (item: InventoryProduct): boolean =>
     (item.systemBalance ?? 0) > 0 || (item.systemBalanceGp ?? 0) > 0;
 
+  const isLegacyCatalogItem = (item: InventoryProduct): boolean =>
+    Boolean(item.isOutdated || item.doNotPublish);
+
+  const isVisibleInInventoryList = (item: InventoryProduct): boolean =>
+    showOutdated || !isLegacyCatalogItem(item) || item.checked || hasStockSomewhere(item);
+
   const visibleProducts = useMemo(
-    () => products.filter((p) => showOutdated || !p.isOutdated || p.checked || hasStockSomewhere(p)),
+    () => products.filter(isVisibleInInventoryList),
     [products, showOutdated]
   );
   const checkedCount = useMemo(() => visibleProducts.filter((p) => p.checked).length, [visibleProducts]);
@@ -611,7 +622,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
   const materialsProgressPercent = totalMaterialsCount > 0 ? Math.round((checkedMaterialsCount / totalMaterialsCount) * 100) : 0;
 
   const visibleSets = useMemo(
-    () => sets.filter((s) => showOutdated || !s.isOutdated || s.checked || hasStockSomewhere(s)),
+    () => sets.filter(isVisibleInInventoryList),
     [sets, showOutdated]
   );
   const checkedSetsCount = useMemo(() => visibleSets.filter((s) => s.checked).length, [visibleSets]);
@@ -682,7 +693,7 @@ export const useWarehouseInventory = (isAdmin: boolean = false): UseWarehouseInv
     () => {
       const result = materials.filter(
         (m) =>
-          (showOutdated || !m.isOutdated || m.checked || hasStockSomewhere(m)) &&
+          isVisibleInInventoryList(m) &&
           (m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             m.sku.toLowerCase().includes(searchQuery.toLowerCase()))
       );

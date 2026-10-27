@@ -148,6 +148,7 @@ export type SerializedInventoryItem = {
   sku: string;
   name: string;
   isOutdated?: boolean;
+  doNotPublish?: boolean;
   systemBalance: number;
   unit: 'portions' | 'pcs';
   portionsPerBox: number;
@@ -166,13 +167,13 @@ export const serializeItems = (
   mats: InventoryProduct[],
   sets?: InventoryProduct[],
 ): SerializedInventoryItem[] => [
-  ...prods.map(({ id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp }) => ({
-    type: 'product' as const, id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp,
+  ...prods.map(({ id, sku, name, isOutdated, doNotPublish, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp }) => ({
+    type: 'product' as const, id, sku, name, isOutdated, doNotPublish, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp,
   })),
-  ...mats.map(({ id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp }) => ({
-    type: 'material' as const, id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp,
+  ...mats.map(({ id, sku, name, isOutdated, doNotPublish, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp }) => ({
+    type: 'material' as const, id, sku, name, isOutdated, doNotPublish, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp,
   })),
-  ...(sets ?? []).map(({ id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp }) => ({
-    type: 'set' as const, id, sku, name, isOutdated, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp,
+  ...(sets ?? []).map(({ id, sku, name, isOutdated, doNotPublish, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp }) => ({
+    type: 'set' as const, id, sku, name, isOutdated, doNotPublish, systemBalance, unit, portionsPerBox, actualCount, boxCount, checked, categoryName, systemBalanceGp, actualCountGp, boxCountGp,
   })),
 ];

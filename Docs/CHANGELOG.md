@@ -218,6 +218,18 @@
 
 ---
 
+## 2026-10-28 — Інвентаризація: реєстр по дню, OFF/архів, редагування з історії
+
+**Files:** `mergeProductHistoryEntriesByDay.ts`, `inventoryProductHistoryMovements.ts`, `inventoryHistoryGroups.ts`, `inventoryCatalogFlagsEnrichment.ts`, `InventoryCatalogStatusBadges.tsx`, `WarehouseController.ts`, `ProductsCatalogService.ts`, `InventoryHistoryRow.tsx`, `InventoryHistoryTable.tsx`, `useWarehouseInventory.ts`, `kyivDateTime.ts`, тести `*.spec.ts`
+
+- Реєстр SKU (`product-history`): один рядок на календарний день Kyiv, зведення МС+ГП; рухи за `dayKey` без дублювання.
+- `POST /inventory/catalog-flags` і збагачення історії/архіву; бейджі OFF і Архів у формі та таблицях; фільтр legacy OFF без факту/залишку.
+- Dropdown SKU в історії: «Редагувати товар» через `MovementMobProductEditDrawer`.
+
+**Документація:** [`warehouse-inventory.md`](features/warehouse-inventory.md), [`warehouse-inventory-shipped-activity.md`](features/warehouse-inventory-shipped-activity.md).
+
+---
+
 ## 2026-10-19 — Chatwoot Bot: reclaim, аналітика, налаштування UI
 
 **Files:** `ChatwootBotOrchestrator.ts`, `chatwootReclaimDecision.ts`, `ChatwootBotAnalyticsService.ts`, `chatwoot-bot.ts`, `chatwoot-webhooks.ts`, `SettingsChatwootBot.tsx`, `ChatwootBotStatistics.tsx`, `routes.config.tsx`, `shared/types/chatwootBot.ts`, `prisma/schema.prisma`, міграція `20261018120000_chatwoot_bot_analytics_events`, `package.json` (`dev:chatwoot`), `config/cloudflared/README.md`

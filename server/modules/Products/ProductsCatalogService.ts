@@ -503,6 +503,7 @@ export class ProductsCatalogService {
     parentId: string | null;
     categoryName: string | null;
     isOutdated: boolean;
+    doNotPublish: boolean;
     isKit: boolean;
     packageRatio: number | null;
     stockBalanceByStock: string | null;
@@ -528,6 +529,7 @@ export class ProductsCatalogService {
         packageRatio: true,
         stockBalanceByStock: true,
         sortOrder: true,
+        doNotPublish: true,
       },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
@@ -561,6 +563,7 @@ export class ProductsCatalogService {
           parentId: row.parentId,
           categoryName: parent?.name ?? null,
           isOutdated: Boolean(row.parentId && archiveParentIds.has(row.parentId)),
+          doNotPublish: Boolean(row.doNotPublish),
           isKit: isKitAccPolicy(row.accPolicyId),
           packageRatio: row.packageRatio,
           stockBalanceByStock: row.stockBalanceByStock,
@@ -576,6 +579,7 @@ export class ProductsCatalogService {
       name: string;
       categoryName: string | null;
       isOutdated: boolean;
+      doNotPublish: boolean;
       packageRatio: number | null;
       stockBalanceByStock: string | null;
     },
@@ -593,6 +597,7 @@ export class ProductsCatalogService {
       name: row.name,
       categoryName: row.categoryName,
       isOutdated: row.isOutdated,
+      doNotPublish: row.doNotPublish,
       systemBalance: stock.smallStock,
       systemBalanceGp: stock.mainStock,
       unit: (portionsPerBox > 1 ? 'portions' : 'pcs') as 'portions' | 'pcs',
@@ -2795,6 +2800,46 @@ export class ProductsCatalogService {
       dilovodId: created.id,
       created: true,
     };
+  }
+
+  /** Прапорці каталогу для рядків збережених сесій інвентаризації (історія). */
+  async getInventoryCatalogFlagsBySkus(
+    skus: string[],
+  ): Promise<Record<string, { isOutdated: boolean; doNotPublish: boolean }>> {
+    const unique = [...new Set(skus.map((sku) => String(sku).trim()).filter(Boolean))];
+    if (unique.length === 0) return {};
+
+    const rows = await prisma.catalogGood.findMany({
+      where: { isGroup: false, sku: { in: unique } },
+      select: { sku: true, doNotPublish: true, parentId: true },
+    });
+
+    const parentIds = [
+      ...new Set(rows.map((row) => row.parentId).filter((id): id is string => Boolean(id))),
+    ];
+    const parents =
+      parentIds.length > 0
+        ? await prisma.catalogGood.findMany({
+          where: { id: { in: parentIds } },
+          select: { id: true, name: true, isGroup: true },
+        })
+        : [];
+    const archiveParentIds = new Set(
+      parents
+        .filter((parent) => parent.isGroup && isArchiveFolderName(parent.name))
+        .map((parent) => parent.id),
+    );
+
+    const flags: Record<string, { isOutdated: boolean; doNotPublish: boolean }> = {};
+    for (const row of rows) {
+      const sku = String(row.sku ?? '').trim();
+      if (!sku) continue;
+      flags[sku] = {
+        isOutdated: Boolean(row.parentId && archiveParentIds.has(row.parentId)),
+        doNotPublish: Boolean(row.doNotPublish),
+      };
+    }
+    return flags;
   }
 
   /** Компактний індекс товарів GP для клієнтського пошуку на складі. */

@@ -2,7 +2,7 @@ import type { InventorySession } from './WarehouseInventoryTypes';
 import { totalPortions, totalPortionsGp } from './WarehouseInventoryUtils';
 
 function shouldKeepItem(item: any): boolean {
-  if (!item?.isOutdated) return true;
+  if (!item?.isOutdated && !item?.doNotPublish) return true;
   const fact = totalPortions(item);
   const factGp = totalPortionsGp(item);
   const actualOrSystem = Math.max(fact ?? 0, item.systemBalance ?? 0);

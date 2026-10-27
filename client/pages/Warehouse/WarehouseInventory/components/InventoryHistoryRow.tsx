@@ -8,6 +8,10 @@ import CompactBalance from './CompactBalance';
 import { useProductMovementsDrawer } from '@/features/product-movements/context/ProductMovementsDrawerContext';
 import { formatKyivDateTime, parseKyivDateTime } from '@shared/utils/kyivDateTime';
 import type { ProductHistoryEntry } from '../WarehouseInventoryTypes';
+import {
+  InventoryCatalogStatusBadges,
+  inventoryCatalogItemNeedsStockToShow,
+} from './InventoryCatalogStatusBadges';
 
 function movementsPeriodAroundInventoryDate(inventoryDate?: string): { startDate: string; endDate: string } | undefined {
   const center = inventoryDate ? parseKyivDateTime(inventoryDate) : null;
@@ -36,6 +40,7 @@ interface InventoryHistoryRowProps {
   rowHistoryLoading: string | null;
   setCompositionBySku: Record<string, any[]>;
   onRowClick: (sessionId: string, sku: string) => void;
+  onOpenProductEdit?: (catalogGoodId: string) => void;
 }
 
 /** Копіювання тексту в буфер з toast-підтвердженням. */
@@ -186,6 +191,7 @@ export const InventoryHistoryRow = ({
   rowHistoryLoading,
   setCompositionBySku,
   onRowClick,
+  onOpenProductEdit,
 }: InventoryHistoryRowProps) => {
   const { open: openProductMovements } = useProductMovementsDrawer();
   const isRowExpanded = expandedRowKey === rowKey;
@@ -207,7 +213,7 @@ export const InventoryHistoryRow = ({
         className="[&>td]:border-b [&>td]:border-b-gray-100 [&>td]:text-gray-700 [&>td]:transition-colors hover:bg-gray-100/80 cursor-pointer select-none"
         onClick={() => onRowClick(sessionId, item.sku)}
       >
-        <td className="py-2 px-3 font-mono">
+        <td className="py-2 px-2 font-mono">
           <div className="flex items-center gap-1">
             <DynamicIcon
               name="chevron-right"
@@ -246,6 +252,25 @@ export const InventoryHistoryRow = ({
                     Рядок даних
                   </DropdownItem>
                   <DropdownItem
+                    key="edit-product"
+                    startContent={<DynamicIcon name="pencil-line" size={16} />}
+                    isDisabled={!String(item.id ?? '').trim()}
+                    onPress={() => {
+                      const catalogGoodId = String(item.id ?? '').trim();
+                      if (!catalogGoodId) {
+                        ToastService.show({
+                          title: 'Не вдалося відкрити товар',
+                          description: 'У записі немає id каталогу',
+                          color: 'warning',
+                        });
+                        return;
+                      }
+                      onOpenProductEdit?.(catalogGoodId);
+                    }}
+                  >
+                    Редагувати товар
+                  </DropdownItem>
+                  <DropdownItem
                     key="movements"
                     startContent={<DynamicIcon name="arrow-left-right" size={16} />}
                     onPress={() => {
@@ -265,21 +290,14 @@ export const InventoryHistoryRow = ({
             </div>
           </div>
         </td>
-        <td className="py-2 px-3 ">
-          <span className={`inline ${item.isOutdated ? 'text-gray-400/75' : ''}`}>
+        <td className="py-2 px-2 md:max-w-0">
+          <div className={`flex items-center min-w-0 max-w-full ${inventoryCatalogItemNeedsStockToShow(item) ? 'text-gray-400/75' : ''}`}>
             {item.unit === 'portions' && (
               <span className="inline items-center gap-0.5 text-xs px-1 py-0.5 mr-1.5 rounded-[6px] bg-neutral-300 text-white text-shadow-sm shadow-inner">
                 {item.portionsPerBox}
               </span>
             )}
-            <span className="pr-1.5">{item.name}</span>
-            {item.isOutdated && (
-              <Tooltip content="Товар відключений в магазині" placement="top" showArrow classNames={{ base: 'before:bg-danger before:rounded-[3px]', content: 'bg-danger border-0 text-white text-xs' }}>
-                <span className="inline-block text-[10px] font-medium px-1.5 py-1 mr-1 rounded-full bg-red-600 border-1 border-red-600 text-white leading-none">
-                  OFF
-                </span>
-              </Tooltip>
-            )}
+            <span className="pr-1.5 truncate max-w-full min-w-0 inline-block">{item.name}</span>
             {isSetItem && (
               <Popover
                 showArrow
@@ -306,19 +324,20 @@ export const InventoryHistoryRow = ({
                 </PopoverContent>
               </Popover>
             )}
-          </span>
+            <InventoryCatalogStatusBadges item={item} className="ml-1 align-middle" />
+          </div>
         </td>
-        <td className="py-2 px-3 text-center">{item.unit === 'portions' ? <CompactBalance total={item.systemBalance} portionsPerBox={item.portionsPerBox} /> : item.systemBalance}</td>
-        <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>{total === null ? '–' : (item.unit === 'portions' ? <CompactBalance total={total} portionsPerBox={item.portionsPerBox} sessionItem={item} /> : String(total))}</td>
-        <td className={`py-2 px-3 text-center ${total === null ? 'text-gray-300' : ''}`}>{dev === null ? '–' : (<span className={`font-semibold ${dev === 0 ? 'text-green-600' : dev < 0 ? 'text-red-500' : 'text-blue-600'}`}>{dev > 0 ? '+' : ''} {dev}</span>)}</td>
-        <td className="py-2 px-3 text-center">{item.unit === 'portions' ? <CompactBalance total={item.systemBalanceGp} portionsPerBox={item.portionsPerBox} /> : (item.systemBalanceGp ?? '–')}</td>
-        <td className={`py-2 px-3 text-center ${totalGp === null ? 'text-gray-300' : ''}`}>{totalGp === null ? '–' : (item.unit === 'portions' ? <CompactBalance total={totalGp} portionsPerBox={item.portionsPerBox} sessionItem={{ boxCount: item.boxCountGp, actualCount: item.actualCountGp }} /> : String(totalGp))}</td>
-        <td className={`py-2 px-3 text-center ${devGp === null ? 'text-gray-300' : ''}`}>{devGp === null ? '–' : (<span className={`font-semibold ${devGp === 0 ? 'text-green-600' : devGp < 0 ? 'text-red-500' : 'text-blue-600'}`}>{devGp > 0 ? '+' : ''} {devGp}</span>)}</td>
+        <td className="py-2 px-2 text-center">{item.unit === 'portions' ? <CompactBalance total={item.systemBalance} portionsPerBox={item.portionsPerBox} /> : item.systemBalance}</td>
+        <td className={`py-2 px-2 text-center ${total === null ? 'text-gray-300' : ''}`}>{total === null ? '–' : (item.unit === 'portions' ? <CompactBalance total={total} portionsPerBox={item.portionsPerBox} sessionItem={item} /> : String(total))}</td>
+        <td className={`py-2 px-2 text-center ${total === null ? 'text-gray-300' : ''}`}>{dev === null ? '–' : (<span className={`font-semibold ${dev === 0 ? 'text-green-600' : dev < 0 ? 'text-red-500' : 'text-blue-600'}`}>{dev > 0 ? '+' : ''} {dev}</span>)}</td>
+        <td className="py-2 px-2 text-center">{item.unit === 'portions' ? <CompactBalance total={item.systemBalanceGp} portionsPerBox={item.portionsPerBox} /> : (item.systemBalanceGp ?? '–')}</td>
+        <td className={`py-2 px-2 text-center ${totalGp === null ? 'text-gray-300' : ''}`}>{totalGp === null ? '–' : (item.unit === 'portions' ? <CompactBalance total={totalGp} portionsPerBox={item.portionsPerBox} sessionItem={{ boxCount: item.boxCountGp, actualCount: item.actualCountGp }} /> : String(totalGp))}</td>
+        <td className={`py-2 px-2 text-center ${devGp === null ? 'text-gray-300' : ''}`}>{devGp === null ? '–' : (<span className={`font-semibold ${devGp === 0 ? 'text-green-600' : devGp < 0 ? 'text-red-500' : 'text-blue-600'}`}>{devGp > 0 ? '+' : ''} {devGp}</span>)}</td>
       </tr>
       {isRowExpanded && (
         <tr>
           <td colSpan={8} className="p-0 bg-gray-100 border-b border-gray-200/40 shadow-[inset_0_6px_10px_rgba(0,0,0,0.05)]">
-            <div className="px-2 py-4">
+            <div className="px-2 py-3">
               {isRowLoading ? (
                 <div className="flex items-center justify-center gap-2 py-4 text-xs text-gray-500">
                   <DynamicIcon name="loader-2" className="w-3 h-3 animate-spin" />
@@ -330,46 +349,58 @@ export const InventoryHistoryRow = ({
                 <table className="text-xs w-full">
                   <thead>
                     <tr className="text-gray-500 border-b border-gray-200 [&>th]:text-center [&>th]:py-1 [&>th]:px-2 [&>th]:font-semibold [&>th]:w-1/10">
-                      <th className="text-left! w-auto! min-w-[160px]">Дата</th>
+                      <th className="text-left! w-auto! min-w-[160px] align-baseline">Дата інвентаризації
+                        <div className="my-0.5 flex items-center gap-1">
+                          <span className="text-[11px] font-normal text-gray-400/75">Час останньої фіксації</span>
+                        </div>
+                      </th>
                       <th>Переміщення
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="my-0.5 flex items-center justify-center gap-1">
                           <StockBadge variant="ms" size="9px" />
                           <span className="text-[9px] text-gray-400">|</span>
                           <StockBadge variant="gp" size="9px" />
                         </div>
                       </th>
-                      <th>Відвантаження <br/><StockBadge variant="ms" size="9px" /></th>
+                      <th>Відвантаження
+                        <div className="my-0.5 flex items-center justify-center">
+                          <StockBadge variant="ms" size="9px" />
+                        </div>
+                      </th>
                       <th>Комплектування
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="my-0.5 flex items-center justify-center gap-1">
                           <StockBadge variant="ms" size="9px" />
                           <span className="text-[9px] text-gray-400">|</span>
                           <StockBadge variant="gp" size="9px" />
                         </div>
                       </th>
-                      <th>Повернення <br/><StockBadge variant="ms" size="9px" /></th>
+                      <th>Повернення
+                        <div className="my-0.5 flex items-center justify-center gap-1">
+                          <StockBadge variant="ms" size="9px" />
+                        </div>
+                      </th>
                       <th>Списання
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="my-0.5 flex items-center justify-center gap-1">
                           <StockBadge variant="ms" size="9px" />
                           <span className="text-[9px] text-gray-400">|</span>
                           <StockBadge variant="gp" size="9px" />
                         </div>
                       </th>
                       <th>Облік
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="my-0.5 flex items-center justify-center gap-1">
                           <StockBadge variant="ms" size="9px" />
                           <span className="text-[9px] text-gray-400">|</span>
                           <StockBadge variant="gp" size="9px" />
                         </div>
                       </th>
                       <th>Факт
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="my-0.5 flex items-center justify-center gap-1">
                           <StockBadge variant="ms" size="9px" />
                           <span className="text-[9px] text-gray-400">|</span>
                           <StockBadge variant="gp" size="9px" />
                         </div>
                       </th>
                       <th>Відхилення
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="my-0.5 flex items-center justify-center gap-1">
                           <StockBadge variant="ms" size="9px" />
                           <span className="text-[9px] text-gray-400">|</span>
                           <StockBadge variant="gp" size="9px" />
@@ -379,7 +410,7 @@ export const InventoryHistoryRow = ({
                   </thead>
                   <tbody className="divide-y divide-blue-50">
                     {historyEntries.map((entry) => (
-                      <tr key={entry.sessionId} className="tabular-nums text-gray-600 hover:bg-white/40">
+                      <tr key={entry.dayKey ?? `${entry.sessionId}-${entry.date}`} className="tabular-nums text-gray-600 hover:bg-white/40">
                         {/* Дата */}
                         <td className="py-0.5 px-2">{formatRelativeDate(entry.date, { showTime: true, maxRelativeDays:21, maxRelativeHours: 3, includeWeekdays: true, shortWeekday: true })}</td>
                         {/* Переміщення МС / ГП */}

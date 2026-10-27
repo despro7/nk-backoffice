@@ -53,6 +53,8 @@ model WarehouseInventory {
 ### Історія
 
 - `GET /inventory/history` — сесії з полем `warehouse`
+- `POST /inventory/catalog-flags` — тіло `{ skus: string[] }`; відповідь `{ flags: Record<sku, { isOutdated, doNotPublish }> }` для збагачення знімків у БД (архів / OFF у магазині)
+- `GET /inventory/product-history?sku=&days=` — реєстр змін по SKU; **один рядок на календарний день Kyiv** (пари МС+ГП зводяться через `buildProductHistoryBalanceSnapshotsByDay`); рухи (`kit`, `shipped`, …) рахуються раз на `dayKey`, див. [`warehouse-inventory-shipped-activity.md`](warehouse-inventory-shipped-activity.md)
 
 ### Оновлення облікових залишків у завершеній сесії
 
@@ -77,7 +79,10 @@ model WarehouseInventory {
 - Акордеон: бейдж складу перед датою (`МС`, `ГП` або `МС + ГП`). Дата — `formatDateLong`. Якщо статус не `completed`, чіп називає сторону: «Редагується - МС», «Редагується - МС і ГП». Обидві завершені — «Завершена».
 - Зведена таблиця: `mergeInventoryGroupItems()` зводить позиції по SKU (облік і факт МС із сесії МС, ГП — із сесії ГП). Кнопки «Оновити облікові залишки», «Редагувати», «Видалити», «Відновити» у парі відкривають меню конкретного складу.
 - Видалена сесія живе в архіві окремим списком, тому в історії з завершеною парою не лишається. Дві видалені сесії одного дня в архіві знову зводяться.
-- SKU в історії → dropdown **«Рухи товару»** (`ProductMovementsDrawer`, період `inventoryDate ± 5` днів, без `storageId`).
+- Розгортання рядка SKU: вкладена таблиця реєстру — **один запис на день** (`dayKey`), не дублює рухи для окремих сесій МС і ГП того ж дня.
+- Бейджі **OFF** (`doNotPublish`) та **Архів** (`isOutdated`) — `InventoryCatalogStatusBadges` у формі та в історії; для завершених сесій прапорці підтягуються з каталогу (`enrichInventorySessionsWithCatalogFlags` після `loadHistory` / `loadArchive`). У списку позицій приховані legacy OFF/архів без факту та без залишку (`isLegacyCatalogItem`).
+- SKU в історії → dropdown: копіювання (SKU, назва, рядок), **«Редагувати товар»** (`MovementMobProductEditDrawer` / `ProductDrawer`, `item.id` = id у каталозі), **«Рухи товару»** (`ProductMovementsDrawer`, період `inventoryDate ± 5` днів).
+- Заголовок зведеної картки в історії: дата Kyiv і час МС / ГП (`inventoryHeaderDateLabel`).
 - Редагування завершеної: «Закрити без збереження» з `ConfirmModal` → `abort-revision`.
 
 ### Локальний резерв (не серверна чернетка)
