@@ -97,6 +97,8 @@ export interface MovementMobStepperStep {
 
 export interface MovementMobListCardViewModel {
   id: number;
+  /** Створено в v2/desktop, не через mob-скан */
+  createdInAlternateInterface: boolean;
   displayNumber: string;
   displayDateTime: string;
   sourceStorageId: string;
@@ -137,8 +139,12 @@ export interface MovementMobProductLineViewModel {
   productName: string;
   batchId: string;
   batchNumber: string;
-  /** Чи привʼязана партія до штрих-коду в каталозі */
+  /**
+   * Партія відома для UI / залишків: каталог (ШК→goodPart) або batchId у рядку без ШК (v2/desktop).
+   */
   batchLinked?: boolean;
+  /** Лише привʼязка ШК→goodPart у каталозі (для wm_mobRequireBatch). */
+  catalogBatchLinked?: boolean;
   /** ID товару в каталозі Dilovod (для drawer редагування) */
   catalogGoodId?: string | null;
   boxQuantity: number;
@@ -205,6 +211,8 @@ export interface MovementMobChronologyEvent {
 
 export interface MovementMobDocumentViewModel {
   id: number;
+  /** Створено в v2/desktop, не через mob-скан */
+  createdInAlternateInterface: boolean;
   displayNumber: string;
   internalDocNumber: string;
   docNumber: string | null;

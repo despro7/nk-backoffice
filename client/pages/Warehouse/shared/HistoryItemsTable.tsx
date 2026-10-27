@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { normalizeItemsArray as clientNormalizeItems, normalizeSetsArray as clientNormalizeSets } from '@/pages/Warehouse/shared/historyNormalize';
-import type { HistoryItemNormalized, HistorySetNormalized } from '@/pages/Warehouse/shared/historyNormalize';
+import type { HistoryBatchLink, HistoryItemNormalized, HistorySetNormalized } from '@/pages/Warehouse/shared/historyNormalize';
+import { useProductMovementsDrawerOptional } from '@/features/product-movements/context/productMovementsDrawerContext.shared';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
 type Mode = 'normal' | 'sets';
@@ -26,6 +27,8 @@ interface Props {
   columns?: HistoryItemsTableColumn[];
   footerTotals?: Record<string, number>;
   footerLabel?: React.ReactNode;
+  /** Склад для фільтра «Рухи по партії» (release / списання тощо). */
+  movementsStorageId?: string | null;
 }
 
 function compareValues(a: any, b: any, numeric = false) {
@@ -42,14 +45,105 @@ function historyBatchLabels(item: HistoryItemNormalized): string[] {
   return text.split(/\n|,\s+/).map((label) => label.trim()).filter(Boolean);
 }
 
-function HistoryBatchList({ item }: { item: HistoryItemNormalized }) {
+function HistoryBatchMovementsTrigger({
+  label,
+  sku,
+  productName,
+  batchId,
+  storageId,
+}: {
+  label: string;
+  sku: string;
+  productName: string | null;
+  batchId: string;
+  storageId?: string | null;
+}) {
+  const movementsDrawer = useProductMovementsDrawerOptional();
+  const canOpen = Boolean(movementsDrawer && sku.trim() && batchId.trim());
+
+  if (!canOpen) {
+    return <span>{label}</span>;
+  }
+
+  return (
+    <button
+      type="button"
+      className="text-left text-primary-600 hover:text-primary-800 hover:underline underline-offset-2 font-mono text-[13px]"
+      title="Рухи товару по партії"
+      onClick={(event) => {
+        event.stopPropagation();
+        movementsDrawer?.open({
+          sku: sku.trim(),
+          productName: productName?.trim() || undefined,
+          goodPartId: batchId.trim(),
+          batchLabel: label.trim(),
+          storageId: storageId?.trim() || undefined,
+          autoGenerate: true,
+        });
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function resolveBatchLinks(item: HistoryItemNormalized): HistoryBatchLink[] {
+  if (Array.isArray(item.batchLinks) && item.batchLinks.length > 0) {
+    return item.batchLinks;
+  }
   const labels = historyBatchLabels(item);
-  if (labels.length === 0) return <>—</>;
-  if (labels.length === 1) return <>{labels[0]}</>;
+  const batchId = String(item.batchId ?? '').trim();
+  if (labels.length === 1 && batchId) {
+    return [{ label: labels[0], batchId }];
+  }
+  return [];
+}
+
+function HistoryBatchList({
+  item,
+  movementsStorageId,
+}: {
+  item: HistoryItemNormalized;
+  movementsStorageId?: string | null;
+}) {
+  const links = resolveBatchLinks(item);
+  if (links.length === 0) {
+    const labels = historyBatchLabels(item);
+    if (labels.length === 0) return <>—</>;
+    if (labels.length === 1) return <>{labels[0]}</>;
+    return (
+      <ul className="m-0 list-disc space-y-0.5 pl-4">
+        {labels.map((label, index) => (
+          <li key={`${label}-${index}`}>{label}</li>
+        ))}
+      </ul>
+    );
+  }
+
+  if (links.length === 1) {
+    return (
+      <HistoryBatchMovementsTrigger
+        label={links[0].label}
+        sku={item.sku}
+        productName={item.name}
+        batchId={links[0].batchId}
+        storageId={movementsStorageId}
+      />
+    );
+  }
+
   return (
     <ul className="m-0 list-disc space-y-0.5 pl-4">
-      {labels.map((label, index) => (
-        <li key={`${label}-${index}`}>{label}</li>
+      {links.map((link, index) => (
+        <li key={`${link.batchId}-${index}`}>
+          <HistoryBatchMovementsTrigger
+            label={link.label}
+            sku={item.sku}
+            productName={item.name}
+            batchId={link.batchId}
+            storageId={movementsStorageId}
+          />
+        </li>
       ))}
     </ul>
   );
@@ -72,7 +166,6 @@ const defaultColumns: HistoryItemsTableColumn[] = [
   {
     key: 'batch',
     label: 'Партія',
-    render: (item) => <HistoryBatchList item={item} />,
     sortValue: (item) => item.batch || '',
     sortType: 'text',
   },
@@ -98,6 +191,7 @@ export const HistoryItemsTable: React.FC<Props> = ({
   columns,
   footerTotals,
   footerLabel = 'Всього:',
+  movementsStorageId = null,
 }) => {
   const [sortBy, setSortBy] = useState<string | null>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -120,7 +214,18 @@ export const HistoryItemsTable: React.FC<Props> = ({
     }));
   }, [sets]);
 
-  const tableColumns = columns && columns.length > 0 ? columns : defaultColumns;
+  const tableColumns = useMemo(() => {
+    const base = columns && columns.length > 0 ? columns : defaultColumns;
+    return base.map((column) => {
+      if (column.key !== 'batch' || column.render) return column;
+      return {
+        ...column,
+        render: (item: HistoryItemNormalized) => (
+          <HistoryBatchList item={item} movementsStorageId={movementsStorageId} />
+        ),
+      };
+    });
+  }, [columns, movementsStorageId]);
 
   const getColumnValue = (item: HistoryItemNormalized, column: HistoryItemsTableColumn) => {
     if (column.sortValue) return column.sortValue(item);
@@ -209,6 +314,7 @@ export const HistoryItemsTable: React.FC<Props> = ({
         {sortedSets.map((setItem, idx) => {
           const kitBatch = setItem.raw?.kit_output_batch ?? setItem.raw?.kitOutputBatch;
           const kitBatchNumber = String(kitBatch?.batchNumber ?? '').trim();
+          const kitBatchId = String(kitBatch?.batchId ?? '').trim();
           return (
           <div key={`set-${idx}`} className={`overflow-x-auto px-1 pb-1 bg-gray-200 rounded-md ${className ?? ''}`}>
             <div className="flex items-center gap-2 px-2 py-2">
@@ -220,7 +326,20 @@ export const HistoryItemsTable: React.FC<Props> = ({
               </h4>
               {kitBatchNumber ? (
                 <span className="text-sm font-medium text-gray-600 ml-auto">
-                  Партія набору: <span className="rounded bg-fuchsia-200/80 px-1.5 py-0.5 text-sm leading-snug ring-1 ring-fuchsia-800/25 font-mono text-gray-800">{kitBatchNumber}</span>
+                  Партія набору:{' '}
+                  <span className="rounded bg-fuchsia-200/80 px-1.5 py-0.5 text-sm leading-snug ring-1 ring-fuchsia-800/25 font-mono text-gray-800">
+                    {kitBatchId ? (
+                      <HistoryBatchMovementsTrigger
+                        label={kitBatchNumber}
+                        sku={setItem.setSku}
+                        productName={setItem.setName}
+                        batchId={kitBatchId}
+                        storageId={movementsStorageId}
+                      />
+                    ) : (
+                      kitBatchNumber
+                    )}
+                  </span>
                 </span>
               ) : null}
             </div>

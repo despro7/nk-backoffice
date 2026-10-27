@@ -153,12 +153,14 @@ function mapMovementListRow(rec: {
   status: string;
   createdBy: number;
   notes: string | null;
+  receiptScanStartedAt: Date | null;
   createdAt?: Date;
 }) {
   return {
     ...rec,
     createdAt: rec.draftCreatedAt,
     movementDate: rec.movementDate,
+    receiptScanStartedAt: rec.receiptScanStartedAt,
     items: [],
     itemsNormalized: [],
     comment: rec.notes,
@@ -188,6 +190,7 @@ export async function listMovementHistory(query: MovementHistoryListQuery) {
         status: true,
         createdBy: true,
         notes: true,
+        receiptScanStartedAt: true,
       },
     }),
   ]);

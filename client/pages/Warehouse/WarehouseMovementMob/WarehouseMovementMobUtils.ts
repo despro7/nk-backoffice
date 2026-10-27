@@ -14,6 +14,8 @@ import {
   isReceiverOfMovement,
   isWithinEditWindow,
 } from '@shared/utils/warehouseMovementEdit';
+import { isMovementFromAlternateInterface } from '@shared/utils/warehouseMovementMobItems';
+import { formatKyivDateTime, KYIV_TZ } from '@shared/utils/kyivDateTime';
 import type { WarehouseMovementSettings } from '@shared/types/movement';
 import type {
   MovementMobAggregates,
@@ -285,7 +287,17 @@ type MovementMobStepperDateRecord = Pick<
   | 'lastSentToDilovodAt'
   | 'draftLastEditedAt'
   | 'receivedAt'
+  | 'movementDate'
 >;
+
+/** Час підтвердження: фактичний receivedAt або дата документа Dilovod (v2 без mob-прийому). */
+function resolveMovementReceivedTimestamp(
+  record: Pick<MovementMobApiRecord, 'receivedAt' | 'movementDate'>,
+): string | null | undefined {
+  if (record.receivedAt) return record.receivedAt;
+  if (record.movementDate) return record.movementDate;
+  return null;
+}
 
 function resolveStepperCompletionDates(
   status: string,
@@ -308,9 +320,7 @@ function resolveStepperCompletionDates(
     accepted: acceptedDone
       ? (record.receiptScanEndedAt ?? record.receiptScanStartedAt)
       : null,
-    received: receivedDone
-      ? (record.receivedAt || record.lastSentToDilovodAt || record.sentToDilovodAt)
-      : null,
+    received: receivedDone ? resolveMovementReceivedTimestamp(record) : null,
   };
 }
 
@@ -385,6 +395,7 @@ export function formatMovementDateTime(iso: string | null | undefined): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '—';
   return date.toLocaleString('uk-UA', {
+    timeZone: KYIV_TZ,
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -399,25 +410,35 @@ export function formatMovementCreatedDateLabel(iso: string | null | undefined): 
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '—';
   const formatted = date.toLocaleDateString('uk-UA', {
+    timeZone: KYIV_TZ,
     day: 'numeric',
     month: 'long',
     year: 'numeric',
   });
-  return `від ${formatted} року`;
+  return `від ${formatted}`;
 }
 
 export function formatChronologyDateTime(iso: string | null | undefined): string {
   if (!iso) return '—';
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString('uk-UA', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+  const wall = formatKyivDateTime(date);
+  const match = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(wall);
+  if (!match) {
+    return date.toLocaleString('uk-UA', {
+      timeZone: KYIV_TZ,
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  }
+  const [, year, month, day, hour, minute, second] = match;
+  const monthLong = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)))
+    .toLocaleDateString('uk-UA', { month: 'long', timeZone: 'UTC' });
+  return `${Number(day)} ${monthLong} ${year} р. о ${hour}:${minute}:${second}`;
 }
 
 export function formatDocNumber(internalDocNumber: string): string {
@@ -456,6 +477,7 @@ export function formatReceiptScanInterval(
   if (Number.isNaN(end.getTime())) return formatChronologyDateTime(startIso);
 
   const timeOpts: Intl.DateTimeFormatOptions = {
+    timeZone: KYIV_TZ,
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
@@ -468,6 +490,7 @@ export function formatReceiptScanInterval(
 
   if (sameDay) {
     const datePart = start.toLocaleDateString('uk-UA', {
+      timeZone: KYIV_TZ,
       day: 'numeric',
       month: 'long',
       year: 'numeric',
@@ -502,8 +525,13 @@ export function sentStepperLabel(storageBadge: string): string {
 export function toListCardViewModel(record: MovementMobApiRecord): MovementMobListCardViewModel {
   const items = parseMovementItems(record.items);
   const aggregates = aggregateMovementItems(items);
+  const createdInAlternateInterface = isMovementFromAlternateInterface({
+    items: record.items,
+    receiptScanStartedAt: record.receiptScanStartedAt,
+  });
   return {
     id: record.id,
+    createdInAlternateInterface,
     displayNumber: formatDocNumber(record.internalDocNumber),
     displayDateTime: formatMovementDateTime(record.draftCreatedAt),
     sourceStorageId: record.sourceWarehouse,
@@ -524,6 +552,7 @@ export function toListCardViewModel(record: MovementMobApiRecord): MovementMobLi
       lastSentToDilovodAt: record.lastSentToDilovodAt,
       draftLastEditedAt: record.draftLastEditedAt,
       receivedAt: record.receivedAt,
+      movementDate: record.movementDate,
     }),
     status: record.status,
   };
@@ -545,6 +574,20 @@ export function effectiveBatchId(batchId: string, batchNumber: string): string {
   const label = (batchNumber || '').trim();
   if (isUsableDilovodBatchId(label)) return label;
   return id || label;
+}
+
+/**
+ * Чи показувати партію в mob: каталог по ШК або збережений batchId без ШК (імпорт v2).
+ * Якщо ШК є — довіряємо лише каталогу (скановий потік).
+ */
+export function isMobLineBatchLinked(
+  line: Pick<MovementMobProductLineViewModel, 'batchId' | 'batchNumber' | 'barcode'>,
+  catalogBatchLinked: boolean,
+): boolean {
+  if (catalogBatchLinked) return true;
+  const barcode = String(line.barcode ?? '').trim();
+  if (barcode) return false;
+  return isUsableDilovodBatchId(effectiveBatchId(line.batchId, line.batchNumber));
 }
 
 export function resolveBatchDisplayName(
@@ -814,7 +857,10 @@ export function enrichMovementMobLines(
     const metaKey = movementMobEnrichmentLineKey(line);
     const meta = lineMetaByKey?.[metaKey];
     const enrichmentReady = lineMetaByKey !== undefined;
-    const batchLinked = enrichmentReady ? meta?.batchLinked === true : undefined;
+    const catalogBatchLinked = enrichmentReady ? meta?.batchLinked === true : undefined;
+    const batchLinked = enrichmentReady
+      ? isMobLineBatchLinked(line, catalogBatchLinked === true)
+      : undefined;
     const catalogBatchId = meta?.catalogBatchId?.trim() || '';
     const batches = batchesBySku[line.sku] ?? [];
     const lookupId = isUsableDilovodBatchId(catalogBatchId)
@@ -849,6 +895,7 @@ export function enrichMovementMobLines(
       ...line,
       batchNumber,
       batchLinked,
+      catalogBatchLinked,
       catalogGoodId: meta?.catalogGoodId ?? line.catalogGoodId ?? null,
       stock,
     };
@@ -907,7 +954,8 @@ export function buildChronology(
   const acceptedDone = isWarehouseAccepted(record);
   const receivedDone = record.status === 'finalized';
   const sentAt = record.submittedAt || record.sentToDilovodAt || record.lastSentToDilovodAt || record.draftLastEditedAt;
-  const receivedAt = record.receivedAt || record.lastSentToDilovodAt || record.sentToDilovodAt;
+  const receivedAt = resolveMovementReceivedTimestamp(record);
+  const receivedFromDilovodDocDate = receivedDone && !record.receivedAt;
   const scanInterval = formatReceiptScanInterval(
     record.receiptScanStartedAt,
     record.receiptScanEndedAt ?? record.receiptScanStartedAt,
@@ -942,7 +990,9 @@ export function buildChronology(
       occurredAt: receivedDone
         ? formatChronologyDateTime(receivedAt)
         : 'ще не підтверджено',
-      title: 'Підтверджено отримання',
+      title: receivedFromDilovodDocDate
+        ? 'Підтверджено (дата документа Dilovod)'
+        : 'Підтверджено отримання',
       userName: receivedDone ? (receiver || author) : null,
       state: receivedDone ? 'done' : 'pending',
     },
@@ -956,6 +1006,10 @@ export function toDocumentViewModel(
 ): MovementMobDocumentViewModel {
   const items = parseMovementItems(record.items);
   const lines = buildProductLines(items, metaBySku);
+  const createdInAlternateInterface = isMovementFromAlternateInterface({
+    items: record.items,
+    receiptScanStartedAt: record.receiptScanStartedAt,
+  });
   const aggregates = {
     totalBoxes: lines.reduce((s, l) => s + l.boxQuantity, 0),
     totalLoosePortions: lines.reduce((s, l) => s + l.portionQuantity, 0),
@@ -965,6 +1019,7 @@ export function toDocumentViewModel(
 
   return {
     id: record.id,
+    createdInAlternateInterface,
     displayNumber: formatDocNumber(record.internalDocNumber),
     internalDocNumber: record.internalDocNumber,
     docNumber: record.docNumber ?? null,
@@ -1333,11 +1388,15 @@ export function serializeMobDraftItems(
   }));
 }
 
-/** Рядки без привʼязаної партії до ШК (для валідації відправки). */
+/** Рядки з ШК без привʼязки партії в каталозі (wm_mobRequireBatch). Рядки v2 без ШК не блокуються. */
 export function linesMissingBatchLink(
   lines: MovementMobProductLineViewModel[],
 ): MovementMobProductLineViewModel[] {
-  return lines.filter((line) => line.totalPortions > 0 && line.batchLinked !== true);
+  return lines.filter((line) => {
+    if (line.totalPortions <= 0) return false;
+    if (!String(line.barcode ?? '').trim()) return false;
+    return line.catalogBatchLinked !== true;
+  });
 }
 
 export function findPresetKeyForRange(

@@ -523,6 +523,55 @@ router.post('/resolve-batch-names', authenticateToken, async (req, res) => {
       }
     }
 
+    const documentBatchIds = [
+      ...new Set(
+        lineEntries
+          .map((line) => (isUsableDilovodBatchId(line.batchId) ? line.batchId.trim() : ''))
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const dilovodLookupIds = [...new Set([...uniqueIds, ...documentBatchIds])].filter((id) => {
+      const existing = names[id];
+      return !existing || batchNumberNeedsResolution(existing, id);
+    });
+
+    if (dilovodLookupIds.length > 0) {
+      const { DilovodApiClient } = await import('../../services/dilovod/DilovodApiClient.js');
+      const { extractBatchLabelFromGoodPartHeader } = await import('../../services/dilovod/DilovodUtils.js');
+      const client = new DilovodApiClient();
+      const chunkSize = 4;
+      for (let offset = 0; offset < dilovodLookupIds.length; offset += chunkSize) {
+        const chunk = dilovodLookupIds.slice(offset, offset + chunkSize);
+        await Promise.all(
+          chunk.map(async (id) => {
+            try {
+              const obj = await client.getObject(id);
+              const header =
+                obj?.header && typeof obj.header === 'object'
+                  ? (obj.header as Record<string, unknown>)
+                  : undefined;
+              const label = extractBatchLabelFromGoodPartHeader(header, id);
+              if (label) {
+                names[id] = label;
+              }
+            } catch (error) {
+              const msg = error instanceof Error ? error.message : String(error);
+              console.log(`⚠️ [Warehouse] resolve-batch-names getObject(${id}): ${msg}`);
+            }
+          }),
+        );
+      }
+
+      for (const line of lineEntries) {
+        const lookupId = isUsableDilovodBatchId(line.batchId) ? line.batchId.trim() : '';
+        const label = lookupId ? names[lookupId] : undefined;
+        if (!label) continue;
+        const key = lineMetaKey(line);
+        if (!names[key]) names[key] = label;
+        names[`${line.sku}::${lookupId}`] = label;
+      }
+    }
+
     res.json({ success: true, names, lineMeta });
   } catch (error) {
     console.error('🚨 [Warehouse] resolve-batch-names:', error);

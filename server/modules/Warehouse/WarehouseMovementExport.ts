@@ -253,6 +253,7 @@ export async function exportWarehouseMovementToDilovod(
     where: { id: draft.id },
     data: {
       status: newStatus,
+      movementDate: docDate,
       lastSentToDilovodAt: now,
       ...(isFirstSend && { sentToDilovodAt: now }),
       ...(dilovodDocId != null && { dilovodDocId }),

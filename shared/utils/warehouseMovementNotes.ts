@@ -1,4 +1,7 @@
-import { isMobMovementStoredItems } from './warehouseMovementMobItems.js';
+import {
+  isMobMovementStoredItems,
+  isMovementCreatedViaMobScanFlow,
+} from './warehouseMovementMobItems.js';
 
 export type MovementNotesChannel = 'default' | 'mob-scan';
 
@@ -27,19 +30,46 @@ export function buildEffectiveMovementNotes(
   return cleaned ? `${cleaned} | ${suffix}` : suffix;
 }
 
+const MOB_SCAN_NOTES_MARK = /\(сканування\)/;
+
+/** Суфікс remark «…з Backoffice (сканування) …» — mob-переміщення. */
+export function movementNotesIndicateMobScan(notes: string | null | undefined): boolean {
+  return MOB_SCAN_NOTES_MARK.test(String(notes ?? ''));
+}
+
+/** Історія v2: mob-скан за приміткою, receiptScanStartedAt або ШК у items. */
+export function isMobScanMovementHistoryRecord(input: {
+  notes?: string | null;
+  comment?: string | null;
+  items?: unknown;
+  receiptScanStartedAt?: Date | string | null;
+}): boolean {
+  if (movementNotesIndicateMobScan(input.notes ?? input.comment)) {
+    return true;
+  }
+  const receiptScanStartedAt = input.receiptScanStartedAt != null
+    ? String(input.receiptScanStartedAt)
+    : null;
+  return isMovementCreatedViaMobScanFlow({
+    items: input.items,
+    receiptScanStartedAt,
+  });
+}
+
 /** Документ з mob-циклу (скан / submit), не desktop v2-only. */
 export function isMobScanMovementRecord(input: {
   submittedAt?: Date | string | null;
   items?: unknown;
 }): boolean {
-  if (input.submittedAt) return true;
   if (typeof input.items === 'string') {
     try {
       const parsed = JSON.parse(input.items);
-      return isMobMovementStoredItems(parsed);
+      if (isMobMovementStoredItems(parsed)) return true;
     } catch {
-      return false;
+      // fall through
     }
+  } else if (isMobMovementStoredItems(input.items)) {
+    return true;
   }
-  return isMobMovementStoredItems(input.items);
+  return Boolean(input.submittedAt);
 }

@@ -45,6 +45,25 @@ Legacy для переміщень: `from` / `to` еквівалентні `date
 
 Sync шапок Dilovod (write-off, surplus, movement) використовує той самий `listQuery`, щоб оновлювати лише поточну сторінку.
 
+### Повернення: сортування «Дата операції»
+
+- Колонка БД: `returnDate`; у рядку списку — `returnDate` або `createdAt`, якщо операційної дати немає.
+- `sortBy=operDate` сортує за **ефективною датою операції** (`shared/utils/returnHistoryOperDate.ts`):
+  - `COALESCE(returnDate, createdAt)`;
+  - якщо `returnDate` старіша за `createdAt` більш ніж на **45 днів** (часто legacy `orderDate`), для сорту береться `createdAt`.
+- Реалізація: `returnsHistoryList.ts` — завантаження ключів + сортування в пам’яті (до 5000 рядків).
+
+### Спільний акордеон історії (`HistoryAccordionItem`)
+
+| Елемент | Опис |
+|---------|------|
+| Бейдж складу | `HistoryStorageBadge` (ГП/МС, 9px) біля відносної дати в заголовку (комплектація, списання, оприбуткування; не дублюється для переміщень — там напрямок GP→MS). |
+| Mob / desktop | Іконка `scan-barcode` біля № документа в історії переміщення v2, якщо mob-скан (`isMobScanMovementHistoryRecord`). Іконка `monitor-smartphone` у mob-списку для документів з v2/desktop. |
+| Помилка Dilovod | `DilovodSendErrorItemsTable` — таблиця позицій з розбору `applicationLayerError` (`dilovodInsufficientStockParse.ts` + fallback `metaLogsParser`). |
+| Партія | Клік по партії в `HistoryItemsTable` → drawer «Рухи товару» (`goodPartId`, `storageId` операції). |
+
+Повернення: бейдж складу біля дати оприбуткування (`returnHistoryStorage.ts` — `payload.storage` / налаштування Dilovod `storageId`).
+
 ## Файли (клієнт)
 
 - `client/pages/Warehouse/shared/WarehouseDocHistoryToolbarFilters.tsx`

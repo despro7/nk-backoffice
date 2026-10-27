@@ -4,7 +4,8 @@ import { useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import MovementMobEditorPage from './MovementMobEditorPage';
 import { useWarehouseMovementMobDocument } from './useWarehouseMovementMobDocument';
-import { formatMovementCreatedDateLabel } from './WarehouseMovementMobUtils';
+import { formatChronologyDateTime } from './WarehouseMovementMobUtils';
+import { MovementMobAlternateInterfaceBadge } from './components/MovementMobAlternateInterfaceNotice';
 
 export default function MovementMobDocumentPage() {
   const navigate = useNavigate();
@@ -31,12 +32,15 @@ export default function MovementMobDocumentPage() {
           <DynamicIcon name="arrow-left" size={18} />
         </Button>
         <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-          <h1 className="text-lg md:text-xl leading-tight font-bold text-default-900 truncate">
-            {document?.displayNumber ? `Переміщення ${document.displayNumber}` : 'Переміщення'}
-          </h1>
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-lg md:text-xl leading-tight font-bold text-default-900 truncate">
+              {document?.displayNumber ? `Переміщення ${document.displayNumber}` : 'Переміщення'}
+            </h1>
+            {document?.createdInAlternateInterface ? <MovementMobAlternateInterfaceBadge /> : null}
+          </div>
           <p className="text-xs md:text-sm text-default-400 truncate">
             {document?.draftCreatedAt
-              ? formatMovementCreatedDateLabel(document.draftCreatedAt)
+              ? formatChronologyDateTime(document.draftCreatedAt)
               : 'Завантаження…'}
           </p>
         </div>

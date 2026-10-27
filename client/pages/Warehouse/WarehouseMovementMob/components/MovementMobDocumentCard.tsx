@@ -6,6 +6,16 @@ import { pluralize } from '@/lib/formatUtils';
 import { receiptDeltaClass, receiptReceivedClass } from '../WarehouseMovementMobUtils';
 import { QtyPills } from '../../shared/QtyPills';
 import MovementMobStatusStepper, { MovementMobDirectionBadges } from './MovementMobStatusStepper';
+import { MovementMobAlternateInterfaceBadge } from './MovementMobAlternateInterfaceNotice';
+
+function DocumentNumberTitle({ displayNumber, showAlternateBadge }: { displayNumber: string; showAlternateBadge: boolean }) {
+  return (
+    <div className="flex items-center gap-1.5 min-w-0">
+      <h3 className="text-lg font-bold text-default-900 leading-none truncate">{displayNumber}</h3>
+      {showAlternateBadge ? <MovementMobAlternateInterfaceBadge /> : null}
+    </div>
+  );
+}
 
 interface MovementMobDocumentCardProps {
   card: MovementMobListCardViewModel;
@@ -148,8 +158,10 @@ export default function MovementMobDocumentCard({
             <>
               <div className="flex items-baseline justify-between gap-2">
                 <div className="flex flex-col gap-0.5">
-                  <h3 className="text-lg font-bold text-default-900 leading-none">{card.displayNumber}</h3>
-                  
+                  <DocumentNumberTitle
+                    displayNumber={card.displayNumber}
+                    showAlternateBadge={card.createdInAlternateInterface}
+                  />
                 </div>
                 {aggregates.lineCount > 0 && (
                   <span className="text-base font-semibold text-neutral-600 shrink-0">
@@ -171,7 +183,10 @@ export default function MovementMobDocumentCard({
           ) : (
             <div className="flex items-end justify-between gap-3">
               <div className="flex items-baseline gap-2 min-w-0">
-                <h3 className="text-lg font-bold text-default-900 leading-none">{card.displayNumber}</h3>
+                <DocumentNumberTitle
+                  displayNumber={card.displayNumber}
+                  showAlternateBadge={card.createdInAlternateInterface}
+                />
                 {aggregates.lineCount > 0 && (
                   <span className="text-[11px] text-neutral-400">
                     {aggregates.lineCount} {pluralize(aggregates.lineCount, 'позиція', 'позиції', 'позицій')}

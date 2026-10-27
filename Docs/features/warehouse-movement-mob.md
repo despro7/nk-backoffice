@@ -430,6 +430,12 @@ Mob зберігає в `items` JSON поля на кшталт `barcode`, `batc
 
 Документи, вже зіпсовані перезаписом до цього фіксу, можна частково відновити скриптом `scripts/repair-mob-movement-scan-fields.ts` (audit / історія змін).
 
+### Документи з іншого інтерфейсу (v2 / desktop)
+
+- Визначення: `isMovementFromAlternateInterface` / `isMovementCreatedViaMobScanFlow` (`shared/utils/warehouseMovementMobItems.ts`).
+- UI: `MovementMobAlternateInterfaceNotice.tsx` — бейдж `monitor-smartphone` у списку та жовтий банер на екрані документа; в історії переміщення v2 — `MovementMobScanInterfaceBadge` (`scan-barcode`) біля номера, якщо в примітці `(сканування)` або є mob-поля в `items` / `receiptScanStartedAt`.
+- Партія в mob без ШК (v2-only рядки): fallback `batchId` з документа + `isMobLineBatchLinked` (`WarehouseMovementMobUtils.ts`).
+
 **Dilovod `getBatchNumbersBySku`:** фільтр SKU — оператор `IL` (список); `goodPart__pr` не вказувати в `fields` (API повертає помилку); при 0 партій з firm — повтор без firm; `unwrapDilovodId` / `unwrapDilovodName` для трансформації.
 
 Міграції: `20260830120000_warehouse_movement_receipt_fields/`, `20260904120000_warehouse_movement_receipt_scan_fields/`.
@@ -462,6 +468,7 @@ client/pages/Warehouse/WarehouseMovementMob/
     ├── MovementMobProductCard.tsx
     ├── MovementMobProductEditDrawer.tsx
     ├── MovementMobStatusStepper.tsx
+    ├── MovementMobAlternateInterfaceNotice.tsx
     └── …
 
 shared/utils/warehouseMovementEdit.ts   — isWithinEditWindow, isReceiverOfMovement

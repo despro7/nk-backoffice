@@ -14,6 +14,10 @@ import {
 import type { ReturnHistoryRecord, ReturnHistoryItem } from '../WarehouseReturnsTypes';
 import useUserNames from '@/hooks/useUserNames';
 import { getFirmDisplayName } from '@shared/utils/directoryUtils';
+import { resolveReturnHistoryStorageId } from '@shared/utils/returnHistoryStorage';
+import { HistoryStorageBadge } from '../../shared/HistoryStorageBadge';
+import { resolveShortStorageBadge } from '../../WarehouseMovementMob/WarehouseMovementMobUtils';
+import { useDilovodSettings } from '@/hooks/useDilovodSettings';
 
 // ---------------------------------------------------------------------------
 // ReturnsHistoryTable — список повернень як акордеон
@@ -26,6 +30,7 @@ interface ReturnsHistoryTableProps {
 }
 
 export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: ReturnsHistoryTableProps) => {
+  const { settings } = useDilovodSettings({ loadDirectories: false });
   const { hasPermission } = useRoleAccess();
   const isAdmin = hasPermission(PERMISSIONS.ACTION_WAREHOUSE_HISTORY_DELETE);
   const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
@@ -115,6 +120,10 @@ export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: R
         const items = Array.isArray(record.items) ? record.items : JSON.parse(record.items || '[]') as ReturnHistoryItem[];
         const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
         const isExpanded = expandedRecordId === record.id;
+        const returnStorageId = resolveReturnHistoryStorageId(record) ?? settings?.storageId ?? null;
+        const returnStorageBadge = returnStorageId
+          ? resolveShortStorageBadge(returnStorageId)
+          : null;
 
         return (
           <div key={record.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
@@ -131,7 +140,13 @@ export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: R
                   <p className="font-medium text-gray-700 tabular-nums text-left pr-2 whitespace-nowrap">
                     Замовлення №{record.orderNumber}
                   </p>
-                  <span className="flex gap-0.5 items-center text-xs text-gray-400" title="Дата оприбутковання"><DynamicIcon name="undo-2" className="w-3 h-3 mb-0.5" /> {record.returnDate ? formatDate(record.returnDate) : formatDate(record.createdAt)}</span>
+                  <span className="flex gap-1 items-center text-xs text-gray-400" title="Дата оприбутковання">
+                    <DynamicIcon name="undo-2" className="w-3 h-3 mb-0.5 shrink-0" />
+                    {record.returnDate ? formatDate(record.returnDate) : formatDate(record.createdAt)}
+                    {returnStorageBadge && returnStorageBadge !== '—' ? (
+                      <HistoryStorageBadge badge={returnStorageBadge} />
+                    ) : null}
+                  </span>
                 </div>
                 <div className="flex gap-2">
                   <Chip size="sm" color="default" variant="flat" className="bg-gray-200 text-gray-700 max-w-sm min-w-0 *:[span]:truncate">{getReturnReasonLabel(record.returnReason, record.customReason)}</Chip>
@@ -241,7 +256,12 @@ export const ReturnsHistoryTable = ({ records, onLoadRecord, onDeleteRecord }: R
                 </div>
 
                 {/* Items table */}
-                <HistoryItemsTable title="Товари на повернення" mode="normal" items={record.itemsNormalized ?? items} />
+                <HistoryItemsTable
+                  title="Товари на повернення"
+                  mode="normal"
+                  items={record.itemsNormalized ?? items}
+                  movementsStorageId={returnStorageId}
+                />
               </div>
             </div>
           </div>

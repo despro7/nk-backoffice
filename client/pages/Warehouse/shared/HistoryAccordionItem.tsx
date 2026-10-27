@@ -16,10 +16,14 @@ import { PERMISSIONS } from '@shared/constants/permissions';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { formatDate, formatRelativeDate, truncateText, pluralize } from '@/lib';
 import { HistoryItemsTable } from './HistoryItemsTable';
+import { DilovodSendErrorItemsTable } from './DilovodSendErrorItemsTable';
+import { HistoryStorageBadge } from './HistoryStorageBadge';
 import { normalizeSetsArray, sumHistoryItemsQuantity } from './historyNormalize';
 import { recordNeedsHistoryDetailsEnrich } from './lazyEnrichHistoryPage';
 import { getFirmDisplayName, getStorageDisplayName } from '@shared/utils/directoryUtils';
+import { MovementMobScanInterfaceBadge } from '@/pages/Warehouse/WarehouseMovementMob/components/MovementMobAlternateInterfaceNotice';
 import { MovementMobDirectionBadges } from '@/pages/Warehouse/WarehouseMovementMob/components/MovementMobStatusStepper';
+import { isMobScanMovementHistoryRecord } from '@shared/utils/warehouseMovementNotes';
 import { resolveShortStorageBadge } from '@/pages/Warehouse/WarehouseMovementMob/WarehouseMovementMobUtils';
 import { useDilovodSettings } from '@/hooks/useDilovodSettings';
 import useUserNames from '@/hooks/useUserNames';
@@ -488,6 +492,18 @@ export const HistoryAccordionItem = ({
         const movementDocLabel = isMovementRecord
           ? (operationDocNumber || record.docNumber || record.doc_number || null)
           : null;
+        const movementCreatedViaMobScan = isMovementRecord && isMobScanMovementHistoryRecord({
+          notes: record.notes,
+          comment: record.comment,
+          items: record.items ?? record.itemsNormalized,
+          receiptScanStartedAt: record.receiptScanStartedAt ?? record.receipt_scan_started_at,
+        });
+        const historyStorageId = isMovementRecord
+          ? (movementFromId || null)
+          : (record.storageId || record.storage_id || record.payload?.storage || null);
+        const historyStorageBadge = !isMovementRecord && historyStorageId
+          ? resolveShortStorageBadge(historyStorageId)
+          : null;
         const releaseStatus = String(record.status ?? '').toLowerCase();
         const sendFailed = releaseStatus === 'send_failed'
           || correctionLayers.some((layer) => String(layer.status ?? '').toLowerCase() === 'send_failed');
@@ -524,7 +540,12 @@ export const HistoryAccordionItem = ({
 									<div className="flex flex-col min-w-28">
                     <span className={`text-sm font-medium inline-flex items-center gap-1 flex-wrap ${correctionIncomplete ? 'text-danger' : 'text-gray-700'}`}>
                       {isMovementRecord ? (
-                        movementDocLabel ?? '—'
+                        <span className="inline-flex items-center gap-1">
+                          {movementDocLabel ?? '—'}
+                          {movementCreatedViaMobScan ? (
+                            <MovementMobScanInterfaceBadge stopAccordionToggle />
+                          ) : null}
+                        </span>
                       ) : (() => {
                         const fallback = releaseHistoryTitle
                           ?? (displayOperationCfg ? displayOperationCfg.label : recordName);
@@ -545,7 +566,12 @@ export const HistoryAccordionItem = ({
                         <CorrectionIncompleteHint stopAccordionToggle />
                       ) : null}
                     </span>
-										<span className="text-xs text-gray-400">{formatRelativeDate(record[cfg.dateField || 'createdAt'], { maxRelativeDays: 1 })}</span>
+										<span className="text-xs text-gray-400 inline-flex items-center gap-1">
+                      {formatRelativeDate(record[cfg.dateField || 'createdAt'], { maxRelativeDays: 1 })}
+                      {historyStorageBadge && historyStorageBadge !== '—' ? (
+                        <HistoryStorageBadge badge={historyStorageBadge} />
+                      ) : null}
+                    </span>
 									</div>
 									<div className="flex gap-2 flex-wrap">
                     {isMovementRecord && (
@@ -793,6 +819,9 @@ export const HistoryAccordionItem = ({
                         {sendError.message}
                       </p>
                       {sendError.raw ? (
+                        <DilovodSendErrorItemsTable raw={sendError.raw} />
+                      ) : null}
+                      {sendError.raw ? (
                         <details
                           className="group"
                           onToggle={() => setLayoutTick((value) => value + 1)}
@@ -902,7 +931,12 @@ export const HistoryAccordionItem = ({
                                 </div>
                               </div>
                               <div className="p-2">
-                                <HistoryItemsTable mode="sets" sets={layerItems} hideHeader />
+                                <HistoryItemsTable
+                                  mode="sets"
+                                  sets={layerItems}
+                                  hideHeader
+                                  movementsStorageId={historyStorageId}
+                                />
                               </div>
                               <WarehouseReleaseAuditAccordion
                                 releaseId={Number(layer.recordId ?? layer.id)}
@@ -916,9 +950,17 @@ export const HistoryAccordionItem = ({
                         })}
                       </div>
 	                  ) : recordType === 'releaseSet' ? (
-	                    <HistoryItemsTable mode="sets" sets={record.setsNormalized ?? items} />
+	                    <HistoryItemsTable
+                        mode="sets"
+                        sets={record.setsNormalized ?? items}
+                        movementsStorageId={historyStorageId}
+                      />
 	                  ) : (
-	                    <HistoryItemsTable mode="normal" items={record.itemsNormalized ?? items} />
+	                    <HistoryItemsTable
+                        mode="normal"
+                        items={record.itemsNormalized ?? items}
+                        movementsStorageId={historyStorageId}
+                      />
 	                  )}
 	                </div>
 

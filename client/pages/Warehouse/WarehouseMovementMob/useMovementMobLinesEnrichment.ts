@@ -9,6 +9,7 @@ import {
   batchNumberNeedsResolution,
   enrichMovementMobLines,
   effectiveBatchId,
+  isMobLineBatchLinked,
   movementMobEnrichmentLineKey,
   resolveBatchDisplayName,
   type MovementMobSkuStockTotals,
@@ -96,11 +97,13 @@ function applyCatalogNames(
   return lines.map((line) => {
     const metaKey = metaKeyByLineKey[line.key] ?? movementMobEnrichmentLineKey(line);
     const meta = lineMeta[metaKey];
-    const batchLinked = meta?.batchLinked === true;
+    const catalogBatchLinked = meta?.batchLinked === true;
+    const batchLinked = isMobLineBatchLinked(line, catalogBatchLinked);
     if (!batchLinked) {
       return {
         ...line,
         batchLinked: false,
+        catalogBatchLinked: false,
         batchNumber: '',
         catalogGoodId: meta?.catalogGoodId ?? line.catalogGoodId ?? null,
       };
@@ -114,16 +117,22 @@ function applyCatalogNames(
       || catalogNames[`${line.sku}::${lookupId}`]
       || (label ? catalogNames[`${line.sku}::${label}`] : undefined);
 
-    if (!catalogName || !batchNumberNeedsResolution(line.batchNumber, lookupId)) {
+    const resolvedNumber = catalogName
+      || (!batchNumberNeedsResolution(line.batchNumber, lookupId) ? line.batchNumber : undefined);
+
+    if (!resolvedNumber || !batchNumberNeedsResolution(resolvedNumber, lookupId)) {
       return {
         ...line,
         batchLinked: true,
+        catalogBatchLinked,
+        batchNumber: resolvedNumber || line.batchNumber,
         catalogGoodId: meta?.catalogGoodId ?? line.catalogGoodId ?? null,
       };
     }
     return {
       ...line,
       batchLinked: true,
+      catalogBatchLinked,
       batchNumber: catalogName,
       catalogGoodId: meta?.catalogGoodId ?? line.catalogGoodId ?? null,
     };

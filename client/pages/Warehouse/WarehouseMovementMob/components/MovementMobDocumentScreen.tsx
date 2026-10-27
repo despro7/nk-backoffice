@@ -17,6 +17,7 @@ import MovementMobProductCard from './MovementMobProductCard';
 import MovementMobWarehouseSelectors, {
   type MovementMobStorageOption,
 } from './MovementMobWarehouseSelectors';
+import { MovementMobAlternateInterfaceBanner } from './MovementMobAlternateInterfaceNotice';
 import {
   collectHistoryDilovodCheckItems,
   runWarehouseHistoryDilovodCheck,
@@ -76,6 +77,7 @@ interface MovementMobDocumentScreenProps {
   dilovodDocId?: string | null;
   dilovodCheckRecordId?: number | null;
   dilovodCheckLabel?: string | null;
+  createdInAlternateInterface?: boolean;
 }
 
 export default function MovementMobDocumentScreen({
@@ -132,6 +134,7 @@ export default function MovementMobDocumentScreen({
   dilovodDocId = null,
   dilovodCheckRecordId = null,
   dilovodCheckLabel = null,
+  createdInAlternateInterface = false,
 }: MovementMobDocumentScreenProps) {
   const [checkingDilovod, setCheckingDilovod] = useState(false);
 
@@ -284,6 +287,10 @@ export default function MovementMobDocumentScreen({
             aggregates={aggregates}
             receivedAggregates={isReceiving || isWarehouseAccepted ? receivedAggregates : undefined}
           />
+
+          {createdInAlternateInterface && !isDeleted && (
+            <MovementMobAlternateInterfaceBanner />
+          )}
         </section>
       )}
 
@@ -438,7 +445,7 @@ export default function MovementMobDocumentScreen({
           {showAdminActions && canAdminDelete && (
             <Button
               color="danger"
-              className="min-w-0 h-10 text-danger-700 border-1.5 border-danger-500 bg-transparent hover:bg-danger-700 hover:text-white"
+              className="min-w-0 h-10 text-danger-700 border-1.5 border-danger-500 bg-danger-100/50 hover:bg-danger-700 hover:text-white"
               startContent={<DynamicIcon name="trash-2" size={16} strokeWidth={1.75} className="shrink-0" />}
               onPress={onAdminDelete}
             >
@@ -448,7 +455,7 @@ export default function MovementMobDocumentScreen({
           {dilovodCheckItems.length > 0 ? (
             <Button
               variant="flat"
-              className="min-w-0 h-10 text-amber-900 border-1.5 border-amber-400 bg-amber-50 hover:bg-amber-100"
+              className="min-w-0 h-10 text-amber-600 border-1.5 bg-amber-100/25 border-amber-500 hover:bg-amber-100"
               isDisabled={checkingDilovod}
               startContent={(
                 <DynamicIcon

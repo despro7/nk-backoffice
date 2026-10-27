@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-10-27 — Склад: історія (бейджі, Dilovod-помилки, mob↔v2), повернення (сортування)
+
+**Files:** `HistoryAccordionItem.tsx`, `HistoryItemsTable.tsx`, `ReturnsHistoryTable.tsx`, `returnsHistoryList.ts`, `returnHistoryOperDate.ts`, `MovementHistoryService.ts`, `warehouseMovementMobItems.ts`, `MovementMobAlternateInterfaceNotice.tsx`, `dilovodInsufficientStockParse.ts`, `warehouse-doc-history-filters.md`, `warehouse-movement-mob.md`
+
+- **Історія (акордеон):** бейдж ГП/МС біля дати; іконка mob-сканування в історії переміщення v2; таблиця позицій з помилки Dilovod; клік по партії → рухи товару.
+- **Mob:** позначка документів з v2/desktop; fallback партії по `batchId`; дати Kyiv у синку переміщень.
+- **Повернення:** сортування «Дата операції» за ефективною датою (`COALESCE` + корекція legacy `orderDate`); бейдж складу біля дати оприбуткування.
+
+---
+
 ## 2026-10-26 — Права доступу: назва дії в toast при 403
 
 **Files:** `requirePermission.ts`, `permissions.ts`, `roles.ts`, `rolePreviewFetch.ts`, `resolvePermissionLabel.ts`

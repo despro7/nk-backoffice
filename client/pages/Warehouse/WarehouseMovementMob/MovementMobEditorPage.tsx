@@ -1338,6 +1338,7 @@ export default function MovementMobEditorPage({
         dilovodDocId={document?.dilovodDocId ?? null}
         dilovodCheckRecordId={document?.id ?? null}
         dilovodCheckLabel={document?.internalDocNumber ?? document?.docNumber ?? null}
+        createdInAlternateInterface={document?.createdInAlternateInterface ?? false}
         onCancelReceipt={isFinalized && canOverrideEdit ? () => setCancelReceiptOpen(true) : undefined}
         cancelingReceipt={cancelingReceipt}
       />

@@ -7,6 +7,7 @@ import { DilovodApiClient } from '../../services/dilovod/DilovodApiClient.js';
 import type { GoodMovingDocument, GoodMovingDocumentDetails, MovementHistoryResponse } from '../../../shared/types/movement.js';
 import type { GetMovementHistoryParams } from './WarehouseTypes.js';
 import { isMobMovementStoredItems } from '../../../shared/utils/warehouseMovementMobItems.js';
+import { parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
 import { WarehouseService } from './WarehouseService.js';
 
@@ -158,7 +159,7 @@ export class MovementHistoryService {
         if (!doc.id) continue;
 
         const createdBy = userIdByDilovodId.get(doc.author) ?? 0;
-        const movementDate = doc.date ? new Date(doc.date) : null;
+        const movementDate = doc.date ? parseKyivDateTime(doc.date) : null;
 
         // Визначаємо sourceWarehouse і destinationWarehouse залежно від напрямку
         // doc.storage = склад-донор, doc.storageTo = склад-реципієнт
@@ -176,8 +177,6 @@ export class MovementHistoryService {
               internalDocNumber: `D-${doc.id}`,
               docNumber: doc.number ?? null,
               movementDate,
-              sentToDilovodAt: movementDate,
-              lastSentToDilovodAt: movementDate,
               status: 'finalized',
               sourceWarehouse,
               destinationWarehouse,
@@ -189,7 +188,6 @@ export class MovementHistoryService {
               // Оновлюємо метадані з Діловода
               docNumber: doc.number ?? null,
               movementDate,
-              lastSentToDilovodAt: movementDate,
               notes: doc.remark ?? null,
               sourceWarehouse,
               destinationWarehouse,
@@ -255,8 +253,8 @@ export class MovementHistoryService {
         sku: dilovodIdToSku.get(g.good) ?? '',
         productName: g.good__pr ?? '',
         dilovodId: g.good ?? '',
-        batchNumber: g.batchNumber ?? '',
-        batchId: g.goodPart ?? '',
+        batchNumber: String(g.goodPart__pr ?? g.batchNumber ?? '').trim(),
+        batchId: String(g.goodPart ?? '').trim(),
         batchStorage: '',
         boxQuantity: 0,
         portionQuantity: parseFloat(g.qty) || 0,

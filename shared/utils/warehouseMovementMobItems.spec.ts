@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   isMobMovementStoredItems,
+  isMovementCreatedViaMobScanFlow,
+  isMovementFromAlternateInterface,
   mergeIncomingPutItemsPreservingMobScan,
 } from './warehouseMovementMobItems.js';
 
@@ -8,6 +10,24 @@ describe('warehouseMovementMobItems', () => {
   it('detects mob items by barcode field', () => {
     expect(isMobMovementStoredItems([{ sku: '1', batchId: 'x' }])).toBe(false);
     expect(isMobMovementStoredItems([{ sku: '1', barcode: '' }])).toBe(true);
+  });
+
+  it('v2 finalized row without barcode is alternate interface', () => {
+    const items = [{
+      sku: '02008',
+      batchId: '1112200000002099',
+      batchNumber: '60917',
+      barcodeKind: 'portion',
+      receivedTotalPortions: 28,
+    }];
+    expect(isMobMovementStoredItems(items)).toBe(true);
+    expect(isMovementCreatedViaMobScanFlow({ items })).toBe(false);
+    expect(isMovementFromAlternateInterface({ items })).toBe(true);
+  });
+
+  it('mob scan with barcode is not alternate interface', () => {
+    const items = [{ sku: '1', barcode: '2200000000347', totalPortions: 1 }];
+    expect(isMovementFromAlternateInterface({ items })).toBe(false);
   });
 
   it('merge preserves barcode when v2 put strips scan fields', () => {

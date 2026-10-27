@@ -1,3 +1,8 @@
+export interface HistoryBatchLink {
+  label: string;
+  batchId: string;
+}
+
 export interface HistoryItemNormalized {
   sku: string;
   name: string | null;
@@ -5,6 +10,7 @@ export interface HistoryItemNormalized {
   batch?: string | null;
   /** Окремі підписи партій; кілька штук таблиця показує списком. */
   batches?: string[];
+  batchLinks?: HistoryBatchLink[];
   batchId?: string | null;
   price?: number | null;
   productId?: number | null;
@@ -44,17 +50,44 @@ function formatHistoryBatchLabel(batch: any): string {
   return Number.isFinite(qty) && qty > 0 ? `${name} (${qty})` : name;
 }
 
-function readHistoryBatch(it: any): { batch: string | null; batches: string[]; batchId: string | null } {
+function readHistoryBatch(it: any): {
+  batch: string | null;
+  batches: string[];
+  batchLinks: HistoryBatchLink[];
+  batchId: string | null;
+} {
   const nested = Array.isArray(it?.batches) ? it.batches : [];
+  const batchLinks: HistoryBatchLink[] = nested
+    .map((entry: unknown) => {
+      const label = formatHistoryBatchLabel(entry);
+      const batchId = entry && typeof entry === 'object' && 'batchId' in entry
+        ? String((entry as { batchId?: unknown }).batchId ?? '').trim()
+        : '';
+      if (!label || !batchId) return null;
+      return { label, batchId };
+    })
+    .filter((row): row is HistoryBatchLink => row != null);
   const labels = nested.map(formatHistoryBatchLabel).filter(Boolean);
   if (labels.length > 0) {
     const firstId = nested[0]?.batchId != null ? String(nested[0].batchId).trim() : '';
-    return { batch: labels.join('\n'), batches: labels, batchId: firstId || null };
+    return {
+      batch: labels.join('\n'),
+      batches: labels,
+      batchLinks,
+      batchId: firstId || null,
+    };
   }
   const batch = it?.batchNumber ?? it?.batchName ?? null;
   const batchId = it?.batchId != null ? String(it.batchId).trim() : '';
-  const label = batch ? String(batch) : '';
-  return { batch: label || null, batches: label ? [label] : [], batchId: batchId || null };
+  const label = batch ? String(batch).trim() : '';
+  if (label) {
+    const links = batchId ? [{ label, batchId }] : [];
+    return { batch: label, batches: [label], batchLinks: links, batchId: batchId || null };
+  }
+  if (batchId) {
+    return { batch: batchId, batches: [batchId], batchLinks: [{ label: batchId, batchId }], batchId };
+  }
+  return { batch: null, batches: [], batchLinks: [], batchId: null };
 }
 
 function withAllocationBatches(component: any, allocations: any[]): any {
@@ -101,11 +134,23 @@ export function normalizeItem(it: any): HistoryItemNormalized {
   const sku = String(it?.sku ?? it?.id ?? it?.set_sku ?? '') || '';
   const name = it?.name ?? it?.productName ?? it?.title ?? null;
   const qty = resolveHistoryItemQuantity(it);
-  const { batch, batches, batchId } = readHistoryBatch(it);
+  const { batch, batches, batchLinks, batchId } = readHistoryBatch(it);
   const price = (it?.price !== undefined && it?.price !== null) ? Number(it.price) : null;
   const productId = it?.productId ?? null;
   const dilovodId = it?.dilovodId ?? null;
-  return { sku, name, qty, batch, batches, batchId, price, productId, dilovodId, raw: it };
+  return {
+    sku,
+    name,
+    qty,
+    batch,
+    batches,
+    batchLinks,
+    batchId,
+    price,
+    productId,
+    dilovodId,
+    raw: it,
+  };
 }
 
 export function normalizeSet(setItem: any): HistorySetNormalized {
