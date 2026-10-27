@@ -417,16 +417,22 @@ router.post('/resolve-batch-names', authenticateToken, async (req, res) => {
     }> = {};
 
     const rawLines = Array.isArray(req.body?.lines) ? req.body.lines : [];
-    const lineEntries = rawLines
+    type ResolveBatchLineEntry = {
+      sku: string;
+      batchId: string;
+      batchNumber: string;
+      barcode: string;
+    };
+    const lineEntries: ResolveBatchLineEntry[] = rawLines
       .map((line: { sku?: unknown; batchId?: unknown; batchNumber?: unknown; barcode?: unknown }) => ({
         sku: String(line?.sku ?? '').trim(),
         batchId: String(line?.batchId ?? '').trim(),
         batchNumber: String(line?.batchNumber ?? '').trim(),
         barcode: String(line?.barcode ?? '').trim(),
       }))
-      .filter((line: { sku: string }) => line.sku);
+      .filter((line): line is ResolveBatchLineEntry => line.sku.length > 0);
 
-    const lineMetaKey = (line: { sku: string; barcode: string; batchId: string; batchNumber: string }) =>
+    const lineMetaKey = (line: ResolveBatchLineEntry) =>
       [line.sku, line.barcode, line.batchId, line.batchNumber].join('::');
 
     if (lineEntries.length > 0) {
@@ -535,7 +541,7 @@ router.post('/resolve-batch-names', authenticateToken, async (req, res) => {
           .filter((id): id is string => Boolean(id)),
       ),
     ];
-    const dilovodLookupIds = [...new Set([...uniqueIds, ...documentBatchIds])].filter((id) => {
+    const dilovodLookupIds = [...new Set<string>([...uniqueIds, ...documentBatchIds])].filter((id) => {
       const existing = names[id];
       return !existing || batchNumberNeedsResolution(existing, id);
     });
