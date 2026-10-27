@@ -2,7 +2,9 @@
 
 Міст між **Chatwoot Agent Bot** (self-hosted) і Backoffice NK Food.
 
-**v0:** echo-відповідь, handover за ключовими словами, **reclaim** (повернення діалогу боту від людини-assignee), базова **аналітика** з webhook. Без LLM і без lookup замовлень.
+**v0:** handover, reclaim, аналітика.
+
+**v1:** патерни автовідповідей, fallback, **LLM** (маски + `llmService`), публічний каталог вітрини, статус замовлення **лише після backend verify** (телефон + номер замовлення **або** телефон + дата останнього замовлення). API tools **без PII** у відповіді.
 
 Офіційна довідка Chatwoot: [Application API](https://developers.chatwoot.com/api-reference/introduction), [Agent bots](https://chatwoot.help/hc/user-guide/articles/1677497472-how-to-use-agent-bots).
 
@@ -42,7 +44,7 @@ https://<публічний-хост-backoffice>/api/webhooks/chatwoot
 2. Orchestrator відфільтровує outgoing / private / повідомлення агента (з опційним debug-журналом).
 3. Якщо діалог у людини-assignee і **reclaim** увімкнено – перевірка offline / поза годинами / таймаут мовчання (`chatwootReclaimDecision.ts`).
 4. Handover-keyword у тексті клієнта → assign / open + unassign за режимом (`specific_agent` | `auto_inbox`).
-5. Інакше → echo у діалог (`live`) або лише лог (`dry_run`).
+5. Інакше → **ReplyRouter**: backend verify з тексту → патерни → LLM (tools) → fallback (`live` / `dry_run`).
 6. Події аналітики пишуться в `chatwoot_bot_analytics_events` (окремо від журналу webhook).
 
 На **«Вирішити»** (за налаштуванням): unassign + скидання custom attribute `bot_human_handover_active`.
@@ -62,8 +64,30 @@ https://<публічний-хост-backoffice>/api/webhooks/chatwoot
 | POST | `/api/chatwoot-bot/conversations/:id/unassign` | Ручний unassign (admin) |
 | GET | `/api/chatwoot-bot/recent-events` | Журнал `chatwoot_bot_webhook_logs` |
 | GET | `/api/chatwoot-bot/analytics/overview` | Агрегати за період (`from`, `to`) |
+| POST | `/api/chatwoot-bot/tools/catalog` | Каталог вітрини (публічно) |
+| POST | `/api/chatwoot-bot/tools/verify-order` | Verify: `{ phone, orderNumber }` → DTO без PII |
+| POST | `/api/chatwoot-bot/tools/verify-by-date` | Verify: `{ phone, lastOrderDate }` |
+| POST | `/api/chatwoot-bot/ai/test` | Тест LLM (admin); помилки провайдера **не** маскуються fallback |
+| GET/PUT | `/api/llm/settings` | Глобальні ключі/моделі OpenAI + Gemini |
+| UI | `/settings/llm` | Налаштування → **LLM** (admin) |
+
+Деталі LLM (ключі, ціни, aliases Gemini): [llm-platform.md](../features/llm-platform.md).
 
 Симуляція webhook через `POST /simulate` **видалена** (раніше dev/admin); тести оркестратора викликають `processWebhook` напряму з fixtures.
+
+### Verify і замовлення (v1)
+
+- Клієнт у чаті може підтвердити себе **телефон + номер замовлення** або **телефон + дата останнього замовлення** (парсинг дат у `chatwootBotVerifyDateParse.ts`).
+- Стан сесії verify зберігається в `conversation.custom_attributes` (TTL і rate limit у налаштуваннях бота).
+- Tool `get_verified_order` для LLM повертає **лише** redacted DTO після успішного verify (`chatwootBotOrderRedaction.ts`); телефон у tool-аргументах не приймається.
+- Admin-тести: **Тест verify** / **Тест AI** на сторінці налаштувань бота.
+
+### LLM у боті
+
+- Ключі й дефолтна модель — з **глобальних** LLM-налаштувань; у боті можна перевизначити `aiProvider` / `aiModel` (порожнє = платформа).
+- **Маски** (`aiMasks`, `aiMaskId`): system prompt; без prompt LLM не викликається.
+- Tools у циклі: `get_storefront_catalog` (публічний каталог), `get_verified_order` (після verify).
+- У проді webhook при збої LLM → **fallback**; `POST /ai/test` пробрасує помилку провайдера в відповідь API.
 
 ## Налаштування
 
@@ -110,13 +134,23 @@ Chatwoot на VPS не достукаться до `localhost` – потріб�
 | Шлях | Роль |
 |------|------|
 | `server/modules/ChatwootBot/ChatwootBotOrchestrator.ts` | Webhook pipeline, handover, reclaim, resolve cleanup |
+| `server/modules/ChatwootBot/ChatwootBotReplyRouter.ts` | verify → патерни → LLM → fallback |
+| `server/modules/ChatwootBot/ChatwootBotPatternMatcher.ts` | Правила автовідповідей |
+| `server/modules/ChatwootBot/ChatwootBotVerifyService.ts` | Backend verify (телефон + order/date) |
+| `server/modules/ChatwootBot/ChatwootBotLlmRunner.ts` | Маска + tool loop через `llmService` |
+| `server/modules/ChatwootBot/ChatwootBotCatalogToolService.ts` | Каталог для tool |
+| `server/modules/ChatwootBot/ChatwootBotOrderToolService.ts` | Verified order для tool |
 | `server/modules/ChatwootBot/chatwootReclaimDecision.ts` | Правила reclaim |
 | `server/modules/ChatwootBot/ChatwootBotAnalyticsService.ts` | Ingest + overview API |
 | `server/modules/ChatwootBot/fixtures/` | Payload для unit-тестів |
 | `server/routes/chatwoot-webhooks.ts` | Webhook |
-| `server/routes/chatwoot-bot.ts` | Admin API |
-| `client/pages/SettingsChatwootBot.tsx` | Налаштування |
+| `server/routes/chatwoot-bot.ts` | Admin API + tools + ai/test |
+| `server/routes/llm.ts` | Платформа LLM |
+| `client/pages/SettingsChatwootBot.tsx` | Налаштування бота |
+| `client/pages/SettingsLlm.tsx` | Глобальні LLM |
 | `client/pages/ChatwootBotStatistics.tsx` | Статистика |
-| `shared/types/chatwootBot.ts` | Типи і дефолти |
+| `shared/types/chatwootBot.ts` | Типи і дефолти бота |
+| `shared/types/chatwootBotTools.ts` | DTO tools (без PII) |
+| `shared/types/llm.ts` | Типи платформи LLM |
 
-Тести: `server/modules/ChatwootBot/ChatwootBotOrchestrator.spec.ts`.
+Тести: `ChatwootBotOrchestrator.spec.ts`, `ChatwootBotPatternMatcher.spec.ts`, `chatwootBotOrderRedaction.spec.ts`, `chatwootBotVerifyDateParse.spec.ts`, сервіси в `server/services/llm/*.spec.ts`.

@@ -48,6 +48,7 @@ import {
   claimHumanAgentActivePersistSlot,
   releaseHumanAgentActivePersistSlot,
 } from './humanAgentActivePersistGate.js';
+import { chatwootBotReplyRouter } from './ChatwootBotReplyRouter.js';
 import { isDuplicateWebhookMessage } from './webhookMessageDedup.js';
 
 type ProcessLogContext = {
@@ -504,7 +505,16 @@ export class ChatwootBotOrchestrator {
       }
     }
 
-    return this.handleEcho(settings, logCtx, conversationId, dryRun, contentPreview, messageId);
+    return chatwootBotReplyRouter.route({
+      settings,
+      logCtx,
+      conversationId,
+      dryRun,
+      contentPreview,
+      messageId,
+      content: content,
+      payload,
+    });
   }
 
   private async performHardReclaim(
@@ -618,7 +628,7 @@ export class ChatwootBotOrchestrator {
     contentPreview: string,
     messageId: number | null,
   ): Promise<ChatwootBotProcessResult> {
-    const echoText = settings.echoMessage;
+    const echoText = settings.fallbackMessage || settings.echoMessage;
     const source = logCtx.source;
 
     if (dryRun) {

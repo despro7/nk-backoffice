@@ -28,6 +28,11 @@ import { releaseHumanAgentActivePersistSlot } from '../modules/ChatwootBot/human
 import { resetHumanHandoverOnConversation } from '../modules/ChatwootBot/chatwootHandoverReset.js';
 import { chatwootBotAnalyticsService } from '../modules/ChatwootBot/ChatwootBotAnalyticsService.js';
 import { sanitizeChatwootApiToken } from '../modules/ChatwootBot/chatwootHttp.js';
+import { chatwootBotCatalogToolService } from '../modules/ChatwootBot/ChatwootBotCatalogToolService.js';
+import { chatwootBotVerifyService } from '../modules/ChatwootBot/ChatwootBotVerifyService.js';
+import { toVerifiedOrderDto } from '../modules/ChatwootBot/chatwootBotOrderRedaction.js';
+import { chatwootBotLlmRunner } from '../modules/ChatwootBot/ChatwootBotLlmRunner.js';
+import { prisma } from '../lib/utils.js';
 
 const router = Router();
 const chatwootAdmin = requirePermission(
@@ -396,6 +401,180 @@ router.get('/recent-events', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to load events',
+    });
+  }
+});
+
+/**
+ * POST /api/chatwoot-bot/tools/catalog
+ */
+router.post('/tools/catalog', async (req: Request, res: Response) => {
+  try {
+    const body = (req.body ?? {}) as { query?: string; limit?: number };
+    const data = await chatwootBotCatalogToolService.listStorefrontCatalog({
+      query: body.query,
+      limit: body.limit,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    logServer('[ChatwootBot] tools/catalog failed', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Catalog lookup failed',
+    });
+  }
+});
+
+/**
+ * POST /api/chatwoot-bot/tools/verify-order
+ */
+router.post('/tools/verify-order', async (req: Request, res: Response) => {
+  try {
+    const settings = await chatwootBotSettingsService.getSettings();
+    const body = (req.body ?? {}) as { phone?: string; orderNumber?: string };
+    const phone = String(body.phone ?? '').trim();
+    const orderNumber = String(body.orderNumber ?? '').trim();
+    if (!phone || !orderNumber) {
+      res.status(400).json({ success: false, error: 'phone та orderNumber обовʼязкові' });
+      return;
+    }
+    const attempt = await chatwootBotVerifyService.verifyWithOrderNumber(phone, orderNumber, settings);
+    if (attempt.ok === false) {
+      res.json({
+        success: true,
+        data: {
+          verified: false,
+          message: settings.verifyFailMessage,
+          reason: attempt.reason,
+        },
+      });
+      return;
+    }
+    const order = await prisma.order.findUnique({ where: { id: attempt.orderId } });
+    if (!order) {
+      res.json({ success: true, data: { verified: false, message: settings.verifyFailMessage } });
+      return;
+    }
+    let items: unknown = order.items;
+    if (typeof items === 'string') {
+      try {
+        items = JSON.parse(items);
+      } catch {
+        items = [];
+      }
+    }
+    res.json({
+      success: true,
+      data: {
+        verified: true,
+        order: toVerifiedOrderDto({
+          orderNumber: order.orderNumber || order.externalId,
+          status: order.status,
+          statusText: order.statusText,
+          ttn: order.ttn,
+          items,
+        }),
+      },
+    });
+  } catch (error) {
+    logServer('[ChatwootBot] tools/verify-order failed', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Verify failed',
+    });
+  }
+});
+
+/**
+ * POST /api/chatwoot-bot/tools/verify-by-date
+ */
+router.post('/tools/verify-by-date', async (req: Request, res: Response) => {
+  try {
+    const settings = await chatwootBotSettingsService.getSettings();
+    const body = (req.body ?? {}) as { phone?: string; lastOrderDate?: string };
+    const phone = String(body.phone ?? '').trim();
+    const lastOrderDate = String(body.lastOrderDate ?? '').trim();
+    if (!phone || !lastOrderDate) {
+      res.status(400).json({ success: false, error: 'phone та lastOrderDate обовʼязкові' });
+      return;
+    }
+    const attempt = await chatwootBotVerifyService.verifyWithLastOrderDate(
+      phone,
+      lastOrderDate,
+      settings,
+    );
+    if (attempt.ok === false) {
+      res.json({
+        success: true,
+        data: {
+          verified: false,
+          message: settings.verifyFailMessage,
+          reason: attempt.reason,
+        },
+      });
+      return;
+    }
+    const order = await prisma.order.findUnique({ where: { id: attempt.orderId } });
+    if (!order) {
+      res.json({ success: true, data: { verified: false, message: settings.verifyFailMessage } });
+      return;
+    }
+    let items: unknown = order.items;
+    if (typeof items === 'string') {
+      try {
+        items = JSON.parse(items);
+      } catch {
+        items = [];
+      }
+    }
+    res.json({
+      success: true,
+      data: {
+        verified: true,
+        order: toVerifiedOrderDto({
+          orderNumber: order.orderNumber || order.externalId,
+          status: order.status,
+          statusText: order.statusText,
+          ttn: order.ttn,
+          items,
+        }),
+      },
+    });
+  } catch (error) {
+    logServer('[ChatwootBot] tools/verify-by-date failed', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Verify failed',
+    });
+  }
+});
+
+/**
+ * POST /api/chatwoot-bot/ai/test
+ */
+router.post('/ai/test', async (req: Request, res: Response) => {
+  try {
+    const settings = await chatwootBotSettingsService.getSettings();
+    const body = (req.body ?? {}) as { message?: string };
+    const message = String(body.message ?? '').trim() || 'Привіт! Що у вас є в наявності?';
+    const payload = {
+      conversation: { custom_attributes: {} },
+    };
+    const text = await chatwootBotLlmRunner.generateReply(
+      { ...settings, aiEnabled: true },
+      payload,
+      message,
+      { propagateErrors: true },
+    );
+    res.json({
+      success: true,
+      data: { reply: text ?? settings.fallbackMessage, usedFallback: !text },
+    });
+  } catch (error) {
+    logServer('[ChatwootBot] ai/test failed', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'AI test failed',
     });
   }
 });

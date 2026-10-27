@@ -7,6 +7,10 @@ import type {
   ChatwootBotSettingsUpdate,
   ChatwootBotAnalyticsOverview,
 } from '@shared/types/chatwootBot';
+import type {
+  ChatwootBotCatalogItemDto,
+  ChatwootBotVerifiedOrderDto,
+} from '@shared/types/chatwootBotTools';
 
 async function parseJson<T>(res: Response): Promise<T> {
   const data = await res.json();
@@ -134,6 +138,56 @@ export const chatwootBotApi = {
     const res = await fetch(`/api/chatwoot-bot/conversations/${conversationId}/unassign`, {
       method: 'POST',
       credentials: 'include',
+    });
+    return parseJson(res);
+  },
+
+  async testCatalog(query?: string, limit?: number): Promise<ChatwootBotCatalogItemDto[]> {
+    const res = await fetch('/api/chatwoot-bot/tools/catalog', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, limit }),
+    });
+    return parseJson(res);
+  },
+
+  async verifyOrderTest(phone: string, orderNumber: string): Promise<{
+    verified: boolean;
+    order?: ChatwootBotVerifiedOrderDto;
+    message?: string;
+    reason?: string;
+  }> {
+    const res = await fetch('/api/chatwoot-bot/tools/verify-order', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, orderNumber }),
+    });
+    return parseJson(res);
+  },
+
+  async verifyByDateTest(phone: string, lastOrderDate: string): Promise<{
+    verified: boolean;
+    order?: ChatwootBotVerifiedOrderDto;
+    message?: string;
+    reason?: string;
+  }> {
+    const res = await fetch('/api/chatwoot-bot/tools/verify-by-date', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, lastOrderDate }),
+    });
+    return parseJson(res);
+  },
+
+  async testAi(message: string): Promise<{ reply: string }> {
+    const res = await fetch('/api/chatwoot-bot/ai/test', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
     });
     return parseJson(res);
   },

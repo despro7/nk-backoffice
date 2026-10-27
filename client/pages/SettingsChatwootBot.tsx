@@ -32,6 +32,8 @@ import {
   type ChatwootBotReplyMode,
   type ChatwootHandoverAssignMode,
   type ChatwootBotSettingsResponse,
+  type ChatwootBotAutoReplyRule,
+  type ChatwootBotAiMask,
 } from '@shared/types/chatwootBot';
 
 type FormState = {
@@ -44,7 +46,20 @@ type FormState = {
   webhookSecret: string;
   webhookSecretMasked: string;
   hasWebhookSecret: boolean;
-  echoMessage: string;
+  fallbackMessage: string;
+  autoReplyRules: ChatwootBotAutoReplyRule[];
+  aiEnabled: boolean;
+  aiMaskId: string;
+  aiMasks: ChatwootBotAiMask[];
+  aiProvider: '' | 'openai' | 'google';
+  aiModel: string;
+  verifySessionTtlHours: number;
+  verifyRateLimitMaxAttempts: number;
+  verifyRateLimitWindowMinutes: number;
+  verifyFailMessage: string;
+  verifyRequiredHint: string;
+  verifyPromptOrderNumber: string;
+  verifyPromptLastOrderDate: string;
   handoverKeywordsText: string;
   replyMode: ChatwootBotReplyMode;
   outgoingUrlHint: string;
@@ -152,7 +167,20 @@ function toFormState(data: ChatwootBotSettingsResponse): FormState {
     webhookSecret: '',
     webhookSecretMasked: data.webhookSecretMasked,
     hasWebhookSecret: data.hasWebhookSecret,
-    echoMessage: data.echoMessage,
+    fallbackMessage: data.fallbackMessage || data.echoMessage,
+    autoReplyRules: data.autoReplyRules ?? [],
+    aiEnabled: data.aiEnabled,
+    aiMaskId: data.aiMaskId,
+    aiMasks: data.aiMasks ?? [],
+    aiProvider: data.aiProvider,
+    aiModel: data.aiModel,
+    verifySessionTtlHours: data.verifySessionTtlHours,
+    verifyRateLimitMaxAttempts: data.verifyRateLimitMaxAttempts,
+    verifyRateLimitWindowMinutes: data.verifyRateLimitWindowMinutes,
+    verifyFailMessage: data.verifyFailMessage,
+    verifyRequiredHint: data.verifyRequiredHint,
+    verifyPromptOrderNumber: data.verifyPromptOrderNumber,
+    verifyPromptLastOrderDate: data.verifyPromptLastOrderDate,
     handoverKeywordsText: keywordsToText(data.handoverKeywords),
     replyMode: data.replyMode,
     outgoingUrlHint: data.outgoingUrlHint || DEFAULT_CHATWOOT_BOT_SETTINGS.outgoingUrlHint,
@@ -316,6 +344,14 @@ const SettingsChatwootBot: React.FC = () => {
   const [expandedPayloadIds, setExpandedPayloadIds] = useState<Set<string>>(new Set());
   const [inboxHours, setInboxHours] = useState<ChatwootInboxHoursStatus | null>(null);
   const [isLoadingInboxHours, setIsLoadingInboxHours] = useState(false);
+  const [verifyTestPhone, setVerifyTestPhone] = useState('');
+  const [verifyTestOrder, setVerifyTestOrder] = useState('');
+  const [verifyTestDate, setVerifyTestDate] = useState('');
+  const [verifyTestResult, setVerifyTestResult] = useState<string>('');
+  const [isVerifyTesting, setIsVerifyTesting] = useState(false);
+  const [aiTestMessage, setAiTestMessage] = useState('Що є в наявності на вітрині?');
+  const [aiTestReply, setAiTestReply] = useState('');
+  const [isAiTesting, setIsAiTesting] = useState(false);
   const [webhookProcessorHealth, setWebhookProcessorHealth] = useState<{
     localBuild: string;
     localHost?: string | null;
@@ -411,7 +447,21 @@ const SettingsChatwootBot: React.FC = () => {
         accountId: Number(form.accountId),
         apiAccessToken: form.apiAccessToken || undefined,
         webhookSecret: form.webhookSecret || undefined,
-        echoMessage: form.echoMessage,
+        fallbackMessage: form.fallbackMessage,
+        echoMessage: form.fallbackMessage,
+        autoReplyRules: form.autoReplyRules,
+        aiEnabled: form.aiEnabled,
+        aiMaskId: form.aiMaskId,
+        aiMasks: form.aiMasks,
+        aiProvider: form.aiProvider,
+        aiModel: form.aiModel,
+        verifySessionTtlHours: Number(form.verifySessionTtlHours),
+        verifyRateLimitMaxAttempts: Number(form.verifyRateLimitMaxAttempts),
+        verifyRateLimitWindowMinutes: Number(form.verifyRateLimitWindowMinutes),
+        verifyFailMessage: form.verifyFailMessage,
+        verifyRequiredHint: form.verifyRequiredHint,
+        verifyPromptOrderNumber: form.verifyPromptOrderNumber,
+        verifyPromptLastOrderDate: form.verifyPromptLastOrderDate,
         handoverKeywords: textToKeywords(form.handoverKeywordsText),
         replyMode: form.replyMode,
         outgoingUrlHint: form.outgoingUrlHint,
@@ -566,7 +616,7 @@ const SettingsChatwootBot: React.FC = () => {
   return (
     <div className="space-y-6">
       <p className="text-sm text-default-500">
-        Echo + handover з робочими годинами, OOH і екстреним викликом. LLM (Jev) – наступна фаза.
+        Патерни, AI, verify замовлень, handover, reclaim і робочі години.
       </p>
 
       {webhookProcessorHealth?.mismatch && (
@@ -851,14 +901,14 @@ const SettingsChatwootBot: React.FC = () => {
           <Card>
             <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
               <DynamicIcon name="message-square" size={20} className="text-default-600" />
-              <h2 className="text-lg font-semibold">Поведінка v0</h2>
+              <h2 className="text-lg font-semibold">Відповіді та AI</h2>
             </CardHeader>
             <CardBody className="gap-4 p-4">
               <Textarea
-                label="Echo-повідомлення"
+                label="Fallback (якщо патерн і AI не відповіли)"
                 minRows={3}
-                value={form.echoMessage}
-                onValueChange={(v) => updateField('echoMessage', v)}
+                value={form.fallbackMessage}
+                onValueChange={(v) => updateField('fallbackMessage', v)}
               />
 
               <Input
@@ -877,6 +927,292 @@ const SettingsChatwootBot: React.FC = () => {
                   ))}
                 </div>
               )}
+
+              <Divider />
+              <div className="flex flex-wrap gap-2 items-center">
+                <p className="text-sm font-medium w-full">Патерни (автовідповіді)</p>
+                <Button
+                  size="sm"
+                  variant="flat"
+                  onPress={() => {
+                    const id = `rule_${Date.now()}`;
+                    updateField('autoReplyRules', [
+                      ...form.autoReplyRules,
+                      {
+                        id,
+                        enabled: true,
+                        priority: (form.autoReplyRules.length + 1) * 10,
+                        matchType: 'substring',
+                        pattern: '',
+                        reply: '',
+                        caseInsensitive: true,
+                      },
+                    ]);
+                  }}
+                >
+                  Додати правило
+                </Button>
+              </div>
+              {form.autoReplyRules.map((rule, idx) => (
+                <div key={rule.id} className="grid gap-2 p-3 border border-default-200 rounded-lg">
+                  <div className="flex flex-wrap gap-2">
+                    <Input
+                      size="sm"
+                      className="flex-1 min-w-[120px]"
+                      label="Патерн"
+                      value={rule.pattern}
+                      onValueChange={(v) => {
+                        const next = [...form.autoReplyRules];
+                        next[idx] = { ...rule, pattern: v };
+                        updateField('autoReplyRules', next);
+                      }}
+                    />
+                    <Select
+                      size="sm"
+                      className="w-40"
+                      label="Тип"
+                      selectedKeys={[rule.matchType]}
+                      onSelectionChange={(keys) => {
+                        const key = Array.from(keys)[0];
+                        if (key !== 'substring' && key !== 'regex') return;
+                        const next = [...form.autoReplyRules];
+                        next[idx] = { ...rule, matchType: key };
+                        updateField('autoReplyRules', next);
+                      }}
+                    >
+                      <SelectItem key="substring">substring</SelectItem>
+                      <SelectItem key="regex">regex</SelectItem>
+                    </Select>
+                    <Input
+                      size="sm"
+                      type="number"
+                      className="w-24"
+                      label="Пріоритет"
+                      value={String(rule.priority)}
+                      onValueChange={(v) => {
+                        const next = [...form.autoReplyRules];
+                        next[idx] = { ...rule, priority: Number(v) || 0 };
+                        updateField('autoReplyRules', next);
+                      }}
+                    />
+                  </div>
+                  <Textarea
+                    size="sm"
+                    label="Відповідь"
+                    minRows={2}
+                    value={rule.reply}
+                    onValueChange={(v) => {
+                      const next = [...form.autoReplyRules];
+                      next[idx] = { ...rule, reply: v };
+                      updateField('autoReplyRules', next);
+                    }}
+                  />
+                  <div className="flex gap-2">
+                    <Switch
+                      size="sm"
+                      isSelected={rule.enabled}
+                      onValueChange={(v) => {
+                        const next = [...form.autoReplyRules];
+                        next[idx] = { ...rule, enabled: v };
+                        updateField('autoReplyRules', next);
+                      }}
+                    >
+                      Увімкнено
+                    </Switch>
+                    <Button
+                      size="sm"
+                      color="danger"
+                      variant="light"
+                      onPress={() =>
+                        updateField(
+                          'autoReplyRules',
+                          form.autoReplyRules.filter((r) => r.id !== rule.id),
+                        )
+                      }
+                    >
+                      Видалити
+                    </Button>
+                  </div>
+                </div>
+              ))}
+
+              <Divider />
+              <FormSwitchField
+                title="AI-відповіді (LLM)"
+                description="Ключі API – Налаштування → LLM (/settings/llm) або env LLM_*"
+                isSelected={form.aiEnabled}
+                onValueChange={(v) => updateField('aiEnabled', v)}
+              />
+              <div className="grid sm:grid-cols-2 gap-3">
+                <Select
+                  label="Маска (system prompt)"
+                  selectedKeys={form.aiMaskId ? [form.aiMaskId] : []}
+                  onSelectionChange={(keys) => {
+                    const key = Array.from(keys)[0];
+                    if (key) updateField('aiMaskId', String(key));
+                  }}
+                >
+                  {form.aiMasks.map((m) => (
+                    <SelectItem key={m.id} textValue={m.name}>
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </Select>
+                <Select
+                  label="Провайдер (override)"
+                  selectedKeys={[form.aiProvider || 'platform']}
+                  onSelectionChange={(keys) => {
+                    const key = Array.from(keys)[0];
+                    updateField(
+                      'aiProvider',
+                      key === 'openai' || key === 'google' ? key : '',
+                    );
+                  }}
+                >
+                  <SelectItem key="platform">З платформи</SelectItem>
+                  <SelectItem key="openai">OpenAI</SelectItem>
+                  <SelectItem key="google">Google Gemini</SelectItem>
+                </Select>
+              </div>
+              <Input
+                label="Модель (override, опційно)"
+                value={form.aiModel}
+                onValueChange={(v) => updateField('aiModel', v)}
+              />
+              <Textarea
+                label="System prompt обраної маски"
+                minRows={4}
+                value={
+                  form.aiMasks.find((m) => m.id === form.aiMaskId)?.systemPrompt ?? ''
+                }
+                onValueChange={(v) => {
+                  const next = form.aiMasks.map((m) =>
+                    m.id === form.aiMaskId ? { ...m, systemPrompt: v } : m,
+                  );
+                  updateField('aiMasks', next);
+                }}
+              />
+
+              <Divider />
+              <p className="text-sm font-medium">Верифікація замовлень</p>
+              <div className="grid sm:grid-cols-3 gap-3">
+                <Input
+                  type="number"
+                  label="TTL сесії (год)"
+                  value={String(form.verifySessionTtlHours)}
+                  onValueChange={(v) => updateField('verifySessionTtlHours', Number(v) || 24)}
+                />
+                <Input
+                  type="number"
+                  label="Спроб / вікно"
+                  value={String(form.verifyRateLimitMaxAttempts)}
+                  onValueChange={(v) =>
+                    updateField('verifyRateLimitMaxAttempts', Number(v) || 5)
+                  }
+                />
+                <Input
+                  type="number"
+                  label="Вікно (хв)"
+                  value={String(form.verifyRateLimitWindowMinutes)}
+                  onValueChange={(v) =>
+                    updateField('verifyRateLimitWindowMinutes', Number(v) || 15)
+                  }
+                />
+              </div>
+              <Textarea
+                label="Повідомлення при невдалій verify"
+                minRows={2}
+                value={form.verifyFailMessage}
+                onValueChange={(v) => updateField('verifyFailMessage', v)}
+              />
+              <Textarea
+                label="Підказка verification_required"
+                minRows={2}
+                value={form.verifyRequiredHint}
+                onValueChange={(v) => updateField('verifyRequiredHint', v)}
+              />
+
+              <Divider />
+              <p className="text-sm font-medium">Тести (без PII у відповіді)</p>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <Input
+                  label="Телефон"
+                  value={verifyTestPhone}
+                  onValueChange={setVerifyTestPhone}
+                />
+                <Input
+                  label="Номер замовлення"
+                  value={verifyTestOrder}
+                  onValueChange={setVerifyTestOrder}
+                />
+                <Input
+                  label="Або дата останнього замовлення"
+                  value={verifyTestDate}
+                  onValueChange={setVerifyTestDate}
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="flat"
+                  isLoading={isVerifyTesting}
+                  onPress={async () => {
+                    setIsVerifyTesting(true);
+                    setVerifyTestResult('');
+                    try {
+                      const data = verifyTestDate.trim()
+                        ? await chatwootBotApi.verifyByDateTest(
+                            verifyTestPhone,
+                            verifyTestDate,
+                          )
+                        : await chatwootBotApi.verifyOrderTest(
+                            verifyTestPhone,
+                            verifyTestOrder,
+                          );
+                      setVerifyTestResult(JSON.stringify(data, null, 2));
+                    } catch (e) {
+                      setVerifyTestResult(e instanceof Error ? e.message : 'Помилка');
+                    } finally {
+                      setIsVerifyTesting(false);
+                    }
+                  }}
+                >
+                  Тест verify
+                </Button>
+                <Button
+                  size="sm"
+                  variant="flat"
+                  isLoading={isAiTesting}
+                  onPress={async () => {
+                    setIsAiTesting(true);
+                    setAiTestReply('');
+                    try {
+                      const data = await chatwootBotApi.testAi(aiTestMessage);
+                      setAiTestReply(data.reply);
+                    } catch (e) {
+                      setAiTestReply(e instanceof Error ? e.message : 'Помилка');
+                    } finally {
+                      setIsAiTesting(false);
+                    }
+                  }}
+                >
+                  Тест AI
+                </Button>
+              </div>
+              {verifyTestResult ? (
+                <pre className="text-xs bg-default-100 p-2 rounded-lg overflow-auto max-h-40">
+                  {verifyTestResult}
+                </pre>
+              ) : null}
+              <Textarea
+                label="Повідомлення для тесту AI"
+                minRows={2}
+                value={aiTestMessage}
+                onValueChange={setAiTestMessage}
+              />
+              {aiTestReply ? (
+                <Textarea label="Відповідь AI" minRows={3} isReadOnly value={aiTestReply} />
+              ) : null}
             </CardBody>
             <CardFooter className="p-4">
               <Button color="primary" isLoading={isSaving} onPress={() => void handleSave()}>

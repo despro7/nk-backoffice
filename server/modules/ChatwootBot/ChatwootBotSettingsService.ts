@@ -9,11 +9,17 @@ import {
   DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_END,
   DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_START,
   DEFAULT_CHATWOOT_BOT_SETTINGS,
+  DEFAULT_CHATWOOT_BOT_VERIFY_RATE_MAX,
+  DEFAULT_CHATWOOT_BOT_VERIFY_RATE_WINDOW_MIN,
+  DEFAULT_CHATWOOT_BOT_VERIFY_SESSION_TTL_HOURS,
+  type ChatwootBotAutoReplyRule,
+  type ChatwootBotAiMask,
   type ChatwootBotReplyMode,
   type ChatwootBotSettings,
   type ChatwootBotSettingsResponse,
   type ChatwootBotSettingsUpdate,
 } from '../../../shared/types/chatwootBot.js';
+import { resolveGoogleLlmModelId } from '../../../shared/constants/googleLlmModelAliases.js';
 
 const CACHE_TTL_MS = 60_000;
 
@@ -94,6 +100,72 @@ function normalizeReclaimMinutes(raw: unknown, fallback: number): number {
   return Math.max(1, Math.min(120, Math.floor(n)));
 }
 
+function normalizeAutoReplyRules(raw: unknown): ChatwootBotAutoReplyRule[] {
+  if (!Array.isArray(raw)) return [];
+  const rules: ChatwootBotAutoReplyRule[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Partial<ChatwootBotAutoReplyRule>;
+    const pattern = String(row.pattern ?? '').trim();
+    const reply = String(row.reply ?? '').trim();
+    if (!pattern || !reply) continue;
+    const matchType = row.matchType === 'regex' ? 'regex' : 'substring';
+    if (matchType === 'regex') {
+      try {
+        new RegExp(pattern);
+      } catch {
+        continue;
+      }
+    }
+    rules.push({
+      id: String(row.id ?? `rule_${rules.length + 1}`),
+      enabled: row.enabled !== false,
+      priority: Number.isFinite(Number(row.priority)) ? Math.floor(Number(row.priority)) : 100,
+      matchType,
+      pattern,
+      reply,
+      caseInsensitive: row.caseInsensitive !== false,
+    });
+  }
+  return rules.sort((a, b) => a.priority - b.priority);
+}
+
+function normalizeAiMasks(raw: unknown, fallback: ChatwootBotAiMask[]): ChatwootBotAiMask[] {
+  if (!Array.isArray(raw) || raw.length === 0) return [...fallback];
+  const masks: ChatwootBotAiMask[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Partial<ChatwootBotAiMask>;
+    const id = String(row.id ?? '').trim();
+    const name = String(row.name ?? '').trim();
+    const systemPrompt = String(row.systemPrompt ?? '').trim();
+    if (!id || !systemPrompt) continue;
+    masks.push({ id, name: name || id, systemPrompt });
+  }
+  return masks.length > 0 ? masks : [...fallback];
+}
+
+function normalizeAiProvider(raw: unknown): ChatwootBotSettings['aiProvider'] {
+  if (raw === 'openai' || raw === 'google') return raw;
+  return '';
+}
+
+function normalizePositiveInt(raw: unknown, fallback: number, min: number, max: number): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(n)));
+}
+
+function resolveFallbackAndEcho(raw: Partial<ChatwootBotSettings>): { echoMessage: string; fallbackMessage: string } {
+  const fallbackRaw =
+    typeof raw.fallbackMessage === 'string' && raw.fallbackMessage.trim()
+      ? raw.fallbackMessage.trim()
+      : typeof raw.echoMessage === 'string' && raw.echoMessage.trim()
+        ? raw.echoMessage.trim()
+        : DEFAULT_CHATWOOT_BOT_SETTINGS.fallbackMessage;
+  return { echoMessage: fallbackRaw, fallbackMessage: fallbackRaw };
+}
+
 function applyEnvFallback(settings: ChatwootBotSettings): ChatwootBotSettings {
   return {
     ...settings,
@@ -108,14 +180,59 @@ function applyEnvFallback(settings: ChatwootBotSettings): ChatwootBotSettings {
 
 function mergeWithDefaults(raw: Partial<ChatwootBotSettings>): ChatwootBotSettings {
   const accountId = Number(raw.accountId ?? DEFAULT_CHATWOOT_BOT_SETTINGS.accountId);
+  const { echoMessage, fallbackMessage } = resolveFallbackAndEcho(raw);
   const merged: ChatwootBotSettings = {
     ...DEFAULT_CHATWOOT_BOT_SETTINGS,
     ...raw,
     accountId: Number.isFinite(accountId) && accountId > 0 ? Math.floor(accountId) : 1,
-    echoMessage:
-      typeof raw.echoMessage === 'string' && raw.echoMessage.trim()
-        ? raw.echoMessage.trim()
-        : DEFAULT_CHATWOOT_BOT_SETTINGS.echoMessage,
+    echoMessage,
+    fallbackMessage,
+    autoReplyRules: normalizeAutoReplyRules(raw.autoReplyRules),
+    aiEnabled: Boolean(raw.aiEnabled ?? DEFAULT_CHATWOOT_BOT_SETTINGS.aiEnabled),
+    aiMaskId:
+      typeof raw.aiMaskId === 'string' && raw.aiMaskId.trim()
+        ? raw.aiMaskId.trim()
+        : DEFAULT_CHATWOOT_BOT_SETTINGS.aiMaskId,
+    aiMasks: normalizeAiMasks(raw.aiMasks, DEFAULT_CHATWOOT_BOT_SETTINGS.aiMasks),
+    aiProvider: normalizeAiProvider(raw.aiProvider),
+    aiModel:
+      typeof raw.aiModel === 'string' && raw.aiModel.trim()
+        ? resolveGoogleLlmModelId(raw.aiModel.trim())
+        : '',
+    verifySessionTtlHours: normalizePositiveInt(
+      raw.verifySessionTtlHours,
+      DEFAULT_CHATWOOT_BOT_VERIFY_SESSION_TTL_HOURS,
+      1,
+      168,
+    ),
+    verifyRateLimitMaxAttempts: normalizePositiveInt(
+      raw.verifyRateLimitMaxAttempts,
+      DEFAULT_CHATWOOT_BOT_VERIFY_RATE_MAX,
+      1,
+      30,
+    ),
+    verifyRateLimitWindowMinutes: normalizePositiveInt(
+      raw.verifyRateLimitWindowMinutes,
+      DEFAULT_CHATWOOT_BOT_VERIFY_RATE_WINDOW_MIN,
+      5,
+      120,
+    ),
+    verifyFailMessage: normalizeMessage(
+      raw.verifyFailMessage,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.verifyFailMessage,
+    ),
+    verifyRequiredHint: normalizeMessage(
+      raw.verifyRequiredHint,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.verifyRequiredHint,
+    ),
+    verifyPromptOrderNumber: normalizeMessage(
+      raw.verifyPromptOrderNumber,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.verifyPromptOrderNumber,
+    ),
+    verifyPromptLastOrderDate: normalizeMessage(
+      raw.verifyPromptLastOrderDate,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.verifyPromptLastOrderDate,
+    ),
     handoverKeywords: normalizeKeywords(raw.handoverKeywords),
     replyMode: normalizeReplyMode(raw.replyMode),
     enabled: Boolean(raw.enabled ?? DEFAULT_CHATWOOT_BOT_SETTINGS.enabled),

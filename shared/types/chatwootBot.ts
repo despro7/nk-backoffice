@@ -13,6 +13,26 @@ export type ChatwootBotReplyMode = 'live' | 'dry_run';
 
 export type ChatwootHandoverAssignMode = 'specific_agent' | 'auto_inbox';
 
+export type ChatwootBotAutoReplyMatchType = 'substring' | 'regex';
+
+export type ChatwootBotAutoReplyRule = {
+  id: string;
+  enabled: boolean;
+  priority: number;
+  matchType: ChatwootBotAutoReplyMatchType;
+  pattern: string;
+  reply: string;
+  caseInsensitive: boolean;
+};
+
+export type ChatwootBotAiMask = {
+  id: string;
+  name: string;
+  systemPrompt: string;
+};
+
+export type ChatwootBotAiProviderOverride = '' | 'openai' | 'google';
+
 /** Повні налаштування бота (зберігаються в settings_base). */
 export type ChatwootBotSettings = {
   enabled: boolean;
@@ -22,7 +42,24 @@ export type ChatwootBotSettings = {
   apiAccessToken: string;
   /** Shared secret для перевірки webhook (header X-Chatwoot-Webhook-Secret). */
   webhookSecret: string;
+  /** @deprecated Alias – використовуйте fallbackMessage; синхронізується при збереженні. */
   echoMessage: string;
+  /** Текст, якщо патерни та AI не дали відповіді. */
+  fallbackMessage: string;
+  autoReplyRules: ChatwootBotAutoReplyRule[];
+  aiEnabled: boolean;
+  aiMaskId: string;
+  aiMasks: ChatwootBotAiMask[];
+  /** Порожньо – з глобальних llm_platform_settings. */
+  aiProvider: ChatwootBotAiProviderOverride;
+  aiModel: string;
+  verifySessionTtlHours: number;
+  verifyRateLimitMaxAttempts: number;
+  verifyRateLimitWindowMinutes: number;
+  verifyFailMessage: string;
+  verifyRequiredHint: string;
+  verifyPromptOrderNumber: string;
+  verifyPromptLastOrderDate: string;
   /** Keywords для handover (case-insensitive substring match). */
   handoverKeywords: string[];
   /** live = POST у Chatwoot; dry_run = лише лог. */
@@ -280,6 +317,17 @@ export const CHATWOOT_BOT_ATTR_HUMAN_HANDOVER_ACTIVE = 'bot_human_handover_activ
 export const CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING = 'bot_ooh_callback_pending';
 export const CHATWOOT_BOT_ATTR_CALLBACK_REQUESTED = 'callback_requested';
 export const CHATWOOT_BOT_ATTR_CALLBACK_PHONE = 'callback_phone';
+export const CHATWOOT_BOT_ATTR_VERIFY_EXPIRES_AT = 'bot_verify_expires_at';
+export const CHATWOOT_BOT_ATTR_VERIFIED_ORDER_IDS = 'bot_verified_order_ids';
+export const CHATWOOT_BOT_ATTR_VERIFIED_PHONE_HASH = 'bot_verified_phone_hash';
+export const CHATWOOT_BOT_ATTR_VERIFY_RATE_WINDOW = 'bot_verify_rate_window';
+export const CHATWOOT_BOT_ATTR_VERIFY_RATE_COUNT = 'bot_verify_rate_count';
+
+export const DEFAULT_CHATWOOT_BOT_AI_MASK_ID = 'default_support';
+
+export const DEFAULT_CHATWOOT_BOT_VERIFY_SESSION_TTL_HOURS = 24;
+export const DEFAULT_CHATWOOT_BOT_VERIFY_RATE_MAX = 5;
+export const DEFAULT_CHATWOOT_BOT_VERIFY_RATE_WINDOW_MIN = 15;
 
 export const DEFAULT_CHATWOOT_BOT_HANDOVER_TIMEZONE = 'Europe/Kyiv';
 export const DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_DAYS = [1, 2, 3, 4, 5];
@@ -307,6 +355,32 @@ export const DEFAULT_CHATWOOT_BOT_SETTINGS: ChatwootBotSettings = {
   webhookSecret: '',
   echoMessage:
     'Дякуємо за повідомлення! Наш бот поки що відповідає ехо. Напишіть «оператор», щоб звʼязатися з людиною.',
+  fallbackMessage:
+    'Дякуємо за повідомлення! Наш бот поки що відповідає ехо. Напишіть «оператор», щоб звʼязатися з людиною.',
+  autoReplyRules: [],
+  aiEnabled: false,
+  aiMaskId: DEFAULT_CHATWOOT_BOT_AI_MASK_ID,
+  aiMasks: [
+    {
+      id: DEFAULT_CHATWOOT_BOT_AI_MASK_ID,
+      name: 'Підтримка NK Food',
+      systemPrompt:
+        'Ти лаконічний асистент магазину NK Food. Відповідай українською, коротко й по суті. Не вигадуй статус замовлення чи наявність – лише дані з інструментів. Не називай ПІБ, адресу чи телефон клієнта. Якщо інструмент повернув verification_required – поясни, що потрібні телефон і номер замовлення або дата останнього замовлення.',
+    },
+  ],
+  aiProvider: '',
+  aiModel: '',
+  verifySessionTtlHours: DEFAULT_CHATWOOT_BOT_VERIFY_SESSION_TTL_HOURS,
+  verifyRateLimitMaxAttempts: DEFAULT_CHATWOOT_BOT_VERIFY_RATE_MAX,
+  verifyRateLimitWindowMinutes: DEFAULT_CHATWOOT_BOT_VERIFY_RATE_WINDOW_MIN,
+  verifyFailMessage:
+    'Не вдалося підтвердити дані. Перевірте телефон і другий параметр (номер замовлення або дату останнього замовлення).',
+  verifyRequiredHint:
+    'Для статусу замовлення надішліть повний номер телефону та номер замовлення, або телефон і дату останнього замовлення (наприклад 19.10.2026).',
+  verifyPromptOrderNumber:
+    'Надішліть повний номер телефону (380…) і номер замовлення в одному повідомленні.',
+  verifyPromptLastOrderDate:
+    'Надішліть повний номер телефону і дату останнього замовлення (ДД.ММ.РРРР).',
   handoverKeywords: [...DEFAULT_CHATWOOT_BOT_HANDOVER_KEYWORDS],
   replyMode: 'dry_run',
   outgoingUrlHint: 'https://your-bo-host/api/webhooks/chatwoot',
