@@ -100,6 +100,66 @@ describe('resolvePdfmeInputs', () => {
     expect(pdfme.ingredients_title).toBeUndefined();
   });
 
+  it('does not pass empty svg values from catalog inputs', () => {
+    const logical = buildLabelInputs({
+      name: 'Суп',
+      ingredientsText: 'вода',
+      nutrition: { proteins: '1', fats: '1', carbs: '1', energy: '10' },
+      weightKg: 0.4,
+      barcode: '1',
+      batchNumber: '61007',
+      expiresAt: '08.2026',
+    });
+    const pdfme = resolvePdfmeInputs(
+      {
+        basePdf: { width: 100, height: 100, padding: [0, 0, 0, 0] },
+        schemas: [[{ name: 'instruction_svg', type: 'svg', content: '' }]],
+      },
+      logical,
+    );
+    expect(pdfme.instruction_svg).toBeUndefined();
+  });
+
+  it('strips expiry prefix even when template field has empty static content', () => {
+    const logical = buildLabelInputs({
+      name: 'Суп',
+      ingredientsText: 'вода',
+      nutrition: { proteins: '1', fats: '1', carbs: '1', energy: '10' },
+      weightKg: 0.4,
+      barcode: '1',
+      batchNumber: '61007',
+      expiresAt: '08.2026',
+    });
+    const pdfme = resolvePdfmeInputs(
+      {
+        basePdf: { width: 100, height: 100, padding: [0, 0, 0, 0] },
+        schemas: [[{ name: 'expires_at', type: 'text', content: '' }]],
+      },
+      logical,
+    );
+    expect(pdfme.expires_at).toBe('08.2026');
+  });
+
+  it('passes hydrated svg body to pdfme inputs', () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+    const pdfme = resolvePdfmeInputs(
+      {
+        basePdf: { width: 100, height: 100, padding: [0, 0, 0, 0] },
+        schemas: [[{ name: 'logo_svg', type: 'svg', content: svg }]],
+      },
+      buildLabelInputs({
+        name: 'X',
+        ingredientsText: '',
+        nutrition: { proteins: '1', fats: '1', carbs: '1', energy: '10' },
+        weightKg: 0.4,
+        barcode: '1',
+        batchNumber: '1',
+        expiresAt: '01.2027',
+      }),
+    );
+    expect(pdfme.logo_svg).toBe(svg);
+  });
+
   it('strips expiry label when template already has static prefix', () => {
     const logical = buildLabelInputs({
       name: 'Суп',

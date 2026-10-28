@@ -12,6 +12,10 @@ import {
   parseMvtVariableNames,
   pickMvtVariablePayload,
 } from '../utils/labelMvtVariables.js';
+import {
+  isStoredLabelSvgContentMissing,
+  LABEL_TEMPLATE_SVG_FIELD_NAMES,
+} from './labelTemplateSvgAssets.js';
 
 type Field = Record<string, unknown>;
 
@@ -48,13 +52,7 @@ export const LABEL_DESIGNER_SAMPLE: Record<string, string> = {
   barcode: '2200000001696',
 };
 
-const SVG_CONTENT_FIELDS = new Set([
-  'logo_svg',
-  'instruction_svg',
-  'estimated_svg',
-  'warning_icon',
-  'qr_url',
-]);
+const SVG_CONTENT_FIELDS = LABEL_TEMPLATE_SVG_FIELD_NAMES;
 
 function text(
   name: string,
@@ -254,8 +252,8 @@ export function toLabelPdfmeTemplate(raw: Template | LabelPdfmeTemplate): LabelP
 }
 
 /**
- * Підставляє зразковий текст і SVG, якщо в збереженому шаблоні їх ще немає.
- * SVG-поля оновлює завжди: інакше в рамці лишається URL замість картинки.
+ * Підставляє зразковий текст і SVG-ассети, якщо в збереженому шаблоні content порожній.
+ * Уже збережений SVG (кастомне зображення в Designer) не перезаписує.
  */
 export function hydrateLabelTemplateContent(
   template: LabelPdfmeTemplate,
@@ -269,7 +267,7 @@ export function hydrateLabelTemplateContent(
         const current = typeof field.content === 'string' ? field.content.trim() : '';
         const sample = LABEL_DESIGNER_SAMPLE[name] ?? '';
         const next: Field = { ...field };
-        if (ASSET_FIELDS.has(name) && assets[name]) {
+        if (ASSET_FIELDS.has(name) && assets[name] && isStoredLabelSvgContentMissing(current)) {
           next.content = assets[name];
           next.type = 'svg';
         } else if (next.type === 'multiVariableText') {

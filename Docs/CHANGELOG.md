@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-10-28 — Наліпки: SVG у превʼю картки та PDF
+
+**Files:** `labelTemplateSvgAssets.ts`, `labelTemplateInputs.ts`, `builtInLabelTemplates.ts`, `applyLabelPreviewInputsToTemplate.ts`, `labelPdfmeRuntime.ts`, `labelTemplateSvgAssets.spec.ts`, `labelTemplateInputs.spec.ts`, `product-labels.md`
+
+- **Превʼю товару / PDF:** hydrate знову підставляє SVG з `public/`, якщо в шаблоні URL-плейсхолдер або порожній content; inline `<svg>` у пресеті зберігається.
+- **pdfme inputs:** порожні ключі SVG з картки не затирають макет; у inputs потрапляє тіло SVG з шаблону після hydrate.
+- **Термін / партія:** префікси «Вжити до:» та «Номер партії:» знімаються з даних картки незалежно від static content у полі шаблону.
+
+**Документація:** [`product-labels.md`](features/product-labels.md).
+
+---
+
 ## 2026-10-28 — Товари: box-ШК, узгодження лише по порційних
 
 **Files:** `BarcodeKindIcon.tsx`, `BarcodesSection.tsx`, `PullFieldBarcodesComparePopover.tsx`, `ProductPullTriSourceTable.tsx`, `ProductDrawer.tsx`, `productDrawerTypes.ts`, `ProductsCatalogService.ts`, `catalogDilovodPreview.ts`, `catalogBarcodePreviewFormat.ts`, `shared/types/catalog.ts`, `products-catalog-2.0.md`

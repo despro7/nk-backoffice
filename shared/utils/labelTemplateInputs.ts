@@ -2,6 +2,7 @@ import { LABEL_INPUT_KEY_SET, type LabelInputKey, LabelInputMap } from '../const
 import { PORTION_LABEL_STATIC } from '../constants/productLabelPortionStatic.js';
 import { LABEL_MVT_VARIABLE_SET } from '../constants/labelMvtVariables.js';
 import type { LabelPdfmeTemplate } from '../types/labelTemplate.js';
+import { isStoredLabelSvgContentMissing } from '../pdfme/labelTemplateSvgAssets.js';
 import { unknownTemplateSchemaNames } from '../pdfme/validateTemplateSchemaNames.js';
 import { emptyLabelInputs } from './labelInputs.js';
 import {
@@ -63,10 +64,10 @@ function valueForCatalogTextField(
   const raw = merged[key] ?? '';
   const staticText = fieldStaticText(field).toLowerCase();
 
-  if (key === 'expires_at' && staticText.includes('вжити')) {
+  if (key === 'expires_at') {
     return stripLabelTextPrefix(raw, PORTION_LABEL_STATIC.expiryLabel);
   }
-  if (key === 'batch_number' && staticText.includes('парт')) {
+  if (key === 'batch_number') {
     return stripLabelTextPrefix(raw, PORTION_LABEL_STATIC.batchLabel);
   }
   if (key === 'ingredients' && staticText.includes('склад')) {
@@ -101,6 +102,14 @@ export function resolvePdfmeInputs(
           if (!Object.prototype.hasOwnProperty.call(payload, key)) payload[key] = '';
         }
         pdfmeInputs[name] = JSON.stringify(payload);
+        continue;
+      }
+
+      if (schemaType(field) === 'svg' || schemaType(field) === 'image') {
+        const content = typeof field.content === 'string' ? field.content.trim() : '';
+        if (content && !isStoredLabelSvgContentMissing(content)) {
+          pdfmeInputs[name] = content;
+        }
         continue;
       }
 

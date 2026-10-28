@@ -1,12 +1,8 @@
 import type { LabelPdfmeTemplate } from '../types/labelTemplate.js';
-
-const SVG_CONTENT_FIELDS = new Set([
-  'logo_svg',
-  'instruction_svg',
-  'estimated_svg',
-  'warning_icon',
-  'qr_url',
-]);
+import {
+  isStoredLabelSvgContentMissing,
+  LABEL_TEMPLATE_SVG_FIELD_NAMES,
+} from './labelTemplateSvgAssets.js';
 
 /**
  * Оновлює лише `content` полів макету для попереднього перегляду в Designer.
@@ -24,14 +20,18 @@ export function applyLabelPreviewInputsToTemplate(
         const name = String(field.name ?? '');
         const next = { ...field };
 
-        if (SVG_CONTENT_FIELDS.has(name) && assets[name]) {
-          next.content = assets[name];
-          next.type = 'svg';
+        if (LABEL_TEMPLATE_SVG_FIELD_NAMES.has(name) && assets[name]) {
+          const existing =
+            typeof next.content === 'string' ? next.content.trim() : '';
+          if (isStoredLabelSvgContentMissing(existing)) {
+            next.content = assets[name];
+            next.type = 'svg';
+          }
           return next;
         }
 
         const value = pdfmeInputs[name];
-        if (value !== undefined) {
+        if (value !== undefined && value !== '') {
           next.content = value;
         }
         return next;

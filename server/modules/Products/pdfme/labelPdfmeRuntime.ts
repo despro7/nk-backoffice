@@ -5,6 +5,7 @@ import type { Font, Template } from '@pdfme/common';
 import type { LabelInputMap } from '../../../../shared/constants/labelInputKeys.js';
 import type { LabelPdfmeTemplate } from '../../../../shared/types/labelTemplate.js';
 import { createLabelPdfmePlugins } from '../../../../shared/pdfme/labelPdfmePlugins.js';
+import { hydrateLabelTemplateContent } from '../../../../shared/pdfme/builtInLabelTemplates.js';
 import { prepareLabelTemplateForRender } from '../../../../shared/pdfme/prepareLabelTemplate.js';
 import { resolvePdfmeInputs } from '../../../../shared/utils/labelTemplateInputs.js';
 
@@ -61,7 +62,9 @@ export async function generateLabelPdfBuffer(
   logicalInputs: Partial<LabelInputMap>,
 ): Promise<Buffer> {
   const font = await loadLabelPdfmeFonts();
-  const renderTemplate = prepareLabelTemplateForRender(template as LabelPdfmeTemplate);
+  const svgAssets = await loadLabelSvgInputs();
+  const hydrated = hydrateLabelTemplateContent(template as LabelPdfmeTemplate, svgAssets);
+  const renderTemplate = prepareLabelTemplateForRender(hydrated);
   const pdfmeInputs = resolvePdfmeInputs(renderTemplate, logicalInputs);
   const pdf = await generate({
     template: renderTemplate as Template,

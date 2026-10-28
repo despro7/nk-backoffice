@@ -105,7 +105,23 @@ PDF-етикетки **100×100 мм** для партій готової про
 
 **Локальні правки чернетки** (`LABEL_EDITABLE_KEYS`): заголовок (2 рядки), **маса нетто** (`net_weight`). Формат ваги на наліпці: число + одиниця **без пробілу** (`400г`, `1кг`) — `formatNetWeightLabel` у `shared/utils/productLabel.ts`.
 
-Превʼю: `label/LabelPdfmeViewer.tsx` (`resolvePdfmeInputs` — без дубля префікса «Вжити до:», якщо він уже в `content` поля шаблону).
+Превʼю: `label/LabelPdfmeViewer.tsx` — шаблон з БД проходить `hydrateLabelTemplateContent`, потім `resolvePdfmeInputs` (див. **SVG і pdfme inputs** нижче).
+
+---
+
+## SVG і pdfme inputs
+
+Слоти `logo_svg`, `instruction_svg`, `estimated_svg`, `warning_icon`, `qr_url` (`LABEL_TEMPLATE_SVG_FIELD_NAMES` у `shared/pdfme/labelTemplateSvgAssets.ts`):
+
+| Джерело | Поведінка |
+| --- | --- |
+| `templateJson` у БД | Часто **порожній** `content` або **URL-плейсхолдер** (`/nk-food-logo.svg`) — не тіло SVG |
+| `hydrateLabelTemplateContent` | Підставляє SVG з `public/` (клієнт: `loadLabelDesignerAssets`, сервер: `loadLabelSvgInputs`), якщо content порожній або виглядає як URL; **збережений `<svg…>` не перезаписується** |
+| `resolvePdfmeInputs` | **Не** передає порожні ключі SVG з `LabelInputMap`; для полів `svg`/`image` у pdfme inputs потрапляє лише **inline SVG з шаблону** після hydrate |
+| Префікси дат/партії | `expires_at` / `batch_number` у pdfme inputs — **без** повтору «Вжити до:» / «Номер партії:», якщо префікс уже в `content` поля шаблону (`stripLabelTextPrefix`) |
+
+**Картка товару:** `ProductLabelsTab` → `hydrateLabelTemplateContent` + `LabelPdfmeViewer`.  
+**PDF:** `generateLabelPdfBuffer` hydrate-ить шаблон перед `@pdfme/generator`.
 
 ---
 
@@ -113,7 +129,7 @@ PDF-етикетки **100×100 мм** для партій готової про
 
 `client/pages/SettingsLabelTemplates.tsx` — список пресетів, pdfme Designer (100×100 мм), матриця дефолтів (3 комірки: good×portion/box, kit×portion), overrides по товарах, живий preview.
 
-**Живі дані в Designer:** `LabelTemplatePreviewProductPicker` — пошук лише **активних** товарів ГП (без архіву / `delMark`, як `isWarehouseProductArchived`); партія → `GET …/preview-inputs`. Підстановка в макет: `resolvePdfmeInputs` + `applyLabelPreviewInputsToTemplate` — **статичні** поля (кастомне ім’я, `readOnly`, текст без MVT) не затираються; toast про невідомі імена — лише для **динамічних** слотів (`unknownDynamicSchemaNames`). Префікси в шаблоні («Вжити до:», «Номер партії:», «Склад:») знімаються з даних картки через `stripLabelTextPrefix`.
+**Живі дані в Designer:** `LabelTemplatePreviewProductPicker` — пошук лише **активних** товарів ГП (без архіву / `delMark`, як `isWarehouseProductArchived`); партія → `GET …/preview-inputs`. Підстановка в макет: `resolvePdfmeInputs` + `applyLabelPreviewInputsToTemplate` — **статичні** поля (кастомне ім’я, `readOnly`, текст без MVT) не затираються; SVG-слоти — через `labelTemplateSvgAssets` (див. секцію **SVG і pdfme inputs**); toast про невідомі імена — лише для **динамічних** слотів (`unknownDynamicSchemaNames`).
 
 Допоміжні модулі: `client/pages/Settings/labelTemplates/*`, `shared/pdfme/*`, `shared/utils/labelTemplateInputs.ts`.
 
@@ -162,7 +178,7 @@ shared/
   constants/labelInputKeys.ts
   utils/labelInputs.ts, productLabelHistory.ts, labelStorefrontOverrides.ts
   # productLabelHistory: productLabelPayloadInputsKey, productLabelDraftMatchesPublished
-  pdfme/   # merge template, plugins, built-in presets
+  pdfme/   # merge template, plugins, built-in presets, labelTemplateSvgAssets
 
 client/
   pages/Products/components/productDrawer/ProductLabelsTab.tsx
@@ -181,6 +197,7 @@ client/
 - `shared/utils/productLabelHistory.spec.ts`
 - `shared/utils/labelTemplateDefaults.spec.ts`
 - `shared/utils/labelTemplateInputs.spec.ts`
+- `shared/pdfme/labelTemplateSvgAssets.spec.ts`
 - `server/modules/Products/CatalogBoxBarcodeService.spec.ts`
 - `server/modules/Products/pdfme/labelPdfmeRuntime.spec.ts`
 - `shared/pdfme/*.spec.ts`
