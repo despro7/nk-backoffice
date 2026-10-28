@@ -118,6 +118,21 @@ export class ProductsLocalSync {
     });
   }
 
+  async replaceGoodBarcodes(
+    goodId: string,
+    barcodes: Array<{
+      code: string;
+      activity: boolean;
+      dilovodRegisterId?: string | null;
+      goodPart?: string | null;
+      goodPartName?: string | null;
+    }>,
+  ): Promise<void> {
+    await prisma.$transaction(async (tx) => {
+      await this.replaceBarcodes(tx, goodId, barcodes);
+    });
+  }
+
   private async upsertCatalogGood(tx: Tx, payload: LocalSyncGoodPayload): Promise<void> {
     const now = new Date();
     const data = {

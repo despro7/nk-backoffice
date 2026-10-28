@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-10-28 — Товари: ШК — сортування в картці та preview узгодження BO↔ERP
+
+**Files:** `BarcodesSection.tsx`, `barcodesSectionSort.ts`, `ProductDrawer.tsx`, `ProductPullTriSourceTable.tsx`, `StorefrontPullConfirmModal.tsx`, `PullFieldBarcodesComparePopover.tsx`, `PullFieldConflictTooltip.tsx`, `ProductsCatalogService.ts`, `ProductsLocalSync.ts`, `catalogDilovodPreview.ts`, `catalogBarcodePreviewFormat.ts`, `shared/types/catalog.ts`, `products-catalog-2.0.md`
+
+- **Картка:** ручне сортування рядків штрихкодів перетягуванням (патерн як у `PricesSection`).
+- **Tri-source:** можна обрати Dilovod для «Штрихкоди і партії» і застосувати (`CatalogDilovodPullApplyField: barcodes`); popover зі списками ШК+партія та підсвіткою відмінностей; tooltip конфлікту показує рядки, не лише лічильник.
+
+**Документація:** [`products-catalog-2.0.md`](features/products-catalog-2.0.md).
+
+---
+
 ## 2026-10-28 — Адмін: Debug mode і прев’ю ролі — звуки та гарячі клавіші
 
 **Files:** `DebugContext.tsx`, `DebugModeSwitch.tsx`, `RolePreviewContext.tsx`, `RolePreviewSelect.tsx`, `rolePreviewOptions.ts`, `role-preview.md`

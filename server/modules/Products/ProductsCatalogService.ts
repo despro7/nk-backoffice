@@ -49,6 +49,7 @@ import {
   buildDilovodFieldSnapshot,
   diffDilovodSnapshots,
   emptyDilovodPreview,
+  mapCatalogBarcodePreviewLines,
 } from './catalogDilovodPreview.js';
 import { catalogArchiveMediaService } from './CatalogArchiveMediaService.js';
 import { wooCommerceSyncService } from '../Storefront/WooCommerceSyncService.js';
@@ -1073,7 +1074,12 @@ export class ProductsCatalogService {
       where: { id },
       include: {
         prices: { select: { priceType: true, price: true } },
-        _count: { select: { components: true, barcodes: true } },
+        _count: { select: { components: true } },
+        barcodes: {
+          where: { barcodeKind: 'portion', activity: true },
+          orderBy: { id: 'asc' },
+          select: { code: true, goodPart: true, goodPartName: true },
+        },
       },
     });
     if (!local) {
@@ -1083,6 +1089,8 @@ export class ProductsCatalogService {
       throw new Error('Групи не синхронізуються з Діловодом через preview');
     }
 
+    const localBarcodeLines = mapCatalogBarcodePreviewLines(local.barcodes);
+
     const localSnap = buildDilovodFieldSnapshot({
       name: local.name,
       sku: local.sku,
@@ -1091,7 +1099,7 @@ export class ProductsCatalogService {
       packageRatio: local.packageRatio,
       prices: local.prices,
       bomRowCount: local._count.components,
-      barcodeCount: local._count.barcodes,
+      barcodeCount: localBarcodeLines.length,
     });
 
     try {
@@ -1100,6 +1108,7 @@ export class ProductsCatalogService {
       const prices = await productsDilovodGateway.fetchPricesForGoods([id]);
       const barcodes = await productsDilovodGateway.fetchBarcodesForGoods([id]);
       const activeBarcodes = barcodes.filter((b) => b.activity);
+      const proposedBarcodeLines = mapCatalogBarcodePreviewLines(activeBarcodes);
 
       const proposedSnap = buildDilovodFieldSnapshot({
         name: mapped.name,
@@ -1109,7 +1118,7 @@ export class ProductsCatalogService {
         packageRatio: mapped.packageRatio,
         prices: prices.map((p) => ({ priceType: p.priceType, price: p.price })),
         bomRowCount: mapped.components?.length ?? 0,
-        barcodeCount: activeBarcodes.length,
+        barcodeCount: proposedBarcodeLines.length,
       });
 
       return {
@@ -1119,6 +1128,8 @@ export class ProductsCatalogService {
         local: localSnap,
         proposed: proposedSnap,
         conflicts: diffDilovodSnapshots(localSnap, proposedSnap),
+        localBarcodes: localBarcodeLines,
+        proposedBarcodes: proposedBarcodeLines,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -1126,6 +1137,7 @@ export class ProductsCatalogService {
       return {
         ...emptyDilovodPreview(id, message),
         local: localSnap,
+        localBarcodes: localBarcodeLines,
       };
     }
   }
@@ -1179,6 +1191,23 @@ export class ProductsCatalogService {
               appliedFields.push('regularPrice');
             }
           }
+          break;
+        }
+        case 'barcodes': {
+          const remote = await productsDilovodGateway.fetchBarcodesForGoods([id]);
+          await productsLocalSync.replaceGoodBarcodes(
+            id,
+            remote
+              .filter((b) => b.activity)
+              .map((b) => ({
+                code: b.code,
+                activity: true,
+                dilovodRegisterId: b.dilovodRegisterId,
+                goodPart: b.goodPart,
+                goodPartName: b.goodPartName,
+              })),
+          );
+          appliedFields.push('barcodes');
           break;
         }
         default: {
@@ -1330,7 +1359,7 @@ export class ProductsCatalogService {
       include: {
         components: { orderBy: { rowNum: 'asc' } },
         prices: true,
-        barcodes: true,
+        barcodes: { orderBy: { id: 'asc' } },
         images: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
         _count: { select: { components: true } },
       },

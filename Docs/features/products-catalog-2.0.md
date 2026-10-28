@@ -267,6 +267,7 @@ UI у `ProductDrawer` (секція «Штрихкоди»):
 - Потрібен непорожній `form.sku`; інакше toast.
 - `onSelect`: `goodPart = batchId`, `goodPartName = batchNumber`.
 - Окремого Input «Партія (ID)» немає; у **debug mode** (`useDebug`) ID показується маленьким бейджем у полі номера партії.
+- **Ручне сортування** рядків (як у «Цінах»): кнопка біля заголовка при ≥2 ШК, DnD `@hello-pangea/dnd` (`barcodesSectionSort.ts`); порядок зберігається при save картки (локальний snapshot `catalog_good_barcodes` за `id asc`).
 
 ### Наліпки для друку
 
@@ -356,7 +357,10 @@ client/pages/Products/
 - **Tri-source sync (BO / WC / Dilovod):**
   - При відкритті edit-картки з SKU — фонова перевірка конфліктів: `GET …/dilovod-preview` + (за правом pull) `POST /api/storefront/woo/pull-preview`.
   - Банер **«Узгодити»** якщо є відмінності Dilovod і/або WC (WC лише в гілці «Готова продукція»).
-  - Модалка `CatalogOpenSyncModal` → `StorefrontPullConfirmModal`: таблиця `ProductPullTriSourceTable`, фільтр «Лише відмінності / Усі поля», застосування Dilovod + WC окремо; push BO→WC лише коли `wcCompareEnabled !== false`; рядок **«Штрихкоди і партії»** (порівняння кількості ШК/партій BO ↔ Dilovod, `barcodeCount`).
+  - Модалка `CatalogOpenSyncModal` → `StorefrontPullConfirmModal`: таблиця `ProductPullTriSourceTable`, фільтр «Лише відмінності / Усі поля», застосування Dilovod + WC окремо; push BO→WC лише коли `wcCompareEnabled !== false`; рядок **«Штрихкоди і партії»**:
+    - порівняння активних **порційних** ШК BO ↔ Dilovod (`barcodeCount`, без `barcodeKind: box`);
+    - клік по «N поз.» — `PullFieldBarcodesComparePopover` (списки `ШК · партія`, жовтим — лише в одному джерелі); preview API: `localBarcodes` / `proposedBarcodes` у `CatalogDilovodPreviewResult`;
+    - вибір колонки **Діловод** + «Застосувати» — поле `barcodes` у `applyDilovodPull` (заміна локального snapshot з ERP, без зміни WC).
   - Після **«Застосувати»** — оновлення картки, опційний push на WC, потім **`onReconcileComplete`** → повторний preview (банер «Узгодити» зникає, якщо конфліктів немає).
   - Toast після узгодження: окремі рядки для Dilovod pull, завантаження з WC, відправки на WC.
   - Семантичне порівняння `storefrontDescriptionDoc` (HTML/plain `_nk_storage`, coalesce override; diff блоків за **blockId** + маркетинг) — `storefrontDescription*.ts`, `storefrontDescriptionDocDiff.ts`; pull apply нормалізує doc (`normalizeStorefrontDescriptionDoc`).

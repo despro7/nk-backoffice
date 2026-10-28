@@ -5,6 +5,11 @@ import { catalogPlainTextForCompare } from '@shared/utils/catalogHtmlCompare';
 
 export function formatPullConflictValue(value: string | null | undefined, max = 120): string {
   if (!value?.trim()) return '—';
+  if (value.includes('\n')) {
+    const multiline = value.replace(/\r\n/g, '\n').trim();
+    if (multiline.length <= 800) return multiline;
+    return `${multiline.slice(0, 800)}…`;
+  }
   const plain = catalogPlainTextForCompare(value) || value;
   const normalized = plain.replace(/\s+/g, ' ').trim();
   if (normalized.length <= max) return normalized;
@@ -29,13 +34,13 @@ function PullConflictTooltipContent({
       <p className="font-semibold">{fieldLabel}</p>
       <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1.5">
         <span className="font-medium text-default-400">BO</span>
-        <span className="break-words text-default-700">{formatPullConflictValue(localValue)}</span>
+        <span className="break-words text-default-700 whitespace-pre-line">{formatPullConflictValue(localValue)}</span>
         <span className="font-medium text-default-400">WC</span>
-        <span className="break-words text-primary-700">{formatPullConflictValue(remoteValue)}</span>
+        <span className="break-words text-primary-700 whitespace-pre-line">{formatPullConflictValue(remoteValue)}</span>
         {dilovodValue != null ? (
           <>
             <span className="font-medium text-default-400">ERP</span>
-            <span className="break-words text-primary-700">
+            <span className="break-words text-primary-700 whitespace-pre-line">
               {formatPullConflictValue(dilovodValue)}
             </span>
           </>

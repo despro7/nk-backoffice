@@ -1,13 +1,15 @@
 import type { ReactNode } from 'react';
 import { Checkbox } from '@heroui/react';
-import type { CatalogDilovodPreviewResult } from '@shared/types/catalog';
+import type { CatalogDilovodPreviewResult, CatalogDilovodBarcodePreviewLine } from '@shared/types/catalog';
 import type { WooPullPreviewResult } from '@shared/types/storefront';
 import { catalogPlainTextForCompare } from '@shared/utils/catalogHtmlCompare';
 import { CatalogImagePreviewPopover } from '../CatalogImagePreviewPopover';
+import { PullFieldBarcodesComparePopover } from '../PullFieldBarcodesComparePopover';
 import { PullFieldConflictTooltip } from '../PullFieldConflictTooltip';
 import { PullFieldFullTextPopover } from '../PullFieldFullTextPopover';
 import { PullFieldStorefrontDocComparePopover } from '../PullFieldStorefrontDocComparePopover';
 import { summarizeStorefrontDescriptionDocDiff } from '@shared/utils/storefrontDescriptionDocDiff';
+import { formatCatalogBarcodePreviewList } from '@shared/utils/catalogBarcodePreviewFormat';
 
 export type ProductPullSource = 'local' | 'woo' | 'dilovod';
 
@@ -40,6 +42,8 @@ export interface ProductPullTriRow {
   hasConflict: boolean;
   dilovodSelectable: boolean;
   wooSelectable: boolean;
+  barcodePreviewLocal?: CatalogDilovodBarcodePreviewLine[];
+  barcodePreviewDilovod?: CatalogDilovodBarcodePreviewLine[];
 }
 
 const ROW_WOO_CONFLICT_FIELD: Partial<Record<ProductPullTriRowId, string>> = {
@@ -409,8 +413,10 @@ export function buildProductPullTriRows(
       conflictLocal: dilovodLocal?.barcodeCount ?? null,
       conflictWoo: null,
       conflictDilovod: d?.proposed.barcodeCount ?? null,
-      dilovodSelectable: false,
+      dilovodSelectable: Boolean(d),
       wooSelectable: false,
+      barcodePreviewLocal: dilovod?.localBarcodes ?? [],
+      barcodePreviewDilovod: dilovod?.remoteAvailable ? (dilovod.proposedBarcodes ?? []) : [],
     },
     {
       id: 'specQty',
@@ -485,6 +491,28 @@ function wrapCellContent(
 ): ReactNode {
   if (row.id === 'images') {
     return wrapImagePreview(row.id, side, display, localImagePreviewUrls, wooImagePreviewUrls);
+  }
+
+  if (row.id === 'barcodesAndBatches' && side !== 'woo') {
+    const localLines = row.barcodePreviewLocal ?? [];
+    const dilovodLines = row.barcodePreviewDilovod ?? [];
+    if (localLines.length > 0 || dilovodLines.length > 0) {
+      if (display === '—' && side === 'dilovod' && dilovodLines.length === 0) {
+        return display;
+      }
+      if (display === '—' && side === 'local' && localLines.length === 0) {
+        return display;
+      }
+      return (
+        <PullFieldBarcodesComparePopover
+          localLines={localLines}
+          dilovodLines={dilovodLines}
+          positionLabel={display}
+        >
+          <span className="cursor-pointer underline decoration-dotted underline-offset-2">{display}</span>
+        </PullFieldBarcodesComparePopover>
+      );
+    }
   }
 
   const full = conflictValueForSide(row, side);
@@ -585,9 +613,18 @@ export function ProductPullTriSourceTable({
                 {row.hasConflict ? (
                   <PullFieldConflictTooltip
                     fieldLabel={row.label}
-                    localValue={row.conflictLocal}
+                    localValue={
+                      row.id === 'barcodesAndBatches'
+                        ? formatCatalogBarcodePreviewList(row.barcodePreviewLocal) ?? row.conflictLocal
+                        : row.conflictLocal
+                    }
                     remoteValue={row.conflictWoo}
-                    dilovodValue={row.conflictDilovod}
+                    dilovodValue={
+                      row.id === 'barcodesAndBatches'
+                        ? formatCatalogBarcodePreviewList(row.barcodePreviewDilovod) ??
+                          row.conflictDilovod
+                        : row.conflictDilovod
+                    }
                   />
                 ) : null}
               </div>

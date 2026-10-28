@@ -1,4 +1,5 @@
 import type {
+  CatalogDilovodBarcodePreviewLine,
   CatalogDilovodFieldSnapshot,
   CatalogDilovodPreviewResult,
   CatalogFieldConflict,
@@ -69,6 +70,22 @@ export function diffDilovodSnapshots(
   ].filter(Boolean) as CatalogFieldConflict[];
 }
 
+export function mapCatalogBarcodePreviewLines(
+  rows: Array<{
+    code: string;
+    goodPart?: string | null;
+    goodPartName?: string | null;
+  }>,
+): CatalogDilovodBarcodePreviewLine[] {
+  return rows
+    .filter((row) => row.code?.trim())
+    .map((row) => ({
+      code: row.code.trim(),
+      goodPart: row.goodPart?.trim() || null,
+      goodPartName: row.goodPartName?.trim() || null,
+    }));
+}
+
 export function emptyDilovodPreview(goodId: string, error?: string): CatalogDilovodPreviewResult {
   const empty: CatalogDilovodFieldSnapshot = {
     name: null,
@@ -87,5 +104,7 @@ export function emptyDilovodPreview(goodId: string, error?: string): CatalogDilo
     local: empty,
     proposed: empty,
     conflicts: [],
+    localBarcodes: [],
+    proposedBarcodes: [],
   };
 }

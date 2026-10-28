@@ -373,6 +373,13 @@ export interface CatalogDilovodFieldSnapshot {
   barcodeCount: string | null;
 }
 
+/** Рядок ШК + партія для tri-source preview (BO ↔ ERP). */
+export interface CatalogDilovodBarcodePreviewLine {
+  code: string;
+  goodPart: string | null;
+  goodPartName: string | null;
+}
+
 export interface CatalogDilovodPreviewResult {
   goodId: string;
   remoteAvailable: boolean;
@@ -380,9 +387,13 @@ export interface CatalogDilovodPreviewResult {
   local: CatalogDilovodFieldSnapshot;
   proposed: CatalogDilovodFieldSnapshot;
   conflicts: CatalogFieldConflict[];
+  /** Активні порційні ШК у Backoffice (без box). */
+  localBarcodes?: CatalogDilovodBarcodePreviewLine[];
+  /** Активні ШК з Dilovod barCodes. */
+  proposedBarcodes?: CatalogDilovodBarcodePreviewLine[];
 }
 
-export type CatalogDilovodPullApplyField = 'name' | 'weight' | 'regularPrice';
+export type CatalogDilovodPullApplyField = 'name' | 'weight' | 'regularPrice' | 'barcodes';
 
 export interface CatalogDilovodPullApplyInput {
   fields: CatalogDilovodPullApplyField[];

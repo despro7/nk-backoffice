@@ -1677,6 +1677,7 @@ export function ProductDrawer({
                           onGenerateBarcode={handleGenerateBarcode}
                           onOpenBatchPicker={openBatchPicker}
                           onRowDeleteConfirm={setRowDeleteConfirm}
+                          isReadOnly={readOnly}
                         />
                         {isEdit && detail?.id && isOther && (
                           <UsedInSection

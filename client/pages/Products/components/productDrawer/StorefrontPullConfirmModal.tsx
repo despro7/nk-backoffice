@@ -139,6 +139,7 @@ function dilovodFieldsFromTriSources(
   if (sourceByRowId.name === 'dilovod') fields.push('name');
   if (sourceByRowId.weight === 'dilovod') fields.push('weight');
   if (sourceByRowId.regularPrice === 'dilovod') fields.push('regularPrice');
+  if (sourceByRowId.barcodesAndBatches === 'dilovod') fields.push('barcodes');
   return fields;
 }
 
