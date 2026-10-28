@@ -1,7 +1,8 @@
 import { Button, Input, Tooltip } from '@heroui/react';
 import { DragDropContext, Draggable, Droppable, type DropResult } from '@hello-pangea/dnd';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { useCallback, useMemo, useState, type HTMLAttributes } from 'react';
+import { useCallback, useMemo, useState, type HTMLAttributes, type ReactNode } from 'react';
+import { BarcodeKindIcon } from '../BarcodeKindIcon';
 import { useProductMovementsDrawerOptional } from '@/features/product-movements/context/productMovementsDrawerContext.shared';
 import type { BarcodeRow, RowDeleteKind } from './productDrawerTypes';
 import { FieldDirtyMarker } from './FieldDirtyMarker';
@@ -50,6 +51,61 @@ function BarcodeBatchMovementsButton({
       <span className="hidden md:inline-block">Рухи партії</span>
     </Button>
   );
+}
+
+function BarcodeCodeInputEndContent({
+  row,
+  idx,
+  isReadOnly,
+  saving,
+  barcodeGeneratingIdx,
+  onGenerateBarcode,
+}: {
+  row: BarcodeRow;
+  idx: number;
+  isReadOnly: boolean;
+  saving?: boolean;
+  barcodeGeneratingIdx: number | null;
+  onGenerateBarcode: (idx: number) => void;
+}): ReactNode {
+  const isBox = row.barcodeKind === 'box';
+  const showGenerate = row.isNew === true && !isBox && !isReadOnly;
+
+  if (showGenerate) {
+    return (
+      <Tooltip
+        content="Згенерувати ШК автоматично"
+        placement="top-end"
+        showArrow={true}
+        color="default"
+        delay={200}
+        classNames={{
+          base: 'before:rounded-[3px] before:bg-blue-500 before:z-[10]',
+          content: 'bg-blue-500 text-white rounded-sm',
+        }}
+      >
+        <Button
+          isIconOnly
+          size="sm"
+          variant="light"
+          color="default"
+          className="text-default-500 hover:text-blue-600/75 hover:bg-blue-600/10! -mr-2"
+          aria-label="Генерувати ШК автоматично"
+          onPress={() => onGenerateBarcode(idx)}
+          isLoading={barcodeGeneratingIdx === idx}
+          isDisabled={saving || barcodeGeneratingIdx != null}
+        >
+          <DynamicIcon name="dices" size={16} />
+        </Button>
+      </Tooltip>
+    );
+  }
+
+  if (isBox) {
+    return <BarcodeKindIcon kind="box" className="bg-white/75 p-1 rounded-sm border border-warning-600 -mr-1" />;
+  }
+
+  return null;
 }
 
 interface BarcodesSectionProps {
@@ -102,47 +158,35 @@ export function BarcodesSection({
     idx: number,
     dragHandleProps?: HTMLAttributes<HTMLElement>,
   ) => {
+    const isBox = b.barcodeKind === 'box';
+    const rowLocked = isReadOnly || isBox;
+
     const fieldsGrid = (
       <>
         <Input
           size="md"
-          aria-label="Штрихкод"
+          aria-label={isBox ? 'Штрихкод коробки' : 'Штрихкод'}
           labelPlacement="outside"
-          placeholder="Введіть або згенеруйте штрихкод"
+          placeholder={isBox ? 'ШК коробки' : 'Введіть або згенеруйте штрихкод'}
           classNames={{
             base: 'flex-1',
             inputWrapper: 'border-1 border-default-200',
           }}
           value={b.code}
-          onValueChange={(v) =>
-            onBarcodesChange((prev) => prev.map((row, i) => (i === idx ? { ...row, code: v } : row)))
-          }
+          isReadOnly={rowLocked}
+          onValueChange={(v) => {
+            if (rowLocked) return;
+            onBarcodesChange((prev) => prev.map((row, i) => (i === idx ? { ...row, code: v } : row)));
+          }}
           endContent={
-            <Tooltip
-              content="Згенерувати ШК автоматично"
-              placement="top-end"
-              showArrow={true}
-              color="default"
-              delay={200}
-              classNames={{
-                base: 'before:rounded-[3px] before:bg-blue-500 before:z-[10]',
-                content: 'bg-blue-500 text-white rounded-sm',
-              }}
-            >
-              <Button
-                isIconOnly
-                size="sm"
-                variant="light"
-                color="default"
-                className={`text-default-500 hover:text-blue-600/75 hover:bg-blue-600/10! -mr-2`}
-                aria-label="Генерувати ШК автоматично"
-                onPress={() => onGenerateBarcode(idx)}
-                isLoading={barcodeGeneratingIdx === idx}
-                isDisabled={saving || barcodeGeneratingIdx != null || isReadOnly}
-              >
-                <DynamicIcon name="dices" size={16} />
-              </Button>
-            </Tooltip>
+            <BarcodeCodeInputEndContent
+              row={b}
+              idx={idx}
+              isReadOnly={isReadOnly}
+              saving={saving}
+              barcodeGeneratingIdx={barcodeGeneratingIdx}
+              onGenerateBarcode={onGenerateBarcode}
+            />
           }
         />
         <Input
@@ -154,12 +198,16 @@ export function BarcodesSection({
           isReadOnly
           classNames={{
             base: 'flex-1',
-            inputWrapper: 'cursor-pointer border-1 border-default-200',
-            input: 'cursor-pointer py-2',
+            inputWrapper: isBox
+              ? 'cursor-default border-1 border-default-200'
+              : 'cursor-pointer border-1 border-default-200',
+            input: isBox ? 'cursor-default py-2' : 'cursor-pointer py-2',
           }}
-          onClick={() => !isReadOnly && onOpenBatchPicker(idx)}
+          onClick={() => !rowLocked && onOpenBatchPicker(idx)}
           endContent={
-            <DynamicIcon name="chevrons-up-down" size={14} className="shrink-0 text-default-400" />
+            isBox ? null : (
+              <DynamicIcon name="chevrons-up-down" size={14} className="shrink-0 text-default-400" />
+            )
           }
         />
         <BarcodeBatchMovementsButton
@@ -173,6 +221,7 @@ export function BarcodesSection({
           ariaLabel="Видалити ШК"
           className="shrink-0 h-10"
           confirming={rowDeleteConfirm?.kind === 'barcode' && rowDeleteConfirm.idx === idx}
+          isDisabled={saving || isBox}
           onRequest={() => onRowDeleteConfirm({ kind: 'barcode', idx })}
           onConfirm={() => {
             onBarcodesChange((prev) => prev.filter((_, i) => i !== idx));
@@ -242,10 +291,10 @@ export function BarcodesSection({
               <div ref={provided.innerRef} {...provided.droppableProps} className="flex flex-col gap-3">
                 {sortedEntries.map((entry, displayIndex) => (
                   <Draggable
-                    key={`barcode-${entry.originalIdx}-${entry.row.code || 'empty'}`}
-                    draggableId={`barcode-${entry.originalIdx}`}
+                    key={`barcode-${entry.originalIdx}-${entry.row.code || 'empty'}-${entry.row.barcodeKind ?? 'portion'}`}
+                    draggableId={`barcode-${entry.originalIdx}-${entry.row.barcodeKind ?? 'portion'}`}
                     index={displayIndex}
-                    isDragDisabled={!canManualReorder}
+                    isDragDisabled={!canManualReorder || entry.row.barcodeKind === 'box'}
                   >
                     {(dragProvided, snapshot) => (
                       <div
@@ -282,7 +331,14 @@ export function BarcodesSection({
         onPress={() =>
           onBarcodesChange((prev) => [
             ...prev,
-            { code: '', activity: true, goodPart: '', goodPartName: '' },
+            {
+              code: '',
+              activity: true,
+              goodPart: '',
+              goodPartName: '',
+              barcodeKind: 'portion',
+              isNew: true,
+            },
           ])
         }
       >

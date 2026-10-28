@@ -267,7 +267,8 @@ UI у `ProductDrawer` (секція «Штрихкоди»):
 - Потрібен непорожній `form.sku`; інакше toast.
 - `onSelect`: `goodPart = batchId`, `goodPartName = batchNumber`.
 - Окремого Input «Партія (ID)» немає; у **debug mode** (`useDebug`) ID показується маленьким бейджем у полі номера партії.
-- **Ручне сортування** рядків (як у «Цінах»): кнопка біля заголовка при ≥2 ШК, DnD `@hello-pangea/dnd` (`barcodesSectionSort.ts`); порядок зберігається при save картки (локальний snapshot `catalog_good_barcodes` за `id asc`).
+- **Ручне сортування** рядків (як у «Цінах»): кнопка біля заголовка при ≥2 ШК, DnD `@hello-pangea/dnd` (`barcodesSectionSort.ts`); порядок зберігається при save картки (локальний snapshot `catalog_good_barcodes` за `id asc`). Рядки **`barcodeKind: box`** не перетягуються.
+- **`barcodeKind`:** `portion` — партійні ШК (Dilovod / sync ERP); **`box`** — локальний ШК коробки (`CatalogBoxBarcodeService`, не пишеться в Dilovod). У картці box read-only (без генерації EAN, без зміни партії); кнопка «Генерувати ШК» — лише для **нових** порційних рядків (`isNew`). Іконка коробки — `BarcodeKindIcon` лише для box; порційні без іконки. Detail API (`readGoodDetailFromLocal`) віддає `barcodeKind` у barcodes DTO.
 
 ### Наліпки для друку
 
@@ -290,6 +291,8 @@ client/pages/Products/
   components/
     CatalogTree.tsx             # DnD move + sibling reorder (лінія вставки)
     CatalogTable.tsx            # GP-колонки, пошук: категорія + «В замовленнях», SortDescriptor, goods DnD grip
+    BarcodeKindIcon.tsx         # іконка коробки для box-ШК (картка + popover узгодження)
+    PullFieldBarcodesComparePopover.tsx
     CatalogBreadcrumbs.tsx      # у пошуку: лише Каталог > Пошук
     CatalogToolbar.tsx          # Синхронізувати гілку (+ TEMP Legacy), вибірковий Legacy, archive/trash
     CatalogContextMenu.tsx      # Legacy Update, fromTrash / fromArchive (і в пошуку)
@@ -358,8 +361,9 @@ client/pages/Products/
   - При відкритті edit-картки з SKU — фонова перевірка конфліктів: `GET …/dilovod-preview` + (за правом pull) `POST /api/storefront/woo/pull-preview`.
   - Банер **«Узгодити»** якщо є відмінності Dilovod і/або WC (WC лише в гілці «Готова продукція»).
   - Модалка `CatalogOpenSyncModal` → `StorefrontPullConfirmModal`: таблиця `ProductPullTriSourceTable`, фільтр «Лише відмінності / Усі поля», застосування Dilovod + WC окремо; push BO→WC лише коли `wcCompareEnabled !== false`; рядок **«Штрихкоди і партії»**:
-    - порівняння активних **порційних** ШК BO ↔ Dilovod (`barcodeCount`, без `barcodeKind: box`);
-    - клік по «N поз.» — `PullFieldBarcodesComparePopover` (списки `ШК · партія`, жовтим — лише в одному джерелі); preview API: `localBarcodes` / `proposedBarcodes` у `CatalogDilovodPreviewResult`;
+    - банер і `conflicts` — лише **порційні** ШК BO ↔ Dilovod (`catalogBarcodePreviewPortionLines`, на сервері `localPortionBarcodeLines` у `previewGoodFromDilovod` / `barcodeCount` у snapshot); локальні **box**-ШК, яких немає в ERP, **не** вважаються розбіжністю;
+    - колонка BO у tri-source — лічильник порційних; ERP — `proposedBarcodes`;
+    - клік по «N поз.» — `PullFieldBarcodesComparePopover` (повні списки BO включно з box, іконки `barcodeKind`; Dilovod — порційні; жовтим — лише в одному джерелі); preview API: `localBarcodes` / `proposedBarcodes` у `CatalogDilovodPreviewResult` (`barcodeKind` у рядках preview);
     - вибір колонки **Діловод** + «Застосувати» — поле `barcodes` у `applyDilovodPull` (заміна локального snapshot з ERP, без зміни WC).
   - Після **«Застосувати»** — оновлення картки, опційний push на WC, потім **`onReconcileComplete`** → повторний preview (банер «Узгодити» зникає, якщо конфліктів немає).
   - Toast після узгодження: окремі рядки для Dilovod pull, завантаження з WC, відправки на WC.

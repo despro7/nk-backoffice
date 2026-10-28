@@ -88,6 +88,10 @@ export interface BarcodeRow {
   activity: boolean;
   goodPart: string;
   goodPartName: string;
+  /** portion — Dilovod; box — внутрішній ШК коробки (не редагується тут) */
+  barcodeKind?: 'portion' | 'box';
+  /** Новий рядок з «Додати ШК» — показуємо генерацію EAN */
+  isNew?: boolean;
 }
 
 export interface DrawerForm {

@@ -5,6 +5,7 @@ import type {
   CatalogFieldConflict,
 } from '../../../shared/types/catalog.js';
 import { resolveStorefrontRegularPrice } from '../Storefront/resolveStorefrontRegularPrice.js';
+import { catalogBarcodePreviewKeysEqual, catalogBarcodePreviewOnlyIn } from '../../../shared/utils/catalogBarcodePreviewFormat.js';
 
 function norm(value: string | number | null | undefined): string | null {
   if (value == null || value === '') return null;
@@ -21,6 +22,24 @@ function fieldConflict(
   if (!localStr && !remoteStr) return null;
   if (localStr === remoteStr) return null;
   return { field, localValue: localStr, remoteValue: remoteStr };
+}
+
+function barcodeCountFieldConflict(
+  localLines: CatalogDilovodBarcodePreviewLine[],
+  proposedLines: CatalogDilovodBarcodePreviewLine[],
+): CatalogFieldConflict | null {
+  if (catalogBarcodePreviewKeysEqual(localLines, proposedLines)) return null;
+  const onlyLocal = catalogBarcodePreviewOnlyIn(localLines, proposedLines);
+  const onlyProposed = catalogBarcodePreviewOnlyIn(proposedLines, localLines);
+  if (onlyLocal.size === 0 && onlyProposed.size === 0) return null;
+
+  const localCount = localLines.length;
+  const proposedCount = proposedLines.length;
+  return {
+    field: 'barcodeCount',
+    localValue: localCount > 0 ? String(localCount) : null,
+    remoteValue: proposedCount > 0 ? String(proposedCount) : null,
+  };
 }
 
 export function buildDilovodFieldSnapshot(input: {
@@ -57,7 +76,15 @@ export function buildDilovodFieldSnapshot(input: {
 export function diffDilovodSnapshots(
   local: CatalogDilovodFieldSnapshot,
   proposed: CatalogDilovodFieldSnapshot,
+  barcodeLines?: {
+    local: CatalogDilovodBarcodePreviewLine[];
+    proposed: CatalogDilovodBarcodePreviewLine[];
+  },
 ): CatalogFieldConflict[] {
+  const barcodeConflict = barcodeLines
+    ? barcodeCountFieldConflict(barcodeLines.local, barcodeLines.proposed)
+    : fieldConflict('barcodeCount', local.barcodeCount, proposed.barcodeCount);
+
   return [
     fieldConflict('name', local.name, proposed.name),
     fieldConflict('sku', local.sku, proposed.sku),
@@ -66,7 +93,7 @@ export function diffDilovodSnapshots(
     fieldConflict('regularPrice', local.regularPrice, proposed.regularPrice),
     fieldConflict('packageRatio', local.packageRatio, proposed.packageRatio),
     fieldConflict('bomRowCount', local.bomRowCount, proposed.bomRowCount),
-    fieldConflict('barcodeCount', local.barcodeCount, proposed.barcodeCount),
+    barcodeConflict,
   ].filter(Boolean) as CatalogFieldConflict[];
 }
 
@@ -75,6 +102,7 @@ export function mapCatalogBarcodePreviewLines(
     code: string;
     goodPart?: string | null;
     goodPartName?: string | null;
+    barcodeKind?: string | null;
   }>,
 ): CatalogDilovodBarcodePreviewLine[] {
   return rows
@@ -83,6 +111,7 @@ export function mapCatalogBarcodePreviewLines(
       code: row.code.trim(),
       goodPart: row.goodPart?.trim() || null,
       goodPartName: row.goodPartName?.trim() || null,
+      barcodeKind: row.barcodeKind === 'box' ? 'box' : 'portion',
     }));
 }
 

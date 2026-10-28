@@ -9,7 +9,10 @@ import { PullFieldConflictTooltip } from '../PullFieldConflictTooltip';
 import { PullFieldFullTextPopover } from '../PullFieldFullTextPopover';
 import { PullFieldStorefrontDocComparePopover } from '../PullFieldStorefrontDocComparePopover';
 import { summarizeStorefrontDescriptionDocDiff } from '@shared/utils/storefrontDescriptionDocDiff';
-import { formatCatalogBarcodePreviewList } from '@shared/utils/catalogBarcodePreviewFormat';
+import {
+  catalogBarcodePreviewPortionLines,
+  formatCatalogBarcodePreviewList,
+} from '@shared/utils/catalogBarcodePreviewFormat';
 
 export type ProductPullSource = 'local' | 'woo' | 'dilovod';
 
@@ -407,9 +410,19 @@ export function buildProductPullTriRows(
     {
       id: 'barcodesAndBatches',
       label: 'Штрихкоди і партії',
-      local: formatErpRowCount(dilovodLocal?.barcodeCount),
+      local: formatErpRowCount(
+        (() => {
+          const portionLines = catalogBarcodePreviewPortionLines(dilovod?.localBarcodes);
+          if (portionLines.length > 0) return String(portionLines.length);
+          return dilovodLocal?.barcodeCount;
+        })(),
+      ),
       woo: '—',
-      dilovod: formatErpRowCount(d?.proposed.barcodeCount),
+      dilovod: formatErpRowCount(
+        dilovod?.proposedBarcodes?.length
+          ? String(dilovod.proposedBarcodes.length)
+          : d?.proposed.barcodeCount,
+      ),
       conflictLocal: dilovodLocal?.barcodeCount ?? null,
       conflictWoo: null,
       conflictDilovod: d?.proposed.barcodeCount ?? null,

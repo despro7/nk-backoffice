@@ -6,6 +6,7 @@ import {
   catalogBarcodePreviewOnlyIn,
   formatCatalogBarcodePreviewLine,
 } from '@shared/utils/catalogBarcodePreviewFormat';
+import { BarcodeKindIcon } from './BarcodeKindIcon';
 
 interface PullFieldBarcodesComparePopoverProps {
   localLines: CatalogDilovodBarcodePreviewLine[];
@@ -37,11 +38,15 @@ function BarcodePreviewColumn({
             return (
               <li
                 key={key}
-                className={`rounded px-1.5 py-0.5 font-mono text-[11px] leading-snug break-all ${
-                  highlight ? 'bg-warning-100 text-warning-900' : 'bg-default-100/80'
+                className={`flex items-start gap-1.5 rounded px-1.5 py-1 font-mono text-[11px] leading-snug ${
+                  highlight ? 'bg-warning-100 text-warning-900' : 'bg-default-100/80 text-default-700'
                 }`}
               >
-                {label}
+                <BarcodeKindIcon
+                  kind={line.barcodeKind === 'box' ? 'box' : 'portion'}
+                  size={13}
+                />
+                <span className="min-w-0 break-all">{label}</span>
               </li>
             );
           })}
@@ -112,7 +117,7 @@ export function PullFieldBarcodesComparePopover({
           </div>
           {(onlyLocal.size > 0 || onlyDilovod.size > 0) && (
             <p className="text-[10px] text-default-500">
-              Жовтим — позиції, яких немає в іншому джерелі
+              Жовтим – позиції, яких немає в іншому джерелі
             </p>
           )}
         </div>

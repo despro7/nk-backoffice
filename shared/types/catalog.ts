@@ -378,6 +378,7 @@ export interface CatalogDilovodBarcodePreviewLine {
   code: string;
   goodPart: string | null;
   goodPartName: string | null;
+  barcodeKind?: 'portion' | 'box';
 }
 
 export interface CatalogDilovodPreviewResult {

@@ -675,6 +675,8 @@ export function ProductDrawer({
         activity: b.activity,
         goodPart: b.goodPart || '',
         goodPartName: b.goodPartName || '',
+        barcodeKind: b.barcodeKind === 'box' ? 'box' : 'portion',
+        isNew: false,
       }));
       setForm(nextForm);
       setComponents(nextComponents);
@@ -1001,7 +1003,7 @@ export function ProductDrawer({
           currency: p.currency || CATALOG_DEFAULT_CURRENCY_ID,
         })),
         barcodes: barcodes
-          .filter((b) => b.code.trim())
+          .filter((b) => b.code.trim() && b.barcodeKind !== 'box')
           .map((b) => ({
             code: b.code.trim(),
             activity: b.activity,

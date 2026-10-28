@@ -1076,9 +1076,14 @@ export class ProductsCatalogService {
         prices: { select: { priceType: true, price: true } },
         _count: { select: { components: true } },
         barcodes: {
-          where: { barcodeKind: 'portion', activity: true },
+          where: { activity: true },
           orderBy: { id: 'asc' },
-          select: { code: true, goodPart: true, goodPartName: true },
+          select: {
+            code: true,
+            goodPart: true,
+            goodPartName: true,
+            barcodeKind: true,
+          },
         },
       },
     });
@@ -1090,6 +1095,7 @@ export class ProductsCatalogService {
     }
 
     const localBarcodeLines = mapCatalogBarcodePreviewLines(local.barcodes);
+    const localPortionBarcodeLines = localBarcodeLines.filter((line) => line.barcodeKind !== 'box');
 
     const localSnap = buildDilovodFieldSnapshot({
       name: local.name,
@@ -1099,7 +1105,7 @@ export class ProductsCatalogService {
       packageRatio: local.packageRatio,
       prices: local.prices,
       bomRowCount: local._count.components,
-      barcodeCount: localBarcodeLines.length,
+      barcodeCount: localPortionBarcodeLines.length,
     });
 
     try {
@@ -1127,7 +1133,10 @@ export class ProductsCatalogService {
         remoteError: null,
         local: localSnap,
         proposed: proposedSnap,
-        conflicts: diffDilovodSnapshots(localSnap, proposedSnap),
+        conflicts: diffDilovodSnapshots(localSnap, proposedSnap, {
+          local: localPortionBarcodeLines,
+          proposed: proposedBarcodeLines,
+        }),
         localBarcodes: localBarcodeLines,
         proposedBarcodes: proposedBarcodeLines,
       };
@@ -1477,6 +1486,7 @@ export class ProductsCatalogService {
         goodPart: b.goodPart || null,
         goodPartName: b.goodPartName,
         activity: b.activity,
+        barcodeKind: b.barcodeKind === 'box' ? 'box' : 'portion',
       })),
       images,
       stock,

@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-10-28 — Товари: box-ШК, узгодження лише по порційних
+
+**Files:** `BarcodeKindIcon.tsx`, `BarcodesSection.tsx`, `PullFieldBarcodesComparePopover.tsx`, `ProductPullTriSourceTable.tsx`, `ProductDrawer.tsx`, `productDrawerTypes.ts`, `ProductsCatalogService.ts`, `catalogDilovodPreview.ts`, `catalogBarcodePreviewFormat.ts`, `shared/types/catalog.ts`, `products-catalog-2.0.md`
+
+- **Картка:** `barcodeKind` (portion / box); box read-only, генерація EAN лише для нових порційних; іконка коробки; `barcodeKind` у detail DTO.
+- **Узгодження:** банер і diff BO↔Dilovod без урахування локальних box-ШК; popover — повний список BO з іконками; tri-source — порівняння лічильників порційних.
+
+**Документація:** [`products-catalog-2.0.md`](features/products-catalog-2.0.md).
+
+---
+
 ## 2026-10-28 — Товари: ШК — сортування в картці та preview узгодження BO↔ERP
 
 **Files:** `BarcodesSection.tsx`, `barcodesSectionSort.ts`, `ProductDrawer.tsx`, `ProductPullTriSourceTable.tsx`, `StorefrontPullConfirmModal.tsx`, `PullFieldBarcodesComparePopover.tsx`, `PullFieldConflictTooltip.tsx`, `ProductsCatalogService.ts`, `ProductsLocalSync.ts`, `catalogDilovodPreview.ts`, `catalogBarcodePreviewFormat.ts`, `shared/types/catalog.ts`, `products-catalog-2.0.md`

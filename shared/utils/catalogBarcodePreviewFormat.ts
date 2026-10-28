@@ -10,8 +10,8 @@ export function formatCatalogBarcodePreviewLine(line: CatalogDilovodBarcodePrevi
   const code = line.code.trim();
   if (!code) return '—';
   const batch = line.goodPartName?.trim() || line.goodPart?.trim();
-  if (!batch) return code;
-  return `${code} · ${batch}`;
+  const base = batch ? `${code} · ${batch}` : code;
+  return base;
 }
 
 export function formatCatalogBarcodePreviewList(
@@ -32,4 +32,22 @@ export function catalogBarcodePreviewOnlyIn(
     if (!otherKeys.has(key)) out.add(key);
   }
   return out;
+}
+
+export function catalogBarcodePreviewPortionLines(
+  lines: CatalogDilovodBarcodePreviewLine[] | null | undefined,
+): CatalogDilovodBarcodePreviewLine[] {
+  if (!lines?.length) return [];
+  return lines.filter((line) => line.barcodeKind !== 'box');
+}
+
+export function catalogBarcodePreviewKeysEqual(
+  a: CatalogDilovodBarcodePreviewLine[],
+  b: CatalogDilovodBarcodePreviewLine[],
+): boolean {
+  const sortKeys = (lines: CatalogDilovodBarcodePreviewLine[]) =>
+    lines.map(catalogBarcodePreviewKey).sort();
+  const left = sortKeys(a);
+  const right = sortKeys(b);
+  return left.length === right.length && left.every((key, idx) => key === right[idx]);
 }
