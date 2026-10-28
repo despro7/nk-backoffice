@@ -29,7 +29,9 @@ import {
   formatProductLabelHistoryCaption,
   formatProductLabelHistoryOption,
   PRODUCT_LABEL_DRAFT_SELECTION_KEY,
+  productLabelDraftMatchesPublished,
   productLabelHistorySelectionKey,
+  productLabelPayloadInputsKey,
   type ProductLabelHistoryEntry,
 } from '@shared/utils/productLabelHistory';
 import type { ProductLabelPayloadV2 } from '@shared/types/labelTemplate';
@@ -67,7 +69,7 @@ interface ProductLabelsTabProps {
 }
 
 function payloadKey(payload: ProductLabelPayloadV2): string {
-  return JSON.stringify(payload.inputs);
+  return productLabelPayloadInputsKey(payload);
 }
 
 export function ProductLabelsTab({
@@ -224,7 +226,8 @@ export function ProductLabelsTab({
       setViewingVersion(false);
       try {
         let history = await ProductLabelService.listHistory(detail.id, batch.batchId, kind);
-        if (!history.some((row) => row.entryType === 'draft')) {
+        const hasPublished = history.some((row) => row.entryType === 'published');
+        if (!history.some((row) => row.entryType === 'draft') && !hasPublished) {
           await ProductLabelService.seedDraft(detail.id, {
             batchId: batch.batchId,
             labelKind: kind,
@@ -244,13 +247,26 @@ export function ProductLabelsTab({
             return;
           }
         }
-        const draftEntry = history.find((row) => row.entryType === 'draft');
+        const latestPublished = history.find(
+          (row): row is ProductLabelHistoryEntry & { entryType: 'published' } =>
+            row.entryType === 'published',
+        );
+        const draftEntry = history.find(
+          (row): row is ProductLabelHistoryEntry & { entryType: 'draft' } => row.entryType === 'draft',
+        );
+        if (
+          draftEntry &&
+          latestPublished &&
+          productLabelDraftMatchesPublished(draftEntry, latestPublished)
+        ) {
+          selectHistoryEntry(latestPublished);
+          return;
+        }
         if (draftEntry) {
           selectHistoryEntry(draftEntry);
           return;
         }
-        const firstPublished = history.find((row) => row.entryType === 'published');
-        if (firstPublished) selectHistoryEntry(firstPublished);
+        if (latestPublished) selectHistoryEntry(latestPublished);
       } catch (err) {
         ToastService.show({
           title: 'Наліпки',
@@ -350,10 +366,47 @@ export function ProductLabelsTab({
     viewingVersion,
   ]);
 
+  const versionSelectEntries = useMemo(() => {
+    const latestPublished = publishedEntries[0] ?? null;
+    const draftEntry = historyEntries.find(
+      (row): row is ProductLabelHistoryEntry & { entryType: 'draft' } => row.entryType === 'draft',
+    );
+    const showDraft =
+      Boolean(draftEntry) &&
+      (!latestPublished ||
+        !productLabelDraftMatchesPublished(draftEntry!, latestPublished) ||
+        (!viewingVersion && isDirty));
+    const entries: ProductLabelHistoryEntry[] = [];
+    if (showDraft && draftEntry) entries.push(draftEntry);
+    entries.push(...publishedEntries);
+    return entries;
+  }, [historyEntries, publishedEntries, viewingVersion, isDirty]);
+
   const nutritionErrors = useMemo(
     () => getLabelNutritionErrors(inputs, { labelKind, audience }),
     [inputs, labelKind, audience],
   );
+
+  /** Чи поточний зміст відрізняється від останнього PDF (не «несохранені зміни в формі»). */
+  const canGeneratePdf = useMemo(() => {
+    if (viewingVersion) return false;
+    const latestPublished = publishedEntries[0] ?? null;
+    if (!latestPublished) return true;
+    return payloadKey(draftPayload) !== payloadKey(latestPublished.payload);
+  }, [viewingVersion, draftPayload, publishedEntries]);
+
+  const labelFieldsEditable = !readOnly && !viewingVersion;
+  const [labelFieldsAccordionKeys, setLabelFieldsAccordionKeys] = useState<Set<string>>(
+    () => new Set<string>(),
+  );
+
+  useEffect(() => {
+    if (labelFieldsEditable) {
+      setLabelFieldsAccordionKeys(new Set(['fields']));
+    } else {
+      setLabelFieldsAccordionKeys(new Set());
+    }
+  }, [labelFieldsEditable]);
 
   const patchInput = (key: LabelInputKey, value: string) => {
     setViewingVersion(false);
@@ -529,8 +582,33 @@ export function ProductLabelsTab({
   };
 
   const handleDeleteVersion = async () => {
+    if (!selectedBatch || !isAdmin) return;
+
+    const deletingDraft =
+      selectedEntryKey === PRODUCT_LABEL_DRAFT_SELECTION_KEY ||
+      selectedHistoryEntry?.entryType === 'draft';
+
+    if (deletingDraft) {
+      if (!window.confirm('Видалити збережену чернетку? Опубліковані PDF не зміняться.')) return;
+      setDeleting(true);
+      try {
+        await ProductLabelService.deleteDraft(detail.id, selectedBatch.batchId, labelKind);
+        await loadLabelState(selectedBatch, labelKind);
+        ToastService.show({ title: 'Чернетку видалено', color: 'success' });
+      } catch (err) {
+        ToastService.show({
+          title: 'Помилка видалення',
+          description: err instanceof Error ? err.message : undefined,
+          color: 'danger',
+        });
+      } finally {
+        setDeleting(false);
+      }
+      return;
+    }
+
     const labelId = resolveVersionId();
-    if (!labelId || !isAdmin || !selectedBatch) return;
+    if (!labelId) return;
     if (!window.confirm('Видалити обрану версію PDF?')) return;
     setDeleting(true);
     try {
@@ -598,7 +676,7 @@ export function ProductLabelsTab({
                 isDisabled={readOnly}
               >
                 {[
-                  <SelectItem key="default">За замовчуванням (Settings)</SelectItem>,
+                  <SelectItem key="default">За замовчуванням</SelectItem>,
                   ...presetOptions.map((opt) => <SelectItem key={opt.id}>{opt.name}</SelectItem>),
                 ]}
               </Select>
@@ -615,24 +693,27 @@ export function ProductLabelsTab({
               />
               {batchesError ? <p className="text-xs text-danger">{batchesError}</p> : null}
 
-              {historyEntries.length > 0 ? (
+              {versionSelectEntries.length > 0 ? (
                 <div className="flex items-end gap-2">
                   <Select
                     label="Версії"
                     labelPlacement="outside"
                     size="md"
-                    className="min-w-0 flex-1"
+                    classNames={{
+                      base: 'min-w-0 flex-1',
+                      popoverContent: 'bg-default-100 w-auto min-w-max'
+                    }}
                     selectedKeys={selectedEntryKey ? [selectedEntryKey] : []}
                     onSelectionChange={(keys) => {
                       const key = Array.from(keys)[0];
                       if (!key) return;
-                      const row = historyEntries.find(
+                      const row = versionSelectEntries.find(
                         (entry) => productLabelHistorySelectionKey(entry) === String(key),
                       );
                       if (row) selectHistoryEntry(row);
                     }}
                   >
-                    {historyEntries.map((row) => (
+                    {versionSelectEntries.map((row) => (
                       <SelectItem
                         key={productLabelHistorySelectionKey(row)}
                         textValue={formatProductLabelHistoryOption(row)}
@@ -647,17 +728,26 @@ export function ProductLabelsTab({
                       size="md"
                       variant="flat"
                       color="danger"
-                      aria-label="Видалити версію PDF"
+                      aria-label={
+                        selectedHistoryEntry?.entryType === 'draft'
+                          ? 'Видалити чернетку'
+                          : 'Видалити версію PDF'
+                      }
                       onPress={() => void handleDeleteVersion()}
                       isLoading={deleting}
                       isDisabled={
-                        !selectedPublished || readOnly || selectedEntryKey === PRODUCT_LABEL_DRAFT_SELECTION_KEY
+                        readOnly ||
+                        !selectedHistoryEntry ||
+                        (selectedHistoryEntry.entryType === 'published' &&
+                          selectedEntryKey === PRODUCT_LABEL_DRAFT_SELECTION_KEY)
                       }
                     >
                       <DynamicIcon name="trash-2" size={16} />
                     </Button>
                   ) : null}
                 </div>
+              ) : historyEntries.length > 0 ? (
+                <p className="text-xs text-default-500">Немає опублікованих версій</p>
               ) : (
                 <p className="text-xs text-default-500">Завантаження версій…</p>
               )}
@@ -708,7 +798,7 @@ export function ProductLabelsTab({
                   className="justify-start"
                   onPress={() => void handleGenerate()}
                   isLoading={generating}
-                  isDisabled={!selectedBatch || readOnly || !isDirty}
+                  isDisabled={!selectedBatch || readOnly || !canGeneratePdf}
                   startContent={generating ? null : <DynamicIcon name="file-output" size={16} />}
                 >
                   Згенерувати PDF
@@ -727,7 +817,7 @@ export function ProductLabelsTab({
                   isDisabled={!canUsePublishedPdf}
                   startContent={<DynamicIcon name="download" size={16} />}
                 >
-                  Завантажити
+                  Завантажити PDF
                 </Button>
                 <Button
                   size="md"
@@ -738,39 +828,11 @@ export function ProductLabelsTab({
                   onPress={() => void handlePrintBrowser()}
                   startContent={printing ? null : <DynamicIcon name="printer" size={16} />}
                 >
-                  Друк (браузер)
+                  Друкувати наліпку
                 </Button>
               </div>
             </CardBody>
           </Card>
-
-          <Accordion variant="splitted" defaultExpandedKeys={['fields']}>
-            <AccordionItem
-              key="fields"
-              aria-label="Текстові поля наліпки"
-              title={
-                <span className="text-sm font-semibold text-foreground">Текстові поля</span>
-              }
-              subtitle="Локальні правки чернетки"
-            >
-              <div className="max-h-[min(40vh,320px)] space-y-2 overflow-y-auto pb-1 pr-1">
-                {LABEL_EDITABLE_KEYS.map((key) => (
-                  <Input
-                    key={key}
-                    size="sm"
-                    label={LABEL_INPUT_LABELS[key]}
-                    labelPlacement="outside"
-                    value={inputs[key] || ''}
-                    isReadOnly={readOnly || viewingVersion}
-                    onValueChange={(value) => patchInput(key, value)}
-                  />
-                ))}
-                {nutritionErrors[0] && !viewingVersion ? (
-                  <p className="text-xs text-warning-600">{nutritionErrors[0]}</p>
-                ) : null}
-              </div>
-            </AccordionItem>
-          </Accordion>
         </div>
 
         <div className="min-w-0">
@@ -786,11 +848,55 @@ export function ProductLabelsTab({
                   {formatProductLabelHistoryCaption(selectedHistoryEntry)}
                 </p>
               ) : null}
+              <Accordion
+                variant="light"
+                selectedKeys={labelFieldsAccordionKeys}
+                onSelectionChange={(keys) => {
+                  if (keys === 'all') {
+                    setLabelFieldsAccordionKeys(new Set(['fields']));
+                    return;
+                  }
+                  setLabelFieldsAccordionKeys(new Set(Array.from(keys).map(String)));
+                }}
+              >
+                <AccordionItem
+                  key="fields"
+                  aria-label="Текстові поля наліпки"
+                  title="Текстові поля"
+                  subtitle="Локальні правки чернетки"
+                  classNames={{
+                    title: 'text-sm font-semibold',
+                    subtitle: 'text-xs text-default-500 font-normal mt-1',
+                  }}
+                >
+                  <div className="grid md:grid-cols-2 gap-3 max-h-[min(40vh,320px)] overflow-y-auto">
+                    {LABEL_EDITABLE_KEYS.map((key) => (
+                      <Input
+                        key={key}
+                        size="sm"
+                        label={LABEL_INPUT_LABELS[key]}
+                        labelPlacement="outside"
+                        classNames={{
+                          label: 'text-xs text-foreground-400! font-normal',
+                          input: 'text-sm text-default-700',
+                        }}
+                        value={inputs[key] || ''}
+                        isReadOnly={readOnly || viewingVersion}
+                        onValueChange={(value) => patchInput(key, value)}
+                      />
+                    ))}
+                    {nutritionErrors[0] && !viewingVersion ? (
+                      <p className="text-xs text-warning-600">{nutritionErrors[0]}</p>
+                    ) : null}
+                  </div>
+                </AccordionItem>
+              </Accordion>
             </div>
           ) : (
             <p className="py-16 text-center text-sm text-default-500">Оберіть партію для попереднього перегляду</p>
           )}
         </div>
+
       </div>
 
       <BatchNumbersAutocomplete

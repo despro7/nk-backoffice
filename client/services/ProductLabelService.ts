@@ -89,6 +89,21 @@ export class ProductLabelService {
     await parseJson<null>(res);
   }
 
+  static async deleteDraft(
+    goodId: string,
+    batchId: string,
+    labelKind: ProductLabelKind,
+  ): Promise<void> {
+    const url = new URL(
+      `/api/products/${encodeURIComponent(goodId)}/labels/draft`,
+      window.location.origin,
+    );
+    url.searchParams.set('batchId', batchId);
+    url.searchParams.set('labelKind', labelKind);
+    const res = await fetch(url.toString(), { method: 'DELETE', credentials: 'include' });
+    await parseJson<null>(res);
+  }
+
   static async listHistory(
     goodId: string,
     batchId: string,

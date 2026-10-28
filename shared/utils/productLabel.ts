@@ -47,8 +47,6 @@ export function resolveLabelExpiryDate(
   return formatLabelExpiryDate(batchExpiration);
 }
 
-const WEIGHT_UNIT_NBSP = '\u00A0';
-
 function formatWeightDecimalUk(value: number): string {
   const fixed = value.toFixed(3).replace(/\.?0+$/, '');
   return fixed.replace('.', ',');
@@ -57,9 +55,9 @@ function formatWeightDecimalUk(value: number): string {
 function formatGramsWeightLabel(grams: number): string {
   const rounded = Math.round(grams);
   if (rounded >= 1000) {
-    return `${formatWeightDecimalUk(rounded / 1000)}${WEIGHT_UNIT_NBSP}кг`;
+    return `${formatWeightDecimalUk(rounded / 1000)}кг`;
   }
-  return `${rounded}${WEIGHT_UNIT_NBSP}г`;
+  return `${rounded}г`;
 }
 
 export function formatNetWeightLabel(weightKg: number | null | undefined): string {
@@ -76,9 +74,9 @@ export function formatNetWeightRangeLabel(minKg: number, maxKg: number): string 
   const minGrams = Math.round(minKg * 1000);
   const maxGrams = Math.round(maxKg * 1000);
   if (maxGrams >= 1000) {
-    return `${formatWeightDecimalUk(minGrams / 1000)}-${formatWeightDecimalUk(maxGrams / 1000)}${WEIGHT_UNIT_NBSP}кг`;
+    return `${formatWeightDecimalUk(minGrams / 1000)}-${formatWeightDecimalUk(maxGrams / 1000)}кг`;
   }
-  return `${minGrams}-${maxGrams}${WEIGHT_UNIT_NBSP}г`;
+  return `${minGrams}-${maxGrams}г`;
 }
 
 export type BomIngredientRow = {

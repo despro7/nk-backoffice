@@ -1,6 +1,6 @@
 # Наліпки для друку (Products 2.0)
 
-**Оновлено:** 2026-10-26  
+**Оновлено:** 2026-10-28  
 **UI:** `ProductDrawer` → вкладка **«Наліпки»**; **Налаштування** → **Шаблони наліпок** (`/settings/label-templates`)  
 **API:** `/api/products/:goodId/labels/*`, `/api/label-templates/*`  
 **Доступ:** `catalog.manage` (мін. `WAREHOUSE_MANAGER`); шаблони — permission `labelTemplates` (BOSS, ADMIN)
@@ -17,7 +17,7 @@ PDF-етикетки **100×100 мм** для партій готової про
 | Дані на наліпці | `LabelInputMap` (`shared/constants/labelInputKeys.ts`), резолвер `LabelInputResolver` |
 | Чернетка | **Одна активна** на `(goodId, labelKind)` — при збереженні інші партії видаляються; у БД ключ `(goodId, batchId, labelKind)`; `updatedBy` + `updatedAt`; спільна для всіх користувачів до генерації PDF |
 | Опубліковані PDF | Кожна генерація — `version`, файл у `uploads/catalog-labels/{goodId}/`, `publishedBy` |
-| Історія в UI | `GET …/labels/history` — **чернетка + PDF** в одному списку «Версії» |
+| Історія в UI | `GET …/labels/history` — чернетка + PDF; у Select **«Версії»** чернетка показується лише якщо зміст **не збігається** з останнім PDF або є **незбережені** локальні правки |
 | Превʼю | `LabelPdfmeViewer` (pdfme Form); підпис під превʼю (дата, автор, партія) |
 | PDF | `@pdfme/generator` + `labelPdfmeRuntime.ts`, шрифти Arial з assets Designer |
 | ШК порції | `catalog_good_barcodes` (`barcodeKind: portion`), привʼязка до `goodPart` (партія) |
@@ -75,12 +75,13 @@ PDF-етикетки **100×100 мм** для партій готової про
 | GET | `…/labels/draft/latest?labelKind=` | Остання збережена чернетка по товару (`updatedAt` desc) |
 | PUT | `…/labels/draft` | Зберегти чернетку (`updatedBy` = поточний user); інші чернетки цього `labelKind` для інших партій — видаляються |
 | POST | `…/labels/seed` | Перестворити чернетку з картки |
+| DELETE | `…/labels/draft?batchId=&labelKind=` | Видалити збережену чернетку (**ADMIN**); опубліковані PDF без змін |
 | GET | `…/labels/history?batchId=&labelKind=` | **Чернетка + опубліковані** (для UI) |
 | GET | `…/labels/published?batchId=&labelKind=` | Лише PDF-версії |
 | GET | `…/labels/published/latest?labelKind=` | Останній PDF по товару |
 | GET | `…/labels/resolve-template?labelKind=` | Який шаблон застосується |
 | PATCH | `…/labels/template` | Override пресета на товарі |
-| POST | `…/labels/published/generate` | Новий PDF + версія |
+| POST | `…/labels/published/generate` | Новий PDF + версія; після успіху **чернетка синхронізується** з опублікованим payload |
 | GET | `…/labels/published/:id/pdf` | Файл PDF |
 | DELETE | `…/labels/published/:id` | Видалити версію (**ADMIN**) |
 
@@ -96,13 +97,15 @@ PDF-етикетки **100×100 мм** для партій готової про
 ## UI — картка товару (`ProductLabelsTab`)
 
 1. **Tabs** `Порція | Коробка` (для комплектів — лише порція, без вкладки коробки).
-2. **Пресет** — override або «За замовчуванням (Settings)»; при `templateId === null` підвантажується дефолт через `resolveTemplate`.
-3. **Партія** — `BatchNumbersAutocomplete`; автопідстановка: спочатку партія з `draft/latest`, інакше з `published/latest`.
-4. **Версії** — один Select: чернетка (`Чернетка · дата · автор`) і `vN · дата · автор`; при відкритті вкладки / зміні партії **за замовчуванням обрана чернетка**, якщо вона є; після **«Згенерувати PDF»** — щойно створена опублікована версія; PDF — режим перегляду, чернетка — редагування.
-5. Під превʼю — `formatProductLabelHistoryCaption` (збережено / згенеровано, автор, партія).
-6. **Дії:** зберегти чернетку · синхронізувати з картки (`seed`) · згенерувати PDF · завантажити / друк (браузер) лише для обраного **PDF** · «Редагувати як чернетку» (клон з PDF). Під час дії кнопки з іконкою: `isLoading` + `startContent={loading ? null : icon}` (спінер замість іконки, не між іконкою й текстом).
+2. **Пресет** — override або «За замовчуванням (Settings)» (`setTemplateOverride` → `null`, далі дефолт з матриці Settings); після resolve UI показує **ім’я** дефолтного пресета (напр. «Звичайна порція»), бо `templateId` стає UUID шаблону. Якщо override уже збігається з дефолтом, пункт «Settings» виглядає як повторний вибір того самого пресета — це скидання override, а не інший макет.
+3. **Партія** — `BatchNumbersAutocomplete`; автопідстановка: спочатку партія з `draft/latest`, інакше з `published/latest`. Авто-**seed** чернетки лише якщо **немає** ні чернетки, ні опублікованих PDF для партії.
+4. **Версії** — Select (`w-fit`): чернетка (`Чернетка · дата · автор`) і `vN · дата · автор`. Чернетка **ховається**, якщо її `inputs` збігаються з останнім PDF (`productLabelDraftMatchesPublished`). Після відкриття: чернетка з неопублікованими змінами, інакше — останній PDF; після **«Згенерувати PDF»** — нова версія + синхронізована чернетка (пункт «Чернетка» зникає зі списку). **Кошик (ADMIN):** видалити PDF-версію або збережену чернетку.
+5. Під превʼю — `formatProductLabelHistoryCaption` (збережено / згенеровано, автор, партія); accordion **«Текстові поля»** автоматично **розгортається** лише в режимі редагування (`!readOnly && !viewingVersion`).
+6. **Дії:** зберегти чернетку · синхронізувати з картки (`seed`) · **згенерувати PDF** (активна, якщо немає PDF або поточний зміст **≠** останній PDF — не плутати з «незбережені зміни в формі») · завантажити / друк (браузер) лише для обраного **PDF** · «Редагувати як чернетку» (клон з PDF). Під час дії кнопки з іконкою: `isLoading` + `startContent={loading ? null : icon}` (спінер замість іконки, не між іконкою й текстом).
 
-Превʼю: `label/LabelPdfmeViewer.tsx` (`resolvePdfmeInputs` — без дубля префікса «Вжити до:», якщо він уже в `content` поля шаблону). Текстові поля — accordion з `LABEL_EDITABLE_KEYS`.
+**Локальні правки чернетки** (`LABEL_EDITABLE_KEYS`): заголовок (2 рядки), **маса нетто** (`net_weight`). Формат ваги на наліпці: число + одиниця **без пробілу** (`400г`, `1кг`) — `formatNetWeightLabel` у `shared/utils/productLabel.ts`.
+
+Превʼю: `label/LabelPdfmeViewer.tsx` (`resolvePdfmeInputs` — без дубля префікса «Вжити до:», якщо він уже в `content` поля шаблону).
 
 ---
 
@@ -158,6 +161,7 @@ shared/
   types/productLabel.ts, labelTemplate.ts
   constants/labelInputKeys.ts
   utils/labelInputs.ts, productLabelHistory.ts, labelStorefrontOverrides.ts
+  # productLabelHistory: productLabelPayloadInputsKey, productLabelDraftMatchesPublished
   pdfme/   # merge template, plugins, built-in presets
 
 client/
@@ -173,6 +177,7 @@ client/
 ## Тести
 
 - `shared/utils/labelInputs.spec.ts`
+- `shared/utils/productLabel.spec.ts`
 - `shared/utils/productLabelHistory.spec.ts`
 - `shared/utils/labelTemplateDefaults.spec.ts`
 - `shared/utils/labelTemplateInputs.spec.ts`

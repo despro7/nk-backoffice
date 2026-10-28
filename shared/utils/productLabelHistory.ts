@@ -1,6 +1,19 @@
+import type { ProductLabelPayloadV2 } from '../types/labelTemplate.js';
 import type { ProductLabelDraftDto, ProductLabelPublishedDto } from '../types/productLabel.js';
 
 export const PRODUCT_LABEL_DRAFT_SELECTION_KEY = 'draft';
+
+/** Порівняння змісту для «чернетка = останній PDF». */
+export function productLabelPayloadInputsKey(payload: ProductLabelPayloadV2): string {
+  return JSON.stringify(payload.inputs);
+}
+
+export function productLabelDraftMatchesPublished(
+  draft: ProductLabelDraftDto,
+  published: ProductLabelPublishedDto,
+): boolean {
+  return productLabelPayloadInputsKey(draft.payload) === productLabelPayloadInputsKey(published.payload);
+}
 
 export type ProductLabelHistoryEntry =
   | ({ entryType: 'draft' } & ProductLabelDraftDto)

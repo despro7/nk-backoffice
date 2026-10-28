@@ -431,7 +431,26 @@ export class CatalogLabelService {
     });
     const dto = this.toPublished(row);
     if (!dto) throw new Error('Некоректний payload опублікованої наліпки');
+
+    await this.saveDraft(goodId, {
+      batchId: batch.batchId,
+      labelKind: batch.labelKind,
+      batchNumber: batch.batchNumber,
+      payload: stored,
+      updatedBy: publishedBy,
+    });
+
     return dto;
+  }
+
+  async deleteDraft(
+    goodId: string,
+    batchId: string,
+    labelKind: ProductLabelKind,
+  ): Promise<void> {
+    await prisma.catalogProductLabelDraft.deleteMany({
+      where: { goodId, batchId, labelKind },
+    });
   }
 
   async seedDraft(

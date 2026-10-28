@@ -209,6 +209,24 @@ router.delete('/:goodId/labels/published/:id', ...authOnly, requireRole([ROLES.A
   }
 });
 
+// DELETE /api/products/:goodId/labels/draft?batchId=&labelKind=
+router.delete('/:goodId/labels/draft', ...authOnly, requireRole([ROLES.ADMIN]), catalogManage, async (req, res) => {
+  try {
+    const goodId = req.params.goodId;
+    const batchId = String(req.query.batchId || '').trim();
+    const labelKind = catalogLabelService.assertLabelKind(String(req.query.labelKind || 'portion'));
+    if (!batchId) {
+      res.status(400).json({ success: false, error: 'batchId обовʼязковий' });
+      return;
+    }
+    await assertGoodExists(goodId);
+    await catalogLabelService.deleteDraft(goodId, batchId, labelKind);
+    res.json({ success: true });
+  } catch (error) {
+    handleError(res, error, 'DELETE draft');
+  }
+});
+
 // GET /api/products/:goodId/labels/published/:id/pdf
 router.get('/:goodId/labels/published/:id/pdf', ...authOnly, catalogManage, async (req, res) => {
   try {

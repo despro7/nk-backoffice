@@ -33,8 +33,8 @@ export type LabelInputMap = Record<LabelInputKey, string>;
 
 export const LABEL_INPUT_KEY_SET = new Set<string>(LABEL_INPUT_KEYS);
 
-/** Ручне редагування лише для переносу заголовка; решта — з картки + MVT у Designer. */
-export const LABEL_EDITABLE_KEYS: LabelInputKey[] = ['title_line1', 'title_line2'];
+/** Локальні правки чернетки в картці товару (решта — з картки + MVT у Designer). */
+export const LABEL_EDITABLE_KEYS: LabelInputKey[] = ['title_line1', 'title_line2', 'net_weight'];
 
 export const LABEL_INPUT_LABELS: Record<LabelInputKey, string> = {
   title_line1: 'Заголовок, рядок 1',
