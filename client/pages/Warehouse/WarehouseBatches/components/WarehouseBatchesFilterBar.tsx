@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Input, Switch } from '@heroui/react';
+import { Button, Input, Switch, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { DateRange } from '@react-types/datepicker';
 import { createStandardDatePresets } from '@/lib/dateReportingUtils';
@@ -37,6 +37,8 @@ interface WarehouseBatchesFilterBarProps {
   datePresetKey: string | null;
   onDatePresetKeyChange: (value: string | null) => void;
   onReset: () => void;
+  onClearCache: () => void;
+  cacheRefreshing?: boolean;
   loading?: boolean;
   hasActiveFilters?: boolean;
 }
@@ -57,6 +59,8 @@ export function WarehouseBatchesFilterBar({
   datePresetKey,
   onDatePresetKeyChange,
   onReset,
+  onClearCache,
+  cacheRefreshing = false,
   loading = false,
   hasActiveFilters = false,
 }: WarehouseBatchesFilterBarProps) {
@@ -192,7 +196,7 @@ export function WarehouseBatchesFilterBar({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-4">
+      <div className="flex flex-wrap items-center gap-6">
         <Switch
           size="sm"
           classNames={{
@@ -216,6 +220,26 @@ export function WarehouseBatchesFilterBar({
         >
           Змінити порядок колонок
         </Switch>
+        <Tooltip
+          content="Скинути кеш списку (~5 хв) і оновити дані з Dilovod та штрих-коди з БД"
+          placement="top"
+          delay={300}
+          classNames={{
+            content: 'text-xs',
+          }}
+        >
+          <Button
+            aria-label="Скинути кеш"
+            onPress={onClearCache}
+            isDisabled={loading || cacheRefreshing}
+            size="sm"
+            variant="flat"
+            className="h-6 min-w-6 px-2 gap-1 bg-white border border-default/75 text-default-700 hover:bg-default-100"
+            startContent={<DynamicIcon name={cacheRefreshing ? 'loader-2' : 'refresh-cw'} size={13} className={cacheRefreshing ? 'animate-spin' : undefined} />}
+          >
+            Скинути кеш
+          </Button>
+        </Tooltip>
       </div>
 
       <ReportsFilterBuilder

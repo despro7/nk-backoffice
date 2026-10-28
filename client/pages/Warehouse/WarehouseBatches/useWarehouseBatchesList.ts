@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useCallback, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   WAREHOUSE_BATCH_KIND_OPTIONS,
 } from '@shared/types/warehouse';
@@ -17,6 +17,17 @@ interface UseWarehouseBatchesListParams {
 }
 
 const ALL_BATCH_KINDS = WAREHOUSE_BATCH_KIND_OPTIONS.map((option) => option.key);
+const WAREHOUSE_BATCHES_QUERY_KEY = ['warehouse-batches', 'full'] as const;
+
+async function fetchFullWarehouseBatches(force = false): Promise<WarehouseBatchListItem[]> {
+  const response = await fetchWarehouseBatches({
+    onlyWithStock: false,
+    negativeMode: 'all',
+    batchKinds: ALL_BATCH_KINDS,
+    force,
+  });
+  return response.data;
+}
 
 function matchesNegativeMode(
   total: number,
@@ -43,16 +54,12 @@ function matchesNegativeMode(
  * Інакше кожна зміна Switch/Select б’є Dilovod повторно через зміну queryKey.
  */
 export function useWarehouseBatchesList(params: UseWarehouseBatchesListParams) {
+  const queryClient = useQueryClient();
+  const [cacheRefreshing, setCacheRefreshing] = useState(false);
+
   const query = useQuery({
-    queryKey: ['warehouse-batches', 'full'],
-    queryFn: async (): Promise<WarehouseBatchListItem[]> => {
-      const response = await fetchWarehouseBatches({
-        onlyWithStock: false,
-        negativeMode: 'all',
-        batchKinds: ALL_BATCH_KINDS,
-      });
-      return response.data;
-    },
+    queryKey: WAREHOUSE_BATCHES_QUERY_KEY,
+    queryFn: () => fetchFullWarehouseBatches(false),
     staleTime: 60_000,
   });
 
@@ -66,10 +73,22 @@ export function useWarehouseBatchesList(params: UseWarehouseBatchesListParams) {
     ));
   }, [kindSet, params.negativeMode, params.onlyWithStock, query.data]);
 
+  const refreshFromServer = useCallback(async () => {
+    setCacheRefreshing(true);
+    try {
+      const data = await fetchFullWarehouseBatches(true);
+      queryClient.setQueryData(WAREHOUSE_BATCHES_QUERY_KEY, data);
+    } finally {
+      setCacheRefreshing(false);
+    }
+  }, [queryClient]);
+
   return {
     items,
     loading: query.isLoading || query.isFetching,
+    cacheRefreshing,
     error: query.error instanceof Error ? query.error.message : null,
     refetch: query.refetch,
+    refreshFromServer,
   };
 }

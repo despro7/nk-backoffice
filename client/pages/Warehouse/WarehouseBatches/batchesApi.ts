@@ -9,6 +9,8 @@ export interface FetchWarehouseBatchesParams {
   onlyWithStock: boolean;
   negativeMode: WarehouseBatchNegativeMode;
   batchKinds: WarehouseBatchKind[];
+  /** Обхід серверного in-memory кешу (5 хв) — свіжі залишки та ШК з БД. */
+  force?: boolean;
 }
 
 export async function fetchWarehouseBatches(
@@ -25,6 +27,9 @@ export async function fetchWarehouseBatches(
     // Повний зріз для клієнтських фільтрів (серверний кеш і так тримає повний список).
     limit: '5000',
   });
+  if (params.force) {
+    query.set('force', 'true');
+  }
 
   const response = await fetch(`/api/warehouse/batches?${query.toString()}`, {
     credentials: 'include',

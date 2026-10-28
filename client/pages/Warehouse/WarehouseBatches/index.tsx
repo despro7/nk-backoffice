@@ -51,8 +51,23 @@ export default function WarehouseBatches() {
   }, []);
 
   const handleProductSaved = useCallback(() => {
-    void list.refetch();
-  }, [list.refetch]);
+    void list.refreshFromServer();
+  }, [list.refreshFromServer]);
+
+  const handleClearCache = useCallback(async () => {
+    try {
+      await list.refreshFromServer();
+      ToastService.show({
+        title: 'Кеш списку скинуто, дані оновлено',
+        color: 'success',
+      });
+    } catch (error) {
+      ToastService.show({
+        title: error instanceof Error ? error.message : 'Не вдалося оновити партії',
+        color: 'danger',
+      });
+    }
+  }, [list.refreshFromServer]);
 
   const handleBatchOpen = useCallback((item: WarehouseBatchListItem) => {
     openProductMovements({
@@ -90,6 +105,8 @@ export default function WarehouseBatches() {
         datePresetKey={filters.datePresetKey}
         onDatePresetKeyChange={filters.setDatePresetKey}
         onReset={filters.resetFilters}
+        onClearCache={() => void handleClearCache()}
+        cacheRefreshing={list.cacheRefreshing}
         loading={list.loading}
         hasActiveFilters={filters.hasActiveFilters}
       />

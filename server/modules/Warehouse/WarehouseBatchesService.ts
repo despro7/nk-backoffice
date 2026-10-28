@@ -161,6 +161,10 @@ const listCache = new Map<string, CacheEntry>();
 /** Один in-flight load — щоб паралельні GET /batches не ганяли одні й ті самі chunk’и Dilovod. */
 let fullListInflight: Promise<WarehouseBatchListItem[]> | null = null;
 
+function clearWarehouseBatchesListCache(): void {
+  listCache.clear();
+}
+
 const DEFAULT_GOOD_PART_FIELDS: GoodPartFieldNames = {
   id: 'id',
   code: 'code',
@@ -882,7 +886,13 @@ export class WarehouseBatchesService {
       },
     });
 
+    clearWarehouseBatchesListCache();
     return code;
+  }
+
+  /** Скидає in-memory кеш GET /warehouse/batches (TTL ~5 хв). */
+  clearListCache(): void {
+    clearWarehouseBatchesListCache();
   }
 
   /** Створює нову партію в Dilovod (catalogs.goodParts). */
@@ -898,7 +908,7 @@ export class WarehouseBatchesService {
       productionDate: input.productionDate,
       expiration: input.expiration,
     });
-    listCache.clear();
+    clearWarehouseBatchesListCache();
     return result;
   }
 
