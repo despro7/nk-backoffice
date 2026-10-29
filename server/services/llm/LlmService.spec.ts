@@ -10,9 +10,16 @@ describe('LlmService', () => {
       defaultProvider: 'openai',
       openaiApiKey: 'test-key',
       googleApiKey: '',
+      openrouterApiKey: '',
       openaiDefaultModel: 'gpt-test',
       googleDefaultModel: 'gemini-test',
+      openrouterDefaultModel: 'openai/gpt-6-luna-pro',
       maxOutputTokens: 512,
+      modelPriceHighlight: {
+        enabled: true,
+        greenMaxUsdPerM: 5,
+        yellowMaxUsdPerM: 10,
+      },
     });
   });
 
@@ -34,9 +41,16 @@ describe('LlmService', () => {
       defaultProvider: 'openai',
       openaiApiKey: '',
       googleApiKey: '',
+      openrouterApiKey: '',
       openaiDefaultModel: 'gpt-test',
       googleDefaultModel: 'gemini-test',
+      openrouterDefaultModel: 'openai/gpt-6-luna-pro',
       maxOutputTokens: 512,
+      modelPriceHighlight: {
+        enabled: true,
+        greenMaxUsdPerM: 5,
+        yellowMaxUsdPerM: 10,
+      },
     });
     const svc = new LlmService();
     await expect(svc.complete({ messages: [{ role: 'user', content: 'hi' }] })).rejects.toThrow(

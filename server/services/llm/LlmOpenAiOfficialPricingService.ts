@@ -25,23 +25,95 @@ function normalizeModelKey(raw: string): string {
     .toLowerCase();
 }
 
+type PriceColumnLayout = { inputIdx: number; outputIdx: number };
+
+function isTableSeparatorRow(cells: string[]): boolean {
+  return cells.every((c) => /^-+$/.test(c) || c === '');
+}
+
+/** Визначає індекси input/output з рядка заголовка таблиці pricing.md. */
+export function resolveOpenAiPricingColumns(cells: string[]): PriceColumnLayout | null {
+  if (cells[0]?.toLowerCase() !== 'model') return null;
+  const lower = cells.map((c) => c.toLowerCase());
+
+  if (lower.some((h) => h.includes('price per minute'))) {
+    return null;
+  }
+
+  let inputIdx = lower.findIndex((h) => h === 'input' || h === 'short context input');
+  if (inputIdx < 0) {
+    inputIdx = lower.findIndex(
+      (h) =>
+        h.includes('input') &&
+        !h.includes('cached') &&
+        !h.includes('write') &&
+        !h.includes('long context'),
+    );
+  }
+
+  let outputIdx = lower.findIndex((h) => h === 'output' || h === 'short context output');
+  if (outputIdx < 0) {
+    outputIdx = lower.findIndex(
+      (h) =>
+        (h === 'output / cost' || h.includes('output')) &&
+        !h.includes('cached') &&
+        !h.includes('write') &&
+        !h.includes('long context'),
+    );
+  }
+
+  // Старий формат: input | cached | cache writes | output (індекс 4)
+  if (outputIdx < 0 && lower.some((h) => h.includes('cache writes'))) {
+    outputIdx = lower.findIndex((h) => h.includes('short context output'));
+    if (outputIdx < 0) outputIdx = 4;
+  }
+
+  if (inputIdx < 0) inputIdx = 1;
+  if (outputIdx < 0) outputIdx = 2;
+
+  return { inputIdx, outputIdx };
+}
+
+type PricingDocSection = 'standard' | 'batch' | 'skip';
+
+function pricingSectionFromLine(line: string): PricingDocSection | null {
+  const lower = line.toLowerCase();
+  if (lower.includes('batch pricing')) return 'batch';
+  if (lower.includes('standard pricing') || /^#+\s*standard\b/.test(lower)) return 'standard';
+  if (lower.includes('gpt-live') || lower.includes('price per minute')) return 'skip';
+  return null;
+}
+
 /** Парсить markdown-таблиці з офіційного pricing.md (Standard tier, short context). */
 export function parseOpenAiPricingMarkdown(markdown: string): Map<string, PriceRow> {
   const map = new Map<string, PriceRow>();
   const lines = markdown.split('\n');
+  let layout: PriceColumnLayout = { inputIdx: 1, outputIdx: 2 };
+  let section: PricingDocSection = 'standard';
 
   for (const line of lines) {
+    const sectionHint = pricingSectionFromLine(line);
+    if (sectionHint != null) {
+      section = sectionHint;
+    }
     if (!line.trim().startsWith('|')) continue;
+    if (section !== 'standard') continue;
     const cells = line
       .split('|')
       .map((c) => c.trim())
       .filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
     if (cells.length < 2) continue;
-    if (cells[0].toLowerCase() === 'model' || cells[0] === '---') continue;
+    if (isTableSeparatorRow(cells)) continue;
+
+    if (cells[0].toLowerCase() === 'model') {
+      const resolved = resolveOpenAiPricingColumns(cells);
+      if (resolved) layout = resolved;
+      continue;
+    }
 
     let modelCell = cells[0];
-    let inputIdx = 1;
-    let outputIdx = 4;
+    let inputIdx = layout.inputIdx;
+    let outputIdx = layout.outputIdx;
 
     if (cells[0].toLowerCase() === 'embedding' && cells.length >= 3) {
       modelCell = cells[1];
@@ -56,19 +128,45 @@ export function parseOpenAiPricingMarkdown(markdown: string): Map<string, PriceR
     if (inputUsdPerM == null) continue;
 
     const outputUsdPerM = outputIdx >= 0 ? parseUsdCell(cells[outputIdx] ?? '') : null;
-    map.set(modelKey, { inputUsdPerM, outputUsdPerM });
+    if (!map.has(modelKey)) {
+      map.set(modelKey, { inputUsdPerM, outputUsdPerM });
+    }
   }
 
   return map;
+}
+
+function modelIdMatchesPricingPrefix(modelId: string, prefix: string): boolean {
+  if (!modelId.startsWith(prefix)) return false;
+  if (modelId.length === prefix.length) return true;
+  return modelId[prefix.length] === '-';
+}
+
+function stripOpenAiSnapshotSuffix(modelId: string): string {
+  return modelId.replace(/-\d{4}-\d{2}-\d{2}$/, '');
+}
+
+/** Для тестів і підказок: exact → snapshot → найдовший prefix з `-` boundary. */
+export function resolveOpenAiPricingRow(
+  map: Map<string, PriceRow>,
+  modelId: string,
+): PriceRow | null {
+  return lookupPrice(map, modelId);
 }
 
 function lookupPrice(map: Map<string, PriceRow>, modelId: string): PriceRow | null {
   const key = normalizeModelKey(modelId);
   if (map.has(key)) return map.get(key) ?? null;
 
+  const withoutDate = normalizeModelKey(stripOpenAiSnapshotSuffix(modelId));
+  if (withoutDate !== key && map.has(withoutDate)) {
+    return map.get(withoutDate) ?? null;
+  }
+
   let best: { row: PriceRow; len: number } | null = null;
   for (const [prefix, row] of map.entries()) {
-    if (key.startsWith(prefix) && (!best || prefix.length > best.len)) {
+    if (!modelIdMatchesPricingPrefix(key, prefix)) continue;
+    if (!best || prefix.length > best.len) {
       best = { row, len: prefix.length };
     }
   }

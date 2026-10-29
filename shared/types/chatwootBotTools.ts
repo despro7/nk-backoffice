@@ -34,6 +34,23 @@ export type ChatwootBotCatalogItemDto = {
   effectiveStock?: number;
 };
 
+export type ChatwootBotSitePageSource = 'wp_rest' | 'html_fallback';
+
+export type ChatwootBotSitePageDto = {
+  slug: string;
+  title: string;
+  excerpt: string;
+  text: string;
+};
+
+export type ChatwootBotSitePagesToolResult = {
+  source: ChatwootBotSitePageSource;
+  fetchedAt: string;
+  cachedUntil: string;
+  pages: ChatwootBotSitePageDto[];
+  error?: string;
+};
+
 export type ChatwootBotVerifyMethod = 'order_number' | 'last_order_date';
 
 export type ChatwootBotVerifyAttemptResult =

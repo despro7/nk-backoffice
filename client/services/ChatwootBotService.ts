@@ -9,8 +9,10 @@ import type {
 } from '@shared/types/chatwootBot';
 import type {
   ChatwootBotCatalogItemDto,
+  ChatwootBotSitePagesToolResult,
   ChatwootBotVerifiedOrderDto,
 } from '@shared/types/chatwootBotTools';
+import type { LlmTestModelResponse } from '@shared/types/llm';
 
 async function parseJson<T>(res: Response): Promise<T> {
   const data = await res.json();
@@ -152,6 +154,20 @@ export const chatwootBotApi = {
     return parseJson(res);
   },
 
+  async testSitePages(params?: {
+    query?: string;
+    slugs?: string;
+    limit?: number;
+  }): Promise<ChatwootBotSitePagesToolResult> {
+    const res = await fetch('/api/chatwoot-bot/tools/site-pages', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params ?? {}),
+    });
+    return parseJson(res);
+  },
+
   async verifyOrderTest(phone: string, orderNumber: string): Promise<{
     verified: boolean;
     order?: ChatwootBotVerifiedOrderDto;
@@ -182,12 +198,30 @@ export const chatwootBotApi = {
     return parseJson(res);
   },
 
-  async testAi(message: string): Promise<{ reply: string }> {
+  async testAi(
+    message: string,
+    options?: {
+      aiProvider?: '' | 'openai' | 'google' | 'openrouter';
+      aiModel?: string;
+      aiMaskId?: string;
+      aiMasks?: Array<{ id: string; name: string; systemPrompt: string }>;
+    },
+  ): Promise<{
+    reply: string;
+    usedFallback?: boolean;
+    meta?: Omit<LlmTestModelResponse, 'reply'>;
+  }> {
     const res = await fetch('/api/chatwoot-bot/ai/test', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({
+        message,
+        aiProvider: options?.aiProvider,
+        aiModel: options?.aiModel,
+        aiMaskId: options?.aiMaskId,
+        aiMasks: options?.aiMasks,
+      }),
     });
     return parseJson(res);
   },

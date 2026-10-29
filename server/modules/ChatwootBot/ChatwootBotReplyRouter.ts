@@ -100,7 +100,7 @@ export class ChatwootBotReplyRouter {
       );
     }
 
-    const llmText = await chatwootBotLlmRunner.generateReply(settings, payload, content);
+    const { text: llmText } = await chatwootBotLlmRunner.generateReply(settings, payload, content);
     if (llmText) {
       return this.sendReply(
         settings,

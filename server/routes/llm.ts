@@ -5,6 +5,7 @@ import type { LlmPlatformSettingsUpdate } from '../../shared/types/llm.js';
 import { llmSettingsService } from '../services/llm/LlmSettingsService.js';
 import { llmModelsService } from '../services/llm/LlmModelsService.js';
 import type { LlmProvider } from '../../shared/types/llm.js';
+import { isLlmProvider } from '../../shared/constants/llmProviders.js';
 
 const router = Router();
 const llmAdmin = requirePermission('settings', 'admin', 'Змінювати адмінські налаштування');
@@ -32,8 +33,8 @@ router.get('/settings', async (req: Request, res: Response) => {
 router.get('/models/:provider', async (req: Request, res: Response) => {
   try {
     const provider = req.params.provider;
-    if (provider !== 'openai' && provider !== 'google') {
-      res.status(400).json({ success: false, error: 'provider must be openai or google' });
+    if (!isLlmProvider(provider)) {
+      res.status(400).json({ success: false, error: 'invalid provider' });
       return;
     }
     const data = await llmModelsService.listModels(provider);
@@ -47,11 +48,71 @@ router.get('/models/:provider', async (req: Request, res: Response) => {
   }
 });
 
+router.post('/test-model/:provider', async (req: Request, res: Response) => {
+  try {
+    const provider = req.params.provider as LlmProvider;
+    if (!isLlmProvider(provider)) {
+      res.status(400).json({ success: false, error: 'invalid provider' });
+      return;
+    }
+    const body = (req.body ?? {}) as {
+      apiKey?: string;
+      model?: string;
+      message?: string;
+      system?: string;
+      maxOutputTokens?: number;
+    };
+    const model = String(body.model ?? '').trim();
+    if (!model) {
+      res.status(400).json({ success: false, error: 'model is required' });
+      return;
+    }
+    const data = await llmModelsService.testModel(provider, model, body.apiKey, {
+      message: body.message,
+      system: body.system,
+      maxOutputTokens: body.maxOutputTokens,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    logServer('[LLM] test-model failed', error);
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Model test failed',
+    });
+  }
+});
+
+router.post('/test-default', async (req: Request, res: Response) => {
+  try {
+    const body = (req.body ?? {}) as {
+      message?: string;
+      system?: string;
+      maxOutputTokens?: number;
+      provider?: LlmProvider;
+      model?: string;
+    };
+    const data = await llmModelsService.testDefaultPlatform({
+      message: body.message,
+      system: body.system,
+      maxOutputTokens: body.maxOutputTokens,
+      provider: body.provider,
+      model: body.model,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    logServer('[LLM] test-default failed', error);
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Default platform test failed',
+    });
+  }
+});
+
 router.post('/models/:provider', async (req: Request, res: Response) => {
   try {
     const provider = req.params.provider as LlmProvider;
-    if (provider !== 'openai' && provider !== 'google') {
-      res.status(400).json({ success: false, error: 'provider must be openai or google' });
+    if (!isLlmProvider(provider)) {
+      res.status(400).json({ success: false, error: 'invalid provider' });
       return;
     }
     const body = (req.body ?? {}) as { apiKey?: string };

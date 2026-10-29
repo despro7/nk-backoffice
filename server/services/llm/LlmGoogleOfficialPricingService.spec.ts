@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { parseGooglePricingHtml } from './LlmGoogleOfficialPricingService.js';
+import { parseGooglePricingHtml, resolveGooglePricingRow } from './LlmGoogleOfficialPricingService.js';
 
 const SAMPLE = `
 <div class="models-section">
-  <em><a href="/gemini-api/docs/models/gemini-2.5-flash"><code translate="no" dir="ltr">gemini-2.5-flash</code></a></em>
+  <em><a href="/gemini-api/docs/models/gemini-2.5-flash"><code dir="ltr" translate="no">gemini-2.5-flash</code></a></em>
 </div>
 <div><devsite-selector>
 <section><h3 data-text="Standard">Standard</h3><table class="pricing-table">
@@ -45,5 +45,9 @@ describe('parseGooglePricingHtml', () => {
     const map = parseGooglePricingHtml(SAMPLE);
     expect(map.get('gemini-2.5-flash')).toEqual({ inputUsdPerM: 0.3, outputUsdPerM: 2.5 });
     expect(map.get('gemini-2.0-flash-lite')).toEqual({ inputUsdPerM: 0.075, outputUsdPerM: 0.3 });
+    expect(resolveGooglePricingRow(map, 'gemini-2.5-flash-preview-09-2025')).toEqual({
+      inputUsdPerM: 0.3,
+      outputUsdPerM: 2.5,
+    });
   });
 });

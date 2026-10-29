@@ -1,5 +1,6 @@
 import { prisma, logServer } from '../../lib/utils.js';
 import { resolveGoogleLlmModelId } from '../../../shared/constants/googleLlmModelAliases.js';
+import { isLlmProvider } from '../../../shared/constants/llmProviders.js';
 import {
   DEFAULT_LLM_PLATFORM_SETTINGS,
   LLM_PLATFORM_SETTINGS_CATEGORY,
@@ -9,6 +10,7 @@ import {
   type LlmPlatformSettingsUpdate,
   type LlmProvider,
 } from '../../../shared/types/llm.js';
+import { mergeLlmModelPriceHighlightSettings } from '../../../shared/utils/llmModelPriceHighlight.js';
 
 const CACHE_TTL_MS = 60_000;
 
@@ -19,18 +21,19 @@ function maskSecret(value: string): string {
 }
 
 function normalizeProvider(raw: unknown): LlmProvider {
-  return raw === 'google' ? 'google' : 'openai';
+  if (typeof raw === 'string' && isLlmProvider(raw)) return raw;
+  return DEFAULT_LLM_PLATFORM_SETTINGS.defaultProvider;
 }
 
 function applyEnvFallback(settings: LlmPlatformSettings): LlmPlatformSettings {
   const envProvider = process.env.LLM_DEFAULT_PROVIDER?.trim();
   return {
     ...settings,
-    defaultProvider: envProvider === 'google' || envProvider === 'openai'
-      ? envProvider
-      : settings.defaultProvider,
+    defaultProvider:
+      envProvider && isLlmProvider(envProvider) ? envProvider : settings.defaultProvider,
     openaiApiKey: settings.openaiApiKey || process.env.LLM_OPENAI_API_KEY || '',
     googleApiKey: settings.googleApiKey || process.env.LLM_GOOGLE_API_KEY || '',
+    openrouterApiKey: settings.openrouterApiKey || process.env.LLM_OPENROUTER_API_KEY || '',
   };
 }
 
@@ -42,6 +45,7 @@ function mergeWithDefaults(raw: Partial<LlmPlatformSettings>): LlmPlatformSettin
     defaultProvider: normalizeProvider(raw.defaultProvider),
     openaiApiKey: typeof raw.openaiApiKey === 'string' ? raw.openaiApiKey.trim() : '',
     googleApiKey: typeof raw.googleApiKey === 'string' ? raw.googleApiKey.trim() : '',
+    openrouterApiKey: typeof raw.openrouterApiKey === 'string' ? raw.openrouterApiKey.trim() : '',
     openaiDefaultModel:
       typeof raw.openaiDefaultModel === 'string' && raw.openaiDefaultModel.trim()
         ? raw.openaiDefaultModel.trim()
@@ -51,9 +55,14 @@ function mergeWithDefaults(raw: Partial<LlmPlatformSettings>): LlmPlatformSettin
         ? raw.googleDefaultModel.trim()
         : DEFAULT_LLM_PLATFORM_SETTINGS.googleDefaultModel,
     ),
+    openrouterDefaultModel:
+      typeof raw.openrouterDefaultModel === 'string' && raw.openrouterDefaultModel.trim()
+        ? raw.openrouterDefaultModel.trim()
+        : DEFAULT_LLM_PLATFORM_SETTINGS.openrouterDefaultModel,
     maxOutputTokens: Number.isFinite(maxTokens)
       ? Math.max(256, Math.min(8192, Math.floor(maxTokens)))
       : DEFAULT_LLM_PLATFORM_SETTINGS.maxOutputTokens,
+    modelPriceHighlight: mergeLlmModelPriceHighlightSettings(raw.modelPriceHighlight),
   };
   return applyEnvFallback(merged);
 }
@@ -100,6 +109,7 @@ export class LlmSettingsService {
       defaultProvider: settings.defaultProvider,
       openaiDefaultModel: settings.openaiDefaultModel,
       googleDefaultModel: settings.googleDefaultModel,
+      openrouterDefaultModel: settings.openrouterDefaultModel,
       maxOutputTokens: settings.maxOutputTokens,
       openaiApiKey: revealSecrets ? settings.openaiApiKey : '',
       openaiApiKeyMasked: maskSecret(settings.openaiApiKey),
@@ -107,12 +117,16 @@ export class LlmSettingsService {
       googleApiKey: revealSecrets ? settings.googleApiKey : '',
       googleApiKeyMasked: maskSecret(settings.googleApiKey),
       hasGoogleApiKey: Boolean(settings.googleApiKey),
+      openrouterApiKey: revealSecrets ? settings.openrouterApiKey : '',
+      openrouterApiKeyMasked: maskSecret(settings.openrouterApiKey),
+      hasOpenrouterApiKey: Boolean(settings.openrouterApiKey),
+      modelPriceHighlight: settings.modelPriceHighlight,
     };
   }
 
   async saveSettings(incoming: LlmPlatformSettingsUpdate): Promise<LlmPlatformSettings> {
     const current = await this.getSettings();
-    const { clearOpenaiApiKey, clearGoogleApiKey, ...rest } = incoming;
+    const { clearOpenaiApiKey, clearGoogleApiKey, clearOpenrouterApiKey, ...rest } = incoming;
     const next = mergeWithDefaults({
       ...current,
       ...rest,
@@ -126,6 +140,11 @@ export class LlmSettingsService {
         : rest.googleApiKey !== undefined && rest.googleApiKey !== ''
           ? rest.googleApiKey
           : current.googleApiKey,
+      openrouterApiKey: clearOpenrouterApiKey
+        ? ''
+        : rest.openrouterApiKey !== undefined && rest.openrouterApiKey !== ''
+          ? rest.openrouterApiKey
+          : current.openrouterApiKey,
     });
 
     await prisma.settingsBase.upsert({

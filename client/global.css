@@ -878,3 +878,10 @@ html.report-capture-ui-hidden [data-report-capture-chrome="true"] {
 .label-pdfme-designer-host.label-pdfme-hide-field-outlines .selectable {
   outline: none !important;
 }
+
+/* LLM settings: двохрядкові пункти (id + ціна), без фіксованої висоти HeroUI */
+.llm-model-autocomplete-popover [role='listbox'] [role='option'] {
+  height: auto !important;
+  min-height: 0;
+  align-items: flex-start;
+}

@@ -31,7 +31,7 @@ export type ChatwootBotAiMask = {
   systemPrompt: string;
 };
 
-export type ChatwootBotAiProviderOverride = '' | 'openai' | 'google';
+export type ChatwootBotAiProviderOverride = '' | 'openai' | 'google' | 'openrouter';
 
 /** Повні налаштування бота (зберігаються в settings_base). */
 export type ChatwootBotSettings = {

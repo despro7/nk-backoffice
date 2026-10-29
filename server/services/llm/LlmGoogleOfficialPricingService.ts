@@ -4,11 +4,11 @@ import {
   type PriceRow,
 } from './LlmOpenAiOfficialPricingService.js';
 
-const GOOGLE_PRICING_URL = 'https://ai.google.dev/gemini-api/docs/pricing';
+const GOOGLE_PRICING_URL = 'https://ai.google.dev/gemini-api/docs/pricing?hl=en';
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
-const MODEL_CODE_IN_DOCS =
-  /<a href="\/gemini-api\/docs\/models\/[^"]+"><code translate="no" dir="ltr">([^<]+)<\/code><\/a>/g;
+/** Атрибути <code> на сторінці pricing (порядок dir/translate може змінюватися). */
+const MODEL_CODE_IN_DOCS = /<code\b[^>]*\btranslate="no"[^>]*>([^<]+)<\/code>/gi;
 
 let cachedAt = 0;
 let cachedMap: Map<string, PriceRow> | null = null;
@@ -28,10 +28,17 @@ function parseUsdFromPaidCell(cellHtml: string): number | null {
   if (!firstLine || /free of charge/i.test(firstLine) || /not available/i.test(firstLine)) {
     return null;
   }
-  const m = firstLine.match(/\$([\d.]+)/);
-  if (!m) return null;
-  const n = Number(m[1]);
-  return Number.isFinite(n) ? n : null;
+  const usd = firstLine.match(/\$([\d.]+)/);
+  if (usd) {
+    const n = Number(usd[1]);
+    return Number.isFinite(n) ? n : null;
+  }
+  const localized = firstLine.match(/([\d]+[.,][\d]+)\s*usd/i);
+  if (localized) {
+    const n = Number(localized[1].replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
 }
 
 function parseStandardPricingTable(tableHtml: string): PriceRow | null {
@@ -71,7 +78,7 @@ export function parseGooglePricingHtml(html: string): Map<string, PriceRow> {
   let anchorMatch: RegExpExecArray | null;
   while ((anchorMatch = MODEL_CODE_IN_DOCS.exec(html)) !== null) {
     const modelId = anchorMatch[1].trim().toLowerCase();
-    if (!modelId) continue;
+    if (!modelId || !/^[a-z0-9][a-z0-9._-]*$/i.test(modelId)) continue;
     anchors.push({ modelId, index: anchorMatch.index });
   }
 
@@ -113,7 +120,10 @@ async function loadPricingMap(): Promise<Map<string, PriceRow>> {
   }
 
   const response = await fetch(GOOGLE_PRICING_URL, {
-    headers: { Accept: 'text/html,application/xhtml+xml,*/*' },
+    headers: {
+      Accept: 'text/html,application/xhtml+xml,*/*',
+      'Accept-Language': 'en-US,en;q=0.9',
+    },
     signal: AbortSignal.timeout(30_000),
   });
   if (!response.ok) {
@@ -127,6 +137,13 @@ async function loadPricingMap(): Promise<Map<string, PriceRow>> {
   cachedMap = map;
   cachedAt = now;
   return map;
+}
+
+export function resolveGooglePricingRow(
+  map: Map<string, PriceRow>,
+  modelId: string,
+): PriceRow | null {
+  return lookupPrice(map, modelId);
 }
 
 export class LlmGoogleOfficialPricingService {

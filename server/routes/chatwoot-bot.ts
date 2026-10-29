@@ -23,12 +23,16 @@ import {
 } from '../modules/ChatwootBot/chatwootCredentials.js';
 import { chatwootBotEventLogService } from '../modules/ChatwootBot/ChatwootBotEventLogService.js';
 import { chatwootBotInboxHoursService } from '../modules/ChatwootBot/ChatwootBotInboxHoursService.js';
-import { chatwootBotSettingsService } from '../modules/ChatwootBot/ChatwootBotSettingsService.js';
+import {
+  applyChatwootAiTestOverrides,
+  chatwootBotSettingsService,
+} from '../modules/ChatwootBot/ChatwootBotSettingsService.js';
 import { releaseHumanAgentActivePersistSlot } from '../modules/ChatwootBot/humanAgentActivePersistGate.js';
 import { resetHumanHandoverOnConversation } from '../modules/ChatwootBot/chatwootHandoverReset.js';
 import { chatwootBotAnalyticsService } from '../modules/ChatwootBot/ChatwootBotAnalyticsService.js';
 import { sanitizeChatwootApiToken } from '../modules/ChatwootBot/chatwootHttp.js';
 import { chatwootBotCatalogToolService } from '../modules/ChatwootBot/ChatwootBotCatalogToolService.js';
+import { chatwootBotStorefrontSiteToolService } from '../modules/ChatwootBot/ChatwootBotStorefrontSiteToolService.js';
 import { chatwootBotVerifyService } from '../modules/ChatwootBot/ChatwootBotVerifyService.js';
 import { toVerifiedOrderDto } from '../modules/ChatwootBot/chatwootBotOrderRedaction.js';
 import { chatwootBotLlmRunner } from '../modules/ChatwootBot/ChatwootBotLlmRunner.js';
@@ -426,6 +430,27 @@ router.post('/tools/catalog', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/chatwoot-bot/tools/site-pages
+ */
+router.post('/tools/site-pages', async (req: Request, res: Response) => {
+  try {
+    const body = (req.body ?? {}) as { query?: string; slugs?: string | string[]; limit?: number };
+    const data = await chatwootBotStorefrontSiteToolService.listSitePages({
+      query: body.query,
+      slugs: body.slugs,
+      limit: body.limit,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    logServer('[ChatwootBot] tools/site-pages failed', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Site pages lookup failed',
+    });
+  }
+});
+
+/**
  * POST /api/chatwoot-bot/tools/verify-order
  */
 router.post('/tools/verify-order', async (req: Request, res: Response) => {
@@ -555,20 +580,37 @@ router.post('/tools/verify-by-date', async (req: Request, res: Response) => {
 router.post('/ai/test', async (req: Request, res: Response) => {
   try {
     const settings = await chatwootBotSettingsService.getSettings();
-    const body = (req.body ?? {}) as { message?: string };
+    const body = (req.body ?? {}) as {
+      message?: string;
+      aiProvider?: string;
+      aiModel?: string;
+      aiMaskId?: string;
+      aiMasks?: unknown;
+    };
     const message = String(body.message ?? '').trim() || 'Привіт! Що у вас є в наявності?';
+    const testSettings = applyChatwootAiTestOverrides(settings, {
+      aiProvider: body.aiProvider,
+      aiModel: body.aiModel,
+      aiMaskId: body.aiMaskId,
+      aiMasks: body.aiMasks,
+    });
     const payload = {
       conversation: { custom_attributes: {} },
     };
-    const text = await chatwootBotLlmRunner.generateReply(
-      { ...settings, aiEnabled: true },
+    const { text, testMeta } = await chatwootBotLlmRunner.generateReply(
+      testSettings,
       payload,
       message,
       { propagateErrors: true },
     );
+    const usedFallback = !text;
     res.json({
       success: true,
-      data: { reply: text ?? settings.fallbackMessage, usedFallback: !text },
+      data: {
+        reply: text ?? settings.fallbackMessage,
+        usedFallback,
+        ...(testMeta ? { meta: testMeta } : {}),
+      },
     });
   } catch (error) {
     logServer('[ChatwootBot] ai/test failed', error);

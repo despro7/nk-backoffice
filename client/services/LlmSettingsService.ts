@@ -1,8 +1,10 @@
 import type {
   LlmModelOption,
+  LlmModelPriceHighlightSettings,
   LlmPlatformSettingsResponse,
   LlmPlatformSettingsUpdate,
   LlmProvider,
+  LlmTestModelResponse,
 } from '@shared/types/llm';
 
 async function parseJson<T>(res: Response): Promise<T> {
@@ -17,6 +19,41 @@ export const llmSettingsApi = {
   async getSettings(revealSecrets = false): Promise<LlmPlatformSettingsResponse> {
     const qs = revealSecrets ? '?revealSecrets=true' : '';
     const res = await fetch(`/api/llm/settings${qs}`, { credentials: 'include' });
+    return parseJson(res);
+  },
+
+  async testModel(
+    provider: LlmProvider,
+    model: string,
+    draftApiKey?: string,
+    options?: { message?: string; system?: string; maxOutputTokens?: number },
+  ): Promise<LlmTestModelResponse> {
+    const res = await fetch(`/api/llm/test-model/${provider}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: model.trim(),
+        apiKey: draftApiKey?.trim() || undefined,
+        ...options,
+      }),
+    });
+    return parseJson(res);
+  },
+
+  async testDefaultPlatform(options?: {
+    message?: string;
+    system?: string;
+    maxOutputTokens?: number;
+    provider?: LlmProvider;
+    model?: string;
+  }): Promise<LlmTestModelResponse> {
+    const res = await fetch('/api/llm/test-default', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(options ?? {}),
+    });
     return parseJson(res);
   },
 
@@ -56,9 +93,14 @@ export type LlmSettingsFormState = {
   googleApiKey: string;
   googleApiKeyMasked: string;
   hasGoogleApiKey: boolean;
+  openrouterApiKey: string;
+  openrouterApiKeyMasked: string;
+  hasOpenrouterApiKey: boolean;
   openaiDefaultModel: string;
   googleDefaultModel: string;
+  openrouterDefaultModel: string;
   maxOutputTokens: number;
+  modelPriceHighlight: LlmModelPriceHighlightSettings;
 };
 
 export function toLlmFormState(data: LlmPlatformSettingsResponse): LlmSettingsFormState {
@@ -70,8 +112,13 @@ export function toLlmFormState(data: LlmPlatformSettingsResponse): LlmSettingsFo
     googleApiKey: '',
     googleApiKeyMasked: data.googleApiKeyMasked,
     hasGoogleApiKey: data.hasGoogleApiKey,
+    openrouterApiKey: '',
+    openrouterApiKeyMasked: data.openrouterApiKeyMasked,
+    hasOpenrouterApiKey: data.hasOpenrouterApiKey,
     openaiDefaultModel: data.openaiDefaultModel,
     googleDefaultModel: data.googleDefaultModel,
+    openrouterDefaultModel: data.openrouterDefaultModel,
     maxOutputTokens: data.maxOutputTokens,
+    modelPriceHighlight: data.modelPriceHighlight,
   };
 }

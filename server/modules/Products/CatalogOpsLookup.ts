@@ -13,6 +13,7 @@ import {
 import { DEFAULT_DILOVOD_CONFIG, getPriceTypeNameById } from '../../services/dilovod/DilovodUtils.js';
 import { isArchiveFolderName, isKitAccPolicy } from './ProductsTypes.js';
 import { collectBarcodeCodes, pickPrimaryBarcode } from './barcodeUtils.js';
+import { textMatchesCatalogQuery } from '../../../shared/utils/catalogNameQueryMatch.js';
 
 export interface CatalogOpsSetItem {
   id: string;
@@ -310,12 +311,8 @@ export class CatalogOpsLookup {
     let filtered = all;
     const q = params.search?.trim().toLowerCase();
     if (q) {
-      filtered = filtered.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.sku.toLowerCase().includes(q) ||
-          (p.barcode?.toLowerCase().includes(q) ?? false) ||
-          p.barcodes.some((code) => code.toLowerCase().includes(q))
+      filtered = filtered.filter((p) =>
+        textMatchesCatalogQuery(q, p.name, p.sku, p.barcode, ...p.barcodes),
       );
     }
     if (params.category) {

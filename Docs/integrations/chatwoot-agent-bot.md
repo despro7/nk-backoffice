@@ -17,6 +17,10 @@
 
 Старий шлях `/settings/chatwoot-bot` перенаправляється на `/chatwoot-bot/settings`.
 
+**Налаштування (таби + hash):** `/chatwoot-bot/settings#tab=ai` — ключі `connection` | `replies` | `ai` | `handover` | `journal` (для «Підключення» hash порожній). Компоненти: `client/pages/ChatwootBotSettings/` (`SettingsChatwootBot.tsx` — re-export).
+
+Перемикання табів пише hash через **`navigate` (push)**, тому **Back/Forward** браузера відновлюють вкладку (`useUrlHashSync` без `replace`).
+
 ## Після створення бота в Chatwoot (вікно «Ключ доступу»)
 
 Chatwoot показує два значення **один раз** (їх можна знайти пізніше в налаштуваннях бота). Куди їх класти в Backoffice → **Chatwoot Bot → Налаштування**:
@@ -65,6 +69,7 @@ https://<публічний-хост-backoffice>/api/webhooks/chatwoot
 | GET | `/api/chatwoot-bot/recent-events` | Журнал `chatwoot_bot_webhook_logs` |
 | GET | `/api/chatwoot-bot/analytics/overview` | Агрегати за період (`from`, `to`) |
 | POST | `/api/chatwoot-bot/tools/catalog` | Каталог вітрини (публічно) |
+| POST | `/api/chatwoot-bot/tools/site-pages` | Текст публічних сторінок сайту (WP REST → HTML fallback, кеш 6 год) |
 | POST | `/api/chatwoot-bot/tools/verify-order` | Verify: `{ phone, orderNumber }` → DTO без PII |
 | POST | `/api/chatwoot-bot/tools/verify-by-date` | Verify: `{ phone, lastOrderDate }` |
 | POST | `/api/chatwoot-bot/ai/test` | Тест LLM (admin); помилки провайдера **не** маскуються fallback |
@@ -86,7 +91,8 @@ https://<публічний-хост-backoffice>/api/webhooks/chatwoot
 
 - Ключі й дефолтна модель — з **глобальних** LLM-налаштувань; у боті можна перевизначити `aiProvider` / `aiModel` (порожнє = платформа).
 - **Маски** (`aiMasks`, `aiMaskId`): system prompt; без prompt LLM не викликається.
-- Tools у циклі: `get_storefront_catalog` (публічний каталог), `get_verified_order` (після verify).
+- Tools у циклі: `get_storefront_catalog` (SKU-каталог BO; пошук за назвою — `textMatchesCatalogQuery`, порядок слів неважливий), `get_storefront_site_pages` (сторінки WordPress сайту, кеш **6 год**), `get_verified_order` (після verify).
+- На вкладці **AI і verify** — довідник tools з описом, прикладами JSON і admin-тестами API.
 - У проді webhook при збої LLM → **fallback**; `POST /ai/test` пробрасує помилку провайдера в відповідь API.
 
 ## Налаштування
@@ -139,6 +145,8 @@ Chatwoot на VPS не достукаться до `localhost` – потріб�
 | `server/modules/ChatwootBot/ChatwootBotVerifyService.ts` | Backend verify (телефон + order/date) |
 | `server/modules/ChatwootBot/ChatwootBotLlmRunner.ts` | Маска + tool loop через `llmService` |
 | `server/modules/ChatwootBot/ChatwootBotCatalogToolService.ts` | Каталог для tool |
+| `server/modules/ChatwootBot/ChatwootBotStorefrontSiteToolService.ts` | Сторінки сайту (WP REST / HTML, TTL 6 год) |
+| `shared/constants/chatwootBotLlmTools.ts` | Метадані LLM tools (runner + UI) |
 | `server/modules/ChatwootBot/ChatwootBotOrderToolService.ts` | Verified order для tool |
 | `server/modules/ChatwootBot/chatwootReclaimDecision.ts` | Правила reclaim |
 | `server/modules/ChatwootBot/ChatwootBotAnalyticsService.ts` | Ingest + overview API |
@@ -146,11 +154,13 @@ Chatwoot на VPS не достукаться до `localhost` – потріб�
 | `server/routes/chatwoot-webhooks.ts` | Webhook |
 | `server/routes/chatwoot-bot.ts` | Admin API + tools + ai/test |
 | `server/routes/llm.ts` | Платформа LLM |
-| `client/pages/SettingsChatwootBot.tsx` | Налаштування бота |
+| `client/pages/ChatwootBotSettings/` | Налаштування бота (таби, hash) |
+| `client/pages/SettingsChatwootBot.tsx` | Re-export модуля ChatwootBotSettings |
 | `client/pages/SettingsLlm.tsx` | Глобальні LLM |
+| `client/components/llm/LlmModelAutocomplete.tsx` | Autocomplete моделей + pricing hint |
 | `client/pages/ChatwootBotStatistics.tsx` | Статистика |
 | `shared/types/chatwootBot.ts` | Типи і дефолти бота |
 | `shared/types/chatwootBotTools.ts` | DTO tools (без PII) |
 | `shared/types/llm.ts` | Типи платформи LLM |
 
-Тести: `ChatwootBotOrchestrator.spec.ts`, `ChatwootBotPatternMatcher.spec.ts`, `chatwootBotOrderRedaction.spec.ts`, `chatwootBotVerifyDateParse.spec.ts`, сервіси в `server/services/llm/*.spec.ts`.
+Тести: `ChatwootBotOrchestrator.spec.ts`, `ChatwootBotPatternMatcher.spec.ts`, `ChatwootBotStorefrontSiteToolService.spec.ts`, `chatwootBotOrderRedaction.spec.ts`, `chatwootBotVerifyDateParse.spec.ts`, `shared/utils/catalogNameQueryMatch.spec.ts`, сервіси в `server/services/llm/*.spec.ts`.

@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-10-29 — LLM: OpenRouter, ціни, UI; Chatwoot Bot: таби, tools, site-pages
+
+**Files:** `client/pages/ChatwootBotSettings/**`, `client/pages/SettingsLlm.tsx`, `client/components/llm/**`, `client/services/LlmSettingsService.ts`, `client/services/ChatwootBotService.ts`, `server/services/llm/**`, `server/modules/ChatwootBot/**`, `server/routes/llm.ts`, `server/routes/chatwoot-bot.ts`, `shared/constants/chatwootBotLlmTools.ts`, `shared/utils/catalogNameQueryMatch.ts`, `shared/types/llm.ts`, `Docs/features/llm-platform.md`, `Docs/integrations/chatwoot-agent-bot.md`
+
+- **LLM:** провайдер **OpenRouter** (ключ, base URL EU/global, models + pricing з API); спільний OpenAI-compatible chat; тест моделі з diagnostics/usage; фікс парсера Google pricing; autocomplete моделей з pricing hint; фільтр каталогу моделей.
+- **Chatwoot Bot UI:** моноліт → `ChatwootBotSettings/` (5 табів, `PageTabs`, hash `#tab=…` з **push** у history для Back/Forward); довідник LLM tools (`ChatwootBotLlmToolsPanel`).
+- **Tools:** `get_storefront_site_pages` (WP REST → HTML fallback, кеш 6 год); каталог — пошук назви без жорсткого порядку слів; метадані tools у `shared/constants/chatwootBotLlmTools.ts`.
+
+**Документація:** [`llm-platform.md`](features/llm-platform.md), [`chatwoot-agent-bot.md`](integrations/chatwoot-agent-bot.md).
+
+---
+
 ## 2026-10-28 — Наліпки: SVG у превʼю картки та PDF
 
 **Files:** `labelTemplateSvgAssets.ts`, `labelTemplateInputs.ts`, `builtInLabelTemplates.ts`, `applyLabelPreviewInputsToTemplate.ts`, `labelPdfmeRuntime.ts`, `labelTemplateSvgAssets.spec.ts`, `labelTemplateInputs.spec.ts`, `product-labels.md`

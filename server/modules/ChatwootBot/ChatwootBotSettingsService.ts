@@ -146,8 +146,48 @@ function normalizeAiMasks(raw: unknown, fallback: ChatwootBotAiMask[]): Chatwoot
 }
 
 function normalizeAiProvider(raw: unknown): ChatwootBotSettings['aiProvider'] {
-  if (raw === 'openai' || raw === 'google') return raw;
+  if (raw === 'openai' || raw === 'google' || raw === 'openrouter') return raw;
   return '';
+}
+
+/** Для POST /ai/test — підставити провайдер/модель/маску з UI без збереження. */
+export function applyChatwootAiTestOverrides(
+  settings: ChatwootBotSettings,
+  overrides: {
+    aiProvider?: unknown;
+    aiModel?: unknown;
+    aiMaskId?: unknown;
+    aiMasks?: unknown;
+  },
+): ChatwootBotSettings {
+  const next: ChatwootBotSettings = { ...settings, aiEnabled: true };
+
+  if (overrides.aiProvider !== undefined) {
+    next.aiProvider = normalizeAiProvider(overrides.aiProvider);
+  }
+  if (overrides.aiModel !== undefined) {
+    const raw = typeof overrides.aiModel === 'string' ? overrides.aiModel.trim() : '';
+    next.aiModel = raw ? resolveGoogleLlmModelId(raw) : '';
+  }
+  if (typeof overrides.aiMaskId === 'string' && overrides.aiMaskId.trim()) {
+    next.aiMaskId = overrides.aiMaskId.trim();
+  }
+  if (Array.isArray(overrides.aiMasks)) {
+    const masks: ChatwootBotAiMask[] = [];
+    for (const row of overrides.aiMasks) {
+      if (!row || typeof row !== 'object') continue;
+      const id = String((row as ChatwootBotAiMask).id ?? '').trim();
+      const systemPrompt = String((row as ChatwootBotAiMask).systemPrompt ?? '').trim();
+      const name = String((row as ChatwootBotAiMask).name ?? '').trim();
+      if (!id || !systemPrompt) continue;
+      masks.push({ id, name: name || id, systemPrompt });
+    }
+    if (masks.length > 0) {
+      next.aiMasks = masks;
+    }
+  }
+
+  return next;
 }
 
 function normalizePositiveInt(raw: unknown, fallback: number, min: number, max: number): number {

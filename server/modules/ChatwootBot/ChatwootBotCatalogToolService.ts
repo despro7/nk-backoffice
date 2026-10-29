@@ -3,6 +3,7 @@ import { getPortionsInOrdersBySku } from '../../services/productExportHelper.js'
 import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
 import { computeEffectiveStock } from '../Storefront/WooCommerceStockService.js';
 import type { ChatwootBotCatalogItemDto } from '../../../shared/types/chatwootBotTools.js';
+import { textMatchesCatalogQuery } from '../../../shared/utils/catalogNameQueryMatch.js';
 import { stockTierFromEffective } from './chatwootBotCatalogStockTier.js';
 
 export class ChatwootBotCatalogToolService {
@@ -31,11 +32,7 @@ export class ChatwootBotCatalogToolService {
 
     let filtered = products.filter((p) => allowedSkus.has(p.sku.trim()));
     if (q) {
-      filtered = filtered.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.sku.toLowerCase().includes(q),
-      );
+      filtered = filtered.filter((p) => textMatchesCatalogQuery(q, p.name, p.sku));
     }
 
     const items: ChatwootBotCatalogItemDto[] = [];
