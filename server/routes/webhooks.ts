@@ -3,6 +3,7 @@ import { orderDatabaseService } from '../services/orderDatabaseService.js';
 import { ordersCacheService } from '../services/ordersCacheService.js';
 import { getStatusText, isDeletedStatus } from '../services/salesdrive/statusMapper.js';
 import { generateExternalId } from '../services/salesdrive/externalIdHelper.js';
+import { parseKyivDateTime } from '../../shared/utils/kyivDateTime.js';
 
 const router = Router();
 
@@ -118,7 +119,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             customerPhone: customerPhone || existingOrder.customerPhone,
             deliveryAddress: webhookData.shipping_address || existingOrder.deliveryAddress,
             totalPrice: webhookData.paymentAmount || existingOrder.totalPrice,
-            orderDate: webhookData.orderTime ? new Date(webhookData.orderTime).toISOString() : existingOrder.orderDate,
+            orderDate: webhookData.orderTime ? parseKyivDateTime(webhookData.orderTime)?.toISOString() : existingOrder.orderDate,
             shippingMethod: shippingMethod || existingOrder.shippingMethod,
             paymentMethod: paymentMethod || existingOrder.paymentMethod,
             cityName: existingOrder.cityName,
@@ -266,7 +267,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             customerPhone: customerPhone || '',
             deliveryAddress: webhookData.shipping_address || '',
             totalPrice: webhookData.paymentAmount || 0,
-            orderDate: webhookData.orderTime ? new Date(webhookData.orderTime).toISOString() : null,
+            orderDate: webhookData.orderTime ? parseKyivDateTime(webhookData.orderTime)?.toISOString() ?? null : null,
             shippingMethod: shippingMethod || '',
             paymentMethod: paymentMethod || '',
             cityName: webhookData.ord_novaposhta?.cityTemplateName || webhookData.ord_ukrposhta?.cityName || '',

@@ -2,6 +2,12 @@ import { prisma } from '../lib/utils.js';
 import { ordersCacheService } from './ordersCacheService.js';
 import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
 import { shouldSkipStatusSyncRollback } from './salesdrive/statusMapper.js';
+import { parseKyivDateTime } from '../../shared/utils/kyivDateTime.js';
+
+function toOrderDate(value: string | Date | null | undefined): Date | null {
+  if (value == null || value === '') return null;
+  return parseKyivDateTime(value);
+}
 
 export interface OrderBaseData {
   externalId: string;
@@ -950,7 +956,7 @@ export class OrderDatabaseService {
               customerPhone: orderData.customerPhone,
               deliveryAddress: orderData.deliveryAddress,
               totalPrice: orderData.totalPrice,
-              orderDate: orderData.orderDate ? new Date(orderData.orderDate).toISOString() : null,
+              orderDate: toOrderDate(orderData.orderDate)?.toISOString() ?? null,
               shippingMethod: orderData.shippingMethod,
               paymentMethod: orderData.paymentMethod,
               cityName: orderData.cityName,
@@ -1190,7 +1196,7 @@ export class OrderDatabaseService {
                     customerPhone: orderData.customerPhone || '',
                     deliveryAddress: orderData.deliveryAddress || '',
                     totalPrice: orderData.totalPrice || 0,
-                    orderDate: orderData.orderDate ? new Date(orderData.orderDate).toISOString() : null,
+                    orderDate: toOrderDate(orderData.orderDate)?.toISOString() ?? null,
                     shippingMethod: orderData.shippingMethod || '',
                     paymentMethod: orderData.paymentMethod || '',
                     cityName: orderData.cityName || '',
@@ -1313,7 +1319,8 @@ export class OrderDatabaseService {
                 updateData.rawData = JSON.stringify(orderData.rawData);
               }
               if (changes.includes('orderDate')) {
-                updateData.orderDate = new Date(orderData.orderDate);
+                const parsed = toOrderDate(orderData.orderDate);
+                if (parsed) updateData.orderDate = parsed;
               }
 
               if (orderData.rawData?.updateAt) {
@@ -1945,7 +1952,7 @@ export class OrderDatabaseService {
               customerPhone: orderData.customerPhone || '',
               deliveryAddress: orderData.deliveryAddress || '',
               totalPrice: orderData.totalPrice || 0,
-              orderDate: orderData.orderDate ? new Date(orderData.orderDate).toISOString() : null,
+              orderDate: toOrderDate(orderData.orderDate)?.toISOString() ?? null,
               shippingMethod: orderData.shippingMethod || '',
               paymentMethod: orderData.paymentMethod || '',
               cityName: orderData.cityName || '',
@@ -1983,7 +1990,7 @@ export class OrderDatabaseService {
               customerPhone: orderData.customerPhone || existingOrder.customerPhone,
               deliveryAddress: orderData.deliveryAddress || existingOrder.deliveryAddress,
               totalPrice: orderData.totalPrice !== undefined ? orderData.totalPrice : existingOrder.totalPrice,
-              orderDate: orderData.orderDate ? new Date(orderData.orderDate).toISOString() : existingOrder.orderDate,
+              orderDate: toOrderDate(orderData.orderDate)?.toISOString() ?? existingOrder.orderDate,
               shippingMethod: orderData.shippingMethod || existingOrder.shippingMethod,
               paymentMethod: orderData.paymentMethod || existingOrder.paymentMethod,
               cityName: orderData.cityName || existingOrder.cityName,
@@ -1999,7 +2006,7 @@ export class OrderDatabaseService {
 
             // Преобразуем orderDate в Date если это string
             if (updateData.orderDate && typeof updateData.orderDate === 'string') {
-              updateData.orderDate = new Date(updateData.orderDate);
+              updateData.orderDate = toOrderDate(updateData.orderDate) ?? new Date(updateData.orderDate);
             }
 
             // Преобразуем rawData в строку если это объект

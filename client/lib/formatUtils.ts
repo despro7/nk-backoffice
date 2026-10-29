@@ -79,8 +79,15 @@
  * formatRelativeDate('2024-01-12T15:20:00Z') // "3 дні тому, о 15:20"
  */
 
+import { parseKyivDateTime } from '@shared/utils/kyivDateTime';
+
 const SHORT_WEEKDAYS = ['нд', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 const FULL_WEEKDAYS = ['Неділя', 'Понеділок', 'Вівторок', 'Середа', 'Четвер', 'П\'ятниця', 'Субота'];
+
+function parseDisplayDate(dateString: string | null | Date): Date | null {
+  if (dateString == null || dateString === '') return null;
+  return parseKyivDateTime(dateString);
+}
 
 export const formatRelativeDate = (
   dateString: string | null | Date, 
@@ -108,12 +115,13 @@ export const formatRelativeDate = (
     shortWeekday = false
   } = options;
 
-  const date = new Date(dateString);
+  const date = parseDisplayDate(dateString);
+  if (!date) return 'Немає даних';
   const now = new Date();
 
-  // "Щойно", "хв тому", "год тому"
+  // "Щойно", "хв тому", "год тому" (лише для минулого; майбутні дати — календарний блок нижче)
   const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
-  if (!weekdayOnly) {
+  if (!weekdayOnly && diffInMinutes >= 0) {
     if (diffInMinutes < 1) return 'Тільки що';
     if (diffInMinutes < 60) return `${diffInMinutes} хв тому`;
     if (diffInMinutes < 1440 && diffInMinutes < maxRelativeHours * 60) return `${Math.floor(diffInMinutes / 60)} год тому`;
@@ -184,7 +192,8 @@ export const formatRelativeDate = (
  */
 export const formatDate = (dateString: string): string => {
   if (!dateString) return "-";
-  const date = new Date(dateString);
+  const date = parseDisplayDate(dateString);
+  if (!date) return "-";
   return date.toLocaleDateString("uk-UA", {
     timeZone: "Europe/Kyiv",
     day: "2-digit",
@@ -206,7 +215,9 @@ export const formatDate = (dateString: string): string => {
  */
 export const formatDateTime = (dateString: string | Date): string => {
   if (!dateString) return "-";
-  return new Date(dateString).toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv' });
+  const date = parseDisplayDate(dateString);
+  if (!date) return "-";
+  return date.toLocaleString('uk-UA', { timeZone: 'Europe/Kyiv' });
 };
 
 /**

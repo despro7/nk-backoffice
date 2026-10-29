@@ -35,7 +35,7 @@ import { useDilovodSettings } from "../hooks/useDilovodSettings";
 import { useRolePreview } from "../contexts/role-preview-context";
 import { useDebug } from "../contexts/debug-context";
 import { DynamicIcon } from "lucide-react/dynamic";
-import { formatRelativeDate, getStatusLabel, getStatusColor, getChannelClass, ORDER_STATUSES } from "../lib/formatUtils";
+import { formatRelativeDate, formatDateTime, getStatusLabel, getStatusColor, getChannelClass, ORDER_STATUSES } from "../lib/formatUtils";
 import { ToastService } from "@/services/ToastService";
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import ResultDrawer from './ResultDrawer';
@@ -1988,12 +1988,12 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
                   </Tooltip>
                 </TableCell>
                 <TableCell>
-                  <Tooltip placement="top-start" color="secondary" content={order.orderDate ? new Date(order.orderDate).toLocaleString('uk-UA') : 'Дата не задана'}>
-                    <span className="cursor-help">{order.orderDate ? formatRelativeDate(order.orderDate.toString(), { maxRelativeDays: 1 }) : 'Не задано'}</span>
+                  <Tooltip placement="top-start" color="secondary" content={order.orderDate ? formatDateTime(order.orderDate) : 'Дата не задана'}>
+                    <span className="cursor-help">{order.orderDate ? formatRelativeDate(order.orderDate, { maxRelativeDays: 1 }) : 'Не задано'}</span>
                   </Tooltip>
                 </TableCell>
                 <TableCell>
-                  <Tooltip placement="top-start" color="secondary" content={`Оновлено: ${order.updatedAt ? new Date(order.updatedAt).toLocaleString('uk-UA') : 'Дата не задана'}`}>
+                  <Tooltip placement="top-start" color="secondary" content={`Оновлено: ${order.updatedAt ? formatDateTime(order.updatedAt) : 'Дата не задана'}`}>
                     <Chip size="sm" variant="flat" classNames={{ base: `${getStatusColor(order.status)} cursor-help` }}>
                       {order.statusText || getStatusLabel(order.status)}
                     </Chip>
