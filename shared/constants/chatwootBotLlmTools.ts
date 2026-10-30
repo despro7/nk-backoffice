@@ -44,6 +44,34 @@ export const CHATWOOT_BOT_LLM_TOOLS: ChatwootBotLlmToolMeta[] = [
     ],
   },
   {
+    name: 'verify_customer',
+    description:
+      'Перевіряє клієнта для доступу до його замовлення. Передавай лише те, що клієнт назвав у розмові: телефон (якщо ще не збережено), номер замовлення та/або дату замовлення. Дату переводь у YYYY-MM-DD за Києвом відносно сьогоднішньої дати з контексту («у понеділок» – одна дата; «у понеділок чи вівторок» – dateFrom і dateTo, не більше 3 днів). Не вигадуй дані. Після verified: true викликай get_verified_order.',
+    parameters: {
+      type: 'object',
+      properties: {
+        phone: { type: 'string', description: 'Телефон клієнта, якщо він його щойно назвав' },
+        orderNumber: { type: 'string', description: 'Номер замовлення (24155 або SD24155)' },
+        dateFrom: { type: 'string', description: 'Перший день, коли могли оформити замовлення (YYYY-MM-DD)' },
+        dateTo: { type: 'string', description: 'Останній день інтервалу (YYYY-MM-DD), якщо клієнт не впевнений' },
+      },
+    },
+    adminTestNote:
+      'Працює лише в розмові (потрібен conversationId). Телефон бекенд бере з аргументів, збереженого в розмові або з профілю контакту.',
+    examples: [
+      {
+        label: '«Замовляв у понеділок чи вівторок»',
+        arguments: { dateFrom: '2026-10-26', dateTo: '2026-10-27' },
+        resultSample: { verified: true, ordersVerified: 1, hint: 'Верифікацію пройдено. Викликай get_verified_order…' },
+      },
+      {
+        label: 'Телефон ще невідомий',
+        arguments: { orderNumber: '24155' },
+        resultSample: { verified: false, code: 'phone_required', hint: 'Попроси номер телефону…' },
+      },
+    ],
+  },
+  {
     name: 'get_verified_order',
     description:
       'Статус замовлення після верифікації клієнта. Не приймає телефон – лише номер замовлення серед уже підтверджених.',

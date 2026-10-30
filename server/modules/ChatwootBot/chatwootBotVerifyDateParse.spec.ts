@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   extractOrderNumberToken,
   hasVerifyCredentialToken,
+  normalizeVerifyDateRange,
   parseUserOrderDate,
 } from './chatwootBotVerifyDateParse.js';
 
@@ -69,5 +70,26 @@ describe('hasVerifyCredentialToken', () => {
     expect(hasVerifyCredentialToken('0978244639, 26.10.2026')).toBe(true);
     expect(hasVerifyCredentialToken('0978244639 замовлення 24155')).toBe(true);
     expect(hasVerifyCredentialToken('мій телефон +380501112233')).toBe(false);
+  });
+});
+
+describe('normalizeVerifyDateRange', () => {
+  const today = '2026-10-30';
+
+  it('accepts a single day and a short interval', () => {
+    expect(normalizeVerifyDateRange('2026-10-26', undefined, today)).toEqual({ ok: true, from: '2026-10-26', to: '2026-10-26' });
+    expect(normalizeVerifyDateRange('2026-10-27', '2026-10-26', today)).toEqual({ ok: true, from: '2026-10-26', to: '2026-10-27' });
+  });
+
+  it('rejects wide, future and malformed ranges', () => {
+    expect(normalizeVerifyDateRange('2026-10-20', '2026-10-27', today)).toEqual({ ok: false, reason: 'too_wide' });
+    expect(normalizeVerifyDateRange('2026-11-02', undefined, today)).toEqual({ ok: false, reason: 'invalid' });
+    expect(normalizeVerifyDateRange('26.10.2026', undefined, today)).toEqual({ ok: false, reason: 'invalid' });
+    expect(normalizeVerifyDateRange('2026-02-30', undefined, today)).toEqual({ ok: false, reason: 'invalid' });
+    expect(normalizeVerifyDateRange(undefined, undefined, today)).toEqual({ ok: false, reason: 'invalid' });
+  });
+
+  it('clamps the end of the range to today', () => {
+    expect(normalizeVerifyDateRange('2026-10-29', '2026-10-31', today)).toEqual({ ok: true, from: '2026-10-29', to: '2026-10-30' });
   });
 });

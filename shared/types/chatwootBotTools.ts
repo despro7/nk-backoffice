@@ -51,8 +51,32 @@ export type ChatwootBotSitePagesToolResult = {
   error?: string;
 };
 
-export type ChatwootBotVerifyMethod = 'order_number' | 'last_order_date';
+export type ChatwootBotVerifyMethod = 'order_number' | 'last_order_date' | 'date_range';
 
 export type ChatwootBotVerifyAttemptResult =
-  | { ok: true; orderId: number; method: ChatwootBotVerifyMethod }
-  | { ok: false; reason: 'mismatch' | 'rate_limited' | 'invalid_input' };
+  | {
+      ok: true;
+      orderId: number;
+      /** Усі замовлення, що відкриває ця спроба (кілька — якщо за точну дату їх було кілька). */
+      orderIds?: number[];
+      method: ChatwootBotVerifyMethod;
+    }
+  /** ambiguous — за інтервал дат знайдено кілька замовлень, потрібен номер. */
+  | { ok: false; reason: 'mismatch' | 'rate_limited' | 'invalid_input' | 'ambiguous' };
+
+/** Результат LLM tool verify_customer (без PII). */
+export type ChatwootBotVerifyToolResult =
+  | { verified: true; ordersVerified: number; hint: string }
+  | {
+      verified: false;
+      code:
+        | 'phone_required'
+        | 'details_required'
+        | 'range_too_wide'
+        | 'mismatch'
+        | 'ambiguous'
+        | 'rate_limited'
+        | 'invalid_input'
+        | 'unavailable';
+      hint: string;
+    };

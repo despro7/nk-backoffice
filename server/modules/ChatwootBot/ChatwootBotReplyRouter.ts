@@ -107,6 +107,8 @@ export class ChatwootBotReplyRouter {
       : [];
     const { text: llmText } = await chatwootBotLlmRunner.generateReply(settings, payload, content, {
       conversationState: verify.state,
+      conversationId,
+      messageId,
       systemNote: verify.attempt ? buildVerifyResultNote(verify.attempt) : undefined,
       history,
     });

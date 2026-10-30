@@ -13,6 +13,7 @@ import { completionToTestDiagnostics } from '../../../shared/utils/llmTestDiagno
 import { buildLlmTestWarnings } from '../../../shared/utils/llmTestWarnings.js';
 import { chatwootBotCatalogToolService } from './ChatwootBotCatalogToolService.js';
 import { chatwootBotOrderToolService } from './ChatwootBotOrderToolService.js';
+import { chatwootBotVerifyService } from './ChatwootBotVerifyService.js';
 import { chatwootBotStorefrontSiteToolService } from './ChatwootBotStorefrontSiteToolService.js';
 import { chatwootBotLlmToolDefinitions } from '../../../shared/constants/chatwootBotLlmTools.js';
 
@@ -37,6 +38,9 @@ export class ChatwootBotLlmRunner {
       systemNote?: string;
       /** Попередні повідомлення розмови (без поточного). */
       history?: LlmMessage[];
+      /** Потрібен для tool verify_customer (зберігає результат у стан розмови). */
+      conversationId?: number;
+      messageId?: number | null;
     },
   ): Promise<ChatwootBotGenerateReplyResult> {
     if (!settings.aiEnabled) return { text: null };
@@ -57,7 +61,8 @@ export class ChatwootBotLlmRunner {
     const requestedModel =
       settings.aiModel.trim() || resolveLlmDefaultModel(platform, effectiveProvider);
     const now = new Date();
-    const state = options?.conversationState;
+    // Стан змінюється, якщо модель пройде verify_customer у цьому ж ході.
+    let state = options?.conversationState;
     const verifiedIds = state ? activeVerifiedOrderIds(state, now.getTime()) : [];
     const contextNote = buildConversationContextNote({
       now,
@@ -93,9 +98,26 @@ export class ChatwootBotLlmRunner {
               typeof args.orderNumber === 'string' ? args.orderNumber : undefined;
             return await chatwootBotOrderToolService.getVerifiedOrderForSession(
               settings,
-              verifiedIds,
+              state ? activeVerifiedOrderIds(state, Date.now()) : [],
               orderNumber,
             );
+          }
+          if (name === 'verify_customer') {
+            const conversationId = options?.conversationId;
+            if (!state || conversationId == null) {
+              return { verified: false, code: 'unavailable', hint: 'Перевірка доступна лише в розмові з клієнтом.' };
+            }
+            const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+            const { result, state: next } = await chatwootBotVerifyService.verifyFromTool(
+              settings,
+              conversationId,
+              state,
+              { phone: str(args.phone), orderNumber: str(args.orderNumber), dateFrom: str(args.dateFrom), dateTo: str(args.dateTo) },
+              chatwootBotVerifyService.channelPhone(payload),
+              options?.messageId ?? null,
+            );
+            state = next;
+            return result;
           }
           if (name === 'get_storefront_site_pages') {
             return await chatwootBotStorefrontSiteToolService.listSitePages({

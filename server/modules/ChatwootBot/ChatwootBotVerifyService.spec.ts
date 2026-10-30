@@ -39,6 +39,8 @@ const order = {
   createdAt: new Date('2026-10-26T09:00:00Z'),
 };
 
+let ordersByPhone: Array<typeof order> = [order];
+
 vi.mock('../../lib/utils.js', () => ({
   logServer: vi.fn(),
   prisma: {
@@ -49,7 +51,7 @@ vi.mock('../../lib/utils.js', () => ({
       findFirst: vi.fn(async ({ where }: { where: { orderNumber: string } }) =>
         where.orderNumber === order.orderNumber ? order : null,
       ),
-      findMany: vi.fn(async () => [order]),
+      findMany: vi.fn(async () => ordersByPhone),
     },
   },
 }));
@@ -66,7 +68,10 @@ function payload(customAttributes: Record<string, unknown> = {}): ChatwootWebhoo
 }
 
 describe('tryVerifyFromUserMessage (conversation state in DB)', () => {
-  beforeEach(() => store.clear());
+  beforeEach(() => {
+    store.clear();
+    ordersByPhone = [order];
+  });
 
   it('remembers phone, then verifies by date in the next message', async () => {
     const first = await chatwootBotVerifyService.tryVerifyFromUserMessage(settings, payload(), 1, '0978244639', 1);
@@ -114,5 +119,71 @@ describe('tryVerifyFromUserMessage (conversation state in DB)', () => {
     });
     const r = await chatwootBotVerifyService.tryVerifyFromUserMessage(settings, payload(), 1, '26.10.2026', 1);
     expect(r.attempt).toEqual({ ok: false, reason: 'rate_limited' });
+  });
+});
+
+describe('date matching uses all orders, not only the latest', () => {
+  beforeEach(() => {
+    store.clear();
+    ordersByPhone = [
+      { ...order, id: 90, orderDate: new Date('2026-10-29T10:00:00Z'), createdAt: new Date('2026-10-29T10:00:00Z') },
+      order,
+    ];
+  });
+
+  it('verifies an older order by its exact date', async () => {
+    const r = await chatwootBotVerifyService.tryVerifyFromUserMessage(settings, payload(), 1, '0978244639, 26.10.2026', 1);
+    expect(r.attempt).toMatchObject({ ok: true, orderId: 77 });
+  });
+});
+
+describe('verifyFromTool (verify_customer)', () => {
+  const base = { ...emptyConversationState(1), pendingPhone: '380978244639' };
+
+  beforeEach(() => {
+    store.clear();
+    ordersByPhone = [order];
+  });
+
+  it('verifies by date range with the stored phone', async () => {
+    const { result, state } = await chatwootBotVerifyService.verifyFromTool(
+      settings, 1, base, { dateFrom: '2026-10-26', dateTo: '2026-10-27' }, null, 1,
+    );
+    expect(result).toMatchObject({ verified: true, ordersVerified: 1 });
+    expect(state.verifiedOrderIds).toEqual([77]);
+  });
+
+  it('asks for order number when the range has several orders', async () => {
+    ordersByPhone = [
+      { ...order, id: 91, orderDate: new Date('2026-10-27T10:00:00Z'), createdAt: new Date('2026-10-27T10:00:00Z') },
+      order,
+    ];
+    const { result } = await chatwootBotVerifyService.verifyFromTool(
+      settings, 1, base, { dateFrom: '2026-10-26', dateTo: '2026-10-27' }, null, 1,
+    );
+    expect(result).toMatchObject({ verified: false, code: 'ambiguous' });
+  });
+
+  it('rejects too wide ranges without spending an attempt', async () => {
+    const { result, state } = await chatwootBotVerifyService.verifyFromTool(
+      settings, 1, base, { dateFrom: '2026-10-01', dateTo: '2026-10-27' }, null, 1,
+    );
+    expect(result).toMatchObject({ verified: false, code: 'range_too_wide' });
+    expect(state.rateCount).toBe(0);
+  });
+
+  it('requires phone, then details', async () => {
+    const empty = emptyConversationState(1);
+    const noPhone = await chatwootBotVerifyService.verifyFromTool(settings, 1, empty, { orderNumber: '24155' }, null, 1);
+    expect(noPhone.result).toMatchObject({ code: 'phone_required' });
+
+    const onlyPhone = await chatwootBotVerifyService.verifyFromTool(settings, 1, empty, { phone: '097 824 46 39' }, null, 1);
+    expect(onlyPhone.result).toMatchObject({ code: 'details_required' });
+    expect(onlyPhone.state.pendingPhone).toBe('380978244639');
+  });
+
+  it('accepts SD order number from args', async () => {
+    const { result } = await chatwootBotVerifyService.verifyFromTool(settings, 1, base, { orderNumber: 'sd 24155' }, null, 1);
+    expect(result).toMatchObject({ verified: true });
   });
 });

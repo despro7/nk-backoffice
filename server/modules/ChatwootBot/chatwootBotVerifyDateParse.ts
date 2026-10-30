@@ -29,6 +29,53 @@ export function kyivCalendarDay(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+/** Максимальна ширина інтервалу дат для верифікації (ширший легко вгадати, знаючи лише телефон). */
+export const CHATWOOT_BOT_VERIFY_MAX_RANGE_DAYS = 3;
+
+const ISO_DAY_REGEX = /^(20\d{2})-(\d{2})-(\d{2})$/;
+
+function isoDayToUtcMs(day: string): number | null {
+  const m = day.trim().match(ISO_DAY_REGEX);
+  if (!m) return null;
+  const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const d = new Date(ms);
+  // Відсікаємо 2026-02-30 тощо.
+  return d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3]) ? ms : null;
+}
+
+export type VerifyDateRange =
+  | { ok: true; from: string; to: string }
+  | { ok: false; reason: 'invalid' | 'too_wide' };
+
+/**
+ * Інтервал календарних днів (YYYY-MM-DD, Київ) від LLM: `to` за замовчуванням = `from`,
+ * перевернутий інтервал виправляємо, майбутні дні й ширші за ліміт — відхиляємо.
+ */
+export function normalizeVerifyDateRange(
+  dateFrom: string | undefined,
+  dateTo: string | undefined,
+  today: string,
+  maxDays: number = CHATWOOT_BOT_VERIFY_MAX_RANGE_DAYS,
+): VerifyDateRange {
+  const fromRaw = dateFrom?.trim() || dateTo?.trim();
+  const toRaw = dateTo?.trim() || fromRaw;
+  if (!fromRaw || !toRaw) return { ok: false, reason: 'invalid' };
+  let fromMs = isoDayToUtcMs(fromRaw);
+  let toMs = isoDayToUtcMs(toRaw);
+  const todayMs = isoDayToUtcMs(today);
+  if (fromMs == null || toMs == null || todayMs == null) return { ok: false, reason: 'invalid' };
+  if (fromMs > toMs) [fromMs, toMs] = [toMs, fromMs];
+  if (fromMs > todayMs) return { ok: false, reason: 'invalid' };
+  if ((toMs - fromMs) / 86_400_000 + 1 > maxDays) return { ok: false, reason: 'too_wide' };
+  const iso = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+  return { ok: true, from: iso(fromMs), to: iso(Math.min(toMs, todayMs)) };
+}
+
+/** Чи потрапляє календарний день (YYYY-MM-DD) в інтервал включно. */
+export function isDayInRange(day: string, from: string, to: string): boolean {
+  return day >= from && day <= to;
+}
+
 export function parseUserOrderDate(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
