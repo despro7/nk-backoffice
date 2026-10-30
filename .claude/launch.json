@@ -1,0 +1,22 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 8080
+    },
+    {
+      "name": "dev:chatwoot",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:chatwoot"],
+      "port": 8080
+    },
+    {
+      "name": "dev (running)",
+      "url": "http://localhost:8080",
+      "port": 8080
+    }
+  ]
+}
