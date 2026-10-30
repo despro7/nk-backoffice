@@ -14,6 +14,7 @@ import { buildLlmTestWarnings } from '../../../shared/utils/llmTestWarnings.js';
 import { chatwootBotCatalogToolService } from './ChatwootBotCatalogToolService.js';
 import { chatwootBotOrderToolService } from './ChatwootBotOrderToolService.js';
 import { chatwootBotKnowledgeService } from './ChatwootBotKnowledgeService.js';
+import { chatwootBotAnalyticsService } from './ChatwootBotAnalyticsService.js';
 import { chatwootBotVerifyService } from './ChatwootBotVerifyService.js';
 import { isTrustedPhoneChannel } from './chatwootBotOrderLookup.js';
 import { chatwootBotStorefrontSiteToolService } from './ChatwootBotStorefrontSiteToolService.js';
@@ -135,7 +136,19 @@ export class ChatwootBotLlmRunner {
             return result;
           }
           if (name === 'search_knowledge_base') {
-            return await chatwootBotKnowledgeService.searchForTool(typeof args.query === 'string' ? args.query : '');
+            const query = typeof args.query === 'string' ? args.query : '';
+            const result = await chatwootBotKnowledgeService.searchForTool(query);
+            // Запит від моделі (без PII за інструкцією tool) — для статистики «бот шукав і не знайшов».
+            if (options?.conversationId != null && query.trim()) {
+              chatwootBotAnalyticsService.recordBestEffort({
+                kind: 'bot_action',
+                conversationId: options.conversationId,
+                messageId: options.messageId ?? null,
+                content: query,
+                meta: { kind: 'kb_lookup', found: result.found },
+              });
+            }
+            return result;
           }
           if (name === 'get_storefront_site_pages') {
             return await chatwootBotStorefrontSiteToolService.listSitePages({

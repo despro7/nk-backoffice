@@ -4,7 +4,10 @@ import { prisma, logServer } from '../../lib/utils.js';
 import type {
   ChatwootBotAnalyticsEventKind,
   ChatwootBotAnalyticsOverview,
+  ChatwootBotQuestionClusterDto,
 } from '../../../shared/types/chatwootBot.js';
+import { chatwootBotKnowledgeService } from './ChatwootBotKnowledgeService.js';
+import { clusterQuestions, type QuestionCluster, type QuestionSample } from './chatwootBotQuestionClusters.js';
 import {
   normalizeChatwootMessageContent,
   previewChatwootContent,
@@ -64,6 +67,21 @@ export class ChatwootBotAnalyticsService {
     void this.record(input);
   }
 
+  /** Для кожної теми — стаття, яку знайде бот (той самий пошук, що й у tool). */
+  private async withKnowledgeCoverage(clusters: QuestionCluster[]): Promise<ChatwootBotQuestionClusterDto[]> {
+    try {
+      return await Promise.all(
+        clusters.map(async (cluster) => {
+          const [hit] = await chatwootBotKnowledgeService.search(cluster.label, 1);
+          return { ...cluster, knowledgeEntry: hit ? { id: hit.id, title: hit.title } : null };
+        }),
+      );
+    } catch (err) {
+      logServer('[ChatwootBotAnalytics] knowledge coverage failed (non-fatal)', err);
+      return clusters;
+    }
+  }
+
   async getOverview(from: Date, to: Date): Promise<ChatwootBotAnalyticsOverview> {
     const rows = await prisma.chatwootBotAnalyticsEvent.findMany({
       where: {
@@ -82,6 +100,9 @@ export class ChatwootBotAnalyticsService {
     });
 
     const questionCounts = new Map<string, { count: number; preview: string }>();
+    const missCounts = new Map<string, { count: number; preview: string }>();
+    let knowledgeLookups = 0;
+    let knowledgeFound = 0;
     let customerMessages = 0;
     let agentMessages = 0;
     let reclaims = 0;
@@ -106,6 +127,19 @@ export class ChatwootBotAnalyticsService {
         case 'agent_message':
           agentMessages += 1;
           break;
+        case 'bot_action': {
+          const meta = row.meta as { kind?: string; found?: boolean } | null;
+          if (meta?.kind !== 'kb_lookup') break;
+          knowledgeLookups += 1;
+          if (meta.found) {
+            knowledgeFound += 1;
+          } else if (row.contentNorm) {
+            const prev = missCounts.get(row.contentNorm);
+            if (prev) prev.count += 1;
+            else missCounts.set(row.contentNorm, { count: 1, preview: row.contentPreview ?? row.contentNorm });
+          }
+          break;
+        }
         case 'reclaim':
           reclaims += 1;
           break;
@@ -117,14 +151,10 @@ export class ChatwootBotAnalyticsService {
       }
     }
 
-    const topQuestions = [...questionCounts.entries()]
-      .map(([contentNorm, v]) => ({
-        contentNorm,
-        contentPreview: v.preview,
-        count: v.count,
-      }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 20);
+    const toSamples = (counts: Map<string, { count: number; preview: string }>): QuestionSample[] =>
+      [...counts.values()].map((v) => ({ text: v.preview, count: v.count }));
+    const questionClusters = await this.withKnowledgeCoverage(clusterQuestions(toSamples(questionCounts)));
+    const knowledgeMisses = clusterQuestions(toSamples(missCounts), { maxClusters: 10 });
 
     const pendingByConv = new Map<number, Date[]>();
     const responseSecondsByAgent = new Map<number, number[]>();
@@ -203,7 +233,9 @@ export class ChatwootBotAnalyticsService {
     return {
       from: from.toISOString(),
       to: to.toISOString(),
-      topQuestions,
+      questionClusters,
+      knowledgeMisses,
+      knowledgeLookups: { total: knowledgeLookups, found: knowledgeFound },
       agentSla,
       totals: {
         customerMessages,

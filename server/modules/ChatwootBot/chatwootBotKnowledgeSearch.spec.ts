@@ -28,7 +28,9 @@ const index = docs.map(indexKnowledgeDoc);
 
 describe('knowledgeStems', () => {
   it('drops stop words and short words, stems long words', () => {
-    expect([...knowledgeStems('Добрий день, скільки коштує доставка?')]).toEqual(['скіль', 'кошту', 'доста']);
+    expect([...knowledgeStems('Добрий день, скільки коштує доставка?')]).toEqual(['~ціна', '~доставка']);
+    expect([...knowledgeStems('Яка вартість доставки?')]).toEqual(['~ціна', '~доставка']);
+    expect([...knowledgeStems('замовлення 24155')]).toEqual(['замов', '24155']);
   });
 });
 

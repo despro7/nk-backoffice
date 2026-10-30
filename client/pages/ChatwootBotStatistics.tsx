@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Spinner, Table, TableBody, TableCell, TableColumn, TableHeader, TableRow, Tooltip } from '@heroui/react';
+import { Button, Chip, Spinner, Table, TableBody, TableCell, TableColumn, TableHeader, TableRow, Tooltip } from '@heroui/react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarDate, getLocalTimeZone, today, type DateValue }   from '@internationalized/date';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { DateRange } from '@react-types/datepicker';
 import { chatwootBotApi } from '@/services/ChatwootBotService';
 import { ToastService } from '@/services/ToastService';
-import type { ChatwootBotAnalyticsOverview } from '@shared/types/chatwootBot';
+import type { ChatwootBotAnalyticsOverview, ChatwootBotQuestionClusterDto } from '@shared/types/chatwootBot';
 import ReportDateRangeFilter from '@/pages/Reports/shared/filters/ReportDateRangeFilter';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PERMISSIONS } from '@shared/constants/permissions';
@@ -66,10 +66,111 @@ function defaultDateRange(): DateRange {
   };
 }
 
+type QuestionClustersCardProps = {
+  title: string;
+  icon: 'badge-question-mark' | 'search-x';
+  description: string;
+  rows: ChatwootBotQuestionClusterDto[];
+  showCoverage?: boolean;
+  canManageKnowledge: boolean;
+  onAdd: (row: ChatwootBotQuestionClusterDto) => void;
+  onOpenKnowledge: () => void;
+};
+
+function QuestionClustersCard({
+  title,
+  icon,
+  description,
+  rows,
+  showCoverage = false,
+  canManageKnowledge,
+  onAdd,
+  onOpenKnowledge,
+}: QuestionClustersCardProps) {
+  return (
+    <div className="p-4 bg-white rounded-xl shadow-lg">
+      <h2 className="flex items-center gap-1 text-md font-semibold text-default-800 mb-1">
+        <DynamicIcon name={icon} size={16} />
+        {title}
+      </h2>
+      <p className="text-xs text-default-500 mb-3">{description}</p>
+      {rows.length === 0 ? (
+        <p className="text-default-500 text-sm">За обраний період даних немає.</p>
+      ) : (
+        <Table aria-label={title} removeWrapper>
+          <TableHeader>
+            <TableColumn>Тема</TableColumn>
+            <TableColumn width={100}>Кількість</TableColumn>
+            <TableColumn width={showCoverage ? 220 : 0} hideHeader={!showCoverage}>
+              {showCoverage ? 'База знань' : ' '}
+            </TableColumn>
+            <TableColumn width={60}>{' '}</TableColumn>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => {
+              const otherPhrasings = row.examples.filter((e) => e !== row.label);
+              return (
+                <TableRow key={row.label}>
+                  <TableCell>
+                    <p className="text-sm font-medium">{row.label}</p>
+                    {otherPhrasings.length > 0 && (
+                      <p className="text-xs text-default-500">{otherPhrasings.join(' · ')}</p>
+                    )}
+                  </TableCell>
+                  <TableCell>{row.count}</TableCell>
+                  <TableCell>
+                    {showCoverage &&
+                      (row.knowledgeEntry ? (
+                        <Chip
+                          size="sm"
+                          variant="flat"
+                          color="success"
+                          className="cursor-pointer max-w-[200px]"
+                          onClick={onOpenKnowledge}
+                        >
+                          {row.knowledgeEntry.title}
+                        </Chip>
+                      ) : (
+                        <Chip size="sm" variant="flat" color="warning">
+                          Немає
+                        </Chip>
+                      ))}
+                  </TableCell>
+                  <TableCell>
+                    {canManageKnowledge && !row.knowledgeEntry && (
+                      <Tooltip content="Додати в базу знань">
+                        <Button
+                          isIconOnly
+                          size="sm"
+                          variant="light"
+                          className="text-blue-600"
+                          aria-label="Додати тему в базу знань"
+                          onPress={() => onAdd(row)}
+                        >
+                          <DynamicIcon name="book-plus" size={16} />
+                        </Button>
+                      </Tooltip>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      )}
+    </div>
+  );
+}
+
 const ChatwootBotStatistics: React.FC = () => {
   const navigate = useNavigate();
   const { hasPermission } = useRoleAccess();
   const canManageKnowledge = hasPermission(PERMISSIONS.ACTION_CHATWOOT_KNOWLEDGE_MANAGE);
+  /** Нова стаття з усіма формулюваннями теми як варіантами питання (без телефонів). */
+  const addToKnowledge = (row: ChatwootBotQuestionClusterDto): void => {
+    const questions = [...new Set([row.label, ...row.examples].map(stripPhones).filter(Boolean))];
+    navigate(`/chatwoot-bot/knowledge#new=${encodeURIComponent(questions.join('\n'))}`);
+  };
   const [dateRange, setDateRange] = useState<DateRange | null>(() => defaultDateRange());
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState<ChatwootBotAnalyticsOverview | null>(null);
@@ -100,7 +201,7 @@ const ChatwootBotStatistics: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-default-500">Топ питань клієнтів і час відповіді менеджерів.</p>
+      <p className="text-sm text-default-500">Теми питань клієнтів, прогалини бази знань і час відповіді менеджерів.</p>
 
       <div className="p-4 bg-white rounded-xl shadow-lg">
         <div className="flex flex-wrap items-center justify-between gap-y-3 gap-x-4">
@@ -138,49 +239,26 @@ const ChatwootBotStatistics: React.FC = () => {
         </div>
       ) : overview ? (
         <>
-          <div className="p-4 bg-white rounded-xl shadow-lg">
-            <h2 className="flex items-center gap-1 text-md font-semibold text-default-800 mb-3">
-              <DynamicIcon name="badge-question-mark" size={16} />
-              Топ питань
-            </h2>
-            {overview.topQuestions.length === 0 ? (
-              <p className="text-default-500 text-sm">За обраний період даних немає.</p>
-            ) : (
-              <Table aria-label="Топ питань" removeWrapper>
-                <TableHeader>
-                  <TableColumn>Питання</TableColumn>
-                  <TableColumn width={100}>Кількість</TableColumn>
-                  <TableColumn width={60}>{' '}</TableColumn>
-                </TableHeader>
-                <TableBody>
-                  {overview.topQuestions.map((row) => (
-                    <TableRow key={row.contentNorm}>
-                      <TableCell>{row.contentPreview}</TableCell>
-                      <TableCell>{row.count}</TableCell>
-                      <TableCell>
-                        {canManageKnowledge && (
-                          <Tooltip content="Додати в базу знань">
-                            <Button
-                              isIconOnly
-                              size="sm"
-                              variant="light"
-                              className="text-blue-600"
-                              aria-label="Додати питання в базу знань"
-                              onPress={() =>
-                                navigate(`/chatwoot-bot/knowledge#new=${encodeURIComponent(stripPhones(row.contentPreview))}`)
-                              }
-                            >
-                              <DynamicIcon name="book-plus" size={16} />
-                            </Button>
-                          </Tooltip>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </div>
+          <QuestionClustersCard
+            title="Теми питань"
+            icon="badge-question-mark"
+            description="Схожі формулювання згруповано. Колонка «База знань» показує статтю, яку знайде бот; «Немає» – прогалина."
+            rows={overview.questionClusters}
+            showCoverage
+            canManageKnowledge={canManageKnowledge}
+            onAdd={addToKnowledge}
+            onOpenKnowledge={() => navigate('/chatwoot-bot/knowledge')}
+          />
+
+          <QuestionClustersCard
+            title="Бот шукав у базі знань і не знайшов"
+            icon="search-x"
+            description={`Звернень до бази знань: ${overview.knowledgeLookups.total}, знайдено відповідь: ${overview.knowledgeLookups.found}.`}
+            rows={overview.knowledgeMisses}
+            canManageKnowledge={canManageKnowledge}
+            onAdd={addToKnowledge}
+            onOpenKnowledge={() => navigate('/chatwoot-bot/knowledge')}
+          />
 
           <div className="p-4 bg-white rounded-xl shadow-lg">
             <h2 className="flex items-center gap-1 text-md font-semibold text-default-800 mb-3">

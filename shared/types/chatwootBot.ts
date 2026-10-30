@@ -145,10 +145,24 @@ export type ChatwootBotAnalyticsEventKind =
   | 'resolved'
   | 'reclaim';
 
+export type ChatwootBotQuestionClusterDto = {
+  /** Найчастіше формулювання теми. */
+  label: string;
+  count: number;
+  /** Різні формулювання (до 5). */
+  examples: string[];
+  /** Стаття, яку бот знайде за цією темою; null — прогалина в базі знань. */
+  knowledgeEntry?: { id: number; title: string } | null;
+};
+
 export type ChatwootBotAnalyticsOverview = {
   from: string;
   to: string;
-  topQuestions: Array<{ contentNorm: string; contentPreview: string; count: number }>;
+  /** Теми питань клієнтів (схожі формулювання згруповано). */
+  questionClusters: ChatwootBotQuestionClusterDto[];
+  /** Теми, за якими бот шукав у базі знань і нічого не знайшов. */
+  knowledgeMisses: ChatwootBotQuestionClusterDto[];
+  knowledgeLookups: { total: number; found: number };
   agentSla: Array<{
     agentId: number;
     conversations: number;

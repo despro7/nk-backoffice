@@ -13,15 +13,35 @@ const STOP_WORDS = new Set([
   'або', 'але', 'без', 'будь', 'вам', 'вас', 'ваш', 'ваше', 'вже', 'від', 'все', 'для', 'добрий', 'день',
   'дякую', 'його', 'коли', 'мені', 'мій', 'моє', 'можна', 'над', 'нас', 'нам', 'них', 'під', 'при',
   'про', 'так', 'там', 'тут', 'хочу', 'цей', 'цього', 'що', 'як', 'який', 'яка', 'яке', 'які', 'ласка',
-  'привіт', 'вітаю', 'скажіть', 'підкажіть', 'есть', 'это', 'как', 'что',
+  'привіт', 'вітаю', 'скажіть', 'підкажіть', 'есть', 'это', 'как', 'что', 'скільки',
+  'доброго', 'дня', 'вечора', 'ранку', 'дізнатися', 'дізнатись', 'якій', 'яким', 'якому', 'точно', 'памʼятаю', "пам'ятаю", 'памятаю',
 ]);
+
+/**
+ * Синоніми предметної області: різні слова однієї теми дають одну «основу»,
+ * щоб «вартість доставки» знаходила статтю «скільки коштує доставка».
+ */
+const SYNONYM_PREFIXES: Array<{ canonical: string; prefixes: string[] }> = [
+  { canonical: '~ціна', prefixes: ['варті', 'цін', 'кошт', 'прайс', 'вартує'] },
+  { canonical: '~доставка', prefixes: ['достав', 'привез', 'привоз'] },
+  { canonical: '~оплата', prefixes: ['оплат', 'оплач', 'платіж', 'платит', 'накладен'] },
+  { canonical: '~скасування', prefixes: ['скасув', 'відмін', 'відмов'] },
+  { canonical: '~статус', prefixes: ['стаді', 'статус', 'відстеж', 'етап'] },
+];
+
+function canonicalStem(word: string): string {
+  for (const group of SYNONYM_PREFIXES) {
+    if (group.prefixes.some((prefix) => word.startsWith(prefix))) return group.canonical;
+  }
+  return word.length > STEM_LENGTH ? word.slice(0, STEM_LENGTH) : word;
+}
 
 export function knowledgeStems(text: string): Set<string> {
   const stems = new Set<string>();
   for (const raw of text.toLowerCase().split(/[^\p{L}\p{N}ʼ']+/u)) {
     const word = raw.replace(/[ʼ']/g, '');
     if (word.length < 3 || STOP_WORDS.has(word)) continue;
-    stems.add(word.length > STEM_LENGTH ? word.slice(0, STEM_LENGTH) : word);
+    stems.add(canonicalStem(word));
   }
   return stems;
 }
