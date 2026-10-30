@@ -14,6 +14,8 @@ import { getChatwootBotFixture } from './fixtures/index.js';
 import { chatwootBotInboxHoursService } from './ChatwootBotInboxHoursService.js';
 import { chatwootBotVerifyService } from './ChatwootBotVerifyService.js';
 import { emptyConversationState } from './chatwootBotConversationStateUtils.js';
+import { chatwootBotLlmRunner } from './ChatwootBotLlmRunner.js';
+import { ChatwootApiClient } from './ChatwootApiClient.js';
 import { shouldPersistEvent } from './ChatwootBotHandoverUtils.js';
 import { clearHumanAgentActivePersistGateForTests } from './humanAgentActivePersistGate.js';
 vi.mock('./chatwootAgentsAvailabilityCache.js', () => ({
@@ -234,6 +236,73 @@ describe('ChatwootBotOrchestrator dry_run', () => {
     );
     expect(result.action).toBe('handover');
     expect(result.reason).toBe('dry_run_ooh_callback');
+  });
+
+  // Сценарії зі скриншотів: бот просив ті самі дані знову й знову.
+  it('third failed verification in hours → handover to operator', async () => {
+    vi.spyOn(chatwootBotVerifyService, 'tryVerifyFromUserMessage').mockResolvedValue({
+      attempt: { ok: false, reason: 'mismatch' },
+      state: { ...emptyConversationState(1001), failedAttempts: 3 },
+    });
+    const result = await chatwootBotOrchestrator.processWebhook(
+      { ...getChatwootBotFixture('echo'), content: '0978244639, 26.10.2026' },
+      { source: 'simulate' },
+    );
+    expect(result.action).toBe('handover');
+    expect(result.reason).toBe('dry_run_handover');
+  });
+
+  it('failed verification out of hours → callback offer', async () => {
+    vi.spyOn(chatwootBotInboxHoursService, 'isWithinBusinessHours').mockResolvedValue({
+      inHours: false,
+      source: 'chatwoot_inbox',
+    });
+    vi.spyOn(chatwootBotVerifyService, 'tryVerifyFromUserMessage').mockResolvedValue({
+      attempt: { ok: false, reason: 'rate_limited' },
+      state: emptyConversationState(1001),
+    });
+    const result = await chatwootBotOrchestrator.processWebhook(
+      { ...getChatwootBotFixture('echo'), content: '0978244639, 26.10.2026' },
+      { source: 'simulate' },
+    );
+    expect(result.reason).toBe('dry_run_ooh_offer');
+  });
+
+  it('LLM about to repeat its previous reply → handover instead of the duplicate', async () => {
+    vi.spyOn(chatwootBotSettingsService, 'getSettings').mockResolvedValue({
+      ...alwaysOpenHoursSettings,
+      aiEnabled: true,
+    });
+    vi.spyOn(chatwootBotVerifyService, 'tryVerifyFromUserMessage').mockResolvedValue({
+      attempt: null,
+      state: emptyConversationState(1001),
+    });
+    const previous =
+      'Щоб перевірити статус, надішліть номер телефону та номер замовлення або номер телефону й дату останнього замовлення.';
+    vi.spyOn(ChatwootApiClient.prototype, 'listConversationMessages').mockResolvedValue([
+      { id: 1, createdAt: new Date(), message_type: 0, content: 'Хочу дізнатися статус замовлення' },
+      { id: 2, createdAt: new Date(), message_type: 1, content: previous },
+    ]);
+    vi.spyOn(chatwootBotLlmRunner, 'generateReply').mockResolvedValue({
+      text: `Щоб перевірити статус, надішліть, будь ласка, номер телефону та номер замовлення або номер телефону й дату останнього замовлення.`,
+    });
+    const result = await chatwootBotOrchestrator.processWebhook(
+      { ...getChatwootBotFixture('echo'), id: 900100, content: 'Замовляв в понеділок' },
+      { source: 'simulate' },
+    );
+    expect(result.reason).toBe('dry_run_handover');
+  });
+
+  it('first failed verification → normal reply, no escalation', async () => {
+    vi.spyOn(chatwootBotVerifyService, 'tryVerifyFromUserMessage').mockResolvedValue({
+      attempt: { ok: false, reason: 'mismatch' },
+      state: { ...emptyConversationState(1001), failedAttempts: 1 },
+    });
+    const result = await chatwootBotOrchestrator.processWebhook(
+      { ...getChatwootBotFixture('echo'), content: '0978244639, 01.10.2026' },
+      { source: 'simulate' },
+    );
+    expect(result.action).toBe('echo');
   });
 
   it('OOH callback pending + phone with date → verify path, not callback', async () => {

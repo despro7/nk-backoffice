@@ -22,6 +22,10 @@ const BOT_TOOLS = chatwootBotLlmToolDefinitions();
 
 export type ChatwootBotGenerateReplyResult = {
   text: string | null;
+  /** Стан розмови після ходу моделі (verify_customer міг його змінити). */
+  conversationState?: ChatwootBotConversationStateSnapshot;
+  /** verify_customer відповів rate_limited у цьому ході. */
+  toolVerifyRateLimited?: boolean;
   /** Заповнюється після успішного виклику LLM (для адмін-тесту). */
   testMeta?: Omit<LlmTestModelResponse, 'reply'>;
 };
@@ -66,6 +70,7 @@ export class ChatwootBotLlmRunner {
     const channelPhoneTrusted = Boolean(channelPhone) && isTrustedPhoneChannel(payload.conversation?.channel);
     // Стан змінюється, якщо модель пройде verify_customer у цьому ж ході.
     let state = options?.conversationState;
+    let toolVerifyRateLimited = false;
     const verifiedIds = state ? activeVerifiedOrderIds(state, now.getTime()) : [];
     const contextNote = buildConversationContextNote({
       now,
@@ -125,6 +130,7 @@ export class ChatwootBotLlmRunner {
               options?.messageId ?? null,
             );
             state = next;
+            if (result.verified === false && result.code === 'rate_limited') toolVerifyRateLimited = true;
             return result;
           }
           if (name === 'get_storefront_site_pages') {
@@ -154,6 +160,8 @@ export class ChatwootBotLlmRunner {
       );
       return {
         text: emptyReply ? null : text,
+        conversationState: state,
+        toolVerifyRateLimited,
         testMeta,
       };
     } catch (error) {

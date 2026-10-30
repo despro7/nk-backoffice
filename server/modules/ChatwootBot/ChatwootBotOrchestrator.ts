@@ -517,6 +517,21 @@ export class ChatwootBotOrchestrator {
       messageId,
       content: content,
       payload,
+      escalate: (reason) =>
+        inHours
+          ? this.handleAgentAssign(
+              settings,
+              logCtx,
+              conversationId,
+              dryRun,
+              contentPreview,
+              messageId,
+              settings.handoverMessageInHours,
+              'in_hours',
+              `Handover: бот не впорався (${reason}).`,
+              hoursLog,
+            )
+          : this.handleOohOffer(settings, logCtx, conversationId, dryRun, contentPreview, messageId, hoursLog),
     });
   }
 

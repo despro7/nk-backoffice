@@ -8,6 +8,13 @@ import type {
 import type { LlmMessage } from '../../../shared/types/llm.js';
 import { botMessagingCredentials, handoverAssignmentCredentials } from './chatwootCredentials.js';
 import { buildLlmHistory } from './chatwootBotConversationContext.js';
+import { chatwootBotAnalyticsService } from './ChatwootBotAnalyticsService.js';
+import {
+  isRepeatedReply,
+  lastAssistantMessage,
+  shouldEscalateAfterFailedVerify,
+  type ChatwootBotEscalationReason,
+} from './chatwootBotLoopGuard.js';
 import { createChatwootApiClient } from './ChatwootApiClient.js';
 import { chatwootBotEventLogService } from './ChatwootBotEventLogService.js';
 import { chatwootBotLlmRunner } from './ChatwootBotLlmRunner.js';
@@ -64,6 +71,11 @@ export type ChatwootBotReplyRouteInput = {
   messageId: number | null;
   content: string;
   payload: ChatwootWebhookMessageCreated;
+  /**
+   * Передача оператору, коли бот зациклився (handover у робочі години, пропозиція дзвінка поза ними).
+   * Без нього бот відповідає як завжди.
+   */
+  escalate?: (reason: ChatwootBotEscalationReason) => Promise<ChatwootBotProcessResult>;
 };
 
 export class ChatwootBotReplyRouter {
@@ -77,6 +89,7 @@ export class ChatwootBotReplyRouter {
       messageId,
       content,
       payload,
+      escalate,
     } = input;
 
     const verify = await chatwootBotVerifyService.tryVerifyFromUserMessage(
@@ -86,6 +99,28 @@ export class ChatwootBotReplyRouter {
       content,
       messageId,
     );
+
+    const escalateWith = async (reason: ChatwootBotEscalationReason): Promise<ChatwootBotProcessResult | null> => {
+      if (!escalate) return null;
+      chatwootBotAnalyticsService.recordBestEffort({
+        kind: 'bot_action',
+        conversationId,
+        messageId,
+        meta: { kind: 'escalate', reason },
+      });
+      logServer(`[ChatwootBot] escalate ${reason} conv=${conversationId}`);
+      return escalate(reason);
+    };
+
+    if (verify.attempt?.ok === false) {
+      if (verify.attempt.reason === 'rate_limited') {
+        const escalated = await escalateWith('verify_rate_limited');
+        if (escalated) return escalated;
+      } else if (shouldEscalateAfterFailedVerify(verify.state.failedAttempts, true)) {
+        const escalated = await escalateWith('verify_failed');
+        if (escalated) return escalated;
+      }
+    }
 
     const pattern = matchAutoReplyFromSettings(content, settings);
     if (pattern) {
@@ -105,13 +140,31 @@ export class ChatwootBotReplyRouter {
     const history = settings.aiEnabled
       ? await this.loadHistory(settings, conversationId, messageId)
       : [];
-    const { text: llmText } = await chatwootBotLlmRunner.generateReply(settings, payload, content, {
+    const llm = await chatwootBotLlmRunner.generateReply(settings, payload, content, {
       conversationState: verify.state,
       conversationId,
       messageId,
       systemNote: verify.attempt ? buildVerifyResultNote(verify.attempt) : undefined,
       history,
     });
+    const llmText = llm.text;
+
+    // Невдачі verify_customer у цьому ж ході моделі.
+    if (llm.toolVerifyRateLimited) {
+      const escalated = await escalateWith('verify_rate_limited');
+      if (escalated) return escalated;
+    }
+    const finalState = llm.conversationState ?? verify.state;
+    const toolFailedHere = finalState.failedAttempts > verify.state.failedAttempts;
+    if (shouldEscalateAfterFailedVerify(finalState.failedAttempts, toolFailedHere)) {
+      const escalated = await escalateWith('verify_failed');
+      if (escalated) return escalated;
+    }
+    if (llmText && isRepeatedReply(llmText, lastAssistantMessage(history))) {
+      const escalated = await escalateWith('repeat_reply');
+      if (escalated) return escalated;
+    }
+
     if (llmText) {
       return this.sendReply(
         settings,
