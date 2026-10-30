@@ -10,7 +10,7 @@ import { createChatwootApiClient } from './ChatwootApiClient.js';
 import { chatwootBotEventLogService } from './ChatwootBotEventLogService.js';
 import { chatwootBotLlmRunner } from './ChatwootBotLlmRunner.js';
 import { matchAutoReplyFromSettings } from './ChatwootBotPatternMatcher.js';
-import { chatwootBotVerifyService } from './ChatwootBotVerifyService.js';
+import { buildVerifyResultNote, chatwootBotVerifyService } from './ChatwootBotVerifyService.js';
 
 type ProcessLogContext = {
   source: ChatwootBotEventSource;
@@ -77,7 +77,7 @@ export class ChatwootBotReplyRouter {
       payload,
     } = input;
 
-    await chatwootBotVerifyService.tryVerifyFromUserMessage(
+    const verify = await chatwootBotVerifyService.tryVerifyFromUserMessage(
       settings,
       payload,
       conversationId,
@@ -100,7 +100,10 @@ export class ChatwootBotReplyRouter {
       );
     }
 
-    const { text: llmText } = await chatwootBotLlmRunner.generateReply(settings, payload, content);
+    const { text: llmText } = await chatwootBotLlmRunner.generateReply(settings, payload, content, {
+      customAttrs: verify?.attrs,
+      systemNote: verify ? buildVerifyResultNote(verify.attempt) : undefined,
+    });
     if (llmText) {
       return this.sendReply(
         settings,

@@ -29,8 +29,10 @@ export function matchesEmergency(content: string, settings: ChatwootBotSettings)
   return matchesKeywordList(content, keywords);
 }
 
-const UA_PHONE_REGEX =
-  /(?:\+?\s?380|0)\s*(?:\d{2}|\(\d{2}\))\s*[\d\s\-()]{5,12}\d/g;
+// Код оператора `0XX` (з необов'язковим `+38`) + рівно 7 цифр з одиничними роздільниками,
+// щоб не захоплювати сусіднє число (`0978244639 100245`).
+export const UA_PHONE_REGEX =
+  /(?<!\d)(?:\+?\s?38\s?)?\(?0\s?\d{2}\)?(?:[\s-]?\d){7}(?!\d)/g;
 
 export function extractCallbackPhone(content: string): string | null {
   const matches = content.match(UA_PHONE_REGEX);

@@ -24,7 +24,13 @@ export class ChatwootBotLlmRunner {
     settings: ChatwootBotSettings,
     payload: ChatwootWebhookMessageCreated,
     userContent: string,
-    options?: { propagateErrors?: boolean },
+    options?: {
+      propagateErrors?: boolean;
+      /** Свіжі custom_attributes (після верифікації в цьому ж повідомленні); інакше — з payload. */
+      customAttrs?: Record<string, unknown>;
+      /** Службовий блок, що додається до system prompt маски. */
+      systemNote?: string;
+    },
   ): Promise<ChatwootBotGenerateReplyResult> {
     if (!settings.aiEnabled) return { text: null };
 
@@ -43,7 +49,11 @@ export class ChatwootBotLlmRunner {
     const effectiveProvider = provider ?? platform.defaultProvider;
     const requestedModel =
       settings.aiModel.trim() || resolveLlmDefaultModel(platform, effectiveProvider);
-    const customAttrs = (payload.conversation?.custom_attributes ?? {}) as Record<string, unknown>;
+    const customAttrs =
+      options?.customAttrs ??
+      ((payload.conversation?.custom_attributes ?? {}) as Record<string, unknown>);
+    const systemNote = options?.systemNote?.trim();
+    const system = systemNote ? `${mask.systemPrompt}\n\n${systemNote}` : mask.systemPrompt;
 
     const started = Date.now();
     try {
@@ -51,7 +61,7 @@ export class ChatwootBotLlmRunner {
         {
           provider,
           model,
-          system: mask.systemPrompt,
+          system,
           messages: [{ role: 'user', content: userContent }],
           maxOutputTokens: platform.maxOutputTokens,
           tools: BOT_TOOLS,

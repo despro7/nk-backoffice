@@ -49,6 +49,7 @@ import {
   releaseHumanAgentActivePersistSlot,
 } from './humanAgentActivePersistGate.js';
 import { chatwootBotReplyRouter } from './ChatwootBotReplyRouter.js';
+import { hasVerifyCredentialToken } from './chatwootBotVerifyDateParse.js';
 import { isDuplicateWebhookMessage } from './webhookMessageDedup.js';
 
 type ProcessLogContext = {
@@ -490,7 +491,9 @@ export class ChatwootBotOrchestrator {
     if (!inHours && callbackPending) {
       const phone = extractCallbackPhone(content);
       const hasCallbackSignal = phone !== null || matchesCallbackIntent(content);
-      if (hasCallbackSignal) {
+      // Телефон + номер замовлення або дата — це спроба верифікації, а не номер для дзвінка.
+      const isVerifyAttempt = phone !== null && hasVerifyCredentialToken(content);
+      if (hasCallbackSignal && !isVerifyAttempt) {
         return this.handleOohCallback(
           settings,
           logCtx,

@@ -1,3 +1,5 @@
+import { UA_PHONE_REGEX } from './ChatwootBotHandoverUtils.js';
+
 const UA_MONTHS: Record<string, number> = {
   січня: 1,
   лютого: 2,
@@ -56,9 +58,31 @@ export function parseUserOrderDate(input: string): string | null {
   return null;
 }
 
+// JS `\b` не бачить кирилицю як word-символ, тому межі задаємо через Unicode lookaround.
+const ORDER_KEYWORD_REGEX =
+  /(?<![\p{L}\p{N}])(?:замовленн[яіює]|order|№|#)\s*(?:номер\s*)?[:#№]?\s*([A-Za-z0-9\-_/]*\d[A-Za-z0-9\-_/]*)(?![\p{L}\p{N}])/iu;
+// SalesDrive externalId має формат `SD{id}` (id від 4 цифр); клієнт може написати `sd 9547`, `SD-9547` або кирилицею `СД`.
+const SD_ORDER_NUMBER_REGEX = /(?<![\p{L}\p{N}])(?:SD|СД)\s*[-#№]?\s*(\d{3,})(?![\p{L}\p{N}])/iu;
+// Номер замовлення — 5–8 цифр; довші послідовності вважаємо телефоном.
+const BARE_ORDER_NUMBER_REGEX = /(?<![\p{L}\p{N}])(\d{5,8})(?![\p{L}\p{N}])/u;
+const DATE_LIKE_REGEX = /20\d{2}-\d{2}-\d{2}|\d{1,2}\.\d{1,2}(?:\.\d{2,4})?/g;
+
+/** Прибирає телефони й дати, щоб їхні цифри не сприймались як номер замовлення. */
+function stripPhonesAndDates(content: string): string {
+  return content.replace(UA_PHONE_REGEX, ' ').replace(DATE_LIKE_REGEX, ' ');
+}
+
 export function extractOrderNumberToken(content: string): string | null {
-  const match = content.match(/\b(?:замовленн[яіє]|order|№|#)\s*[:#]?\s*([A-Za-z0-9\-_/]{4,})\b/ui);
-  if (match) return match[1].trim();
-  const bare = content.match(/\b(\d{5,})\b/);
+  const cleaned = stripPhonesAndDates(content);
+  const sd = cleaned.match(SD_ORDER_NUMBER_REGEX);
+  if (sd) return `SD${sd[1]}`;
+  const match = cleaned.match(ORDER_KEYWORD_REGEX);
+  if (match && match[1].length >= 4) return match[1].trim();
+  const bare = cleaned.match(BARE_ORDER_NUMBER_REGEX);
   return bare ? bare[1] : null;
+}
+
+/** Чи містить повідомлення дані для верифікації (номер замовлення або дату). */
+export function hasVerifyCredentialToken(content: string): boolean {
+  return extractOrderNumberToken(content) !== null || parseUserOrderDate(content) !== null;
 }

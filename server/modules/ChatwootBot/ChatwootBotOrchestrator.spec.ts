@@ -12,6 +12,7 @@ import {
 } from './ChatwootBotOrchestrator.js';
 import { getChatwootBotFixture } from './fixtures/index.js';
 import { chatwootBotInboxHoursService } from './ChatwootBotInboxHoursService.js';
+import { chatwootBotVerifyService } from './ChatwootBotVerifyService.js';
 import { shouldPersistEvent } from './ChatwootBotHandoverUtils.js';
 import { clearHumanAgentActivePersistGateForTests } from './humanAgentActivePersistGate.js';
 vi.mock('./chatwootAgentsAvailabilityCache.js', () => ({
@@ -220,6 +221,30 @@ describe('ChatwootBotOrchestrator dry_run', () => {
     );
     expect(result.action).toBe('handover');
     expect(result.reason).toBe('dry_run_ooh_callback');
+  });
+
+  it('OOH callback pending + phone with date → verify path, not callback', async () => {
+    vi.spyOn(chatwootBotInboxHoursService, 'isWithinBusinessHours').mockResolvedValue({
+      inHours: false,
+      source: 'chatwoot_inbox',
+    });
+    const verifySpy = vi
+      .spyOn(chatwootBotVerifyService, 'tryVerifyFromUserMessage')
+      .mockResolvedValue(null);
+    const result = await chatwootBotOrchestrator.processWebhook(
+      {
+        ...getChatwootBotFixture('echo'),
+        content: '0978244639, 26.10.2026',
+        conversation: {
+          ...getChatwootBotFixture('echo').conversation,
+          custom_attributes: { [CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING]: true },
+        },
+      },
+      { source: 'simulate' },
+    );
+    expect(result.reason).not.toBe('dry_run_ooh_callback');
+    expect(result.action).toBe('echo');
+    expect(verifySpy).toHaveBeenCalledOnce();
   });
 
   it('ignores outgoing and private without persisting', async () => {

@@ -15,6 +15,8 @@ describe('ChatwootBotHandoverUtils', () => {
   it('extractCallbackPhone parses UA numbers', () => {
     expect(extractCallbackPhone('дзвоніть 050 123 45 67')).toMatch(/^\+38/);
     expect(extractCallbackPhone('+380501234567')).toBe('+380501234567');
+    expect(extractCallbackPhone('+38 (097) 824-46-39')).toBe('+380978244639');
+    expect(extractCallbackPhone('0978244639 100245')).toBe('+380978244639');
   });
 
   it('matchesEmergency respects enabled flag', () => {
