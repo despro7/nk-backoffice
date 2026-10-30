@@ -5,7 +5,9 @@ import type {
   ChatwootBotSettings,
   ChatwootWebhookMessageCreated,
 } from '../../../shared/types/chatwootBot.js';
-import { botMessagingCredentials } from './chatwootCredentials.js';
+import type { LlmMessage } from '../../../shared/types/llm.js';
+import { botMessagingCredentials, handoverAssignmentCredentials } from './chatwootCredentials.js';
+import { buildLlmHistory } from './chatwootBotConversationContext.js';
 import { createChatwootApiClient } from './ChatwootApiClient.js';
 import { chatwootBotEventLogService } from './ChatwootBotEventLogService.js';
 import { chatwootBotLlmRunner } from './ChatwootBotLlmRunner.js';
@@ -100,9 +102,13 @@ export class ChatwootBotReplyRouter {
       );
     }
 
+    const history = settings.aiEnabled
+      ? await this.loadHistory(settings, conversationId, messageId)
+      : [];
     const { text: llmText } = await chatwootBotLlmRunner.generateReply(settings, payload, content, {
       customAttrs: verify?.attrs,
       systemNote: verify ? buildVerifyResultNote(verify.attempt) : undefined,
+      history,
     });
     if (llmText) {
       return this.sendReply(
@@ -130,6 +136,22 @@ export class ChatwootBotReplyRouter {
       'fallback',
       'no_pattern_no_ai',
     );
+  }
+
+  /** Історія розмови з Chatwoot; помилка не блокує відповідь (LLM отримає лише поточне повідомлення). */
+  private async loadHistory(
+    settings: ChatwootBotSettings,
+    conversationId: number,
+    messageId: number | null,
+  ): Promise<LlmMessage[]> {
+    try {
+      const client = createChatwootApiClient(handoverAssignmentCredentials(settings));
+      const messages = await client.listConversationMessages(conversationId);
+      return buildLlmHistory(messages, messageId);
+    } catch (err) {
+      logServer(`[ChatwootBot] history load failed conv=${conversationId} (non-fatal)`, err);
+      return [];
+    }
   }
 
   private async sendReply(

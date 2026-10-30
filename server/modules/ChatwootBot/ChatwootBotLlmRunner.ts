@@ -1,5 +1,11 @@
-import type { LlmProvider, LlmTestModelResponse } from '../../../shared/types/llm.js';
-import type { ChatwootBotSettings, ChatwootWebhookMessageCreated } from '../../../shared/types/chatwootBot.js';
+import type { LlmMessage, LlmProvider, LlmTestModelResponse } from '../../../shared/types/llm.js';
+import {
+  CHATWOOT_BOT_ATTR_VERIFY_EXPIRES_AT,
+  type ChatwootBotSettings,
+  type ChatwootWebhookMessageCreated,
+} from '../../../shared/types/chatwootBot.js';
+import { buildConversationContextNote } from './chatwootBotConversationContext.js';
+import { getVerifiedOrderIdsFromAttrs } from './ChatwootBotVerifyService.js';
 import { logServer } from '../../lib/utils.js';
 import { llmService } from '../../services/llm/LlmService.js';
 import { llmSettingsService } from '../../services/llm/LlmSettingsService.js';
@@ -30,6 +36,8 @@ export class ChatwootBotLlmRunner {
       customAttrs?: Record<string, unknown>;
       /** Службовий блок, що додається до system prompt маски. */
       systemNote?: string;
+      /** Попередні повідомлення розмови (без поточного). */
+      history?: LlmMessage[];
     },
   ): Promise<ChatwootBotGenerateReplyResult> {
     if (!settings.aiEnabled) return { text: null };
@@ -52,8 +60,17 @@ export class ChatwootBotLlmRunner {
     const customAttrs =
       options?.customAttrs ??
       ((payload.conversation?.custom_attributes ?? {}) as Record<string, unknown>);
-    const systemNote = options?.systemNote?.trim();
-    const system = systemNote ? `${mask.systemPrompt}\n\n${systemNote}` : mask.systemPrompt;
+    const verifyExpiresAt = customAttrs[CHATWOOT_BOT_ATTR_VERIFY_EXPIRES_AT];
+    const contextNote = buildConversationContextNote({
+      now: new Date(),
+      verifiedOrderCount: getVerifiedOrderIdsFromAttrs(customAttrs).length,
+      verifyExpiresAt: typeof verifyExpiresAt === 'string' ? verifyExpiresAt : null,
+      channelPhoneKnown: Boolean(payload.conversation?.meta?.sender?.phone_number?.trim()),
+    });
+    const system = [mask.systemPrompt, contextNote, options?.systemNote?.trim()]
+      .filter((part): part is string => Boolean(part))
+      .join('\n\n');
+    const messages: LlmMessage[] = [...(options?.history ?? []), { role: 'user', content: userContent }];
 
     const started = Date.now();
     try {
@@ -62,7 +79,7 @@ export class ChatwootBotLlmRunner {
           provider,
           model,
           system,
-          messages: [{ role: 'user', content: userContent }],
+          messages,
           maxOutputTokens: platform.maxOutputTokens,
           tools: BOT_TOOLS,
         },

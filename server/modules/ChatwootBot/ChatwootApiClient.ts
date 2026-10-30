@@ -352,6 +352,7 @@ export class ChatwootApiClient {
       createdAt: Date;
       message_type?: string | number;
       private?: boolean;
+      content?: string | null;
       sender?: { type?: string };
     }>
   > {
@@ -361,6 +362,7 @@ export class ChatwootApiClient {
           created_at?: number;
           message_type?: string | number;
           private?: boolean;
+          content?: string | null;
           sender?: { type?: string };
         }>
       | {
@@ -369,6 +371,7 @@ export class ChatwootApiClient {
             created_at?: number;
             message_type?: string | number;
             private?: boolean;
+            content?: string | null;
             sender?: { type?: string };
           }>;
         }
@@ -384,6 +387,7 @@ export class ChatwootApiClient {
         ),
         message_type: m.message_type,
         private: m.private,
+        content: typeof m.content === 'string' ? m.content : null,
         sender: m.sender,
       }));
   }
