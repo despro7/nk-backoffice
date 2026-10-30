@@ -1188,3 +1188,24 @@ model ChatwootBotConversationState {
   @@index([updatedAt])
   @@map("chatwoot_bot_conversation_states")
 }
+
+/// База знань Chatwoot Bot: факти, з яких LLM формулює відповідь (tool search_knowledge_base).
+model ChatwootBotKnowledgeEntry {
+  id        Int      @id @default(autoincrement())
+  title     String   @db.VarChar(255)
+  /// Варіанти формулювань питання (string[]).
+  questions Json
+  answer    String   @db.Text
+  /// Теги для пошуку (string[]).
+  tags      Json
+  enabled   Boolean  @default(true)
+  /// Скільки разів стаття потрапила в результат пошуку для LLM.
+  hits      Int      @default(0)
+  createdBy Int?
+  updatedBy Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([enabled])
+  @@map("chatwoot_bot_knowledge_entries")
+}

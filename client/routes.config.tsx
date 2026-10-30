@@ -35,6 +35,7 @@ const SettingsAdmin = lazyPage(() => import('./pages/SettingsAdmin'));
 const SettingsLlm = lazyPage(() => import('./pages/SettingsLlm'));
 const SettingsChatwootBot = lazyPage(() => import('./pages/SettingsChatwootBot'));
 const ChatwootBotStatistics = lazyPage(() => import('./pages/ChatwootBotStatistics'));
+const ChatwootBotKnowledge = lazyPage(() => import('./pages/ChatwootBotKnowledge'));
 const SettingsStorefront = lazyPage(() => import('./pages/SettingsStorefront'));
 const SettingsUsers = lazyPage(() => import('./pages/Settings/Users'));
 const SettingsLabelTemplates = lazyPage(() => import('./pages/SettingsLabelTemplates'));
@@ -825,6 +826,18 @@ export const appRoutes: AppRoute[] = [
       order: 9,
     },
     permission: { name: 'admin' },
+  },
+  {
+    path: '/chatwoot-bot/knowledge',
+    component: ChatwootBotKnowledge,
+    title: 'База знань Chatwoot Bot',
+    pageTitle: 'База знань | NK Backoffice',
+    navLabel: 'База знань',
+    icon: <DynamicIcon name="book-open" size={16} />,
+    inNav: true,
+    parent: 'chatwoot-bot',
+    order: 0.5,
+    permission: { name: 'chatwootKnowledge', group: 'settings', label: 'База знань Chatwoot Bot' },
   },
   {
     path: '/chatwoot-bot/settings',

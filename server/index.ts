@@ -18,6 +18,7 @@ import settingsRoutes from "./routes/settings.js";
 import webhookRoutes from './routes/webhooks.js';
 import chatwootWebhookRoutes from './routes/chatwoot-webhooks.js';
 import chatwootBotRoutes from './routes/chatwoot-bot.js';
+import chatwootKnowledgeRoutes from './routes/chatwoot-knowledge.js';
 import llmRoutes from './routes/llm.js';
 import warehouseRoutes from './routes/warehouse.js';
 import ordersSyncRoutes from './routes/orders-sync.js';
@@ -219,6 +220,7 @@ export function createServer() {
 
   // Chatwoot Agent Bot admin API
   app.use('/api/chatwoot-bot', chatwootBotRoutes);
+  app.use('/api/chatwoot-knowledge', chatwootKnowledgeRoutes);
   app.use('/api/llm', llmRoutes);
 
   // Добавляем роуты для работы с перевозчиками

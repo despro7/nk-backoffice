@@ -13,6 +13,7 @@ import { completionToTestDiagnostics } from '../../../shared/utils/llmTestDiagno
 import { buildLlmTestWarnings } from '../../../shared/utils/llmTestWarnings.js';
 import { chatwootBotCatalogToolService } from './ChatwootBotCatalogToolService.js';
 import { chatwootBotOrderToolService } from './ChatwootBotOrderToolService.js';
+import { chatwootBotKnowledgeService } from './ChatwootBotKnowledgeService.js';
 import { chatwootBotVerifyService } from './ChatwootBotVerifyService.js';
 import { isTrustedPhoneChannel } from './chatwootBotOrderLookup.js';
 import { chatwootBotStorefrontSiteToolService } from './ChatwootBotStorefrontSiteToolService.js';
@@ -132,6 +133,9 @@ export class ChatwootBotLlmRunner {
             state = next;
             if (result.verified === false && result.code === 'rate_limited') toolVerifyRateLimited = true;
             return result;
+          }
+          if (name === 'search_knowledge_base') {
+            return await chatwootBotKnowledgeService.searchForTool(typeof args.query === 'string' ? args.query : '');
           }
           if (name === 'get_storefront_site_pages') {
             return await chatwootBotStorefrontSiteToolService.listSitePages({

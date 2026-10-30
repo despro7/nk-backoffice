@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Spinner, Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from '@heroui/react';
+import { Button, Spinner, Table, TableBody, TableCell, TableColumn, TableHeader, TableRow, Tooltip } from '@heroui/react';
+import { useNavigate } from 'react-router-dom';
 import { CalendarDate, getLocalTimeZone, today, type DateValue }   from '@internationalized/date';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { DateRange } from '@react-types/datepicker';
@@ -7,6 +8,13 @@ import { chatwootBotApi } from '@/services/ChatwootBotService';
 import { ToastService } from '@/services/ToastService';
 import type { ChatwootBotAnalyticsOverview } from '@shared/types/chatwootBot';
 import ReportDateRangeFilter from '@/pages/Reports/shared/filters/ReportDateRangeFilter';
+import { useRoleAccess } from '@/hooks/useRoleAccess';
+import { PERMISSIONS } from '@shared/constants/permissions';
+
+/** Телефони в питаннях клієнтів не мають потрапити в базу знань. */
+function stripPhones(text: string): string {
+  return text.replace(/\+?\d[\d\s\-()]{7,}\d/g, '…').replace(/\s+/g, ' ').trim();
+}
 
 function formatSeconds(seconds: number | null): string {
   if (seconds == null) return '–';
@@ -59,6 +67,9 @@ function defaultDateRange(): DateRange {
 }
 
 const ChatwootBotStatistics: React.FC = () => {
+  const navigate = useNavigate();
+  const { hasPermission } = useRoleAccess();
+  const canManageKnowledge = hasPermission(PERMISSIONS.ACTION_CHATWOOT_KNOWLEDGE_MANAGE);
   const [dateRange, setDateRange] = useState<DateRange | null>(() => defaultDateRange());
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState<ChatwootBotAnalyticsOverview | null>(null);
@@ -139,12 +150,31 @@ const ChatwootBotStatistics: React.FC = () => {
                 <TableHeader>
                   <TableColumn>Питання</TableColumn>
                   <TableColumn width={100}>Кількість</TableColumn>
+                  <TableColumn width={60}>{' '}</TableColumn>
                 </TableHeader>
                 <TableBody>
                   {overview.topQuestions.map((row) => (
                     <TableRow key={row.contentNorm}>
                       <TableCell>{row.contentPreview}</TableCell>
                       <TableCell>{row.count}</TableCell>
+                      <TableCell>
+                        {canManageKnowledge && (
+                          <Tooltip content="Додати в базу знань">
+                            <Button
+                              isIconOnly
+                              size="sm"
+                              variant="light"
+                              className="text-blue-600"
+                              aria-label="Додати питання в базу знань"
+                              onPress={() =>
+                                navigate(`/chatwoot-bot/knowledge#new=${encodeURIComponent(stripPhones(row.contentPreview))}`)
+                              }
+                            >
+                              <DynamicIcon name="book-plus" size={16} />
+                            </Button>
+                          </Tooltip>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

@@ -14,7 +14,8 @@ export type PermissionGroup =
   | 'actions.warehouse'
   | 'actions.products'
   | 'actions.integrations'
-  | 'actions.hr';
+  | 'actions.hr'
+  | 'actions.chatwoot';
 
 export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   'pages.main': 'Основні сторінки',
@@ -28,6 +29,7 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   'actions.products': 'Операції з товарами',
   'actions.integrations': 'Dilovod / SalesDrive',
   'actions.hr': 'Персонал',
+  'actions.chatwoot': 'Chatwoot Bot',
 };
 
 /** Група ключа екшена → група чекбоксів у UI (мапінг з PERMISSION_GROUP_LABELS). */
@@ -43,6 +45,7 @@ const ACTION_UI_GROUP: Record<string, PermissionGroup> = {
   salesdrive: 'actions.integrations',
   lal: 'actions.integrations',
   hr: 'actions.hr',
+  chatwoot: 'actions.chatwoot',
 };
 
 export const DEFAULT_PAGE_GROUP = 'main';
@@ -287,6 +290,9 @@ export const PERMISSION_SEEDS: Array<{ key: PermissionKey; seed: SeedGrant }> = 
   { key: actionKey('users', 'manage'), seed: only(ROLES.ADMIN) },
   { key: actionKey('roles', 'manage'), seed: only(ROLES.ADMIN) },
   { key: actionKey('settings', 'admin'), seed: only(ROLES.ADMIN) },
+  { key: pageKey('settings', 'chatwootKnowledge'), seed: only(ROLES.ADMIN) },
+  { key: actionKey('chatwoot', 'knowledgeRead'), seed: only(ROLES.ADMIN) },
+  { key: actionKey('chatwoot', 'knowledgeManage'), seed: only(ROLES.ADMIN) },
   { key: actionKey('storefront', 'read'), seed: min(ROLES.WAREHOUSE_MANAGER) },
   { key: actionKey('storefront', 'edit'), seed: min(ROLES.WAREHOUSE_MANAGER) },
   { key: actionKey('storefront', 'manage'), seed: only(ROLES.ADMIN) },
@@ -383,6 +389,9 @@ export const PERMISSIONS = {
   ACTION_USERS_MANAGE: actionKey('users', 'manage'),
   ACTION_ROLES_MANAGE: actionKey('roles', 'manage'),
   ACTION_SETTINGS_ADMIN: actionKey('settings', 'admin'),
+  PAGE_SETTINGS_CHATWOOT_KNOWLEDGE: pageKey('settings', 'chatwootKnowledge'),
+  ACTION_CHATWOOT_KNOWLEDGE_READ: actionKey('chatwoot', 'knowledgeRead'),
+  ACTION_CHATWOOT_KNOWLEDGE_MANAGE: actionKey('chatwoot', 'knowledgeManage'),
   ACTION_STOREFRONT_READ: actionKey('storefront', 'read'),
   ACTION_STOREFRONT_EDIT: actionKey('storefront', 'edit'),
   ACTION_STOREFRONT_MANAGE: actionKey('storefront', 'manage'),

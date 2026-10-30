@@ -111,6 +111,30 @@ export const CHATWOOT_BOT_LLM_TOOLS: ChatwootBotLlmToolMeta[] = [
     ],
   },
   {
+    name: 'search_knowledge_base',
+    description:
+      'Внутрішня база знань магазину: доставка, оплата, умови, зберігання, часті питання. Викликай першою для загальних питань. Відповідай своїми словами лише за фактами з answer; якщо found: false – спробуй get_storefront_site_pages.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Суть питання клієнта своїми словами (без телефону та імені)' },
+      },
+      required: ['query'],
+    },
+    adminTestNote: 'Перевірити, що знайде бот, можна на сторінці «База знань» (кнопка «Перевірити пошук»).',
+    examples: [
+      {
+        label: 'Доставка',
+        arguments: { query: 'скільки коштує доставка' },
+        resultSample: {
+          found: true,
+          entries: [{ title: 'Вартість і терміни доставки', answer: 'Доставка Новою Поштою 1–3 дні…' }],
+          hint: 'Сформулюй відповідь своїми словами…',
+        },
+      },
+    ],
+  },
+  {
     name: 'get_storefront_site_pages',
     description:
       'Текст публічних сторінок сайту (доставка, акції, FAQ тощо). Не каталог SKU — для загальної інформації з вітрини.',
