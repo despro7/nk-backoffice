@@ -14,6 +14,7 @@ import { buildLlmTestWarnings } from '../../../shared/utils/llmTestWarnings.js';
 import { chatwootBotCatalogToolService } from './ChatwootBotCatalogToolService.js';
 import { chatwootBotOrderToolService } from './ChatwootBotOrderToolService.js';
 import { chatwootBotVerifyService } from './ChatwootBotVerifyService.js';
+import { isTrustedPhoneChannel } from './chatwootBotOrderLookup.js';
 import { chatwootBotStorefrontSiteToolService } from './ChatwootBotStorefrontSiteToolService.js';
 import { chatwootBotLlmToolDefinitions } from '../../../shared/constants/chatwootBotLlmTools.js';
 
@@ -61,6 +62,8 @@ export class ChatwootBotLlmRunner {
     const requestedModel =
       settings.aiModel.trim() || resolveLlmDefaultModel(platform, effectiveProvider);
     const now = new Date();
+    const channelPhone = chatwootBotVerifyService.channelPhone(payload);
+    const channelPhoneTrusted = Boolean(channelPhone) && isTrustedPhoneChannel(payload.conversation?.channel);
     // Стан змінюється, якщо модель пройде verify_customer у цьому ж ході.
     let state = options?.conversationState;
     const verifiedIds = state ? activeVerifiedOrderIds(state, now.getTime()) : [];
@@ -68,7 +71,8 @@ export class ChatwootBotLlmRunner {
       now,
       verifiedOrderCount: verifiedIds.length,
       verifyExpiresAt: verifiedIds.length && state?.verifyExpiresAt ? state.verifyExpiresAt.toISOString() : null,
-      channelPhoneKnown: Boolean(payload.conversation?.meta?.sender?.phone_number?.trim()),
+      channelPhoneKnown: Boolean(channelPhone),
+      channelPhoneTrusted,
       phoneOnFile: Boolean(state?.pendingPhone),
     });
     const system = [mask.systemPrompt, contextNote, options?.systemNote?.trim()]
@@ -98,7 +102,11 @@ export class ChatwootBotLlmRunner {
               typeof args.orderNumber === 'string' ? args.orderNumber : undefined;
             return await chatwootBotOrderToolService.getVerifiedOrderForSession(
               settings,
-              state ? activeVerifiedOrderIds(state, Date.now()) : [],
+              {
+                verifiedIds: state ? activeVerifiedOrderIds(state, Date.now()) : [],
+                trustedPhone: channelPhoneTrusted ? channelPhone : null,
+                unverifiedPhone: state?.pendingPhone ?? channelPhone,
+              },
               orderNumber,
             );
           }
@@ -113,7 +121,7 @@ export class ChatwootBotLlmRunner {
               conversationId,
               state,
               { phone: str(args.phone), orderNumber: str(args.orderNumber), dateFrom: str(args.dateFrom), dateTo: str(args.dateTo) },
-              chatwootBotVerifyService.channelPhone(payload),
+              channelPhone,
               options?.messageId ?? null,
             );
             state = next;

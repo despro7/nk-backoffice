@@ -54,7 +54,8 @@ describe('buildConversationContextNote', () => {
     expect(note).toContain('пʼятниця');
     expect(note).toContain('30.10.2026, 12:05');
     expect(note).toContain('Верифікація: не пройдена');
-    expect(note).toContain('Телефон з каналу: відомий');
+    expect(note).toContain('Телефон уже відомий');
+    expect(note).toContain('короткий статус');
   });
 
   it('describes active verification', () => {
@@ -65,5 +66,16 @@ describe('buildConversationContextNote', () => {
       channelPhoneKnown: false,
     });
     expect(note).toContain('пройдена (замовлень: 1), діє до 30.10.2026 14:05');
+  });
+
+  it('marks platform-provided phone as trusted', () => {
+    const note = buildConversationContextNote({
+      now: new Date('2026-10-30T10:05:00Z'),
+      verifiedOrderCount: 0,
+      verifyExpiresAt: null,
+      channelPhoneKnown: true,
+      channelPhoneTrusted: true,
+    });
+    expect(note).toContain('підтверджено каналом');
   });
 });

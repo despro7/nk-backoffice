@@ -15,8 +15,24 @@ export type ChatwootBotVerifiedOrderDto = {
   items: ChatwootBotVerifiedOrderItem[];
 };
 
+/**
+ * Короткий статус за самим телефоном (рівень 1). Без номера, дати, складу й ТТН:
+ * номер чи дата дали б змогу пройти повну верифікацію, знаючи лише чужий телефон.
+ */
+export type ChatwootBotOrderShortStatusDto = {
+  status: string;
+  statusText: string;
+};
+
 export type ChatwootBotOrderToolResult =
   | { verified: true; order: ChatwootBotVerifiedOrderDto }
+  | {
+      verified: false;
+      code: 'phone_only';
+      /** null — за цим телефоном замовлень не знайдено. */
+      latestOrder: ChatwootBotOrderShortStatusDto | null;
+      hint: string;
+    }
   | {
       verified: false;
       code: 'verification_required' | 'not_found' | 'rate_limited';

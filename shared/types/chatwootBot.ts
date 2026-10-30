@@ -281,6 +281,8 @@ export type ChatwootWebhookMessageCreated = {
     display_id?: number | string;
     status?: string;
     inbox_id?: number;
+    /** Тип каналу inbox, напр. `Channel::WebWidget`, `Channel::Whatsapp`. */
+    channel?: string;
     assignee_id?: number | null;
     custom_attributes?: Record<string, unknown>;
     meta?: {

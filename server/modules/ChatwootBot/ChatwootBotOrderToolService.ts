@@ -2,23 +2,46 @@ import { prisma } from '../../lib/utils.js';
 import type { ChatwootBotSettings } from '../../../shared/types/chatwootBot.js';
 import type { ChatwootBotOrderToolResult } from '../../../shared/types/chatwootBotTools.js';
 import { toVerifiedOrderDto } from './chatwootBotOrderRedaction.js';
+import { extractOrderNumberToken } from './chatwootBotVerifyDateParse.js';
+import { findOrdersByPhone } from './chatwootBotOrderLookup.js';
+
+/** Скільки останніх замовлень телефону з довіреного каналу відкриваємо повністю. */
+const TRUSTED_PHONE_ORDERS_LIMIT = 20;
+
+const PHONE_ONLY_HINT =
+  'Це короткий статус останнього замовлення за телефоном клієнта. Не називай номер чи дату замовлення. Для складу замовлення й номера ТТН попроси номер замовлення або дату, коли його робили.';
+const PHONE_ONLY_NOT_FOUND_HINT =
+  'За цим телефоном замовлень не знайдено. Попроси перевірити номер телефону або назвати номер замовлення.';
+
+export type ChatwootBotOrderAccess = {
+  /** Замовлення з активної сесії верифікації (chatwoot_bot_conversation_states). */
+  verifiedIds: number[];
+  /** Телефон з довіреного каналу (WhatsApp/SMS) — повний доступ до його замовлень. */
+  trustedPhone: string | null;
+  /** Телефон без підтвердження (введений у віджеті) — лише короткий статус. */
+  unverifiedPhone: string | null;
+};
+
 export class ChatwootBotOrderToolService {
-  /** verifiedIds — лише з активної сесії (chatwoot_bot_conversation_states). */
   async getVerifiedOrderForSession(
     settings: ChatwootBotSettings,
-    verifiedIds: number[],
+    access: ChatwootBotOrderAccess,
     orderNumberHint?: string,
   ): Promise<ChatwootBotOrderToolResult> {
-    if (verifiedIds.length === 0) {
-      return {
-        verified: false,
-        code: 'verification_required',
-        hint: settings.verifyRequiredHint,
-      };
+    const ids = new Set(access.verifiedIds);
+    if (access.trustedPhone) {
+      const trustedOrders = await findOrdersByPhone(access.trustedPhone);
+      trustedOrders.slice(0, TRUSTED_PHONE_ORDERS_LIMIT).forEach((o) => ids.add(o.id));
+    }
+
+    if (ids.size === 0) {
+      return access.unverifiedPhone
+        ? this.phoneOnlyStatus(access.unverifiedPhone)
+        : { verified: false, code: 'verification_required', hint: settings.verifyRequiredHint };
     }
 
     const orders = await prisma.order.findMany({
-      where: { id: { in: verifiedIds } },
+      where: { id: { in: [...ids] } },
       select: {
         id: true,
         orderNumber: true,
@@ -38,7 +61,8 @@ export class ChatwootBotOrderToolService {
       };
     }
 
-    const hint = orderNumberHint?.trim();
+    const rawHint = orderNumberHint?.trim();
+    const hint = rawHint ? extractOrderNumberToken(rawHint) ?? rawHint : undefined;
     let selected = orders[0];
     if (hint) {
       const match = orders.find(
@@ -74,6 +98,20 @@ export class ChatwootBotOrderToolService {
         ttn: selected.ttn,
         items,
       }),
+    };
+  }
+
+  /** Рівень 1: лише статус найновішого замовлення, без номера, дати, складу й ТТН. */
+  private async phoneOnlyStatus(phone: string): Promise<ChatwootBotOrderToolResult> {
+    const [latest] = await findOrdersByPhone(phone);
+    if (!latest) {
+      return { verified: false, code: 'phone_only', latestOrder: null, hint: PHONE_ONLY_NOT_FOUND_HINT };
+    }
+    return {
+      verified: false,
+      code: 'phone_only',
+      latestOrder: { status: latest.status, statusText: latest.statusText },
+      hint: PHONE_ONLY_HINT,
     };
   }
 }

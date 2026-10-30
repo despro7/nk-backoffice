@@ -61,6 +61,8 @@ export type ConversationContextInput = {
   verifyExpiresAt: string | null;
   /** Телефон відомий з каналу (Viber/Telegram/WhatsApp або профіль контакту). */
   channelPhoneKnown: boolean;
+  /** Телефон дала платформа (WhatsApp/SMS) — повний доступ без додаткових даних. */
+  channelPhoneTrusted?: boolean;
   /** Клієнт уже надав телефон у цій розмові (збережено зашифрованим). */
   phoneOnFile?: boolean;
 };
@@ -94,8 +96,12 @@ export function buildConversationContextNote(input: ConversationContextInput): s
   } else {
     lines.push('- Верифікація: не пройдена.');
   }
-  if (input.phoneOnFile && input.verifiedOrderCount === 0) {
-    lines.push('- Телефон клієнт уже надав у цій розмові – не проси його знову; для перевірки бракує номера замовлення або дати.');
+  if (input.channelPhoneTrusted) {
+    lines.push('- Телефон підтверджено каналом (WhatsApp/SMS): get_verified_order одразу дає повні дані, додатково нічого не проси.');
+  } else if ((input.phoneOnFile || input.channelPhoneKnown) && input.verifiedOrderCount === 0) {
+    lines.push(
+      '- Телефон уже відомий – не проси його знову. get_verified_order дасть короткий статус; для складу й ТТН потрібен номер замовлення або дата.',
+    );
   } else {
     lines.push(`- Телефон з каналу: ${input.channelPhoneKnown ? 'відомий' : 'невідомий'}.`);
   }

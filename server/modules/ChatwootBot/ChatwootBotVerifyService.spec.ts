@@ -187,3 +187,25 @@ describe('verifyFromTool (verify_customer)', () => {
     expect(result).toMatchObject({ verified: true });
   });
 });
+
+describe('phone replacement is rate limited', () => {
+  beforeEach(() => {
+    store.clear();
+    ordersByPhone = [order];
+  });
+
+  it('first phone is free, each replacement counts as an attempt', async () => {
+    const first = await chatwootBotVerifyService.tryVerifyFromUserMessage(settings, payload(), 1, '0501110000', 1);
+    expect(first.state.rateCount).toBe(0);
+
+    let last = first;
+    for (let i = 1; i <= settings.verifyRateLimitMaxAttempts; i += 1) {
+      last = await chatwootBotVerifyService.tryVerifyFromUserMessage(settings, payload(), 1, `050111000${i}`, i + 1);
+    }
+    expect(last.state.rateCount).toBe(settings.verifyRateLimitMaxAttempts);
+
+    const blocked = await chatwootBotVerifyService.tryVerifyFromUserMessage(settings, payload(), 1, '0501119999', 99);
+    expect(blocked.attempt).toEqual({ ok: false, reason: 'rate_limited' });
+    expect(blocked.state.pendingPhone).toBe(last.state.pendingPhone);
+  });
+});

@@ -74,7 +74,7 @@ export const CHATWOOT_BOT_LLM_TOOLS: ChatwootBotLlmToolMeta[] = [
   {
     name: 'get_verified_order',
     description:
-      'Статус замовлення після верифікації клієнта. Не приймає телефон – лише номер замовлення серед уже підтверджених.',
+      'Статус замовлення клієнта. Після верифікації – повні дані (склад, ТТН). Якщо відомий лише телефон – code: phone_only з коротким статусом останнього замовлення без номера, дати, складу й ТТН; номер і дату замовлення клієнту не підказуй. Не приймає телефон.',
     parameters: {
       type: 'object',
       properties: {
@@ -82,8 +82,18 @@ export const CHATWOOT_BOT_LLM_TOOLS: ChatwootBotLlmToolMeta[] = [
       },
     },
     adminTestNote:
-      'Спочатку verify у чаті (телефон + номер або дата). Tool повертає дані лише для підтвердженої сесії.',
+      'Повні дані – після verify у чаті (телефон + номер або дата) або для телефону з довіреного каналу (WhatsApp/SMS). Лише телефон – короткий статус.',
     examples: [
+      {
+        label: 'Лише телефон',
+        arguments: {},
+        resultSample: {
+          verified: false,
+          code: 'phone_only',
+          latestOrder: { status: '4', statusText: 'Відправлено' },
+          hint: 'Короткий статус за телефоном…',
+        },
+      },
       {
         label: 'Після verify',
         arguments: { orderNumber: '24155' },

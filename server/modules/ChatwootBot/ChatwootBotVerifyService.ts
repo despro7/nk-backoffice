@@ -1,6 +1,4 @@
 import { createHmac } from 'node:crypto';
-import { prisma } from '../../lib/utils.js';
-import { normalizePhoneNumber } from '../../../shared/utils/phoneNormalizer.js';
 import {
   CHATWOOT_BOT_ATTR_VERIFIED,
   type ChatwootBotSettings,
@@ -23,6 +21,12 @@ import { botMessagingCredentials } from './chatwootCredentials.js';
 import { createChatwootApiClient } from './ChatwootApiClient.js';
 import { chatwootBotAnalyticsService } from './ChatwootBotAnalyticsService.js';
 import {
+  findOrderByNumberToken,
+  findOrdersByPhone,
+  phonesMatch,
+  safeNormalizePhone,
+} from './chatwootBotOrderLookup.js';
+import {
   chatwootBotConversationStateService,
   conversationStateSecret,
 } from './ChatwootBotConversationStateService.js';
@@ -44,43 +48,11 @@ export function hashVerifiedPhone(normalizedPhone: string): string {
   return createHmac('sha256', conversationStateSecret()).update(normalizedPhone).digest('hex');
 }
 
-function safeNormalizePhone(phone: string | null | undefined): string | null {
-  if (!phone?.trim()) return null;
-  try {
-    return normalizePhoneNumber(phone);
-  } catch {
-    return null;
-  }
-}
-
-function phonesMatch(stored: string | null | undefined, normalizedInput: string): boolean {
-  return safeNormalizePhone(stored) === normalizedInput;
-}
-
 function rateConfig(settings: ChatwootBotSettings): VerifyRateLimitConfig {
   return {
     windowMinutes: settings.verifyRateLimitWindowMinutes,
     maxAttempts: settings.verifyRateLimitMaxAttempts,
   };
-}
-
-async function findOrderByNumberToken(orderToken: string) {
-  const token = orderToken.trim();
-  if (!token) return null;
-  const byExternal = await prisma.order.findUnique({ where: { externalId: token } });
-  if (byExternal) return byExternal;
-  return prisma.order.findFirst({ where: { orderNumber: token } });
-}
-
-async function findOrdersByPhone(normalizedPhone: string) {
-  const digits = normalizedPhone.replace(/\D/g, '');
-  const suffix = digits.slice(-9);
-  const candidates = await prisma.order.findMany({
-    where: suffix.length >= 9 ? { customerPhone: { contains: suffix } } : { customerPhone: normalizedPhone },
-    orderBy: [{ orderDate: 'desc' }, { createdAt: 'desc' }],
-    take: 100,
-  });
-  return candidates.filter((o) => phonesMatch(o.customerPhone, normalizedPhone));
 }
 
 /** Підказки для LLM у відповіді verify_customer (без PII). */
@@ -140,6 +112,28 @@ export class ChatwootBotVerifyService {
   /** Телефон з профілю контакту (Viber/Telegram/WhatsApp або заповнений у Chatwoot). */
   channelPhone(payload: ChatwootWebhookMessageCreated): string | null {
     return safeNormalizePhone(payload.conversation?.meta?.sender?.phone_number);
+  }
+
+  /**
+   * Запамʼятовує телефон, наданий без номера/дати. Кожна заміна вже збереженого телефону
+   * рахується як спроба: короткий статус за телефоном не має давати перебирати чужі номери.
+   */
+  private async rememberPhone(
+    settings: ChatwootBotSettings,
+    state: ChatwootBotConversationStateSnapshot,
+    phone: string,
+  ): Promise<{ state: ChatwootBotConversationStateSnapshot; limited: boolean }> {
+    if (phone === state.pendingPhone) return { state, limited: false };
+    const now = Date.now();
+    const cfg = rateConfig(settings);
+    const isReplacement = state.pendingPhone != null;
+    if (isReplacement && isVerifyRateLimited(state, cfg, now)) return { state, limited: true };
+    const next = await chatwootBotConversationStateService.update(state, {
+      ...(isReplacement ? bumpVerifyRate(state, cfg, now) : {}),
+      pendingPhone: phone,
+      pendingPhoneExpiresAt: new Date(now + settings.verifySessionTtlHours * 3600_000),
+    });
+    return { state: next, limited: false };
   }
 
   /** Записує результат спроби в стан розмови (ліміт, лічильник невдач, сесія) і аналітику. */
@@ -209,11 +203,10 @@ export class ChatwootBotVerifyService {
 
     if (!orderToken && !dateToken) {
       // Лише телефон — запамʼятовуємо, щоб наступне повідомлення з номером/датою пройшло верифікацію.
-      if (phoneFromText && phoneFromText !== state.pendingPhone) {
-        state = await chatwootBotConversationStateService.update(state, {
-          pendingPhone: phoneFromText,
-          pendingPhoneExpiresAt: new Date(now + settings.verifySessionTtlHours * 3600_000),
-        });
+      if (phoneFromText) {
+        const remembered = await this.rememberPhone(settings, state, phoneFromText);
+        state = remembered.state;
+        if (remembered.limited) return { attempt: { ok: false, reason: 'rate_limited' }, state };
       }
       return { attempt: null, state };
     }
@@ -267,11 +260,12 @@ export class ChatwootBotVerifyService {
     const hasDates = Boolean(args.dateFrom?.trim() || args.dateTo?.trim());
     if (!orderToken && !hasDates) {
       let next = state;
-      if (phoneFromArgs && phoneFromArgs !== state.pendingPhone) {
-        next = await chatwootBotConversationStateService.update(state, {
-          pendingPhone: phoneFromArgs,
-          pendingPhoneExpiresAt: new Date(now + settings.verifySessionTtlHours * 3600_000),
-        });
+      if (phoneFromArgs) {
+        const remembered = await this.rememberPhone(settings, state, phoneFromArgs);
+        next = remembered.state;
+        if (remembered.limited) {
+          return { result: { verified: false, code: 'rate_limited', hint: VERIFY_TOOL_HINTS.rateLimited }, state: next };
+        }
       }
       return { result: { verified: false, code: 'details_required', hint: VERIFY_TOOL_HINTS.detailsRequired }, state: next };
     }
