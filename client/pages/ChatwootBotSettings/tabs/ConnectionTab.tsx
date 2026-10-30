@@ -14,6 +14,7 @@ import { ToastService } from '@/services/ToastService';
 import { chatwootBotApi } from '@/services/ChatwootBotService';
 import type { ChatwootBotReplyMode } from '@shared/types/chatwootBot';
 import { ReplyModeRadio } from '../components/FormSwitchField';
+import { DevWebhookSwitch } from '../components/DevWebhookSwitch';
 import type { ChatwootBotSettingsPageModel } from '../useChatwootBotSettingsPage';
 
 type Props = { page: ChatwootBotSettingsPageModel };
@@ -37,6 +38,7 @@ export function ConnectionTab({ page }: Props) {
     isProbingWebhook,
     setIsProbingWebhook,
     loadEvents,
+    loadWebhookProcessorHealth,
   } = page;
 
   if (!form) return null;
@@ -48,14 +50,17 @@ export function ConnectionTab({ page }: Props) {
         <h2 className="text-lg font-semibold">Підключення</h2>
       </CardHeader>
       <CardBody className="gap-4 p-4">
-        <div className="flex items-center gap-3">
-          <Switch isSelected={form.enabled} onValueChange={(v) => updateField('enabled', v)} />
-          <div>
-            <p className="text-sm font-medium">Бот увімкнено</p>
-            <p className="text-xs text-default-500">
-              Вимкнено – у журналі <span className="font-mono">bot_disabled</span>, без echo/handover
-            </p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="flex items-center gap-3">
+            <Switch isSelected={form.enabled} onValueChange={(v) => updateField('enabled', v)} />
+            <div>
+              <p className="text-sm font-medium">Бот увімкнено</p>
+              <p className="text-xs text-default-500">
+                Вимкнено – у журналі <span className="font-mono">bot_disabled</span>, без echo/handover
+              </p>
+            </div>
           </div>
+          <DevWebhookSwitch onChanged={() => void loadWebhookProcessorHealth()} />
         </div>
 
         <div className="flex flex-col sm:flex-row gap-4 sm:items-start">

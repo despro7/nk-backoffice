@@ -320,8 +320,16 @@ if (!(process as any).__SHUTDOWN_HANDLER_ATTACHED__) {
     // Используем глобальную функцию, чтобы гарантированно остановить все задачи
     forceStopAllCronJobs();
 
+    // Локальний BO: повернути Chatwoot outgoing_url на прод (не довше 3 с; інакше поверне prod cron).
+    const revertDevWebhook = import('./modules/ChatwootBot/ChatwootBotDevWebhookService.js')
+      .then(({ chatwootBotDevWebhookService }) => chatwootBotDevWebhookService.revertOnShutdown())
+      .catch((err) => logServer('[shutdown] dev webhook revert failed', err));
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, 3000));
+
     // Даем небольшую задержку для завершения логов перед выходом
-    setTimeout(() => process.exit(0), 200);
+    void Promise.race([revertDevWebhook, timeout]).finally(() => {
+      setTimeout(() => process.exit(0), 200);
+    });
   };
 
   process.once('SIGTERM', () => shutdown('SIGTERM'));

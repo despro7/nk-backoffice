@@ -113,6 +113,8 @@ export class CronService {
   private isCatalogMediaCleanupRunning = false;
   private chatwootBotLogCleanupJob: cron.ScheduledTask | null = null;
   private isChatwootBotLogCleanupRunning = false;
+  private chatwootDevWebhookGuardJob: cron.ScheduledTask | null = null;
+  private isChatwootDevWebhookGuardRunning = false;
   private isTaskRunning = false;
   private isProductsSyncRunning = false;
   private isStockSyncRunning = false;
@@ -648,6 +650,7 @@ export class CronService {
     this.startWarehouseAutoFinalize();
     this.startCatalogMediaCleanup();
     this.startChatwootBotLogCleanup();
+    this.startChatwootDevWebhookGuard();
   }
 
   stopAll(): void {
@@ -766,6 +769,38 @@ export class CronService {
     if (this.chatwootBotLogCleanupJob) {
       this.chatwootBotLogCleanupJob.stop();
       this.chatwootBotLogCleanupJob = null;
+    }
+  }
+
+  /** Прод: повертає Agent Bot outgoing_url з локального BO після TTL або падіння тунелю. */
+  startChatwootDevWebhookGuard(): void {
+    if (this.chatwootDevWebhookGuardJob) return;
+
+    // */2 * * * * — кожні 2 хвилини
+    this.chatwootDevWebhookGuardJob = cron.schedule('*/2 * * * *', async () => {
+      if (this.isChatwootDevWebhookGuardRunning) return;
+      this.isChatwootDevWebhookGuardRunning = true;
+      try {
+        const { chatwootBotDevWebhookService } = await import(
+          '../modules/ChatwootBot/ChatwootBotDevWebhookService.js'
+        );
+        await chatwootBotDevWebhookService.runGuard();
+      } catch (error) {
+        console.error('🤖 [CronService] Chatwoot dev webhook guard failed:', error);
+      } finally {
+        this.isChatwootDevWebhookGuardRunning = false;
+      }
+    });
+
+    this.chatwootDevWebhookGuardJob.start();
+    cronJobsRegistry.add(this.chatwootDevWebhookGuardJob);
+    console.log('🤖 [CronService] Chatwoot dev webhook guard запущено (кожні 2 хв)');
+  }
+
+  stopChatwootDevWebhookGuard(): void {
+    if (this.chatwootDevWebhookGuardJob) {
+      this.chatwootDevWebhookGuardJob.stop();
+      this.chatwootDevWebhookGuardJob = null;
     }
   }
 }

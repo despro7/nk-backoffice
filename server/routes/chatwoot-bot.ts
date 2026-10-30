@@ -36,6 +36,7 @@ import { chatwootBotStorefrontSiteToolService } from '../modules/ChatwootBot/Cha
 import { chatwootBotVerifyService } from '../modules/ChatwootBot/ChatwootBotVerifyService.js';
 import { toVerifiedOrderDto } from '../modules/ChatwootBot/chatwootBotOrderRedaction.js';
 import { chatwootBotLlmRunner } from '../modules/ChatwootBot/ChatwootBotLlmRunner.js';
+import { chatwootBotDevWebhookService } from '../modules/ChatwootBot/ChatwootBotDevWebhookService.js';
 import { prisma } from '../lib/utils.js';
 
 const router = Router();
@@ -106,13 +107,54 @@ router.post('/test-connection', async (_req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/chatwoot-bot/dev-webhook
+ * Стан перемикача Agent Bot outgoing_url → локальний BO.
+ */
+router.get('/dev-webhook', async (_req: Request, res: Response) => {
+  try {
+    const data = await chatwootBotDevWebhookService.getStatus();
+    res.json({ success: true, data });
+  } catch (error) {
+    logServer('[ChatwootBot] GET dev-webhook failed', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to load dev webhook status',
+    });
+  }
+});
+
+/**
+ * POST /api/chatwoot-bot/dev-webhook  { enabled: boolean }
+ * Увімкнути — лише з локального BO; вимкнути — звідки завгодно.
+ */
+router.post('/dev-webhook', async (req: Request, res: Response) => {
+  try {
+    const enabled = Boolean((req.body as { enabled?: unknown } | undefined)?.enabled);
+    const data = enabled
+      ? await chatwootBotDevWebhookService.enable()
+      : await chatwootBotDevWebhookService.disable('manual_off');
+    res.json({ success: true, data });
+  } catch (error) {
+    logServer('[ChatwootBot] POST dev-webhook failed', error);
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to switch dev webhook',
+    });
+  }
+});
+
+/**
  * GET /api/chatwoot-bot/webhook-processor-health
- * Порівняння build цього сервера з хостом з Outgoing URL hint (куди Chatwoot шле webhook).
+ * Порівняння build цього сервера з хостом, куди Chatwoot шле webhook:
+ * dev URL, якщо увімкнено «Вебхуки → локальний сервер», інакше Outgoing URL hint.
  */
 router.get('/webhook-processor-health', async (_req: Request, res: Response) => {
   try {
     const settings = await chatwootBotSettingsService.getSettings();
-    const targetHealthUrl = chatwootWebhookHealthUrlFromOutgoingHint(settings.outgoingUrlHint);
+    const devWebhook = await chatwootBotDevWebhookService.getState();
+    const effectiveOutgoingUrl =
+      devWebhook.enabled && devWebhook.devOutgoingUrl ? devWebhook.devOutgoingUrl : settings.outgoingUrlHint;
+    const targetHealthUrl = chatwootWebhookHealthUrlFromOutgoingHint(effectiveOutgoingUrl);
     const localBuild = CHATWOOT_BOT_HANDOVER_BUILD;
     const localProcessor = getChatwootProcessorStamp();
     const localHost = parseProcessorHost(localProcessor);
@@ -167,7 +209,7 @@ router.get('/webhook-processor-health', async (_req: Request, res: Response) => 
     const hostMismatch = targetHost != null && localHost != null && !tunnelPointsHere;
     const mismatch = buildMismatch || hostMismatch || Boolean(fetchError);
 
-    const isDevTunnel = settings.outgoingUrlHint.includes('chatwoot-dev.nk-food.shop');
+    const isDevTunnel = effectiveOutgoingUrl.includes('chatwoot-dev.nk-food.shop');
     let message = 'Outgoing URL веде на цей процес (build і host збігаються).';
     if (fetchError) {
       message = isDevTunnel
@@ -215,7 +257,10 @@ router.get('/webhook-processor-health', async (_req: Request, res: Response) => 
 router.post('/probe-outgoing-webhook', async (_req: Request, res: Response) => {
   try {
     const settings = await chatwootBotSettingsService.getSettings();
-    const postUrl = chatwootWebhookPostUrlFromOutgoingHint(settings.outgoingUrlHint);
+    const devWebhook = await chatwootBotDevWebhookService.getState();
+    const postUrl = chatwootWebhookPostUrlFromOutgoingHint(
+      devWebhook.enabled && devWebhook.devOutgoingUrl ? devWebhook.devOutgoingUrl : settings.outgoingUrlHint,
+    );
     if (!postUrl) {
       res.status(400).json({ success: false, error: 'Заповніть коректний Outgoing URL hint' });
       return;

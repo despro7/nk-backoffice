@@ -95,6 +95,14 @@ export function useChatwootBotSettingsPage() {
     }
   }, []);
 
+  const loadWebhookProcessorHealth = useCallback(async (): Promise<void> => {
+    try {
+      setWebhookProcessorHealth(await chatwootBotApi.getWebhookProcessorHealth());
+    } catch {
+      setWebhookProcessorHealth(null);
+    }
+  }, []);
+
   const loadSettings = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -103,10 +111,7 @@ export function useChatwootBotSettingsPage() {
       void chatwootBotApi.listAgents().then(setAgents).catch(() => setAgents([]));
       void loadInboxHours(data.handoverDefaultInboxId);
       await loadEvents();
-      void chatwootBotApi
-        .getWebhookProcessorHealth()
-        .then(setWebhookProcessorHealth)
-        .catch(() => setWebhookProcessorHealth(null));
+      void loadWebhookProcessorHealth();
       void llmSettingsApi
         .getSettings(false)
         .then((llm) =>
@@ -132,7 +137,7 @@ export function useChatwootBotSettingsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [loadEvents, loadInboxHours]);
+  }, [loadEvents, loadInboxHours, loadWebhookProcessorHealth]);
 
   useEffect(() => {
     void loadSettings();
@@ -350,6 +355,7 @@ export function useChatwootBotSettingsPage() {
     llmPlatform,
     setLlmPlatform,
     webhookProcessorHealth,
+    loadWebhookProcessorHealth,
     activeTab,
     setActiveTab,
     togglePayloadExpanded,

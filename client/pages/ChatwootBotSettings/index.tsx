@@ -85,16 +85,12 @@ const SettingsChatwootBot: React.FC = () => {
       {webhookProcessorHealth &&
         !webhookProcessorHealth.mismatch &&
         webhookProcessorHealth.tunnelPointsHere &&
-        form.outgoingUrlHint.includes('chatwoot-dev') && (
+        webhookProcessorHealth.targetHealthUrl?.includes('chatwoot-dev') && (
           <Card className="border border-success-200 bg-success-50/50">
             <CardBody className="p-4 text-sm text-success-900 space-y-1">
               <p>
                 Health тунелю chatwoot-dev вказує на цей Mac. Перевірте доставку кнопкою «Тест Outgoing URL» –
                 у терміналі має зʼявитись <span className="font-mono text-xs">📦 Webhook raw body</span>.
-              </p>
-              <p className="text-xs text-success-800/90">
-                У Chatwoot → Agent Bot → <strong>Outgoing URL</strong> має бути той самий рядок, що в hint
-                (backoffice hint сам Chatwoot не змінює).
               </p>
             </CardBody>
           </Card>

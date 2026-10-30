@@ -13,6 +13,7 @@ import type {
   ChatwootBotVerifiedOrderDto,
 } from '@shared/types/chatwootBotTools';
 import type { LlmTestModelResponse } from '@shared/types/llm';
+import type { ChatwootBotDevWebhookStatus } from '@shared/types/chatwootBotDevWebhook';
 
 async function parseJson<T>(res: Response): Promise<T> {
   const data = await res.json();
@@ -49,6 +50,21 @@ export const chatwootBotApi = {
     const res = await fetch('/api/chatwoot-bot/probe-outgoing-webhook', {
       method: 'POST',
       credentials: 'include',
+    });
+    return parseJson(res);
+  },
+
+  async getDevWebhookStatus(): Promise<ChatwootBotDevWebhookStatus> {
+    const res = await fetch('/api/chatwoot-bot/dev-webhook', { credentials: 'include' });
+    return parseJson(res);
+  },
+
+  async setDevWebhookEnabled(enabled: boolean): Promise<ChatwootBotDevWebhookStatus> {
+    const res = await fetch('/api/chatwoot-bot/dev-webhook', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
     });
     return parseJson(res);
   },

@@ -18,6 +18,14 @@ import {
   sanitizeChatwootApiToken,
 } from './chatwootHttp.js';
 
+export interface ChatwootAgentBotSummary {
+  id: number;
+  name: string;
+  outgoingUrl: string | null;
+  /** null — системний бот (Super Admin), API акаунта його не змінює. */
+  accountId: number | null;
+}
+
 export interface ChatwootApiCredentials {
   baseUrl: string;
   accountId: number;
@@ -378,6 +386,30 @@ export class ChatwootApiClient {
         private: m.private,
         sender: m.sender,
       }));
+  }
+
+  /** Agent Bots акаунта (потрібен User PAT адміністратора). */
+  async listAgentBots(): Promise<ChatwootAgentBotSummary[]> {
+    const raw = await fetchChatwoot<
+      | Array<{ id: number; name?: string; outgoing_url?: string | null; account_id?: number | null }>
+      | { payload?: Array<{ id: number; name?: string; outgoing_url?: string | null; account_id?: number | null }> }
+    >(this.creds, '/agent_bots');
+    const list = Array.isArray(raw) ? raw : Array.isArray(raw?.payload) ? raw.payload : [];
+    return list
+      .filter((b) => b && Number.isFinite(b.id))
+      .map((b) => ({
+        id: b.id,
+        name: b.name ?? `#${b.id}`,
+        outgoingUrl: typeof b.outgoing_url === 'string' ? b.outgoing_url : null,
+        accountId: typeof b.account_id === 'number' ? b.account_id : null,
+      }));
+  }
+
+  async updateAgentBotOutgoingUrl(agentBotId: number, outgoingUrl: string): Promise<void> {
+    await fetchChatwoot(this.creds, `/agent_bots/${agentBotId}`, {
+      method: 'PATCH',
+      body: { outgoing_url: outgoingUrl },
+    });
   }
 
   async listAgents(): Promise<ChatwootBotAgentSummary[]> {
