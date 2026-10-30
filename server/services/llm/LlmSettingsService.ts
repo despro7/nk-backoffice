@@ -34,6 +34,7 @@ function applyEnvFallback(settings: LlmPlatformSettings): LlmPlatformSettings {
     openaiApiKey: settings.openaiApiKey || process.env.LLM_OPENAI_API_KEY || '',
     googleApiKey: settings.googleApiKey || process.env.LLM_GOOGLE_API_KEY || '',
     openrouterApiKey: settings.openrouterApiKey || process.env.LLM_OPENROUTER_API_KEY || '',
+    typesafeApiKey: settings.typesafeApiKey || process.env.LLM_TYPESAFE_API_KEY || '',
   };
 }
 
@@ -63,6 +64,11 @@ function mergeWithDefaults(raw: Partial<LlmPlatformSettings>): LlmPlatformSettin
       ? Math.max(256, Math.min(8192, Math.floor(maxTokens)))
       : DEFAULT_LLM_PLATFORM_SETTINGS.maxOutputTokens,
     modelPriceHighlight: mergeLlmModelPriceHighlightSettings(raw.modelPriceHighlight),
+    typesafeApiKey: typeof raw.typesafeApiKey === 'string' ? raw.typesafeApiKey.trim() : '',
+    typesafeModel:
+      typeof raw.typesafeModel === 'string' && raw.typesafeModel.trim()
+        ? raw.typesafeModel.trim()
+        : DEFAULT_LLM_PLATFORM_SETTINGS.typesafeModel,
   };
   return applyEnvFallback(merged);
 }
@@ -121,12 +127,16 @@ export class LlmSettingsService {
       openrouterApiKeyMasked: maskSecret(settings.openrouterApiKey),
       hasOpenrouterApiKey: Boolean(settings.openrouterApiKey),
       modelPriceHighlight: settings.modelPriceHighlight,
+      typesafeModel: settings.typesafeModel,
+      typesafeApiKey: revealSecrets ? settings.typesafeApiKey : '',
+      typesafeApiKeyMasked: maskSecret(settings.typesafeApiKey),
+      hasTypesafeApiKey: Boolean(settings.typesafeApiKey),
     };
   }
 
   async saveSettings(incoming: LlmPlatformSettingsUpdate): Promise<LlmPlatformSettings> {
     const current = await this.getSettings();
-    const { clearOpenaiApiKey, clearGoogleApiKey, clearOpenrouterApiKey, ...rest } = incoming;
+    const { clearOpenaiApiKey, clearGoogleApiKey, clearOpenrouterApiKey, clearTypesafeApiKey, ...rest } = incoming;
     const next = mergeWithDefaults({
       ...current,
       ...rest,
@@ -145,6 +155,11 @@ export class LlmSettingsService {
         : rest.openrouterApiKey !== undefined && rest.openrouterApiKey !== ''
           ? rest.openrouterApiKey
           : current.openrouterApiKey,
+      typesafeApiKey: clearTypesafeApiKey
+        ? ''
+        : rest.typesafeApiKey !== undefined && rest.typesafeApiKey !== ''
+          ? rest.typesafeApiKey
+          : current.typesafeApiKey,
     });
 
     await prisma.settingsBase.upsert({

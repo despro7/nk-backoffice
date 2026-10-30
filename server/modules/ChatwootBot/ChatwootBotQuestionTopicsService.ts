@@ -7,7 +7,12 @@ import {
   type ChatwootBotTopicQuestionsAction,
   type ChatwootBotTopicRef,
 } from '../../../shared/types/chatwootBotTopics.js';
+import { jevClassifyChoice } from '../../services/llm/typesafeJevClient.js';
+import { llmSettingsService } from '../../services/llm/LlmSettingsService.js';
+import { chatwootBotSettingsService } from './ChatwootBotSettingsService.js';
+import { topicStems } from './chatwootBotQuestionClusters.js';
 import { assignQuestionsToTopics } from './chatwootBotTopicAssign.js';
+import { JEV_TOPIC_INSTRUCTIONS, buildJevTopicCriteria, topicIdFromJevChoice } from './chatwootBotTopicJev.js';
 
 /**
  * Збережені теми питань клієнтів. Перша лінія — алгоритм (`sync`): нові питання розкладаються
@@ -16,6 +21,9 @@ import { assignQuestionsToTopics } from './chatwootBotTopicAssign.js';
 
 /** Прод і локальний BO ділять БД; частіше синхронізувати немає сенсу. */
 const SYNC_INTERVAL_MS = 30_000;
+
+type PendingQuestion = { key: string; text: string; count: number };
+type JevAssignment = { key: string; topicId: number; score: number };
 
 export class ChatwootBotTopicsValidationError extends Error {}
 
@@ -66,6 +74,35 @@ function cleanHashes(raw: unknown): string[] {
 export class ChatwootBotQuestionTopicsService {
   private lastSyncAt = 0;
   private running: Promise<void> | null = null;
+  private scheduled = false;
+  private lastCronSyncAt = 0;
+
+  /** Після нового повідомлення клієнта: розкласти у фоні через `topicsSyncDelaySeconds` (debounce). */
+  scheduleSync(): void {
+    if (this.scheduled) return;
+    this.scheduled = true;
+    void chatwootBotSettingsService
+      .getSettings()
+      .then((settings) => {
+        const timer = setTimeout(() => {
+          this.scheduled = false;
+          this.sync(true).catch((err) => logServer('[ChatwootBotTopics] background sync failed', err));
+        }, settings.topicsSyncDelaySeconds * 1000);
+        timer.unref?.();
+      })
+      .catch((err) => {
+        this.scheduled = false;
+        logServer('[ChatwootBotTopics] schedule failed', err);
+      });
+  }
+
+  /** Cron щохвилини; синхронізація — раз на `topicsCronMinutes` (0 — вимкнено). */
+  async cronTick(): Promise<void> {
+    const { topicsCronMinutes } = await chatwootBotSettingsService.getSettings();
+    if (topicsCronMinutes <= 0 || Date.now() - this.lastCronSyncAt < topicsCronMinutes * 60_000) return;
+    this.lastCronSyncAt = Date.now();
+    await this.sync(true);
+  }
 
   /** Розкласти нові питання. Без `force` — не частіше за SYNC_INTERVAL_MS. */
   async sync(force = false): Promise<void> {
@@ -94,7 +131,7 @@ export class ChatwootBotQuestionTopicsService {
       }));
 
     const assignments = await prisma.chatwootBotQuestionAssignment.findMany({
-      select: { contentNorm: true, topicId: true, ignored: true },
+      select: { contentNorm: true, topicId: true, ignored: true, source: true },
     });
     const assignedNorms = new Map(assignments.map((a) => [a.contentNorm, a]));
     const pendingKeys = questions
@@ -112,14 +149,35 @@ export class ChatwootBotQuestionTopicsService {
         list.push(a.contentNorm);
         members.set(a.topicId, list);
       }
+      const textByKey = new Map(questions.map((q) => [q.key, q.text]));
+      const byKey = new Map(questions.map((q) => [q.key, q]));
+
+      const jevAssigned = await this.classifyWithJev(
+        pendingKeys.map((key) => byKey.get(key)).filter((q): q is PendingQuestion => Boolean(q)),
+        members,
+        assignments,
+        byKey,
+      );
+      for (const a of jevAssigned) {
+        const list = members.get(a.topicId) ?? [];
+        list.push(a.key);
+        members.set(a.topicId, list);
+      }
+      const jevKeys = new Set(jevAssigned.map((a) => a.key));
+
       const plan = assignQuestionsToTopics(
         questions,
         [...members].map(([id, memberKeys]) => ({ id, memberKeys })),
-        pendingKeys,
+        pendingKeys.filter((key) => !jevKeys.has(key)),
       );
-      const textByKey = new Map(questions.map((q) => [q.key, q.text]));
 
-      type Write = { contentNorm: string; topicId: number | null; ignored: boolean; confidence: number | null };
+      type Write = {
+        contentNorm: string;
+        topicId: number | null;
+        ignored: boolean;
+        confidence: number | null;
+        method?: 'local' | 'jev';
+      };
       const upsert = (tx: Prisma.TransactionClient, write: Write) => {
         const hash = questionHash(write.contentNorm);
         const data = {
@@ -127,7 +185,7 @@ export class ChatwootBotQuestionTopicsService {
           ignored: write.ignored,
           confidence: write.confidence,
           source: 'auto',
-          method: 'local',
+          method: write.method ?? 'local',
           preview: (textByKey.get(write.contentNorm) ?? write.contentNorm).slice(0, 512),
         };
         return tx.chatwootBotQuestionAssignment.upsert({
@@ -138,6 +196,13 @@ export class ChatwootBotQuestionTopicsService {
       };
 
       for (const write of [
+        ...jevAssigned.map((a) => ({
+          contentNorm: a.key,
+          topicId: a.topicId,
+          ignored: false,
+          confidence: a.score,
+          method: 'jev' as const,
+        })),
         ...plan.assigned.map((a) => ({ contentNorm: a.key, topicId: a.topicId, ignored: false, confidence: a.score })),
         ...plan.noise.map((key) => ({ contentNorm: key, topicId: null, ignored: true, confidence: null })),
       ]) {
@@ -155,11 +220,82 @@ export class ChatwootBotQuestionTopicsService {
         });
       }
       logServer(
-        `[ChatwootBotTopics] sync: ${plan.assigned.length} assigned, ${plan.newTopics.length} new topics, ${plan.noise.length} noise`,
+        `[ChatwootBotTopics] sync: ${jevAssigned.length} by Jev, ${plan.assigned.length} local, ${plan.newTopics.length} new topics, ${plan.noise.length} noise`,
       );
     }
 
     await this.deleteEmptyTopics();
+  }
+
+  /**
+   * Jev вибирає тему серед наявних. Невпевнене, «none» чи помилка API — питання лишається
+   * локальному алгоритму. Без ключа або в режимі local — нічого не робить.
+   */
+  private async classifyWithJev(
+    pending: PendingQuestion[],
+    members: Map<number, string[]>,
+    assignments: Array<{ contentNorm: string; topicId: number | null; ignored: boolean; source: string }>,
+    byKey: Map<string, PendingQuestion>,
+  ): Promise<JevAssignment[]> {
+    if (pending.length === 0 || members.size === 0) return [];
+    const [botSettings, llm] = await Promise.all([
+      chatwootBotSettingsService.getSettings(),
+      llmSettingsService.getSettings(),
+    ]);
+    if (botSettings.topicsClassifier !== 'jev' || !llm.typesafeApiKey) return [];
+
+    const topics = await prisma.chatwootBotQuestionTopic.findMany({
+      where: { id: { in: [...members.keys()] } },
+      select: { id: true, title: true, description: true },
+    });
+    const manual = new Set(assignments.filter((a) => a.source === 'manual').map((a) => a.contentNorm));
+    const criteria = buildJevTopicCriteria(
+      topics.map((topic) => {
+        const keys = (members.get(topic.id) ?? []).sort(
+          (a, b) =>
+            Number(manual.has(b)) - Number(manual.has(a)) || (byKey.get(b)?.count ?? 0) - (byKey.get(a)?.count ?? 0),
+        );
+        return {
+          id: topic.id,
+          title: topic.title,
+          description: topic.description,
+          examples: keys.map((key) => byKey.get(key)?.text ?? key),
+          weight: keys.reduce((sum, key) => sum + (byKey.get(key)?.count ?? 0), 0),
+        };
+      }),
+      botSettings.topicsJevExamplesPerTopic,
+    );
+
+    const candidates = pending
+      .filter((q) => topicStems(q.text).size > 0)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, botSettings.topicsJevMaxPerSync);
+    const result: JevAssignment[] = [];
+    let inputTokens = 0;
+    for (const question of candidates) {
+      try {
+        const answer = await jevClassifyChoice({
+          apiKey: llm.typesafeApiKey,
+          model: llm.typesafeModel,
+          state: question.text,
+          instructions: JEV_TOPIC_INSTRUCTIONS,
+          criteria,
+        });
+        inputTokens += answer.inputTokens;
+        const topicId = topicIdFromJevChoice(answer.choice);
+        if (topicId != null && answer.confidence >= botSettings.topicsJevMinConfidence) {
+          result.push({ key: question.key, topicId, score: answer.confidence });
+        }
+      } catch (err) {
+        // Ключ, ліміт чи мережа — решту цього разу розкладе локальний алгоритм.
+        logServer('[ChatwootBotTopics] Jev failed, falling back to local', err);
+        break;
+      }
+    }
+    logServer(
+      `[ChatwootBotTopics] Jev: ${result.length}/${candidates.length} assigned, ${inputTokens} input tokens`,
+    );
+    return result;
   }
 
   private async deleteEmptyTopics(): Promise<void> {

@@ -115,6 +115,7 @@ export class CronService {
   private isChatwootBotLogCleanupRunning = false;
   private chatwootDevWebhookGuardJob: cron.ScheduledTask | null = null;
   private isChatwootDevWebhookGuardRunning = false;
+  private chatwootBotTopicsSyncJob: cron.ScheduledTask | null = null;
   private isTaskRunning = false;
   private isProductsSyncRunning = false;
   private isStockSyncRunning = false;
@@ -651,6 +652,7 @@ export class CronService {
     this.startCatalogMediaCleanup();
     this.startChatwootBotLogCleanup();
     this.startChatwootDevWebhookGuard();
+    this.startChatwootBotTopicsSync();
   }
 
   stopAll(): void {
@@ -799,6 +801,34 @@ export class CronService {
     this.chatwootDevWebhookGuardJob.start();
     cronJobsRegistry.add(this.chatwootDevWebhookGuardJob);
     console.log('🤖 [CronService] Chatwoot dev webhook guard запущено (кожні 2 хв)');
+  }
+
+  /** Підстраховка до фонового розкладу після повідомлення: нові питання → теми статистики. */
+  startChatwootBotTopicsSync(): void {
+    if (this.chatwootBotTopicsSyncJob) return;
+
+    // * * * * * — щохвилини; реальний інтервал — topicsCronMinutes у налаштуваннях бота
+    this.chatwootBotTopicsSyncJob = cron.schedule('* * * * *', async () => {
+      try {
+        const { chatwootBotQuestionTopicsService } = await import(
+          '../modules/ChatwootBot/ChatwootBotQuestionTopicsService.js'
+        );
+        await chatwootBotQuestionTopicsService.cronTick();
+      } catch (error) {
+        console.error('🤖 [CronService] Chatwoot bot topics sync failed:', error);
+      }
+    });
+
+    this.chatwootBotTopicsSyncJob.start();
+    cronJobsRegistry.add(this.chatwootBotTopicsSyncJob);
+    console.log('🤖 [CronService] Chatwoot bot topics sync запущено (інтервал з налаштувань бота)');
+  }
+
+  stopChatwootBotTopicsSync(): void {
+    if (this.chatwootBotTopicsSyncJob) {
+      this.chatwootBotTopicsSyncJob.stop();
+      this.chatwootBotTopicsSyncJob = null;
+    }
   }
 
   stopChatwootDevWebhookGuard(): void {

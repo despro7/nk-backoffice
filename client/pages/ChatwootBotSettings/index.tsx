@@ -11,6 +11,7 @@ import { RepliesTab } from './tabs/RepliesTab';
 import { AiVerifyTab } from './tabs/AiVerifyTab';
 import { HandoverReclaimTab } from './tabs/HandoverReclaimTab';
 import { JournalTab } from './tabs/JournalTab';
+import { TopicsTab } from './tabs/TopicsTab';
 
 const SettingsChatwootBot: React.FC = () => {
   const { hasPermission } = useRoleAccess();
@@ -123,6 +124,7 @@ const SettingsChatwootBot: React.FC = () => {
           {activeTab === 'replies' && <RepliesTab page={page} />}
           {activeTab === 'ai' && <AiVerifyTab page={page} />}
           {activeTab === 'handover' && <HandoverReclaimTab page={page} />}
+          {activeTab === 'topics' && <TopicsTab page={page} />}
         </fieldset>
         {activeTab === 'journal' && <JournalTab page={page} />}
       </div>

@@ -12,6 +12,7 @@ export type LlmPlatformSnapshot = {
   hasOpenaiApiKey: boolean;
   hasGoogleApiKey: boolean;
   hasOpenrouterApiKey: boolean;
+  hasTypesafeApiKey: boolean;
   openaiDefaultModel: string;
   googleDefaultModel: string;
   openrouterDefaultModel: string;
@@ -44,6 +45,7 @@ export function defaultLlmPlatformSnapshot(): LlmPlatformSnapshot {
     hasOpenaiApiKey: false,
     hasGoogleApiKey: false,
     hasOpenrouterApiKey: false,
+    hasTypesafeApiKey: false,
     openaiDefaultModel: DEFAULT_LLM_PLATFORM_SETTINGS.openaiDefaultModel,
     googleDefaultModel: DEFAULT_LLM_PLATFORM_SETTINGS.googleDefaultModel,
     openrouterDefaultModel: DEFAULT_LLM_PLATFORM_SETTINGS.openrouterDefaultModel,

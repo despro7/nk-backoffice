@@ -121,6 +121,7 @@ export function useChatwootBotSettingsPage() {
             hasOpenaiApiKey: llm.hasOpenaiApiKey,
             hasGoogleApiKey: llm.hasGoogleApiKey,
             hasOpenrouterApiKey: llm.hasOpenrouterApiKey,
+            hasTypesafeApiKey: llm.hasTypesafeApiKey,
             openaiDefaultModel: llm.openaiDefaultModel,
             googleDefaultModel: llm.googleDefaultModel,
             openrouterDefaultModel: llm.openrouterDefaultModel,
@@ -203,6 +204,12 @@ export function useChatwootBotSettingsPage() {
         reclaimMessageInHours: form.reclaimMessageInHours,
         reclaimContinueWithEcho: form.reclaimContinueWithEcho,
         resolveCleanupEnabled: form.resolveCleanupEnabled,
+        topicsClassifier: form.topicsClassifier,
+        topicsJevMinConfidence: Number(form.topicsJevMinConfidence),
+        topicsJevExamplesPerTopic: Number(form.topicsJevExamplesPerTopic),
+        topicsJevMaxPerSync: Number(form.topicsJevMaxPerSync),
+        topicsSyncDelaySeconds: Number(form.topicsSyncDelaySeconds),
+        topicsCronMinutes: Number(form.topicsCronMinutes),
       });
       setForm(toFormState(saved));
       setTokenVisible(false);

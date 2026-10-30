@@ -140,17 +140,21 @@ export type LlmPlatformSettings = {
   openrouterDefaultModel: string;
   maxOutputTokens: number;
   modelPriceHighlight: LlmModelPriceHighlightSettings;
+  /** TypeSafe Jev — класифікатор (не chat-модель), напр. теми питань чат-бота. */
+  typesafeApiKey: string;
+  typesafeModel: string;
 };
 
 export type LlmPlatformSettingsUpdate = Partial<LlmPlatformSettings> & {
   clearOpenaiApiKey?: boolean;
   clearGoogleApiKey?: boolean;
   clearOpenrouterApiKey?: boolean;
+  clearTypesafeApiKey?: boolean;
 };
 
 export type LlmPlatformSettingsResponse = Omit<
   LlmPlatformSettings,
-  'openaiApiKey' | 'googleApiKey' | 'openrouterApiKey'
+  'openaiApiKey' | 'googleApiKey' | 'openrouterApiKey' | 'typesafeApiKey'
 > & {
   openaiApiKey: string;
   openaiApiKeyMasked: string;
@@ -161,6 +165,21 @@ export type LlmPlatformSettingsResponse = Omit<
   openrouterApiKey: string;
   openrouterApiKeyMasked: string;
   hasOpenrouterApiKey: boolean;
+  typesafeApiKey: string;
+  typesafeApiKeyMasked: string;
+  hasTypesafeApiKey: boolean;
+};
+
+/** Тест Jev у /settings/llm: класифікація прикладу питання. */
+export type TypesafeJevTestResponse = {
+  model: string;
+  choice: string;
+  confidence: number;
+  probabilities: Record<string, number>;
+  latencyMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  question: string;
 };
 
 export const LLM_PLATFORM_SETTINGS_KEY = 'llm_platform_settings';
@@ -180,6 +199,8 @@ export const DEFAULT_LLM_PLATFORM_SETTINGS: LlmPlatformSettings = {
     greenMaxUsdPerM: 5,
     yellowMaxUsdPerM: 10,
   },
+  typesafeApiKey: '',
+  typesafeModel: 'jev-latest',
 };
 
 export class LlmServiceError extends Error {

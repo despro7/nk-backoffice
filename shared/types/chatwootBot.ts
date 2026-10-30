@@ -35,6 +35,9 @@ export type ChatwootBotAiMask = {
 
 export type ChatwootBotAiProviderOverride = '' | 'openai' | 'google' | 'openrouter';
 
+/** Хто розкладає нові питання по темах статистики: local — схожість слів, jev — TypeSafe Jev. */
+export type ChatwootBotTopicsClassifier = 'local' | 'jev';
+
 /** Повні налаштування бота (зберігаються в settings_base). */
 export type ChatwootBotSettings = {
   enabled: boolean;
@@ -133,7 +136,27 @@ export type ChatwootBotSettings = {
   reclaimContinueWithEcho: boolean;
   /** На «Вирішити» – unassign + скинути bot_human_handover_active. */
   resolveCleanupEnabled: boolean;
+  /** Без ключа TypeSafe `jev` працює як `local`. */
+  topicsClassifier: ChatwootBotTopicsClassifier;
+  /** 0–1: нижче — Jev не впевнений, питання розкладає локальний алгоритм. */
+  topicsJevMinConfidence: number;
+  /** Скільки формулювань учасників показувати Jev як приклади теми. */
+  topicsJevExamplesPerTopic: number;
+  /** Ліміт викликів Jev за прохід; решту нових питань розкладає локальний алгоритм. */
+  topicsJevMaxPerSync: number;
+  /** Через скільки секунд після повідомлення клієнта розкладати нові питання у фоні. */
+  topicsSyncDelaySeconds: number;
+  /** Інтервал підстраховувального cron (прод), хвилин; 0 — вимкнено. */
+  topicsCronMinutes: number;
 };
+
+/** Межі числових налаштувань тем питань (сервер і UI). */
+export const CHATWOOT_BOT_TOPICS_LIMITS = {
+  jevExamplesPerTopic: { min: 0, max: 10 },
+  jevMaxPerSync: { min: 1, max: 200 },
+  syncDelaySeconds: { min: 5, max: 600 },
+  cronMinutes: { min: 0, max: 120 },
+} as const;
 
 export type ChatwootBotReclaimReason =
   | 'reclaim_offline'
@@ -446,6 +469,12 @@ export const DEFAULT_CHATWOOT_BOT_SETTINGS: ChatwootBotSettings = {
     'Оператор ще не відповів. Тимчасово допоможу я – опишіть ваше питання.',
   reclaimContinueWithEcho: true,
   resolveCleanupEnabled: true,
+  topicsClassifier: 'local',
+  topicsJevMinConfidence: 0.6,
+  topicsJevExamplesPerTopic: 4,
+  topicsJevMaxPerSync: 40,
+  topicsSyncDelaySeconds: 30,
+  topicsCronMinutes: 10,
 };
 
 /** @deprecated Використовуйте `settings.reclaimOohSilentMinutes`. */

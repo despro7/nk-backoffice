@@ -9,6 +9,7 @@ import {
   DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_END,
   DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_START,
   DEFAULT_CHATWOOT_BOT_SETTINGS,
+  CHATWOOT_BOT_TOPICS_LIMITS,
   DEFAULT_CHATWOOT_BOT_VERIFY_RATE_MAX,
   DEFAULT_CHATWOOT_BOT_VERIFY_RATE_WINDOW_MIN,
   DEFAULT_CHATWOOT_BOT_VERIFY_SESSION_TTL_HOURS,
@@ -37,6 +38,18 @@ function normalizeKeywords(raw: unknown, fallback = DEFAULT_CHATWOOT_BOT_SETTING
     .map((item) => String(item ?? '').trim())
     .filter(Boolean);
   return cleaned.length > 0 ? cleaned : [...fallback];
+}
+
+function normalizeJevConfidence(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return DEFAULT_CHATWOOT_BOT_SETTINGS.topicsJevMinConfidence;
+  return Math.max(0, Math.min(1, n));
+}
+
+function normalizeIntInRange(raw: unknown, range: { min: number; max: number }, fallback: number): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(range.min, Math.min(range.max, Math.round(n)));
 }
 
 function normalizeReplyMode(raw: unknown): ChatwootBotReplyMode {
@@ -382,6 +395,28 @@ function mergeWithDefaults(raw: Partial<ChatwootBotSettings>): ChatwootBotSettin
     ),
     resolveCleanupEnabled: Boolean(
       raw.resolveCleanupEnabled ?? DEFAULT_CHATWOOT_BOT_SETTINGS.resolveCleanupEnabled,
+    ),
+    topicsClassifier: raw.topicsClassifier === 'jev' ? 'jev' : 'local',
+    topicsJevMinConfidence: normalizeJevConfidence(raw.topicsJevMinConfidence),
+    topicsJevExamplesPerTopic: normalizeIntInRange(
+      raw.topicsJevExamplesPerTopic,
+      CHATWOOT_BOT_TOPICS_LIMITS.jevExamplesPerTopic,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.topicsJevExamplesPerTopic,
+    ),
+    topicsJevMaxPerSync: normalizeIntInRange(
+      raw.topicsJevMaxPerSync,
+      CHATWOOT_BOT_TOPICS_LIMITS.jevMaxPerSync,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.topicsJevMaxPerSync,
+    ),
+    topicsSyncDelaySeconds: normalizeIntInRange(
+      raw.topicsSyncDelaySeconds,
+      CHATWOOT_BOT_TOPICS_LIMITS.syncDelaySeconds,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.topicsSyncDelaySeconds,
+    ),
+    topicsCronMinutes: normalizeIntInRange(
+      raw.topicsCronMinutes,
+      CHATWOOT_BOT_TOPICS_LIMITS.cronMinutes,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.topicsCronMinutes,
     ),
   };
   return applyEnvFallback(merged);

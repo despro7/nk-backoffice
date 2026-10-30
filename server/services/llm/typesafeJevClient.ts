@@ -1,0 +1,91 @@
+/**
+ * TypeSafe Jev (`POST /v1/systemone`) — швидкий класифікатор: питання типу `choice` повертає
+ * вибраний варіант, confidence і ймовірності всіх варіантів. Платні лише input tokens.
+ * https://docs.typesafe.ai/introduction/quickstart
+ */
+
+const TYPESAFE_API_URL = 'https://api.typesafe.ai/v1/systemone';
+const REQUEST_TIMEOUT_MS = 20_000;
+/** Ліміт API на кількість варіантів у `criteria`. */
+export const JEV_MAX_CHOICES = 255;
+
+export type JevChoiceRequest = {
+  apiKey: string;
+  model: string;
+  /** Текст, який класифікуємо. */
+  state: string;
+  instructions: string;
+  /** Ключ варіанта → опис. */
+  criteria: Record<string, string>;
+};
+
+export type JevChoiceResult = {
+  model: string;
+  choice: string;
+  confidence: number;
+  probabilities: Record<string, number>;
+  inputTokens: number;
+  outputTokens: number;
+};
+
+export class TypesafeJevError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null = null,
+  ) {
+    super(message);
+    this.name = 'TypesafeJevError';
+  }
+}
+
+type SystemOneResponse = {
+  model?: string;
+  answers?: Record<
+    string,
+    { type?: string; choice?: string; confidence?: number; probabilities?: Record<string, number> }
+  >;
+  usage?: { input_tokens?: number; output_tokens?: number };
+  error?: string | { message?: string };
+  detail?: string;
+};
+
+function errorMessage(body: SystemOneResponse | null, status: number): string {
+  const raw = body?.error ?? body?.detail;
+  const text = typeof raw === 'string' ? raw : raw?.message;
+  return `TypeSafe HTTP ${status}${text ? `: ${text}` : ''}`;
+}
+
+export async function jevClassifyChoice(input: JevChoiceRequest): Promise<JevChoiceResult> {
+  if (!input.apiKey) throw new TypesafeJevError('TypeSafe API key не налаштовано');
+  const choices = Object.keys(input.criteria);
+  if (choices.length < 2) throw new TypesafeJevError('Потрібно щонайменше 2 варіанти');
+  if (choices.length > JEV_MAX_CHOICES) throw new TypesafeJevError(`Більше ${JEV_MAX_CHOICES} варіантів`);
+
+  const res = await fetch(TYPESAFE_API_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${input.apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: input.model,
+      state: input.state,
+      questions: {
+        answer: { type: 'choice', instructions: input.instructions, criteria: input.criteria },
+      },
+    }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  const body = (await res.json().catch(() => null)) as SystemOneResponse | null;
+  if (!res.ok) throw new TypesafeJevError(errorMessage(body, res.status), res.status);
+
+  const answer = body?.answers?.answer;
+  if (!answer?.choice || !choices.includes(answer.choice)) {
+    throw new TypesafeJevError('TypeSafe: відповідь без валідного choice');
+  }
+  return {
+    model: body?.model ?? input.model,
+    choice: answer.choice,
+    confidence: Number(answer.confidence ?? 0),
+    probabilities: answer.probabilities ?? {},
+    inputTokens: Number(body?.usage?.input_tokens ?? 0),
+    outputTokens: Number(body?.usage?.output_tokens ?? 0),
+  };
+}

@@ -242,6 +242,147 @@ function LlmProviderCard({
   );
 }
 
+function TypesafeJevCard({
+  form,
+  isSaving,
+  keyVisible,
+  onToggleKeyVisible,
+  onRevealKey,
+  onClearKey,
+  onUpdateField,
+}: {
+  form: LlmSettingsFormState;
+  isSaving: boolean;
+  keyVisible: boolean;
+  onToggleKeyVisible: () => void;
+  onRevealKey: () => void;
+  onClearKey: () => void;
+  onUpdateField: <K extends keyof LlmSettingsFormState>(key: K, value: LlmSettingsFormState[K]) => void;
+}) {
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testFailed, setTestFailed] = useState(false);
+  const hasKey = form.hasTypesafeApiKey || Boolean(form.typesafeApiKey.trim());
+
+  const runTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    setTestFailed(false);
+    try {
+      const r = await llmSettingsApi.testTypesafe(form.typesafeApiKey, form.typesafeModel);
+      const probabilities = Object.entries(r.probabilities)
+        .sort((a, b) => b[1] - a[1])
+        .map(([key, p]) => `  ${key}: ${p.toFixed(3)}`)
+        .join('\n');
+      setTestResult(
+        `Питання: ${r.question}\nВідповідь: ${r.choice} (confidence ${r.confidence.toFixed(3)})\n` +
+          `Ймовірності:\n${probabilities}\n` +
+          `Модель: ${r.model} · ${r.latencyMs} мс · input ${r.inputTokens} / output ${r.outputTokens} tokens`,
+      );
+      ToastService.show({ title: 'Jev OK', description: `${r.choice} · ${r.confidence.toFixed(2)}`, color: 'success' });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Тест не вдався';
+      setTestResult(msg);
+      setTestFailed(true);
+      ToastService.show({ title: 'Тест Jev', description: msg, color: 'danger' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
+        <DynamicIcon name="tags" size={20} className="text-default-600" />
+        <h2 className="text-lg font-semibold">TypeSafe Jev</h2>
+      </CardHeader>
+      <CardBody className="gap-4 p-4">
+        <p className="text-xs text-default-500">
+          Швидкий класифікатор (не чат-модель): розкладає питання клієнтів чат-бота по темах. Вмикається в
+          налаштуваннях Chatwoot Bot → «Теми питань». Fallback: env{' '}
+          <code className="text-xs">LLM_TYPESAFE_API_KEY</code>.
+        </p>
+        <Input
+          label="API key"
+          type={keyVisible ? 'text' : 'password'}
+          placeholder={form.hasTypesafeApiKey ? form.typesafeApiKeyMasked : 'Не налаштовано'}
+          value={form.typesafeApiKey}
+          onValueChange={(v) => onUpdateField('typesafeApiKey', v)}
+          description="Порожнє при збереженні не змінює збережений ключ"
+          endContent={
+            <div className="flex gap-0.5">
+              {hasKey ? (
+                <Tooltip content={keyVisible ? 'Приховати' : 'Показати'} placement="top">
+                  <Button
+                    size="sm"
+                    variant="light"
+                    isIconOnly
+                    aria-label={keyVisible ? 'Приховати API key' : 'Показати API key'}
+                    onPress={() => {
+                      if (keyVisible || form.typesafeApiKey.trim()) {
+                        onToggleKeyVisible();
+                        return;
+                      }
+                      onRevealKey();
+                    }}
+                  >
+                    <DynamicIcon name={keyVisible ? 'eye-off' : 'eye'} size={16} />
+                  </Button>
+                </Tooltip>
+              ) : null}
+              {form.hasTypesafeApiKey ? (
+                <Tooltip content="Очистити збережений ключ" placement="top">
+                  <Button
+                    size="sm"
+                    variant="light"
+                    isIconOnly
+                    color="danger"
+                    aria-label="Очистити збережений API key"
+                    isDisabled={isSaving}
+                    onPress={onClearKey}
+                  >
+                    <DynamicIcon name="trash-2" size={16} className="text-danger" />
+                  </Button>
+                </Tooltip>
+              ) : null}
+            </div>
+          }
+        />
+        <div className="flex flex-wrap items-start gap-2">
+          <Input
+            className="flex-1 min-w-[12rem]"
+            label="Модель"
+            placeholder="jev-latest"
+            value={form.typesafeModel}
+            onValueChange={(v) => onUpdateField('typesafeModel', v)}
+          />
+          <Button
+            size="md"
+            variant="bordered"
+            color="primary"
+            isLoading={testing}
+            isDisabled={!hasKey}
+            onPress={() => void runTest()}
+            startContent={!testing ? <DynamicIcon name="sparkles" size={16} /> : undefined}
+            className="shrink-0 h-14"
+          >
+            Тест Jev
+          </Button>
+        </div>
+        {testResult ? (
+          <pre
+            className={`text-xs rounded-md p-2 overflow-auto max-h-full whitespace-pre-wrap ${
+              testFailed ? 'bg-danger-50 text-danger' : 'bg-default-100 text-default-800'
+            }`}
+          >
+            {testResult}
+          </pre>
+        ) : null}
+      </CardBody>
+    </Card>
+  );
+}
+
 const SettingsLlm: React.FC = () => {
   const { hasPermission } = useRoleAccess();
   const [form, setForm] = useState<LlmSettingsFormState | null>(null);
@@ -250,6 +391,7 @@ const SettingsLlm: React.FC = () => {
   const [openaiVisible, setOpenaiVisible] = useState(false);
   const [googleVisible, setGoogleVisible] = useState(false);
   const [openrouterVisible, setOpenrouterVisible] = useState(false);
+  const [typesafeVisible, setTypesafeVisible] = useState(false);
   const [platformTestMessage, setPlatformTestMessage] = useState(DEFAULT_PLATFORM_TEST_MESSAGE);
   const [platformTestSystem, setPlatformTestSystem] = useState(DEFAULT_PLATFORM_TEST_SYSTEM);
   const [platformTesting, setPlatformTesting] = useState(false);
@@ -291,10 +433,13 @@ const SettingsLlm: React.FC = () => {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
   };
 
-  const revealKey = async (provider: ProviderKey) => {
+  const revealKey = async (provider: ProviderKey | 'typesafe') => {
     try {
       const data = await llmSettingsApi.getSettings(true);
-      if (provider === 'openai') {
+      if (provider === 'typesafe') {
+        updateField('typesafeApiKey', data.typesafeApiKey);
+        setTypesafeVisible(true);
+      } else if (provider === 'openai') {
         updateField('openaiApiKey', data.openaiApiKey);
         setOpenaiVisible(true);
       } else if (provider === 'google') {
@@ -327,11 +472,14 @@ const SettingsLlm: React.FC = () => {
         googleApiKey: form.googleApiKey || undefined,
         openrouterApiKey: form.openrouterApiKey || undefined,
         modelPriceHighlight: form.modelPriceHighlight,
+        typesafeApiKey: form.typesafeApiKey || undefined,
+        typesafeModel: form.typesafeModel,
       });
       setForm(toLlmFormState(saved));
       setOpenaiVisible(false);
       setGoogleVisible(false);
       setOpenrouterVisible(false);
+      setTypesafeVisible(false);
       ToastService.show({
         title: 'Збережено',
         description: 'Налаштування LLM оновлено',
@@ -348,18 +496,21 @@ const SettingsLlm: React.FC = () => {
     }
   };
 
-  const clearKey = async (provider: ProviderKey) => {
+  const clearKey = async (provider: ProviderKey | 'typesafe') => {
     setIsSaving(true);
     try {
       const saved = await llmSettingsApi.updateSettings(
-        provider === 'openai'
+        provider === 'typesafe'
+          ? { clearTypesafeApiKey: true }
+          : provider === 'openai'
           ? { clearOpenaiApiKey: true }
           : provider === 'google'
             ? { clearGoogleApiKey: true }
             : { clearOpenrouterApiKey: true },
       );
       setForm(toLlmFormState(saved));
-      if (provider === 'openai') setOpenaiVisible(false);
+      if (provider === 'typesafe') setTypesafeVisible(false);
+      else if (provider === 'openai') setOpenaiVisible(false);
       else if (provider === 'google') setGoogleVisible(false);
       else setOpenrouterVisible(false);
       ToastService.show({ title: 'Ключ очищено', color: 'success' });
@@ -429,6 +580,16 @@ const SettingsLlm: React.FC = () => {
         </div>
 
         <div className="space-y-4">
+          <TypesafeJevCard
+            form={form}
+            isSaving={isSaving}
+            keyVisible={typesafeVisible}
+            onToggleKeyVisible={() => setTypesafeVisible((v) => !v)}
+            onRevealKey={() => void revealKey('typesafe')}
+            onClearKey={() => void clearKey('typesafe')}
+            onUpdateField={updateField}
+          />
+
           <Card>
             <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
               <DynamicIcon name="palette" size={20} className="text-default-600" />

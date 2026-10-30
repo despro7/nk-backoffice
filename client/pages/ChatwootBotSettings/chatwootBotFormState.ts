@@ -5,6 +5,7 @@ import type {
   ChatwootBotAutoReplyRule,
   ChatwootBotAiMask,
   ChatwootHandoverAssignMode,
+  ChatwootBotTopicsClassifier,
 } from '@shared/types/chatwootBot';
 
 export type FormState = {
@@ -64,6 +65,12 @@ export type FormState = {
   reclaimMessageInHours: string;
   reclaimContinueWithEcho: boolean;
   resolveCleanupEnabled: boolean;
+  topicsClassifier: ChatwootBotTopicsClassifier;
+  topicsJevMinConfidence: number;
+  topicsJevExamplesPerTopic: number;
+  topicsJevMaxPerSync: number;
+  topicsSyncDelaySeconds: number;
+  topicsCronMinutes: number;
 };
 
 export function keywordsToText(keywords: string[]): string {
@@ -135,5 +142,11 @@ export function toFormState(data: ChatwootBotSettingsResponse): FormState {
     reclaimMessageInHours: data.reclaimMessageInHours,
     reclaimContinueWithEcho: data.reclaimContinueWithEcho,
     resolveCleanupEnabled: data.resolveCleanupEnabled,
+    topicsClassifier: data.topicsClassifier,
+    topicsJevMinConfidence: data.topicsJevMinConfidence,
+    topicsJevExamplesPerTopic: data.topicsJevExamplesPerTopic,
+    topicsJevMaxPerSync: data.topicsJevMaxPerSync,
+    topicsSyncDelaySeconds: data.topicsSyncDelaySeconds,
+    topicsCronMinutes: data.topicsCronMinutes,
   };
 }

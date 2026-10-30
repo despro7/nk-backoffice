@@ -5,6 +5,7 @@ import type {
   LlmPlatformSettingsUpdate,
   LlmProvider,
   LlmTestModelResponse,
+  TypesafeJevTestResponse,
 } from '@shared/types/llm';
 
 async function parseJson<T>(res: Response): Promise<T> {
@@ -74,6 +75,16 @@ export const llmSettingsApi = {
     return parseJson(res);
   },
 
+  async testTypesafe(draftApiKey?: string, model?: string): Promise<TypesafeJevTestResponse> {
+    const res = await fetch('/api/llm/typesafe/test', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: draftApiKey?.trim() || undefined, model: model?.trim() || undefined }),
+    });
+    return parseJson(res);
+  },
+
   async updateSettings(input: LlmPlatformSettingsUpdate): Promise<LlmPlatformSettingsResponse> {
     const res = await fetch('/api/llm/settings', {
       method: 'PUT',
@@ -101,6 +112,10 @@ export type LlmSettingsFormState = {
   openrouterDefaultModel: string;
   maxOutputTokens: number;
   modelPriceHighlight: LlmModelPriceHighlightSettings;
+  typesafeApiKey: string;
+  typesafeApiKeyMasked: string;
+  hasTypesafeApiKey: boolean;
+  typesafeModel: string;
 };
 
 export function toLlmFormState(data: LlmPlatformSettingsResponse): LlmSettingsFormState {
@@ -120,5 +135,9 @@ export function toLlmFormState(data: LlmPlatformSettingsResponse): LlmSettingsFo
     openrouterDefaultModel: data.openrouterDefaultModel,
     maxOutputTokens: data.maxOutputTokens,
     modelPriceHighlight: data.modelPriceHighlight,
+    typesafeApiKey: '',
+    typesafeApiKeyMasked: data.typesafeApiKeyMasked,
+    hasTypesafeApiKey: data.hasTypesafeApiKey,
+    typesafeModel: data.typesafeModel,
   };
 }

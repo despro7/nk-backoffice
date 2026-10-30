@@ -6,6 +6,7 @@ import { llmSettingsService } from '../services/llm/LlmSettingsService.js';
 import { llmModelsService } from '../services/llm/LlmModelsService.js';
 import type { LlmProvider } from '../../shared/types/llm.js';
 import { isLlmProvider } from '../../shared/constants/llmProviders.js';
+import { jevClassifyChoice } from '../services/llm/typesafeJevClient.js';
 
 const router = Router();
 const llmAdmin = requirePermission('settings', 'admin', 'Змінювати адмінські налаштування');
@@ -123,6 +124,48 @@ router.post('/models/:provider', async (req: Request, res: Response) => {
     res.status(400).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to list models',
+    });
+  }
+});
+
+const JEV_TEST_QUESTION = 'Скільки коштує доставка до Львова?';
+
+/** POST body { apiKey?, model? } — тест Jev на прикладі класифікації питання клієнта. */
+router.post('/typesafe/test', async (req: Request, res: Response) => {
+  try {
+    const body = (req.body ?? {}) as { apiKey?: string; model?: string };
+    const settings = await llmSettingsService.getSettings();
+    const startedAt = Date.now();
+    const result = await jevClassifyChoice({
+      apiKey: body.apiKey?.trim() || settings.typesafeApiKey,
+      model: body.model?.trim() || settings.typesafeModel,
+      state: JEV_TEST_QUESTION,
+      instructions: 'Яка тема цього повідомлення клієнта інтернет-магазину?',
+      criteria: {
+        delivery: 'Доставка: вартість, терміни, способи',
+        payment: 'Оплата замовлення',
+        menu: 'Страви, склад, асортимент',
+        none: 'Жодна з тем не підходить',
+      },
+    });
+    res.json({
+      success: true,
+      data: {
+        model: result.model,
+        choice: result.choice,
+        confidence: result.confidence,
+        probabilities: result.probabilities,
+        latencyMs: Date.now() - startedAt,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        question: JEV_TEST_QUESTION,
+      },
+    });
+  } catch (error) {
+    logServer('[LLM] typesafe test failed', error);
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'TypeSafe test failed',
     });
   }
 });

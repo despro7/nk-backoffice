@@ -60,6 +60,7 @@ export class ChatwootBotAnalyticsService {
           meta: (input.meta ?? undefined) as Prisma.InputJsonValue | undefined,
         },
       });
+      if (input.kind === 'customer_message' && contentNorm) chatwootBotQuestionTopicsService.scheduleSync();
     } catch (err) {
       logServer('[ChatwootBotAnalytics] record failed', err);
     }
