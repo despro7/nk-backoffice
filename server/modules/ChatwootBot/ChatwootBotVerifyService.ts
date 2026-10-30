@@ -2,11 +2,7 @@ import { createHmac } from 'node:crypto';
 import { prisma } from '../../lib/utils.js';
 import { normalizePhoneNumber } from '../../../shared/utils/phoneNormalizer.js';
 import {
-  CHATWOOT_BOT_ATTR_VERIFY_EXPIRES_AT,
-  CHATWOOT_BOT_ATTR_VERIFY_RATE_COUNT,
-  CHATWOOT_BOT_ATTR_VERIFY_RATE_WINDOW,
-  CHATWOOT_BOT_ATTR_VERIFIED_ORDER_IDS,
-  CHATWOOT_BOT_ATTR_VERIFIED_PHONE_HASH,
+  CHATWOOT_BOT_ATTR_VERIFIED,
   type ChatwootBotSettings,
   type ChatwootWebhookMessageCreated,
 } from '../../../shared/types/chatwootBot.js';
@@ -23,58 +19,46 @@ import {
 import { botMessagingCredentials } from './chatwootCredentials.js';
 import { createChatwootApiClient } from './ChatwootApiClient.js';
 import { chatwootBotAnalyticsService } from './ChatwootBotAnalyticsService.js';
+import {
+  chatwootBotConversationStateService,
+  conversationStateSecret,
+} from './ChatwootBotConversationStateService.js';
+import {
+  bumpVerifyRate,
+  isVerifyRateLimited,
+  type ChatwootBotConversationStateSnapshot,
+  type VerifyRateLimitConfig,
+} from './chatwootBotConversationStateUtils.js';
 
 export type ChatwootBotVerifyFromMessageResult = {
-  attempt: ChatwootBotVerifyAttemptResult;
-  /** custom_attributes після спроби: payload + rate limit + сесія верифікації. */
-  attrs: Record<string, unknown>;
+  /** null — у повідомленні не було спроби верифікації. */
+  attempt: ChatwootBotVerifyAttemptResult | null;
+  /** Стан розмови після обробки повідомлення (з таблиці, не з custom_attributes). */
+  state: ChatwootBotConversationStateSnapshot;
 };
 
-function verifySecret(): string {
-  return process.env.JWT_SECRET || process.env.CHATWOOT_WEBHOOK_SECRET || 'chatwoot-bot-verify';
-}
-
 export function hashVerifiedPhone(normalizedPhone: string): string {
-  return createHmac('sha256', verifySecret()).update(normalizedPhone).digest('hex');
+  return createHmac('sha256', conversationStateSecret()).update(normalizedPhone).digest('hex');
 }
 
-function parseVerifiedOrderIds(attrs: Record<string, unknown> | undefined): number[] {
-  const raw = attrs?.[CHATWOOT_BOT_ATTR_VERIFIED_ORDER_IDS];
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (Array.isArray(parsed)) {
-        return parsed.map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0);
-      }
-    } catch {
-      return [];
-    }
+function safeNormalizePhone(phone: string | null | undefined): string | null {
+  if (!phone?.trim()) return null;
+  try {
+    return normalizePhoneNumber(phone);
+  } catch {
+    return null;
   }
-  if (Array.isArray(raw)) {
-    return raw.map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0);
-  }
-  return [];
-}
-
-export function isVerifySessionActive(attrs: Record<string, unknown> | undefined): boolean {
-  const expiresRaw = attrs?.[CHATWOOT_BOT_ATTR_VERIFY_EXPIRES_AT];
-  if (typeof expiresRaw !== 'string' || !expiresRaw.trim()) return false;
-  const expires = new Date(expiresRaw);
-  return !Number.isNaN(expires.getTime()) && expires.getTime() > Date.now();
-}
-
-export function getVerifiedOrderIdsFromAttrs(attrs: Record<string, unknown> | undefined): number[] {
-  if (!isVerifySessionActive(attrs)) return [];
-  return parseVerifiedOrderIds(attrs);
 }
 
 function phonesMatch(stored: string | null | undefined, normalizedInput: string): boolean {
-  if (!stored?.trim()) return false;
-  try {
-    return normalizePhoneNumber(stored) === normalizedInput;
-  } catch {
-    return false;
-  }
+  return safeNormalizePhone(stored) === normalizedInput;
+}
+
+function rateConfig(settings: ChatwootBotSettings): VerifyRateLimitConfig {
+  return {
+    windowMinutes: settings.verifyRateLimitWindowMinutes,
+    maxAttempts: settings.verifyRateLimitMaxAttempts,
+  };
 }
 
 async function findOrderByNumberToken(orderToken: string) {
@@ -97,54 +81,9 @@ async function findLatestOrderByPhone(normalizedPhone: string) {
 }
 
 export class ChatwootBotVerifyService {
-  private checkRateLimit(attrs: Record<string, unknown>, settings: ChatwootBotSettings): boolean {
-    const windowStartRaw = attrs[CHATWOOT_BOT_ATTR_VERIFY_RATE_WINDOW];
-    const countRaw = attrs[CHATWOOT_BOT_ATTR_VERIFY_RATE_COUNT];
-    const now = Date.now();
-    const windowMs = settings.verifyRateLimitWindowMinutes * 60_000;
-    let windowStart = typeof windowStartRaw === 'string' ? Date.parse(windowStartRaw) : NaN;
-    let count = Number(countRaw);
-    if (!Number.isFinite(windowStart) || now - windowStart > windowMs) {
-      return true;
-    }
-    return count < settings.verifyRateLimitMaxAttempts;
-  }
-
-  private bumpRateLimit(
-    attrs: Record<string, unknown>,
-    settings: ChatwootBotSettings,
-  ): Record<string, unknown> {
-    const windowStartRaw = attrs[CHATWOOT_BOT_ATTR_VERIFY_RATE_WINDOW];
-    const countRaw = attrs[CHATWOOT_BOT_ATTR_VERIFY_RATE_COUNT];
-    const now = Date.now();
-    const windowMs = settings.verifyRateLimitWindowMinutes * 60_000;
-    let windowStart = typeof windowStartRaw === 'string' ? Date.parse(windowStartRaw) : NaN;
-    let count = Number(countRaw);
-    if (!Number.isFinite(windowStart) || now - windowStart > windowMs) {
-      windowStart = now;
-      count = 0;
-    }
-    return {
-      [CHATWOOT_BOT_ATTR_VERIFY_RATE_WINDOW]: new Date(windowStart).toISOString(),
-      [CHATWOOT_BOT_ATTR_VERIFY_RATE_COUNT]: count + 1,
-    };
-  }
-
-  async verifyWithOrderNumber(
-    phone: string,
-    orderNumber: string,
-    settings: ChatwootBotSettings,
-    attrs: Record<string, unknown> = {},
-  ): Promise<ChatwootBotVerifyAttemptResult> {
-    if (!this.checkRateLimit(attrs, settings)) {
-      return { ok: false, reason: 'rate_limited' };
-    }
-    let normalizedPhone: string;
-    try {
-      normalizedPhone = normalizePhoneNumber(phone);
-    } catch {
-      return { ok: false, reason: 'invalid_input' };
-    }
+  async verifyWithOrderNumber(phone: string, orderNumber: string): Promise<ChatwootBotVerifyAttemptResult> {
+    const normalizedPhone = safeNormalizePhone(phone);
+    if (!normalizedPhone) return { ok: false, reason: 'invalid_input' };
     const order = await findOrderByNumberToken(orderNumber);
     if (!order || !phonesMatch(order.customerPhone, normalizedPhone)) {
       return { ok: false, reason: 'mismatch' };
@@ -152,21 +91,9 @@ export class ChatwootBotVerifyService {
     return { ok: true, orderId: order.id, method: 'order_number' };
   }
 
-  async verifyWithLastOrderDate(
-    phone: string,
-    lastOrderDate: string,
-    settings: ChatwootBotSettings,
-    attrs: Record<string, unknown> = {},
-  ): Promise<ChatwootBotVerifyAttemptResult> {
-    if (!this.checkRateLimit(attrs, settings)) {
-      return { ok: false, reason: 'rate_limited' };
-    }
-    let normalizedPhone: string;
-    try {
-      normalizedPhone = normalizePhoneNumber(phone);
-    } catch {
-      return { ok: false, reason: 'invalid_input' };
-    }
+  async verifyWithLastOrderDate(phone: string, lastOrderDate: string): Promise<ChatwootBotVerifyAttemptResult> {
+    const normalizedPhone = safeNormalizePhone(phone);
+    if (!normalizedPhone) return { ok: false, reason: 'invalid_input' };
     const day = parseUserOrderDate(lastOrderDate);
     if (!day) return { ok: false, reason: 'invalid_input' };
     const order = await findLatestOrderByPhone(normalizedPhone);
@@ -176,49 +103,9 @@ export class ChatwootBotVerifyService {
     return { ok: true, orderId: order.id, method: 'last_order_date' };
   }
 
-  async persistVerifySession(
-    settings: ChatwootBotSettings,
-    conversationId: number,
-    orderId: number,
-    normalizedPhone: string,
-    existingAttrs: Record<string, unknown>,
-    method: ChatwootBotVerifyMethod,
-    messageId: number | null,
-  ): Promise<Record<string, unknown>> {
-    const expires = new Date(Date.now() + settings.verifySessionTtlHours * 3600_000);
-    const prevIds = parseVerifiedOrderIds(existingAttrs);
-    const orderIds = [...new Set([...prevIds, orderId])];
-    const sessionAttrs: Record<string, unknown> = {
-      [CHATWOOT_BOT_ATTR_VERIFY_EXPIRES_AT]: expires.toISOString(),
-      [CHATWOOT_BOT_ATTR_VERIFIED_ORDER_IDS]: JSON.stringify(orderIds),
-      [CHATWOOT_BOT_ATTR_VERIFIED_PHONE_HASH]: hashVerifiedPhone(normalizedPhone),
-    };
-    const client = createChatwootApiClient(botMessagingCredentials(settings));
-    await client.mergeConversationCustomAttributesBestEffort(conversationId, sessionAttrs);
-    chatwootBotAnalyticsService.recordBestEffort({
-      kind: 'bot_action',
-      conversationId,
-      messageId,
-      meta: { kind: 'verify_success', method },
-    });
-    return sessionAttrs;
-  }
-
-  resolvePhoneFromMessage(
-    content: string,
-    payload: ChatwootWebhookMessageCreated,
-  ): string | null {
-    const fromText = extractCallbackPhone(content);
-    if (fromText) return fromText;
-    const metaPhone = payload.conversation?.meta?.sender?.phone_number;
-    if (typeof metaPhone === 'string' && metaPhone.trim()) {
-      try {
-        return normalizePhoneNumber(metaPhone);
-      } catch {
-        return null;
-      }
-    }
-    return null;
+  /** Телефон з профілю контакту (Viber/Telegram/WhatsApp або заповнений у Chatwoot). */
+  private channelPhone(payload: ChatwootWebhookMessageCreated): string | null {
+    return safeNormalizePhone(payload.conversation?.meta?.sender?.phone_number);
   }
 
   async tryVerifyFromUserMessage(
@@ -227,61 +114,81 @@ export class ChatwootBotVerifyService {
     conversationId: number,
     content: string,
     messageId: number | null,
-  ): Promise<ChatwootBotVerifyFromMessageResult | null> {
-    const attrs = (payload.conversation?.custom_attributes ?? {}) as Record<string, unknown>;
-    const phone = this.resolvePhoneFromMessage(content, payload);
-    if (!phone) return null;
+  ): Promise<ChatwootBotVerifyFromMessageResult> {
+    let state = await chatwootBotConversationStateService.get(conversationId);
+    const now = Date.now();
+    const sessionExpiresAt = new Date(now + settings.verifySessionTtlHours * 3600_000);
 
+    const phoneFromText = safeNormalizePhone(extractCallbackPhone(content));
     const orderToken = extractOrderNumberToken(content);
     const dateToken = parseUserOrderDate(content);
-    if (!orderToken && !dateToken) return null;
+
+    if (!orderToken && !dateToken) {
+      // Лише телефон — запамʼятовуємо, щоб наступне повідомлення з номером/датою пройшло верифікацію.
+      if (phoneFromText && phoneFromText !== state.pendingPhone) {
+        state = await chatwootBotConversationStateService.update(state, {
+          pendingPhone: phoneFromText,
+          pendingPhoneExpiresAt: sessionExpiresAt,
+        });
+      }
+      return { attempt: null, state };
+    }
+
+    const phone = phoneFromText ?? state.pendingPhone ?? this.channelPhone(payload);
+    if (!phone) return { attempt: null, state };
+
+    const rateCfg = rateConfig(settings);
+    if (isVerifyRateLimited(state, rateCfg, now)) {
+      return { attempt: { ok: false, reason: 'rate_limited' }, state };
+    }
 
     // Спершу номер замовлення; якщо не збігся — дата з того ж повідомлення (одна спроба в ліміті).
     let method: ChatwootBotVerifyMethod = orderToken ? 'order_number' : 'last_order_date';
     let attempt: ChatwootBotVerifyAttemptResult = orderToken
-      ? await this.verifyWithOrderNumber(phone, orderToken, settings, attrs)
-      : await this.verifyWithLastOrderDate(phone, dateToken as string, settings, attrs);
+      ? await this.verifyWithOrderNumber(phone, orderToken)
+      : await this.verifyWithLastOrderDate(phone, dateToken as string);
     if (attempt.ok === false && attempt.reason === 'mismatch' && orderToken && dateToken) {
       method = 'last_order_date';
-      attempt = await this.verifyWithLastOrderDate(phone, dateToken, settings, attrs);
+      attempt = await this.verifyWithLastOrderDate(phone, dateToken);
     }
 
-    const rateBump = this.bumpRateLimit(attrs, settings);
-    const client = createChatwootApiClient(botMessagingCredentials(settings));
-    await client.mergeConversationCustomAttributesBestEffort(conversationId, rateBump);
-    const attrsAfterRate: Record<string, unknown> = { ...attrs, ...rateBump };
-
+    const rate = bumpVerifyRate(state, rateCfg, now);
     if (attempt.ok === false) {
+      state = await chatwootBotConversationStateService.update(state, {
+        ...rate,
+        failedAttempts: state.failedAttempts + 1,
+        pendingPhone: phone,
+        pendingPhoneExpiresAt: sessionExpiresAt,
+      });
       chatwootBotAnalyticsService.recordBestEffort({
         kind: 'bot_action',
         conversationId,
         messageId,
-        meta: {
-          kind: 'verify_fail',
-          method,
-          reason: attempt.reason,
-        },
+        meta: { kind: 'verify_fail', method, reason: attempt.reason },
       });
-      return { attempt, attrs: attrsAfterRate };
+      return { attempt, state };
     }
 
-    let normalizedPhone: string;
-    try {
-      normalizedPhone = normalizePhoneNumber(phone);
-    } catch {
-      return { attempt: { ok: false, reason: 'invalid_input' }, attrs: attrsAfterRate };
-    }
-
-    const sessionAttrs = await this.persistVerifySession(
-      settings,
+    state = await chatwootBotConversationStateService.update(state, {
+      ...rate,
+      verifiedOrderIds: [...new Set([...state.verifiedOrderIds, attempt.orderId])],
+      verifiedPhoneHash: hashVerifiedPhone(phone),
+      verifyExpiresAt: sessionExpiresAt,
+      failedAttempts: 0,
+      pendingPhone: phone,
+      pendingPhoneExpiresAt: sessionExpiresAt,
+    });
+    const client = createChatwootApiClient(botMessagingCredentials(settings));
+    await client.mergeConversationCustomAttributesBestEffort(conversationId, {
+      [CHATWOOT_BOT_ATTR_VERIFIED]: true,
+    });
+    chatwootBotAnalyticsService.recordBestEffort({
+      kind: 'bot_action',
       conversationId,
-      attempt.orderId,
-      normalizedPhone,
-      attrs,
-      attempt.method,
       messageId,
-    );
-    return { attempt, attrs: { ...attrsAfterRate, ...sessionAttrs } };
+      meta: { kind: 'verify_success', method: attempt.method },
+    });
+    return { attempt, state };
   }
 }
 
@@ -292,10 +199,10 @@ export class ChatwootBotVerifyService {
 export function buildVerifyResultNote(attempt: ChatwootBotVerifyAttemptResult): string {
   const prefix = 'Службова примітка (не цитуй клієнту):';
   if (attempt.ok === true) {
-    return `${prefix} клієнт щойно успішно пройшов верифікацію цим повідомленням. Не проси дані повторно — викликай get_verified_order і відповідай про замовлення.`;
+    return `${prefix} клієнт щойно успішно пройшов верифікацію цим повідомленням. Не проси дані повторно – викликай get_verified_order і відповідай про замовлення.`;
   }
   if (attempt.reason === 'rate_limited') {
-    return `${prefix} ліміт спроб верифікації вичерпано. Не проси дані знову — запропонуй звернутися до оператора або спробувати пізніше.`;
+    return `${prefix} ліміт спроб верифікації вичерпано. Не проси дані знову – запропонуй звернутися до оператора або спробувати пізніше.`;
   }
   if (attempt.reason === 'invalid_input') {
     return `${prefix} спроба верифікації не вдалася: не вдалося розпізнати телефон або дату. Попроси уточнити саме цю частину.`;

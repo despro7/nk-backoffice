@@ -508,7 +508,7 @@ router.post('/tools/verify-order', async (req: Request, res: Response) => {
       res.status(400).json({ success: false, error: 'phone та orderNumber обовʼязкові' });
       return;
     }
-    const attempt = await chatwootBotVerifyService.verifyWithOrderNumber(phone, orderNumber, settings);
+    const attempt = await chatwootBotVerifyService.verifyWithOrderNumber(phone, orderNumber);
     if (attempt.ok === false) {
       res.json({
         success: true,
@@ -568,11 +568,7 @@ router.post('/tools/verify-by-date', async (req: Request, res: Response) => {
       res.status(400).json({ success: false, error: 'phone та lastOrderDate обовʼязкові' });
       return;
     }
-    const attempt = await chatwootBotVerifyService.verifyWithLastOrderDate(
-      phone,
-      lastOrderDate,
-      settings,
-    );
+    const attempt = await chatwootBotVerifyService.verifyWithLastOrderDate(phone, lastOrderDate);
     if (attempt.ok === false) {
       res.json({
         success: true,

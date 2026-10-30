@@ -13,6 +13,7 @@ import {
 import { getChatwootBotFixture } from './fixtures/index.js';
 import { chatwootBotInboxHoursService } from './ChatwootBotInboxHoursService.js';
 import { chatwootBotVerifyService } from './ChatwootBotVerifyService.js';
+import { emptyConversationState } from './chatwootBotConversationStateUtils.js';
 import { shouldPersistEvent } from './ChatwootBotHandoverUtils.js';
 import { clearHumanAgentActivePersistGateForTests } from './humanAgentActivePersistGate.js';
 vi.mock('./chatwootAgentsAvailabilityCache.js', () => ({
@@ -29,6 +30,18 @@ vi.mock('./ChatwootBotAnalyticsService.js', () => ({
     record: vi.fn(async () => undefined),
   },
 }));
+
+// Стан розмови читається з БД на кожне повідомлення — у тестах без БД.
+vi.mock('./ChatwootBotConversationStateService.js', async () => {
+  const { emptyConversationState } = await import('./chatwootBotConversationStateUtils.js');
+  return {
+    conversationStateSecret: () => 'test-secret',
+    chatwootBotConversationStateService: {
+      get: vi.fn(async (id: number) => emptyConversationState(id)),
+      update: vi.fn(async (current: object, patch: object) => ({ ...current, ...patch })),
+    },
+  };
+});
 
 vi.mock('./chatwootHandoverReset.js', () => ({
   resetHumanHandoverOnConversation: vi.fn(async () => ({
@@ -230,7 +243,7 @@ describe('ChatwootBotOrchestrator dry_run', () => {
     });
     const verifySpy = vi
       .spyOn(chatwootBotVerifyService, 'tryVerifyFromUserMessage')
-      .mockResolvedValue(null);
+      .mockResolvedValue({ attempt: null, state: emptyConversationState(1001) });
     const result = await chatwootBotOrchestrator.processWebhook(
       {
         ...getChatwootBotFixture('echo'),

@@ -317,11 +317,8 @@ export const CHATWOOT_BOT_ATTR_HUMAN_HANDOVER_ACTIVE = 'bot_human_handover_activ
 export const CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING = 'bot_ooh_callback_pending';
 export const CHATWOOT_BOT_ATTR_CALLBACK_REQUESTED = 'callback_requested';
 export const CHATWOOT_BOT_ATTR_CALLBACK_PHONE = 'callback_phone';
-export const CHATWOOT_BOT_ATTR_VERIFY_EXPIRES_AT = 'bot_verify_expires_at';
-export const CHATWOOT_BOT_ATTR_VERIFIED_ORDER_IDS = 'bot_verified_order_ids';
-export const CHATWOOT_BOT_ATTR_VERIFIED_PHONE_HASH = 'bot_verified_phone_hash';
-export const CHATWOOT_BOT_ATTR_VERIFY_RATE_WINDOW = 'bot_verify_rate_window';
-export const CHATWOOT_BOT_ATTR_VERIFY_RATE_COUNT = 'bot_verify_rate_count';
+/** Лише для відображення в Chatwoot; стан верифікації — у таблиці chatwoot_bot_conversation_states. */
+export const CHATWOOT_BOT_ATTR_VERIFIED = 'bot_verified';
 
 export const DEFAULT_CHATWOOT_BOT_AI_MASK_ID = 'default_support';
 

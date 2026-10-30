@@ -2,15 +2,13 @@ import { prisma } from '../../lib/utils.js';
 import type { ChatwootBotSettings } from '../../../shared/types/chatwootBot.js';
 import type { ChatwootBotOrderToolResult } from '../../../shared/types/chatwootBotTools.js';
 import { toVerifiedOrderDto } from './chatwootBotOrderRedaction.js';
-import { getVerifiedOrderIdsFromAttrs } from './ChatwootBotVerifyService.js';
-
 export class ChatwootBotOrderToolService {
+  /** verifiedIds — лише з активної сесії (chatwoot_bot_conversation_states). */
   async getVerifiedOrderForSession(
     settings: ChatwootBotSettings,
-    customAttrs: Record<string, unknown> | undefined,
+    verifiedIds: number[],
     orderNumberHint?: string,
   ): Promise<ChatwootBotOrderToolResult> {
-    const verifiedIds = getVerifiedOrderIdsFromAttrs(customAttrs);
     if (verifiedIds.length === 0) {
       return {
         verified: false,

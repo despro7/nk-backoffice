@@ -61,6 +61,8 @@ export type ConversationContextInput = {
   verifyExpiresAt: string | null;
   /** Телефон відомий з каналу (Viber/Telegram/WhatsApp або профіль контакту). */
   channelPhoneKnown: boolean;
+  /** Клієнт уже надав телефон у цій розмові (збережено зашифрованим). */
+  phoneOnFile?: boolean;
 };
 
 function kyivParts(date: Date): { weekday: string; date: string; time: string } {
@@ -87,11 +89,15 @@ export function buildConversationContextNote(input: ConversationContextInput): s
   if (input.verifiedOrderCount > 0) {
     const until = input.verifyExpiresAt ? kyivParts(new Date(input.verifyExpiresAt)) : null;
     lines.push(
-      `- Верифікація: пройдена (замовлень: ${input.verifiedOrderCount})${until ? `, діє до ${until.date} ${until.time}` : ''}. Не проси дані повторно — викликай get_verified_order.`,
+      `- Верифікація: пройдена (замовлень: ${input.verifiedOrderCount})${until ? `, діє до ${until.date} ${until.time}` : ''}. Не проси дані повторно – викликай get_verified_order.`,
     );
   } else {
     lines.push('- Верифікація: не пройдена.');
   }
-  lines.push(`- Телефон з каналу: ${input.channelPhoneKnown ? 'відомий' : 'невідомий'}.`);
+  if (input.phoneOnFile && input.verifiedOrderCount === 0) {
+    lines.push('- Телефон клієнт уже надав у цій розмові – не проси його знову; для перевірки бракує номера замовлення або дати.');
+  } else {
+    lines.push(`- Телефон з каналу: ${input.channelPhoneKnown ? 'відомий' : 'невідомий'}.`);
+  }
   return lines.join('\n');
 }

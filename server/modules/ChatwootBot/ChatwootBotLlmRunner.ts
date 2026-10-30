@@ -1,11 +1,10 @@
 import type { LlmMessage, LlmProvider, LlmTestModelResponse } from '../../../shared/types/llm.js';
-import {
-  CHATWOOT_BOT_ATTR_VERIFY_EXPIRES_AT,
-  type ChatwootBotSettings,
-  type ChatwootWebhookMessageCreated,
-} from '../../../shared/types/chatwootBot.js';
+import type { ChatwootBotSettings, ChatwootWebhookMessageCreated } from '../../../shared/types/chatwootBot.js';
 import { buildConversationContextNote } from './chatwootBotConversationContext.js';
-import { getVerifiedOrderIdsFromAttrs } from './ChatwootBotVerifyService.js';
+import {
+  activeVerifiedOrderIds,
+  type ChatwootBotConversationStateSnapshot,
+} from './chatwootBotConversationStateUtils.js';
 import { logServer } from '../../lib/utils.js';
 import { llmService } from '../../services/llm/LlmService.js';
 import { llmSettingsService } from '../../services/llm/LlmSettingsService.js';
@@ -32,8 +31,8 @@ export class ChatwootBotLlmRunner {
     userContent: string,
     options?: {
       propagateErrors?: boolean;
-      /** Свіжі custom_attributes (після верифікації в цьому ж повідомленні); інакше — з payload. */
-      customAttrs?: Record<string, unknown>;
+      /** Стан розмови з БД (після верифікації в цьому ж повідомленні); без нього — неверифікована сесія. */
+      conversationState?: ChatwootBotConversationStateSnapshot;
       /** Службовий блок, що додається до system prompt маски. */
       systemNote?: string;
       /** Попередні повідомлення розмови (без поточного). */
@@ -57,15 +56,15 @@ export class ChatwootBotLlmRunner {
     const effectiveProvider = provider ?? platform.defaultProvider;
     const requestedModel =
       settings.aiModel.trim() || resolveLlmDefaultModel(platform, effectiveProvider);
-    const customAttrs =
-      options?.customAttrs ??
-      ((payload.conversation?.custom_attributes ?? {}) as Record<string, unknown>);
-    const verifyExpiresAt = customAttrs[CHATWOOT_BOT_ATTR_VERIFY_EXPIRES_AT];
+    const now = new Date();
+    const state = options?.conversationState;
+    const verifiedIds = state ? activeVerifiedOrderIds(state, now.getTime()) : [];
     const contextNote = buildConversationContextNote({
-      now: new Date(),
-      verifiedOrderCount: getVerifiedOrderIdsFromAttrs(customAttrs).length,
-      verifyExpiresAt: typeof verifyExpiresAt === 'string' ? verifyExpiresAt : null,
+      now,
+      verifiedOrderCount: verifiedIds.length,
+      verifyExpiresAt: verifiedIds.length && state?.verifyExpiresAt ? state.verifyExpiresAt.toISOString() : null,
       channelPhoneKnown: Boolean(payload.conversation?.meta?.sender?.phone_number?.trim()),
+      phoneOnFile: Boolean(state?.pendingPhone),
     });
     const system = [mask.systemPrompt, contextNote, options?.systemNote?.trim()]
       .filter((part): part is string => Boolean(part))
@@ -94,7 +93,7 @@ export class ChatwootBotLlmRunner {
               typeof args.orderNumber === 'string' ? args.orderNumber : undefined;
             return await chatwootBotOrderToolService.getVerifiedOrderForSession(
               settings,
-              customAttrs,
+              verifiedIds,
               orderNumber,
             );
           }

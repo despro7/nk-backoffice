@@ -1169,3 +1169,22 @@ model ChatwootBotAnalyticsEvent {
   @@index([contentNorm])
   @@map("chatwoot_bot_analytics_events")
 }
+
+/// Стан верифікації розмови Chatwoot Bot (замість conversation custom_attributes, які може змінити клієнт).
+model ChatwootBotConversationState {
+  conversationId        Int       @id
+  verifiedOrderIds      Json?
+  verifiedPhoneHash     String?   @db.VarChar(64)
+  verifyExpiresAt       DateTime?
+  /// Телефон, наданий у розмові до верифікації (AES-256-GCM).
+  pendingPhoneEnc       String?   @db.VarChar(255)
+  pendingPhoneExpiresAt DateTime?
+  rateWindowStart       DateTime?
+  rateCount             Int       @default(0)
+  failedAttempts        Int       @default(0)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([updatedAt])
+  @@map("chatwoot_bot_conversation_states")
+}
