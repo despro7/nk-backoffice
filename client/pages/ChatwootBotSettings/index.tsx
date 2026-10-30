@@ -17,7 +17,9 @@ const SettingsChatwootBot: React.FC = () => {
   const page = useChatwootBotSettingsPage();
   const { form, isLoading, webhookProcessorHealth, activeTab, setActiveTab } = page;
 
-  if (!hasPermission(PERMISSIONS.PAGE_SETTINGS_ADMIN)) {
+  const canManage = hasPermission(PERMISSIONS.ACTION_CHATWOOT_SETTINGS_MANAGE);
+
+  if (!hasPermission(PERMISSIONS.PAGE_CHATWOOT_SETTINGS)) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -105,11 +107,23 @@ const SettingsChatwootBot: React.FC = () => {
         ))}
       </PageTabs>
 
+      {!canManage && (
+        <Card className="border border-default-200 bg-default-50">
+          <CardBody className="p-4 flex flex-row gap-3 items-center text-sm text-default-600">
+            <DynamicIcon name="eye" size={18} className="shrink-0" />
+            Лише перегляд: для зміни налаштувань і тестів потрібне право «Зміна налаштувань і тести чат-бота».
+          </CardBody>
+        </Card>
+      )}
+
       <div>
-        {activeTab === 'connection' && <ConnectionTab page={page} />}
-        {activeTab === 'replies' && <RepliesTab page={page} />}
-        {activeTab === 'ai' && <AiVerifyTab page={page} />}
-        {activeTab === 'handover' && <HandoverReclaimTab page={page} />}
+        {/* Без права на зміну — нативний disabled блокує всі поля й кнопки вкладок. */}
+        <fieldset disabled={!canManage} className="contents">
+          {activeTab === 'connection' && <ConnectionTab page={page} />}
+          {activeTab === 'replies' && <RepliesTab page={page} />}
+          {activeTab === 'ai' && <AiVerifyTab page={page} />}
+          {activeTab === 'handover' && <HandoverReclaimTab page={page} />}
+        </fieldset>
         {activeTab === 'journal' && <JournalTab page={page} />}
       </div>
     </div>

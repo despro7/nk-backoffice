@@ -1,5 +1,6 @@
 import { Router, type Response } from 'express';
-import { authenticateToken, requirePermission } from '../middleware/auth.js';
+import { authenticateToken, requirePermission, requirePermissionKey } from '../middleware/auth.js';
+import { PERMISSIONS } from '../../shared/constants/permissions.js';
 import { logServer } from '../lib/utils.js';
 import {
   ChatwootBotKnowledgeValidationError,
@@ -8,13 +9,14 @@ import {
 import type { ChatwootBotKnowledgeEntryInput } from '../../shared/types/chatwootBotKnowledge.js';
 
 /**
- * База знань Chatwoot Bot. Окремо від /api/chatwoot-bot, де все під settings.admin:
- * тут власні права, які можна видати ролям у менеджері ролей.
+ * База знань Chatwoot Bot. Окремий роутер із власними правами (менеджер ролей → «Чат-бот»),
+ * незалежними від прав на налаштування бота.
  */
 const router = Router();
 const authOnly = [authenticateToken] as const;
-const knowledgeRead = requirePermission('chatwoot', 'knowledgeRead', 'Перегляд бази знань Chatwoot Bot');
-const knowledgeManage = requirePermission('chatwoot', 'knowledgeManage', 'Редагування бази знань Chatwoot Bot');
+// Читання — за доступом до сторінки «База знань», зміни — окрема дія.
+const knowledgeRead = requirePermissionKey(PERMISSIONS.PAGE_CHATWOOT_KNOWLEDGE);
+const knowledgeManage = requirePermission('chatwoot', 'knowledgeManage', 'Редагування бази знань чат-бота');
 
 function handleError(res: Response, error: unknown, context: string): void {
   const message = error instanceof Error ? error.message : String(error);

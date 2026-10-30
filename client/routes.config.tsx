@@ -825,7 +825,7 @@ export const appRoutes: AppRoute[] = [
       icon: <DynamicIcon name="bot" size={20} />,
       order: 9,
     },
-    permission: { name: 'admin' },
+    permission: { name: 'statistics', group: 'chatwoot', label: 'Статистика' },
   },
   {
     path: '/chatwoot-bot/knowledge',
@@ -837,7 +837,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'chatwoot-bot',
     order: 0.5,
-    permission: { name: 'chatwootKnowledge', group: 'settings', label: 'База знань Chatwoot Bot' },
+    permission: { name: 'knowledge', group: 'chatwoot', label: 'База знань' },
   },
   {
     path: '/chatwoot-bot/settings',
@@ -849,7 +849,7 @@ export const appRoutes: AppRoute[] = [
     inNav: true,
     parent: 'chatwoot-bot',
     order: 1,
-    permission: { name: 'admin' },
+    permission: { name: 'settings', group: 'chatwoot', label: 'Налаштування бота' },
   },
   {
     path: '/test-serial-com',

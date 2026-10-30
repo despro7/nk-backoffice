@@ -12,6 +12,7 @@ export type PermissionDomainId =
   | 'accounting'
   | 'hr'
   | 'products'
+  | 'chatwoot'
   | 'settings';
 
 export interface PermissionDomainTab {
@@ -28,6 +29,7 @@ export const PERMISSION_ROLE_EDITOR_DOMAINS: readonly PermissionDomainTab[] = [
   { id: 'accounting', label: 'Бухгалтерія', groups: ['pages.accounting'] },
   { id: 'hr', label: 'Персонал', groups: ['pages.hr', 'actions.hr'] },
   { id: 'products', label: 'Товари', groups: ['actions.products'] },
+  { id: 'chatwoot', label: 'Чат-бот', groups: ['pages.chatwoot', 'actions.chatwoot'] },
   { id: 'settings', label: 'Налаштування', groups: ['pages.settings', 'actions.users'] },
 ];
 

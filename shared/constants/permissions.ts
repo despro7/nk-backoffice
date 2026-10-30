@@ -10,6 +10,7 @@ export type PermissionGroup =
   | 'pages.accounting'
   | 'pages.hr'
   | 'pages.settings'
+  | 'pages.chatwoot'
   | 'actions.users'
   | 'actions.warehouse'
   | 'actions.products'
@@ -24,12 +25,13 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   'pages.accounting': 'Бухгалтерія',
   'pages.hr': 'Персонал',
   'pages.settings': 'Налаштування',
+  'pages.chatwoot': 'Чат-бот',
   'actions.users': 'Користувачі та адміністрування',
   'actions.warehouse': 'Складські операції',
   'actions.products': 'Операції з товарами',
   'actions.integrations': 'Dilovod / SalesDrive',
   'actions.hr': 'Персонал',
-  'actions.chatwoot': 'Chatwoot Bot',
+  'actions.chatwoot': 'Чат-бот',
 };
 
 /** Група ключа екшена → група чекбоксів у UI (мапінг з PERMISSION_GROUP_LABELS). */
@@ -290,9 +292,12 @@ export const PERMISSION_SEEDS: Array<{ key: PermissionKey; seed: SeedGrant }> = 
   { key: actionKey('users', 'manage'), seed: only(ROLES.ADMIN) },
   { key: actionKey('roles', 'manage'), seed: only(ROLES.ADMIN) },
   { key: actionKey('settings', 'admin'), seed: only(ROLES.ADMIN) },
-  { key: pageKey('settings', 'chatwootKnowledge'), seed: only(ROLES.ADMIN) },
-  { key: actionKey('chatwoot', 'knowledgeRead'), seed: only(ROLES.ADMIN) },
+
+  { key: pageKey('chatwoot', 'statistics'), seed: only(ROLES.ADMIN) },
+  { key: pageKey('chatwoot', 'knowledge'), seed: only(ROLES.ADMIN) },
+  { key: pageKey('chatwoot', 'settings'), seed: only(ROLES.ADMIN) },
   { key: actionKey('chatwoot', 'knowledgeManage'), seed: only(ROLES.ADMIN) },
+  { key: actionKey('chatwoot', 'settingsManage'), seed: only(ROLES.ADMIN) },
   { key: actionKey('storefront', 'read'), seed: min(ROLES.WAREHOUSE_MANAGER) },
   { key: actionKey('storefront', 'edit'), seed: min(ROLES.WAREHOUSE_MANAGER) },
   { key: actionKey('storefront', 'manage'), seed: only(ROLES.ADMIN) },
@@ -389,9 +394,11 @@ export const PERMISSIONS = {
   ACTION_USERS_MANAGE: actionKey('users', 'manage'),
   ACTION_ROLES_MANAGE: actionKey('roles', 'manage'),
   ACTION_SETTINGS_ADMIN: actionKey('settings', 'admin'),
-  PAGE_SETTINGS_CHATWOOT_KNOWLEDGE: pageKey('settings', 'chatwootKnowledge'),
-  ACTION_CHATWOOT_KNOWLEDGE_READ: actionKey('chatwoot', 'knowledgeRead'),
+  PAGE_CHATWOOT_STATISTICS: pageKey('chatwoot', 'statistics'),
+  PAGE_CHATWOOT_KNOWLEDGE: pageKey('chatwoot', 'knowledge'),
+  PAGE_CHATWOOT_SETTINGS: pageKey('chatwoot', 'settings'),
   ACTION_CHATWOOT_KNOWLEDGE_MANAGE: actionKey('chatwoot', 'knowledgeManage'),
+  ACTION_CHATWOOT_SETTINGS_MANAGE: actionKey('chatwoot', 'settingsManage'),
   ACTION_STOREFRONT_READ: actionKey('storefront', 'read'),
   ACTION_STOREFRONT_EDIT: actionKey('storefront', 'edit'),
   ACTION_STOREFRONT_MANAGE: actionKey('storefront', 'manage'),

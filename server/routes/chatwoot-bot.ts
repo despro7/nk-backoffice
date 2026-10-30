@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { authenticateToken, requirePermission } from '../middleware/auth.js';
+import { authenticateToken, requirePermission, requirePermissionKey } from '../middleware/auth.js';
 import { logServer } from '../lib/utils.js';
 import {
   CHATWOOT_BOT_HANDOVER_BUILD,
@@ -38,22 +38,28 @@ import { toVerifiedOrderDto } from '../modules/ChatwootBot/chatwootBotOrderRedac
 import { chatwootBotLlmRunner } from '../modules/ChatwootBot/ChatwootBotLlmRunner.js';
 import { chatwootBotDevWebhookService } from '../modules/ChatwootBot/ChatwootBotDevWebhookService.js';
 import { prisma } from '../lib/utils.js';
+import { roleService } from '../services/RoleService.js';
+import { PERMISSIONS } from '../../shared/constants/permissions.js';
 
 const router = Router();
-const chatwootAdmin = requirePermission(
-  'settings',
-  'admin',
-  'Змінювати адмінські налаштування',
-);
+// Права чат-бота (менеджер ролей → «Чат-бот»): читання — за доступом до сторінки, зміни — окрема дія.
+const settingsRead = requirePermissionKey(PERMISSIONS.PAGE_CHATWOOT_SETTINGS);
+const settingsManage = requirePermission('chatwoot', 'settingsManage', 'Зміна налаштувань і тести чат-бота');
+const statisticsRead = requirePermissionKey(PERMISSIONS.PAGE_CHATWOOT_STATISTICS);
 
-router.use(authenticateToken, chatwootAdmin);
+router.use(authenticateToken);
 
 /**
  * GET /api/chatwoot-bot/settings
  */
-router.get('/settings', async (req: Request, res: Response) => {
+router.get('/settings', settingsRead, async (req: Request, res: Response) => {
   try {
-    const reveal = String(req.query.revealSecrets ?? '') === 'true';
+    const wantsReveal = String(req.query.revealSecrets ?? '') === 'true';
+    // Токени й secret у відкритому вигляді — лише з правом на зміну налаштувань.
+    const reveal =
+      wantsReveal &&
+      Boolean(req.user?.role) &&
+      (await roleService.hasPermission(req.user!.role, PERMISSIONS.ACTION_CHATWOOT_SETTINGS_MANAGE));
     const data = await chatwootBotSettingsService.getSettingsForAdmin(reveal);
     res.json({ success: true, data });
   } catch (error) {
@@ -68,7 +74,7 @@ router.get('/settings', async (req: Request, res: Response) => {
 /**
  * PUT /api/chatwoot-bot/settings
  */
-router.put('/settings', async (req: Request, res: Response) => {
+router.put('/settings', settingsManage, async (req: Request, res: Response) => {
   try {
     const body = (req.body ?? {}) as ChatwootBotSettingsUpdate;
     await chatwootBotSettingsService.saveSettings(body);
@@ -86,7 +92,7 @@ router.put('/settings', async (req: Request, res: Response) => {
 /**
  * POST /api/chatwoot-bot/test-connection
  */
-router.post('/test-connection', async (_req: Request, res: Response) => {
+router.post('/test-connection', settingsManage, async (_req: Request, res: Response) => {
   try {
     const settings = await chatwootBotSettingsService.getSettings();
     const client = createChatwootApiClient(botMessagingCredentials(settings));
@@ -110,7 +116,7 @@ router.post('/test-connection', async (_req: Request, res: Response) => {
  * GET /api/chatwoot-bot/dev-webhook
  * Стан перемикача Agent Bot outgoing_url → локальний BO.
  */
-router.get('/dev-webhook', async (_req: Request, res: Response) => {
+router.get('/dev-webhook', settingsRead, async (_req: Request, res: Response) => {
   try {
     const data = await chatwootBotDevWebhookService.getStatus();
     res.json({ success: true, data });
@@ -127,7 +133,7 @@ router.get('/dev-webhook', async (_req: Request, res: Response) => {
  * POST /api/chatwoot-bot/dev-webhook  { enabled: boolean }
  * Увімкнути — лише з локального BO; вимкнути — звідки завгодно.
  */
-router.post('/dev-webhook', async (req: Request, res: Response) => {
+router.post('/dev-webhook', settingsManage, async (req: Request, res: Response) => {
   try {
     const enabled = Boolean((req.body as { enabled?: unknown } | undefined)?.enabled);
     const data = enabled
@@ -148,7 +154,7 @@ router.post('/dev-webhook', async (req: Request, res: Response) => {
  * Порівняння build цього сервера з хостом, куди Chatwoot шле webhook:
  * dev URL, якщо увімкнено «Вебхуки → локальний сервер», інакше Outgoing URL hint.
  */
-router.get('/webhook-processor-health', async (_req: Request, res: Response) => {
+router.get('/webhook-processor-health', settingsRead, async (_req: Request, res: Response) => {
   try {
     const settings = await chatwootBotSettingsService.getSettings();
     const devWebhook = await chatwootBotDevWebhookService.getState();
@@ -254,7 +260,7 @@ router.get('/webhook-processor-health', async (_req: Request, res: Response) => 
  * POST /api/chatwoot-bot/probe-outgoing-webhook
  * Тестовий POST на Outgoing URL (перевірка тунелю / проксі). Див. термінал: 📦 Webhook raw body.
  */
-router.post('/probe-outgoing-webhook', async (_req: Request, res: Response) => {
+router.post('/probe-outgoing-webhook', settingsManage, async (_req: Request, res: Response) => {
   try {
     const settings = await chatwootBotSettingsService.getSettings();
     const devWebhook = await chatwootBotDevWebhookService.getState();
@@ -316,7 +322,7 @@ router.post('/probe-outgoing-webhook', async (_req: Request, res: Response) => {
 /**
  * GET /api/chatwoot-bot/agents
  */
-router.get('/agents', async (_req: Request, res: Response) => {
+router.get('/agents', settingsRead, async (_req: Request, res: Response) => {
   try {
     const settings = await chatwootBotSettingsService.getSettings();
     const client = createChatwootApiClient(handoverAssignmentCredentials(settings));
@@ -335,7 +341,7 @@ router.get('/agents', async (_req: Request, res: Response) => {
 /**
  * GET /api/chatwoot-bot/inbox-schedule?inboxId=1
  */
-router.get('/inbox-schedule', async (req: Request, res: Response) => {
+router.get('/inbox-schedule', settingsRead, async (req: Request, res: Response) => {
   try {
     const settings = await chatwootBotSettingsService.getSettings();
     const inboxId = Number(req.query.inboxId ?? settings.handoverDefaultInboxId ?? 1);
@@ -374,7 +380,7 @@ router.get('/inbox-schedule', async (req: Request, res: Response) => {
  * POST /api/chatwoot-bot/conversations/:conversationId/unassign
  * Debug: зняти assignee + скинути bot_human_handover_active (+ typing off).
  */
-router.post('/conversations/:conversationId/unassign', async (req: Request, res: Response) => {
+router.post('/conversations/:conversationId/unassign', settingsManage, async (req: Request, res: Response) => {
   try {
     const conversationId = Number(req.params.conversationId);
     if (!Number.isFinite(conversationId) || conversationId <= 0) {
@@ -423,7 +429,7 @@ router.post('/conversations/:conversationId/unassign', async (req: Request, res:
 /**
  * DELETE /api/chatwoot-bot/recent-events
  */
-router.delete('/recent-events', async (_req: Request, res: Response) => {
+router.delete('/recent-events', settingsManage, async (_req: Request, res: Response) => {
   try {
     const deleted = await chatwootBotEventLogService.clearAll();
     res.json({ success: true, data: { deleted } });
@@ -439,7 +445,7 @@ router.delete('/recent-events', async (_req: Request, res: Response) => {
 /**
  * GET /api/chatwoot-bot/recent-events
  */
-router.get('/recent-events', async (req: Request, res: Response) => {
+router.get('/recent-events', settingsRead, async (req: Request, res: Response) => {
   try {
     const limitRaw = Number(req.query.limit ?? 20);
     const limit = Number.isFinite(limitRaw) ? limitRaw : 20;
@@ -457,7 +463,7 @@ router.get('/recent-events', async (req: Request, res: Response) => {
 /**
  * POST /api/chatwoot-bot/tools/catalog
  */
-router.post('/tools/catalog', async (req: Request, res: Response) => {
+router.post('/tools/catalog', settingsManage, async (req: Request, res: Response) => {
   try {
     const body = (req.body ?? {}) as { query?: string; limit?: number };
     const data = await chatwootBotCatalogToolService.listStorefrontCatalog({
@@ -477,7 +483,7 @@ router.post('/tools/catalog', async (req: Request, res: Response) => {
 /**
  * POST /api/chatwoot-bot/tools/site-pages
  */
-router.post('/tools/site-pages', async (req: Request, res: Response) => {
+router.post('/tools/site-pages', settingsManage, async (req: Request, res: Response) => {
   try {
     const body = (req.body ?? {}) as { query?: string; slugs?: string | string[]; limit?: number };
     const data = await chatwootBotStorefrontSiteToolService.listSitePages({
@@ -498,7 +504,7 @@ router.post('/tools/site-pages', async (req: Request, res: Response) => {
 /**
  * POST /api/chatwoot-bot/tools/verify-order
  */
-router.post('/tools/verify-order', async (req: Request, res: Response) => {
+router.post('/tools/verify-order', settingsManage, async (req: Request, res: Response) => {
   try {
     const settings = await chatwootBotSettingsService.getSettings();
     const body = (req.body ?? {}) as { phone?: string; orderNumber?: string };
@@ -558,7 +564,7 @@ router.post('/tools/verify-order', async (req: Request, res: Response) => {
 /**
  * POST /api/chatwoot-bot/tools/verify-by-date
  */
-router.post('/tools/verify-by-date', async (req: Request, res: Response) => {
+router.post('/tools/verify-by-date', settingsManage, async (req: Request, res: Response) => {
   try {
     const settings = await chatwootBotSettingsService.getSettings();
     const body = (req.body ?? {}) as { phone?: string; lastOrderDate?: string };
@@ -618,7 +624,7 @@ router.post('/tools/verify-by-date', async (req: Request, res: Response) => {
 /**
  * POST /api/chatwoot-bot/ai/test
  */
-router.post('/ai/test', async (req: Request, res: Response) => {
+router.post('/ai/test', settingsManage, async (req: Request, res: Response) => {
   try {
     const settings = await chatwootBotSettingsService.getSettings();
     const body = (req.body ?? {}) as {
@@ -665,7 +671,7 @@ router.post('/ai/test', async (req: Request, res: Response) => {
 /**
  * GET /api/chatwoot-bot/analytics/overview?from=&to=
  */
-router.get('/analytics/overview', async (req: Request, res: Response) => {
+router.get('/analytics/overview', statisticsRead, async (req: Request, res: Response) => {
   try {
     const now = new Date();
     const defaultFrom = new Date(now);
