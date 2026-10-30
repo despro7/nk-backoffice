@@ -316,6 +316,7 @@ export default function useLalAudiences() {
   );
 
   const summary = query.data?.summary ?? null;
+  const periodTrend = query.data?.periodTrend ?? [];
   const allStatusesSelected = statuses.length === ALL_VISIBLE_STATUS_KEYS.length;
 
   return {
@@ -336,6 +337,7 @@ export default function useLalAudiences() {
     page,
     pagination: query.data?.pagination ?? null,
     period,
+    periodTrend,
     preset,
     resetFilters,
     rows: query.data?.rows ?? [],

@@ -18,6 +18,10 @@ import {
 import { formatNumber } from '@/lib/formatUtils';
 import { qualityColor, qualityLabel } from '../LalAudiencesUtils';
 
+function formatRepeatPercent(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 interface LalSummaryCardProps {
   exportColumns: Set<LalExportColumn>;
   isExporting: boolean;
@@ -94,6 +98,24 @@ export default function LalSummaryCard({
             <Skeleton className="rounded h-5 w-16 opacity-60" />
           ) : (
             <p className="text-sm text-default-700 py-0.5">{formatNumber(summary?.totalOrdersInSelection ?? 0)}</p>
+          )}
+        </div>
+        <div className="flex flex-col justify-between">
+          <p className="text-xs text-default-400 mb-1">Замовлень у періоді</p>
+          {loading ? (
+            <Skeleton className="rounded h-5 w-16 opacity-60" />
+          ) : (
+            <p className="text-sm text-default-700 py-0.5">{formatNumber(summary?.ordersInPeriod ?? 0)}</p>
+          )}
+        </div>
+        <div className="flex flex-col justify-between">
+          <p className="text-xs text-default-400 mb-1">Повторні продажі</p>
+          {loading ? (
+            <Skeleton className="rounded h-5 w-24 opacity-60" />
+          ) : (
+            <p className="text-sm text-default-700 py-0.5">
+              {formatNumber(summary?.repeatOrdersInPeriod ?? 0)} · {formatRepeatPercent(summary?.repeatOrdersPercent ?? 0)}%
+            </p>
           )}
         </div>
       </div>

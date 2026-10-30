@@ -1,6 +1,7 @@
 import LalAudiencesTable from './components/LalAudiencesTable';
 import LalFiltersPanel from './components/LalFiltersPanel';
 import LalPresetsPanel from './components/LalPresetsPanel';
+import LalRepeatTrendChart from './components/LalRepeatTrendChart';
 import LalSummaryCard from './components/LalSummaryCard';
 import useLalAudiences from './useLalAudiences';
 
@@ -23,6 +24,7 @@ export default function LalAudiencesPage() {
     page,
     pagination,
     period,
+    periodTrend,
     preset,
     resetFilters,
     rows,
@@ -79,6 +81,8 @@ export default function LalAudiencesPage() {
           onExport={exportAudience}
           onExportColumnsChange={setExportColumns}
         />
+
+        <LalRepeatTrendChart loading={loading} period={period} trend={periodTrend} />
 
         <LalAudiencesTable
           limit={limit}

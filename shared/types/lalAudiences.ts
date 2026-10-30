@@ -129,12 +129,27 @@ export interface LalAudienceRow {
   hasMilitaryDiscount: boolean;
 }
 
+/** Один звітний день ряду повторних продажів. */
+export interface LalPeriodTrendPoint {
+  /** Звітна дата `YYYY-MM-DD` */
+  date: string;
+  orders: number;
+  repeatOrders: number;
+}
+
 export interface LalAudienceSummary {
   customers: number;
   phonePercent: number;
   emailPercent: number;
   quality: LalAudienceQuality;
+  /** Сума lifetime-замовлень клієнтів вибірки */
   totalOrdersInSelection: number;
+  /** Замовлення обраних статусів, чия звітна дата в періоді */
+  ordersInPeriod: number;
+  /** З них повторні: у клієнта вже було раніше замовлення */
+  repeatOrdersInPeriod: number;
+  /** Частка повторних від замовлень періоду, 0–100, один знак */
+  repeatOrdersPercent: number;
 }
 
 export interface LalAudiencePagination {
@@ -148,6 +163,8 @@ export interface LalAudienceListResponse {
   success: true;
   rows: LalAudienceRow[];
   summary: LalAudienceSummary;
+  /** Денний ряд за період. Для «весь час» — лише дні з замовленнями. */
+  periodTrend: LalPeriodTrendPoint[];
   pagination: LalAudiencePagination;
 }
 

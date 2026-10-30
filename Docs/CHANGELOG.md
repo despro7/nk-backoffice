@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-10-30 — LAL: замовлення періоду і повторні продажі
+
+**Files:** `lalPeriodOrderStats.ts`, `lalPeriodOrderStats.spec.ts`, `LalAudiencesService.ts`, `shared/types/lalAudiences.ts`, `LalSummaryCard.tsx`, `LalRepeatTrendChart.tsx`, `useLalAudiences.ts`, `LalAudiences/index.tsx`, `Docs/features/lal-audiences.md`
+
+- **Період:** `ordersInPeriod` — рядки замовлень обраних статусів за звітною датою, без lifetime клієнта і без слайдерів LTV / кількості / пресета.
+- **Повторні:** замовлення періоду, якщо в того самого телефону вже було раніше замовлення; частка і денний ряд `periodTrend`.
+- **Графік:** area chart, день / тиждень / місяць. Межі пресетів 1/3/6 міс. без `getReportingDateRange` — крайні дні можуть розходитись зі «Статистикою продажів». Звіт продажів ще й пропускає замовлення без кешованих позицій.
+
+**Документація:** [`lal-audiences.md`](features/lal-audiences.md).
+
+---
+
 ## 2026-10-29 — LLM: OpenRouter, ціни, UI; Chatwoot Bot: таби, tools, site-pages
 
 **Files:** `client/pages/ChatwootBotSettings/**`, `client/pages/SettingsLlm.tsx`, `client/components/llm/**`, `client/services/LlmSettingsService.ts`, `client/services/ChatwootBotService.ts`, `server/services/llm/**`, `server/modules/ChatwootBot/**`, `server/routes/llm.ts`, `server/routes/chatwoot-bot.ts`, `shared/constants/chatwootBotLlmTools.ts`, `shared/utils/catalogNameQueryMatch.ts`, `shared/types/llm.ts`, `Docs/features/llm-platform.md`, `Docs/integrations/chatwoot-agent-bot.md`

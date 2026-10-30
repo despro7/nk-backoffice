@@ -3,7 +3,8 @@
  */
 
 import * as XLSX from 'xlsx';
-import { prisma, logServer } from '../lib/utils.js';
+import { getReportingDayStartHour, prisma, logServer } from '../lib/utils.js';
+import { buildPeriodOrderStats, type PeriodOrderStats } from './lalPeriodOrderStats.js';
 import { normalizePhoneNumber } from '../../shared/utils/phoneNormalizer.js';
 import {
   B2B_MIN_PORTIONS_IN_ORDER,
@@ -49,6 +50,7 @@ type OrderContact = { rawData: string; customerName: string | null; cityName: st
 type CollectedAudience = {
   customers: AggregatedCustomer[];
   contacts: Map<number, OrderContact>;
+  periodStats: PeriodOrderStats;
 };
 
 type AudienceCacheEntry = {
@@ -170,6 +172,38 @@ function resolveDateRange(filters: LalAudienceFilters): { from: Date | null; to:
   const months = filters.period === '1m' ? 1 : filters.period === '6m' ? 6 : 3;
   from.setMonth(from.getMonth() - months);
   return { from, to };
+}
+
+function formatLocalIso(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/** Межі звітної дати для метрик періоду. Кастомний діапазон — календарні дні як у звіті продажів. */
+function resolveReportingBounds(filters: LalAudienceFilters): {
+  reportingFrom: string | null;
+  reportingTo: string | null;
+  fillEmptyDays: boolean;
+} {
+  if (filters.period === 'all') {
+    return { reportingFrom: null, reportingTo: null, fillEmptyDays: false };
+  }
+
+  if (filters.period === 'custom') {
+    const from = filters.startDate && /^\d{4}-\d{2}-\d{2}$/.test(filters.startDate) ? filters.startDate : null;
+    const to = filters.endDate && /^\d{4}-\d{2}-\d{2}$/.test(filters.endDate) ? filters.endDate : formatLocalIso(new Date());
+    if (!from) return { reportingFrom: null, reportingTo: null, fillEmptyDays: false };
+    return { reportingFrom: from, reportingTo: to, fillEmptyDays: true };
+  }
+
+  const { from, to } = resolveDateRange(filters);
+  return {
+    reportingFrom: from ? formatLocalIso(from) : null,
+    reportingTo: to ? formatLocalIso(to) : null,
+    fillEmptyDays: Boolean(from && to),
+  };
 }
 
 function inRange(date: Date | null, from: Date | null, to: Date | null): boolean {
@@ -502,7 +536,7 @@ export class LalAudiencesService {
   private audienceInflight = new Map<string, Promise<CollectedAudience>>();
 
   async list(filters: LalAudienceFilters): Promise<LalAudienceListResponse> {
-    const { customers, contacts } = await this.getCollectedAudience(filters);
+    const { customers, contacts, periodStats } = await this.getCollectedAudience(filters);
     const sorted = sortCollectedCustomers(customers, contacts, filters.sortBy, filters.sortDir);
     const page = Math.max(1, filters.page ?? 1);
     const limit = clampPageSize(filters.limit);
@@ -530,7 +564,11 @@ export class LalAudiencesService {
         emailPercent,
         quality: qualityFromPercents(phonePercent, emailPercent),
         totalOrdersInSelection,
+        ordersInPeriod: periodStats.ordersInPeriod,
+        repeatOrdersInPeriod: periodStats.repeatOrdersInPeriod,
+        repeatOrdersPercent: periodStats.repeatOrdersPercent,
       },
+      periodTrend: periodStats.periodTrend,
       pagination: { page, limit, total, totalPages },
     };
   }
@@ -594,7 +632,8 @@ export class LalAudiencesService {
   }
 
   private async getCollectedAudience(filters: LalAudienceFilters): Promise<CollectedAudience> {
-    const key = audienceCacheKey(filters);
+    const dayStartHour = await getReportingDayStartHour();
+    const key = `${audienceCacheKey(filters)}|dayStart:${dayStartHour}`;
     const now = Date.now();
     const cached = this.audienceCache.get(key);
     if (cached && cached.expiresAt > now) {
@@ -609,7 +648,7 @@ export class LalAudiencesService {
       return inflight;
     }
 
-    const pending = this.collectAudience(filters)
+    const pending = this.collectAudience(filters, dayStartHour)
       .then((value) => {
         this.setAudienceCache(key, value);
         return value;
@@ -634,17 +673,17 @@ export class LalAudiencesService {
     });
   }
 
-  private async collectAudience(filters: LalAudienceFilters): Promise<CollectedAudience> {
+  private async collectAudience(filters: LalAudienceFilters, dayStartHour: number): Promise<CollectedAudience> {
     const statuses =
       filters.statuses.length > 0 ? filters.statuses.filter((s) => s !== LAL_EXCLUDED_STATUS) : [...LAL_DEFAULT_STATUSES];
 
     const { from, to } = resolveDateRange(filters);
     const now = new Date();
 
+    // Без фільтра телефону: замовлення без номера входять у лічильник періоду, як у звіті продажів.
     const orders: OrderLite[] = await prisma.order.findMany({
       where: {
         status: { in: statuses },
-        AND: [{ customerPhone: { not: null } }, { NOT: { customerPhone: '' } }],
       },
       select: {
         id: true,
@@ -731,6 +770,12 @@ export class LalAudiencesService {
 
     filtered.sort((a, b) => b.ltv - a.ltv || b.orderCount - a.orderCount);
 
+    const reportingBounds = resolveReportingBounds(filters);
+    const periodStats = buildPeriodOrderStats(orders, {
+      ...reportingBounds,
+      dayStartHour,
+    });
+
     const latestIds = filtered.map((c) => c.latestOrderId);
     const contacts = await this.loadContacts(latestIds);
 
@@ -738,12 +783,14 @@ export class LalAudiencesService {
       orders: orders.length,
       grouped: grouped.size,
       matched: filtered.length,
+      ordersInPeriod: periodStats.ordersInPeriod,
+      repeatOrdersInPeriod: periodStats.repeatOrdersInPeriod,
       logic: filters.logic,
       period: filters.period,
       preset: filters.preset ?? null,
     });
 
-    return { customers: filtered, contacts };
+    return { customers: filtered, contacts, periodStats };
   }
 
   private async loadContacts(orderIds: number[]): Promise<Map<number, OrderContact>> {
