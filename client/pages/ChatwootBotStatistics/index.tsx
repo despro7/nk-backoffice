@@ -10,6 +10,7 @@ import type { ChatwootBotAnalyticsOverview, ChatwootBotQuestionClusterDto } from
 import ReportDateRangeFilter from '@/pages/Reports/shared/filters/ReportDateRangeFilter';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PERMISSIONS } from '@shared/constants/permissions';
+import { QuestionTopicsCard } from './components/QuestionTopicsCard';
 
 /** Телефони в питаннях клієнтів не мають потрапити в базу знань. */
 function stripPhones(text: string): string {
@@ -166,6 +167,7 @@ const ChatwootBotStatistics: React.FC = () => {
   const navigate = useNavigate();
   const { hasPermission } = useRoleAccess();
   const canManageKnowledge = hasPermission(PERMISSIONS.ACTION_CHATWOOT_KNOWLEDGE_MANAGE);
+  const canManageTopics = hasPermission(PERMISSIONS.ACTION_CHATWOOT_TOPICS_MANAGE);
   /** Нова стаття з усіма формулюваннями теми як варіантами питання (без телефонів). */
   const addToKnowledge = (row: ChatwootBotQuestionClusterDto): void => {
     const questions = [...new Set([row.label, ...row.examples].map(stripPhones).filter(Boolean))];
@@ -177,8 +179,13 @@ const ChatwootBotStatistics: React.FC = () => {
 
   const rangeIso = useMemo(() => dateRangeToIsoBounds(dateRange), [dateRange]);
 
-  const load = useCallback(async () => {
+  /** silent — без спінера (після правок тем), помилка летить у викликача. */
+  const load = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!rangeIso) return;
+    if (silent) {
+      setOverview(await chatwootBotApi.getAnalyticsOverview(rangeIso.from, rangeIso.to));
+      return;
+    }
     setLoading(true);
     try {
       const data = await chatwootBotApi.getAnalyticsOverview(rangeIso.from, rangeIso.to);
@@ -239,15 +246,15 @@ const ChatwootBotStatistics: React.FC = () => {
         </div>
       ) : overview ? (
         <>
-          <QuestionClustersCard
-            title="Теми питань"
-            icon="badge-question-mark"
-            description="Схожі формулювання згруповано. Колонка «База знань» показує статтю, яку знайде бот; «Немає» – прогалина."
+          <QuestionTopicsCard
             rows={overview.questionClusters}
-            showCoverage
+            topics={overview.topics ?? []}
+            ignoredQuestions={overview.ignoredQuestions ?? []}
+            canManageTopics={canManageTopics}
             canManageKnowledge={canManageKnowledge}
-            onAdd={addToKnowledge}
+            onAddToKnowledge={addToKnowledge}
             onOpenKnowledge={() => navigate('/chatwoot-bot/knowledge')}
+            onChanged={() => load({ silent: true })}
           />
 
           <QuestionClustersCard

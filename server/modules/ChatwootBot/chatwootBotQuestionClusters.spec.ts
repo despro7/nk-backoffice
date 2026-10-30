@@ -13,6 +13,8 @@ describe('clusterQuestions', () => {
     { text: '0978244639', count: 6 },
     { text: 'Дякую!', count: 4 },
     { text: 'Вітаю, хочу зробити замовлення', count: 1 },
+    { text: 'Мене цікавить щось без мʼяса', count: 1 },
+    { text: 'Мене цікавлять білкові страви', count: 1 },
   ];
   const clusters = clusterQuestions(samples);
   const byLabel = (label: string) => clusters.find((c) => c.label === label);
@@ -26,6 +28,11 @@ describe('clusterQuestions', () => {
     expect(byLabel('Де моє замовлення?')).toMatchObject({ count: 6 });
     expect(byLabel('Хочу скасувати замовлення')).toMatchObject({ count: 4 });
     expect(byLabel('Вітаю, хочу зробити замовлення')).toMatchObject({ count: 1 });
+  });
+
+  it('does not merge topics on filler words like «мене цікавить»', () => {
+    expect(byLabel('Мене цікавить щось без мʼяса')).toMatchObject({ count: 1 });
+    expect(byLabel('Мене цікавлять білкові страви')).toMatchObject({ count: 1 });
   });
 
   it('drops phone-only and courtesy messages', () => {

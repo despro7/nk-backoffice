@@ -6,6 +6,8 @@ import type {
   ChatwootBotAnalyticsOverview,
   ChatwootBotQuestionClusterDto,
 } from '../../../shared/types/chatwootBot.js';
+import type { ChatwootBotTopicQuestionDto, ChatwootBotTopicRef } from '../../../shared/types/chatwootBotTopics.js';
+import { chatwootBotQuestionTopicsService, type TopicsSnapshot } from './ChatwootBotQuestionTopicsService.js';
 import { chatwootBotKnowledgeService } from './ChatwootBotKnowledgeService.js';
 import { clusterQuestions, type QuestionCluster, type QuestionSample } from './chatwootBotQuestionClusters.js';
 import {
@@ -68,7 +70,7 @@ export class ChatwootBotAnalyticsService {
   }
 
   /** Для кожної теми — стаття, яку знайде бот (той самий пошук, що й у tool). */
-  private async withKnowledgeCoverage(clusters: QuestionCluster[]): Promise<ChatwootBotQuestionClusterDto[]> {
+  private async withKnowledgeCoverage<T extends QuestionCluster>(clusters: T[]): Promise<Array<T & ChatwootBotQuestionClusterDto>> {
     try {
       return await Promise.all(
         clusters.map(async (cluster) => {
@@ -80,6 +82,71 @@ export class ChatwootBotAnalyticsService {
       logServer('[ChatwootBotAnalytics] knowledge coverage failed (non-fatal)', err);
       return clusters;
     }
+  }
+
+  /**
+   * Теми з БД (алгоритм + ручні правки) з підрахунком за період. Якщо таблиці тем недоступні —
+   * кластеризація на льоту, як раніше.
+   */
+  private async buildQuestionTopics(questionCounts: Map<string, { count: number; preview: string }>): Promise<{
+    questionClusters: ChatwootBotQuestionClusterDto[];
+    topics: ChatwootBotTopicRef[];
+    ignoredQuestions: ChatwootBotTopicQuestionDto[];
+  }> {
+    let snapshot: TopicsSnapshot;
+    try {
+      snapshot = await chatwootBotQuestionTopicsService.snapshot();
+    } catch (err) {
+      logServer('[ChatwootBotAnalytics] topics unavailable, clustering on the fly', err);
+      const samples = [...questionCounts.values()].map((v) => ({ text: v.preview, count: v.count }));
+      return {
+        questionClusters: await this.withKnowledgeCoverage(clusterQuestions(samples)),
+        topics: [],
+        ignoredQuestions: [],
+      };
+    }
+
+    const byTopic = new Map<number, ChatwootBotTopicQuestionDto[]>();
+    const ignoredQuestions: ChatwootBotTopicQuestionDto[] = [];
+    for (const [norm, { count, preview }] of questionCounts) {
+      const row = snapshot.assignments.get(norm);
+      if (!row) continue;
+      const question: ChatwootBotTopicQuestionDto = {
+        hash: row.questionHash,
+        text: preview,
+        count,
+        source: row.source === 'manual' ? 'manual' : 'auto',
+      };
+      if (row.ignored) {
+        ignoredQuestions.push(question);
+      } else if (row.topicId != null) {
+        const list = byTopic.get(row.topicId) ?? [];
+        list.push(question);
+        byTopic.set(row.topicId, list);
+      }
+    }
+
+    const byCount = (a: ChatwootBotTopicQuestionDto, b: ChatwootBotTopicQuestionDto) =>
+      b.count - a.count || a.text.localeCompare(b.text);
+    const clusters = snapshot.topics
+      .filter((topic) => byTopic.has(topic.id))
+      .map((topic) => {
+        const questions = byTopic.get(topic.id)!.sort(byCount);
+        return {
+          topicId: topic.id,
+          label: topic.title,
+          count: questions.reduce((sum, q) => sum + q.count, 0),
+          examples: [...new Set(questions.map((q) => q.text))].slice(0, 5),
+          questions,
+        };
+      })
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+
+    return {
+      questionClusters: await this.withKnowledgeCoverage(clusters),
+      topics: snapshot.topics,
+      ignoredQuestions: ignoredQuestions.sort(byCount),
+    };
   }
 
   async getOverview(from: Date, to: Date): Promise<ChatwootBotAnalyticsOverview> {
@@ -153,7 +220,7 @@ export class ChatwootBotAnalyticsService {
 
     const toSamples = (counts: Map<string, { count: number; preview: string }>): QuestionSample[] =>
       [...counts.values()].map((v) => ({ text: v.preview, count: v.count }));
-    const questionClusters = await this.withKnowledgeCoverage(clusterQuestions(toSamples(questionCounts)));
+    const { questionClusters, topics, ignoredQuestions } = await this.buildQuestionTopics(questionCounts);
     const knowledgeMisses = clusterQuestions(toSamples(missCounts), { maxClusters: 10 });
 
     const pendingByConv = new Map<number, Date[]>();
@@ -234,6 +301,8 @@ export class ChatwootBotAnalyticsService {
       from: from.toISOString(),
       to: to.toISOString(),
       questionClusters,
+      topics,
+      ignoredQuestions,
       knowledgeMisses,
       knowledgeLookups: { total: knowledgeLookups, found: knowledgeFound },
       agentSla,

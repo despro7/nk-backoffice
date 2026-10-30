@@ -14,6 +14,11 @@ import type {
 } from '@shared/types/chatwootBotTools';
 import type { LlmTestModelResponse } from '@shared/types/llm';
 import type { ChatwootBotDevWebhookStatus } from '@shared/types/chatwootBotDevWebhook';
+import type {
+  ChatwootBotTopicDeleteMode,
+  ChatwootBotTopicQuestionsAction,
+  ChatwootBotTopicRef,
+} from '@shared/types/chatwootBotTopics';
 
 async function parseJson<T>(res: Response): Promise<T> {
   const data = await res.json();
@@ -21,6 +26,16 @@ async function parseJson<T>(res: Response): Promise<T> {
     throw new Error(data.error || data.message || `HTTP ${res.status}`);
   }
   return data.data as T;
+}
+
+async function sendJson<T>(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method,
+    credentials: 'include',
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return parseJson(res);
 }
 
 export const chatwootBotApi = {
@@ -251,5 +266,25 @@ export const chatwootBotApi = {
       credentials: 'include',
     });
     return parseJson(res);
+  },
+
+  async createTopic(title: string, hashes: string[]): Promise<ChatwootBotTopicRef> {
+    return sendJson('/api/chatwoot-bot/analytics/topics', 'POST', { title, hashes });
+  },
+
+  async applyTopicQuestionsAction(input: ChatwootBotTopicQuestionsAction): Promise<void> {
+    await sendJson('/api/chatwoot-bot/analytics/topics/questions', 'POST', input);
+  },
+
+  async renameTopic(id: number, title: string): Promise<void> {
+    await sendJson(`/api/chatwoot-bot/analytics/topics/${id}`, 'PATCH', { title });
+  },
+
+  async mergeTopics(targetId: number, sourceIds: number[]): Promise<void> {
+    await sendJson(`/api/chatwoot-bot/analytics/topics/${targetId}/merge`, 'POST', { sourceIds });
+  },
+
+  async deleteTopic(id: number, mode: ChatwootBotTopicDeleteMode): Promise<void> {
+    await sendJson(`/api/chatwoot-bot/analytics/topics/${id}?mode=${mode}`, 'DELETE');
   },
 };

@@ -30,6 +30,10 @@ import {
 import { releaseHumanAgentActivePersistSlot } from '../modules/ChatwootBot/humanAgentActivePersistGate.js';
 import { resetHumanHandoverOnConversation } from '../modules/ChatwootBot/chatwootHandoverReset.js';
 import { chatwootBotAnalyticsService } from '../modules/ChatwootBot/ChatwootBotAnalyticsService.js';
+import {
+  ChatwootBotTopicsValidationError,
+  chatwootBotQuestionTopicsService,
+} from '../modules/ChatwootBot/ChatwootBotQuestionTopicsService.js';
 import { sanitizeChatwootApiToken } from '../modules/ChatwootBot/chatwootHttp.js';
 import { chatwootBotCatalogToolService } from '../modules/ChatwootBot/ChatwootBotCatalogToolService.js';
 import { chatwootBotStorefrontSiteToolService } from '../modules/ChatwootBot/ChatwootBotStorefrontSiteToolService.js';
@@ -46,6 +50,7 @@ const router = Router();
 const settingsRead = requirePermissionKey(PERMISSIONS.PAGE_CHATWOOT_SETTINGS);
 const settingsManage = requirePermission('chatwoot', 'settingsManage', 'Зміна налаштувань і тести чат-бота');
 const statisticsRead = requirePermissionKey(PERMISSIONS.PAGE_CHATWOOT_STATISTICS);
+const topicsManage = requirePermission('chatwoot', 'topicsManage', 'Керування темами питань у статистиці чат-бота');
 
 router.use(authenticateToken);
 
@@ -692,6 +697,90 @@ router.get('/analytics/overview', statisticsRead, async (req: Request, res: Resp
       success: false,
       error: error instanceof Error ? error.message : 'Failed to load analytics',
     });
+  }
+});
+
+function handleTopicsError(res: Response, error: unknown, context: string): void {
+  const message = error instanceof Error ? error.message : String(error);
+  logServer(`[ChatwootBot] topics ${context}: ${message}`, error);
+  const notFound = typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2025';
+  const status = error instanceof ChatwootBotTopicsValidationError ? 400 : notFound ? 404 : 500;
+  res.status(status).json({ success: false, error: notFound ? 'Тему не знайдено' : message });
+}
+
+function parseTopicId(req: Request, res: Response): number | null {
+  const id = Number(req.params.id);
+  if (Number.isInteger(id) && id > 0) return id;
+  res.status(400).json({ success: false, error: 'Невірний id теми' });
+  return null;
+}
+
+/**
+ * POST /api/chatwoot-bot/analytics/topics  { title, hashes }
+ * Нова тема з вибраних питань (розділення теми).
+ */
+router.post('/analytics/topics', topicsManage, async (req: Request, res: Response) => {
+  try {
+    const data = await chatwootBotQuestionTopicsService.createFromQuestions(req.body ?? {}, req.user?.userId ?? null);
+    res.json({ success: true, data });
+  } catch (error) {
+    handleTopicsError(res, error, 'create');
+  }
+});
+
+/**
+ * POST /api/chatwoot-bot/analytics/topics/questions  { action: 'move' | 'noise' | 'auto', hashes, topicId? }
+ */
+router.post('/analytics/topics/questions', topicsManage, async (req: Request, res: Response) => {
+  try {
+    await chatwootBotQuestionTopicsService.applyQuestionsAction(req.body ?? {}, req.user?.userId ?? null);
+    res.json({ success: true });
+  } catch (error) {
+    handleTopicsError(res, error, 'questions');
+  }
+});
+
+/**
+ * PATCH /api/chatwoot-bot/analytics/topics/:id  { title, description? }
+ */
+router.patch('/analytics/topics/:id', topicsManage, async (req: Request, res: Response) => {
+  const id = parseTopicId(req, res);
+  if (!id) return;
+  try {
+    await chatwootBotQuestionTopicsService.rename(id, req.body ?? {}, req.user?.userId ?? null);
+    res.json({ success: true });
+  } catch (error) {
+    handleTopicsError(res, error, 'rename');
+  }
+});
+
+/**
+ * POST /api/chatwoot-bot/analytics/topics/:id/merge  { sourceIds }
+ * Питання тем sourceIds переходять у тему :id.
+ */
+router.post('/analytics/topics/:id/merge', topicsManage, async (req: Request, res: Response) => {
+  const id = parseTopicId(req, res);
+  if (!id) return;
+  try {
+    await chatwootBotQuestionTopicsService.merge(id, req.body?.sourceIds, req.user?.userId ?? null);
+    res.json({ success: true });
+  } catch (error) {
+    handleTopicsError(res, error, 'merge');
+  }
+});
+
+/**
+ * DELETE /api/chatwoot-bot/analytics/topics/:id?mode=reassign|ignore
+ */
+router.delete('/analytics/topics/:id', topicsManage, async (req: Request, res: Response) => {
+  const id = parseTopicId(req, res);
+  if (!id) return;
+  try {
+    const mode = req.query.mode === 'ignore' ? 'ignore' : 'reassign';
+    await chatwootBotQuestionTopicsService.remove(id, mode, req.user?.userId ?? null);
+    res.json({ success: true });
+  } catch (error) {
+    handleTopicsError(res, error, 'delete');
   }
 });
 

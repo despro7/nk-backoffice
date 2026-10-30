@@ -1209,3 +1209,45 @@ model ChatwootBotKnowledgeEntry {
   @@index([enabled])
   @@map("chatwoot_bot_knowledge_entries")
 }
+
+/// Тема питань клієнтів у статистиці Chatwoot Bot. Створює алгоритм або менеджер вручну.
+model ChatwootBotQuestionTopic {
+  id          Int      @id @default(autoincrement())
+  title       String   @db.VarChar(255)
+  /// Опис теми для класифікатора (коли питання сюди належить).
+  description String?  @db.Text
+  /// auto — створив алгоритм; manual — менеджер (створення, перейменування, злиття).
+  origin      String   @default("auto") @db.VarChar(16)
+  createdBy   Int?
+  updatedBy   Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  questions ChatwootBotQuestionAssignment[]
+
+  @@map("chatwoot_bot_question_topics")
+}
+
+/// Належність унікального питання (contentNorm) до теми. Ручне призначення алгоритм не змінює.
+model ChatwootBotQuestionAssignment {
+  /// sha256(contentNorm) — contentNorm задовгий для ключа.
+  questionHash String                    @id @db.Char(64)
+  contentNorm  String                    @db.VarChar(512)
+  preview      String                    @db.VarChar(512)
+  topicId      Int?
+  topic        ChatwootBotQuestionTopic? @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  /// auto — алгоритм; manual — менеджер.
+  source       String                    @default("auto") @db.VarChar(16)
+  /// Шум: питання не рахується в темах.
+  ignored      Boolean                   @default(false)
+  /// Схожість/впевненість автоматичного призначення (0–1).
+  confidence   Float?
+  /// Хто розклав: local | jev | manual.
+  method       String                    @default("local") @db.VarChar(16)
+  updatedBy    Int?
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+
+  @@index([topicId])
+  @@map("chatwoot_bot_question_assignments")
+}

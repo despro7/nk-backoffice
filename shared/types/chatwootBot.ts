@@ -1,5 +1,7 @@
 /** Chatwoot Agent Bot v0 – settings + webhook event types. */
 
+import type { ChatwootBotTopicQuestionDto, ChatwootBotTopicRef } from './chatwootBotTopics.js';
+
 /** Маркер реалізації handover у health – перевірка, що webhook б’є в актуальний код. */
 export const CHATWOOT_BOT_HANDOVER_BUILD = 'handover-trace-assign-v7';
 
@@ -153,6 +155,10 @@ export type ChatwootBotQuestionClusterDto = {
   examples: string[];
   /** Стаття, яку бот знайде за цією темою; null — прогалина в базі знань. */
   knowledgeEntry?: { id: number; title: string } | null;
+  /** Збережена тема (ручне керування); немає — тема порахована на льоту. */
+  topicId?: number;
+  /** Усі питання теми за період, від найчастішого. */
+  questions?: ChatwootBotTopicQuestionDto[];
 };
 
 export type ChatwootBotAnalyticsOverview = {
@@ -160,6 +166,10 @@ export type ChatwootBotAnalyticsOverview = {
   to: string;
   /** Теми питань клієнтів (схожі формулювання згруповано). */
   questionClusters: ChatwootBotQuestionClusterDto[];
+  /** Усі збережені теми (ціль для перенесення питань); порожньо — теми рахуються на льоту. */
+  topics: ChatwootBotTopicRef[];
+  /** Питання, позначені як шум, за період. */
+  ignoredQuestions: ChatwootBotTopicQuestionDto[];
   /** Теми, за якими бот шукав у базі знань і нічого не знайшов. */
   knowledgeMisses: ChatwootBotQuestionClusterDto[];
   knowledgeLookups: { total: number; found: number };
