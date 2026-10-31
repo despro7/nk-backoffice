@@ -1,18 +1,23 @@
-# Платформа LLM (OpenAI + Google Gemini + OpenRouter)
+# Платформа LLM (OpenAI + Google Gemini + OpenRouter + TypeSafe Jev)
 
 Спільний шар для викликів LLM у Backoffice: ключі, моделі за замовчуванням, провайдери, підказки цін з офіційних джерел.
 
-Перший споживач: **Chatwoot Agent Bot v1** (`ChatwootBotLlmRunner` → `llmService`).
+Споживачі: **Chatwoot Agent Bot v1** (`ChatwootBotLlmRunner` → `llmService`), теми питань бота (TypeSafe Jev).
 
 ## UI і API
 
 | Що | Де |
 |----|-----|
-| Налаштування | **Налаштування → LLM** (`/settings/llm`, admin) |
+| Налаштування | **Налаштування → LLM** (`/settings/llm`, admin); таби **Провайдери** і **Витрати і баланси** (`#tab=usage`) |
 | GET/PUT | `/api/llm/settings` |
 | Список моделей | `GET /api/llm/models/:provider` (`openai` \| `google` \| `openrouter`) |
 | Чернетка ключа | `POST /api/llm/models/:provider` body `{ "apiKey": "..." }` |
 | Тест моделі | `POST /api/llm/test-model/:provider` body `{ "model": "...", "apiKey"?: "..." }` — короткий completion |
+| Тест Jev | `POST /api/llm/typesafe/test` body `{ "apiKey"?, "model"? }` — класифікація прикладу питання |
+| Витрати | `GET /api/llm/usage?days=7\|30` — агрегати журналу `llm_usage_log` |
+| Баланси | `GET /api/llm/balances?refresh=true` — баланси провайдерів (кеш 5 хв) |
+
+Таб **Провайдери:** OpenAI, Google Gemini, OpenRouter — одна картка-accordion з логотипами (`public/icons/llm/`) і підзаголовком «ключ · модель»; під нею картка TypeSafe Jev; праворуч кольори цін і провайдер за замовчуванням.
 
 У dropdown моделей показується **pricingHint** (USD / 1M tokens), якщо вдалося підтягнути офіційні ціни. У **Тест моделі** та **Тест AI** (Chatwoot) у meta можуть бути usage + оцінка вартості (`shared/utils/llmUsageCostEstimate.ts`, enrichment у `llmUsageCostEnrichment.ts`).
 
@@ -28,8 +33,12 @@
   - `LLM_OPENROUTER_BASE_URL` — за замовч. `https://openrouter.ai/api/v1`; для EU in-region: `https://eu.openrouter.ai/api/v1` (потрібен Business/Enterprise)
   - `LLM_OPENROUTER_HTTP_REFERER`, `LLM_OPENROUTER_APP_TITLE` — опційно для OpenRouter rankings
   - `LLM_DEFAULT_PROVIDER` — `openai` \| `google` \| `openrouter`
+  - `LLM_TYPESAFE_API_KEY` — TypeSafe Jev
+  - `LLM_OPENAI_ADMIN_KEY` — OpenAI Admin key (`sk-admin-…`), лише для витрат організації
 
-Порожнє поле API key при **Зберегти** не затирає вже збережений ключ (як у Chatwoot). Очистити: `clearOpenaiApiKey` / `clearGoogleApiKey` / `clearOpenrouterApiKey` у PUT.
+Порожнє поле API key при **Зберегти** не затирає вже збережений ключ (як у Chatwoot). Очистити: `clearOpenaiApiKey` / `clearGoogleApiKey` / `clearOpenrouterApiKey` / `clearTypesafeApiKey` / `clearOpenaiAdminKey` у PUT.
+
+Інші поля: `typesafeModel` (дефолт `jev-latest`), `typesafeInputPricePer1M` (USD за 1M input tokens Jev; 0 — невідомо).
 
 Дефолти типів: `shared/types/llm.ts` (`DEFAULT_LLM_PLATFORM_SETTINGS`).
 
@@ -50,8 +59,36 @@
 | `shared/constants/googleLlmModelAliases.ts` | Підміна недоступних Gemini id перед API + приховування їх у каталозі (напр. `gemini-2.5-flash-lite` → `gemini-3.5-flash-lite`) |
 | `server/services/llm/openaiCompatibleChat.ts` | Спільний шар Chat Completions (OpenAI + OpenRouter) |
 | `shared/constants/llmProviders.ts` | Константи провайдерів для UI/API |
+| `server/services/llm/typesafeJevClient.ts` | TypeSafe Jev `POST /v1/systemone`, питання `choice` (до 255 варіантів, timeout 20 с) |
+| `server/services/llm/LlmUsageLogService.ts` | Запис у `llm_usage_log` (fire-and-forget), підсумок, очистка |
+| `server/services/llm/llmUsageSummary.ts` | Агрегація журналу (провайдер / функція / модель / день за Києвом), вартість Jev |
+| `server/services/llm/LlmBalancesService.ts` | Баланси OpenRouter і витрати OpenAI (кеш 5 хв) |
+| `client/components/llm/LlmUsageCard.tsx` | Таб «Витрати і баланси» |
 
 Помилки Google GenAI у `LlmService` нормалізуються через `googleLlmProviderError.ts` (текст з `error.message` у JSON, без сирого `ApiError: {...}`).
+
+## TypeSafe Jev
+
+Швидкий класифікатор (не chat-модель): `POST https://api.typesafe.ai/v1/systemone`, Bearer-ключ, питання типу `choice` → `choice`, `confidence`, `probabilities`. Платні лише input tokens. Використовується для тем питань чат-бота — див. [chatwoot-agent-bot.md](../integrations/chatwoot-agent-bot.md#теми-питань-статистика). Картка в табі **Провайдери**: ключ, модель, ціна за 1M input, кнопка **Тест Jev**.
+
+## Витрати і баланси
+
+**Журнал `llm_usage_log`** (міграція `20261031120000_llm_usage_log`): `provider` (`openai` \| `google` \| `openrouter` \| `typesafe`), `model`, `feature`, `inputTokens`, `outputTokens`, `apiCalls`, `costUsd` (null — ціна невідома), `ok`, `error`.
+
+- Пишуть: `LlmService.complete` / `completeWithTools` (і при помилці — з токенами, накопиченими до збою), тест моделі (`LlmModelsService.testModel`), `jevClassifyChoice` з параметром `usage`.
+- `feature`: `chatwoot_bot_reply`, `topics_jev`, `llm_test`, `jev_test`, `other` (дефолт, якщо в `LlmCompletionRequest` немає `feature`).
+- Вартість: `estimatedCostUsd` з usage (OpenRouter `usage.cost` або офіційні ціни OpenAI/Gemini); Jev — input tokens × `typesafeInputPricePer1M`.
+- Записи старші за 365 днів видаляє cron щодня о 04:15 (`startLlmUsageLogCleanup`, лише прод).
+
+**Баланси:**
+
+| Провайдер | Джерело |
+|-----------|---------|
+| OpenRouter | `GET {base}/credits` (кредити акаунта); якщо ключ без доступу — `GET {base}/key` (ліміт ключа) |
+| OpenAI | Лише з Admin key: `GET /v1/organization/costs` — витрати організації за 30 днів. Балансу API не віддає |
+| Google Gemini, TypeSafe | API балансу немає — лише наші витрати з журналу |
+
+Таб **Витрати і баланси:** перемикач 7 / 30 днів, підсумки (USD, виклики, tokens), графік по днях, таблиці по провайдерах / функціях / топ-10 моделях, баланси; кнопка оновлення бере баланси без кешу.
 
 ## Ціни в UI
 
@@ -74,6 +111,7 @@
 - `server/services/llm/LlmOpenAiOfficialPricingService.spec.ts`
 - `server/services/llm/LlmGoogleOfficialPricingService.spec.ts`
 - `shared/constants/googleLlmModelAliases.spec.ts`
+- `server/services/llm/llmUsageSummary.spec.ts`
 
 ## Залежності
 

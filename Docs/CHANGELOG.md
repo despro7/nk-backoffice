@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-10-31 — Chatwoot Bot: збережені теми питань і Jev; LLM: витрати і баланси
+
+**Files:** `ChatwootBotQuestionTopicsService.ts`, `chatwootBotTopicAssign.ts`, `chatwootBotTopicJev.ts`, `chatwootBotQuestionClusters.ts`, `ChatwootBotAnalyticsService.ts`, `ChatwootBotSettingsService.ts`, `ChatwootBotLlmRunner.ts`, `server/routes/chatwoot-bot.ts`, `server/routes/llm.ts`, `server/services/cronService.ts`, `server/services/llm/**` (`typesafeJevClient.ts`, `LlmUsageLogService.ts`, `llmUsageSummary.ts`, `LlmBalancesService.ts`), `QuestionTopicsCard.tsx`, `ChatwootBotSettings/tabs/TopicsTab.tsx`, `SettingsLlm.tsx`, `client/components/llm/LlmUsageCard.tsx`, `public/icons/llm/*`, `shared/types/chatwootBot*.ts`, `shared/types/llm.ts`, `prisma/schema.prisma`, міграції `20261030160000_chatwoot_bot_question_topics`, `20261031120000_llm_usage_log`
+
+- **Теми питань:** збережені теми й призначення питань у БД замість перерахунку на льоту; нові питання — у тему з найближчим учасником або нові кластери; ручне керування (перейменувати, перенести, шум, повернути алгоритму, злити, видалити, тема з обраних питань) під правом `actions.chatwoot.topicsManage`; ручне призначення алгоритм не чіпає.
+- **TypeSafe Jev:** класифікатор тем (`topicsClassifier: jev`) з порогом confidence і fallback на локальний алгоритм; ключ, модель і **Тест Jev** у `/settings/llm`.
+- **Розклад:** sync через `topicsSyncDelaySeconds` після повідомлення клієнта + cron щохвилини з інтервалом `topicsCronMinutes`; усі параметри — вкладка «Теми питань» у налаштуваннях бота.
+- **Витрати LLM:** журнал `llm_usage_log` (провайдер, модель, функція, tokens, USD, помилки) з `LlmService`, тестів моделей і Jev; ціна Jev за 1M input вводиться вручну; очистка записів > 365 днів.
+- **Баланси:** OpenRouter (кредити / ліміт ключа), OpenAI — витрати організації з опційним Admin key; Google і TypeSafe — лише наш журнал.
+- **UI `/settings/llm`:** таби «Провайдери» / «Витрати і баланси» (hash `#tab=usage`); провайдери — одна картка-accordion з логотипами; Jev — у лівій колонці.
+
+**Документація:** [`chatwoot-agent-bot.md`](integrations/chatwoot-agent-bot.md), [`llm-platform.md`](features/llm-platform.md).
+
+---
+
+## 2026-10-30 — Chatwoot Bot: база знань, теми питань у статистиці, права «Чат-бот»
+
+**Files:** `ChatwootBotKnowledgeService.ts`, `chatwootBotKnowledgeSearch.ts`, `ChatwootBotLlmRunner.ts`, `ChatwootBotAnalyticsService.ts`, `chatwootBotQuestionClusters.ts`, `server/routes/chatwoot-knowledge.ts`, `server/routes/chatwoot-bot.ts`, `client/pages/ChatwootBotKnowledge/**`, `ChatwootBotStatistics.tsx`, `ChatwootBotSettings/index.tsx`, `routes.config.tsx`, `shared/constants/chatwootBotLlmTools.ts`, `shared/constants/permissions.ts`, `permissionRoleEditor.ts`, `shared/types/chatwootBotKnowledge.ts`, `shared/types/chatwootBot.ts`, міграція `20261030140000_chatwoot_bot_knowledge_entries`
+
+- **База знань:** `/chatwoot-bot/knowledge` — статті (питання, відповідь, теги, увімкнено, лічильник звернень); пошук по основах слів + синоніми, без зовнішніх сервісів.
+- **LLM tool** `search_knowledge_base`: бот викликає першим для загальних питань і відповідає лише за фактами статті; нема збігу — сторінки сайту.
+- **Статистика:** теми питань клієнтів (кластеризація) і прогалини бази знань — тема без статті, яку знайде бот.
+- **Права:** окрема група «Чат-бот» — сторінки статистики, бази знань, налаштувань і дії керування базою знань / налаштуваннями; без права зміни налаштування лише на перегляд.
+
+**Документація:** [`chatwoot-agent-bot.md`](integrations/chatwoot-agent-bot.md).
+
+---
+
 ## 2026-10-30 — LAL: замовлення періоду і повторні продажі
 
 **Files:** `lalPeriodOrderStats.ts`, `lalPeriodOrderStats.spec.ts`, `LalAudiencesService.ts`, `shared/types/lalAudiences.ts`, `LalSummaryCard.tsx`, `LalRepeatTrendChart.tsx`, `useLalAudiences.ts`, `LalAudiences/index.tsx`, `Docs/features/lal-audiences.md`
