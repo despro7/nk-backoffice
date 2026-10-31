@@ -6,7 +6,7 @@ import { llmSettingsService } from '../services/llm/LlmSettingsService.js';
 import { llmModelsService } from '../services/llm/LlmModelsService.js';
 import type { LlmProvider } from '../../shared/types/llm.js';
 import { isLlmProvider } from '../../shared/constants/llmProviders.js';
-import { jevClassifyChoice } from '../services/llm/typesafeJevClient.js';
+import { jevClassifyChoice, resolveJevConnection } from '../services/llm/typesafeJevClient.js';
 import { llmUsageLogService } from '../services/llm/LlmUsageLogService.js';
 import { llmBalancesService } from '../services/llm/LlmBalancesService.js';
 
@@ -135,12 +135,13 @@ const JEV_TEST_QUESTION = 'Скільки коштує доставка до Л�
 /** POST body { apiKey?, model? } — тест Jev на прикладі класифікації питання клієнта. */
 router.post('/typesafe/test', async (req: Request, res: Response) => {
   try {
-    const body = (req.body ?? {}) as { apiKey?: string; model?: string };
+    const body = (req.body ?? {}) as { apiKey?: string; model?: string; source?: string };
     const settings = await llmSettingsService.getSettings();
+    // Джерело з UI (ще не збережене) має пріоритет над збереженим.
+    const source = body.source === 'typesafe' || body.source === 'openrouter' ? body.source : settings.typesafeSource;
     const startedAt = Date.now();
     const result = await jevClassifyChoice({
-      apiKey: body.apiKey?.trim() || settings.typesafeApiKey,
-      model: body.model?.trim() || settings.typesafeModel,
+      ...resolveJevConnection({ ...settings, typesafeSource: source }, { apiKey: body.apiKey, model: body.model }),
       state: JEV_TEST_QUESTION,
       instructions: 'Яка тема цього повідомлення клієнта інтернет-магазину?',
       criteria: {
@@ -149,7 +150,7 @@ router.post('/typesafe/test', async (req: Request, res: Response) => {
         menu: 'Страви, склад, асортимент',
         none: 'Жодна з тем не підходить',
       },
-      usage: { feature: 'jev_test', inputPricePer1M: settings.typesafeInputPricePer1M },
+      usageFeature: 'jev_test',
     });
     res.json({
       success: true,
@@ -160,6 +161,8 @@ router.post('/typesafe/test', async (req: Request, res: Response) => {
         probabilities: result.probabilities,
         latencyMs: Date.now() - startedAt,
         inputTokens: result.inputTokens,
+        costUsd: result.costUsd,
+        source,
         outputTokens: result.outputTokens,
         question: JEV_TEST_QUESTION,
       },

@@ -1,5 +1,17 @@
 import React from 'react';
-import { Button, Card, CardBody, CardFooter, CardHeader, Divider, Input, Link, Radio, RadioGroup, Slider } from '@heroui/react';
+import {
+  Button,
+  Card,
+  CardBody,
+  CardFooter,
+  CardHeader,
+  Divider,
+  Input,
+  Link,
+  Radio,
+  RadioGroup,
+  Slider,
+} from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { CHATWOOT_BOT_TOPICS_LIMITS as LIMITS } from '@shared/types/chatwootBot';
 import type { FormState } from '../chatwootBotFormState';
@@ -33,7 +45,7 @@ export function TopicsTab({ page }: Props) {
     />
   );
 
-  const jevWithoutKey = form.topicsClassifier === 'jev' && llmPlatform != null && !llmPlatform.hasTypesafeApiKey;
+  const jevWithoutKey = form.topicsClassifier === 'jev' && llmPlatform != null && !llmPlatform.jevApiKeyReady;
 
   return (
     <Card className="max-w-3xl">
@@ -65,7 +77,8 @@ export function TopicsTab({ page }: Props) {
           <div className="flex gap-2 items-start rounded-lg bg-warning-50 p-3 text-sm text-warning-800">
             <DynamicIcon name="triangle-alert" size={16} className="shrink-0 mt-0.5" />
             <span>
-              TypeSafe API key не налаштовано — працюватиме локальний алгоритм. Додайте ключ у{' '}
+              Ключ для Jev не налаштовано (OpenRouter або TypeSafe — залежно від джерела) — працюватиме локальний
+              алгоритм. Додайте ключ у{' '}
               <Link href="/settings/llm" size="sm" underline="always">
                 налаштуваннях LLM
               </Link>

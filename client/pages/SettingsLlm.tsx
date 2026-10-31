@@ -4,6 +4,8 @@ import {
   AccordionItem,
   Avatar,
   Button,
+  Radio,
+  RadioGroup,
   Card,
   CardBody,
   CardHeader,
@@ -281,14 +283,16 @@ function TypesafeJevCard({
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testFailed, setTestFailed] = useState(false);
-  const hasKey = form.hasTypesafeApiKey || Boolean(form.typesafeApiKey.trim());
+  const viaOpenRouter = form.typesafeSource === 'openrouter';
+  const hasDirectKey = form.hasTypesafeApiKey || Boolean(form.typesafeApiKey.trim());
+  const hasKey = viaOpenRouter ? form.hasOpenrouterApiKey : hasDirectKey;
 
   const runTest = async () => {
     setTesting(true);
     setTestResult(null);
     setTestFailed(false);
     try {
-      const r = await llmSettingsApi.testTypesafe(form.typesafeApiKey, form.typesafeModel);
+      const r = await llmSettingsApi.testTypesafe(form.typesafeApiKey, form.typesafeModel, form.typesafeSource);
       const probabilities = Object.entries(r.probabilities)
         .sort((a, b) => b[1] - a[1])
         .map(([key, p]) => `  ${key}: ${p.toFixed(3)}`)
@@ -296,7 +300,9 @@ function TypesafeJevCard({
       setTestResult(
         `Питання: ${r.question}\nВідповідь: ${r.choice} (confidence ${r.confidence.toFixed(3)})\n` +
           `Ймовірності:\n${probabilities}\n` +
-          `Модель: ${r.model} · ${r.latencyMs} мс · input ${r.inputTokens} / output ${r.outputTokens} tokens`,
+          `Модель: ${r.model} · ${r.latencyMs} мс · input ${r.inputTokens} / output ${r.outputTokens} tokens` +
+          (r.costUsd != null ? ` · $${r.costUsd.toFixed(6)}` : '') +
+          ` · ${r.source === 'openrouter' ? 'OpenRouter' : 'TypeSafe'}`,
       );
       ToastService.show({ title: 'Jev OK', description: `${r.choice} · ${r.confidence.toFixed(2)}`, color: 'success' });
     } catch (error) {
@@ -318,55 +324,72 @@ function TypesafeJevCard({
       <CardBody className="gap-4 p-4">
         <p className="text-xs text-default-500">
           Швидкий класифікатор (не чат-модель): розкладає питання клієнтів чат-бота по темах. Вмикається в налаштуваннях
-          Chatwoot Bot → «Теми питань». Fallback: env <code className="text-xs">LLM_TYPESAFE_API_KEY</code>. Ціна
-          потрібна для звіту витрат: API її не віддає, output tokens безкоштовні.
+          Chatwoot Bot → «Теми питань». Платні лише input tokens.
         </p>
-        <Input
-          label="API key"
-          type={keyVisible ? 'text' : 'password'}
-          placeholder={form.hasTypesafeApiKey ? form.typesafeApiKeyMasked : 'Не налаштовано'}
-          value={form.typesafeApiKey}
-          onValueChange={(v) => onUpdateField('typesafeApiKey', v)}
-          description="Порожнє при збереженні не змінює збережений ключ"
-          endContent={
-            <div className="flex gap-0.5">
-              {hasKey ? (
-                <Tooltip content={keyVisible ? 'Приховати' : 'Показати'} placement="top">
-                  <Button
-                    size="sm"
-                    variant="light"
-                    isIconOnly
-                    aria-label={keyVisible ? 'Приховати API key' : 'Показати API key'}
-                    onPress={() => {
-                      if (keyVisible || form.typesafeApiKey.trim()) {
-                        onToggleKeyVisible();
-                        return;
-                      }
-                      onRevealKey();
-                    }}
-                  >
-                    <DynamicIcon name={keyVisible ? 'eye-off' : 'eye'} size={16} />
-                  </Button>
-                </Tooltip>
-              ) : null}
-              {form.hasTypesafeApiKey ? (
-                <Tooltip content="Очистити збережений ключ" placement="top">
-                  <Button
-                    size="sm"
-                    variant="light"
-                    isIconOnly
-                    color="danger"
-                    aria-label="Очистити збережений API key"
-                    isDisabled={isSaving}
-                    onPress={onClearKey}
-                  >
-                    <DynamicIcon name="trash-2" size={16} className="text-danger" />
-                  </Button>
-                </Tooltip>
-              ) : null}
-            </div>
-          }
-        />
+        <RadioGroup
+          label="Джерело"
+          orientation="horizontal"
+          size="sm"
+          value={form.typesafeSource}
+          onValueChange={(v) => onUpdateField('typesafeSource', v === 'typesafe' ? 'typesafe' : 'openrouter')}
+        >
+          <Radio value="openrouter">OpenRouter</Radio>
+          <Radio value="typesafe">TypeSafe напряму</Radio>
+        </RadioGroup>
+        {viaOpenRouter ? (
+          <p className="text-xs text-default-500">
+            Ключ і кредити OpenRouter з картки «Провайдери»
+            {form.hasOpenrouterApiKey ? '' : ' — ключ OpenRouter не налаштовано'}. Вартість кожного виклику OpenRouter
+            повертає сам (<code className="text-xs">usage.cost</code>).
+          </p>
+        ) : (
+          <Input
+            label="API key"
+            type={keyVisible ? 'text' : 'password'}
+            placeholder={form.hasTypesafeApiKey ? form.typesafeApiKeyMasked : 'Не налаштовано'}
+            value={form.typesafeApiKey}
+            onValueChange={(v) => onUpdateField('typesafeApiKey', v)}
+            description="Порожнє при збереженні не змінює збережений ключ"
+            endContent={
+              <div className="flex gap-0.5">
+                {hasKey ? (
+                  <Tooltip content={keyVisible ? 'Приховати' : 'Показати'} placement="top">
+                    <Button
+                      size="sm"
+                      variant="light"
+                      isIconOnly
+                      aria-label={keyVisible ? 'Приховати API key' : 'Показати API key'}
+                      onPress={() => {
+                        if (keyVisible || form.typesafeApiKey.trim()) {
+                          onToggleKeyVisible();
+                          return;
+                        }
+                        onRevealKey();
+                      }}
+                    >
+                      <DynamicIcon name={keyVisible ? 'eye-off' : 'eye'} size={16} />
+                    </Button>
+                  </Tooltip>
+                ) : null}
+                {form.hasTypesafeApiKey ? (
+                  <Tooltip content="Очистити збережений ключ" placement="top">
+                    <Button
+                      size="sm"
+                      variant="light"
+                      isIconOnly
+                      color="danger"
+                      aria-label="Очистити збережений API key"
+                      isDisabled={isSaving}
+                      onPress={onClearKey}
+                    >
+                      <DynamicIcon name="trash-2" size={16} className="text-danger" />
+                    </Button>
+                  </Tooltip>
+                ) : null}
+              </div>
+            }
+          />
+        )}
         <div className="flex flex-wrap items-start gap-2">
           <Input
             className="flex-1 min-w-[12rem]"
@@ -375,16 +398,19 @@ function TypesafeJevCard({
             value={form.typesafeModel}
             onValueChange={(v) => onUpdateField('typesafeModel', v)}
           />
-          <Input
-            className="w-40"
-            type="number"
-            min={0}
-            step={0.01}
-            label="$ / 1M input"
-            placeholder="0"
-            value={form.typesafeInputPricePer1M ? String(form.typesafeInputPricePer1M) : ''}
-            onValueChange={(v) => onUpdateField('typesafeInputPricePer1M', Math.max(0, Number(v) || 0))}
-          />
+          {!viaOpenRouter ? (
+            <Input
+              className="w-40"
+              type="number"
+              min={0}
+              step={0.01}
+              label="$ / 1M input"
+              placeholder="0"
+              value={form.typesafeInputPricePer1M ? String(form.typesafeInputPricePer1M) : ''}
+              onValueChange={(v) => onUpdateField('typesafeInputPricePer1M', Math.max(0, Number(v) || 0))}
+              description="Для звіту витрат"
+            />
+          ) : null}
           <Button
             size="md"
             variant="bordered"
@@ -510,6 +536,7 @@ const SettingsLlm: React.FC = () => {
         modelPriceHighlight: form.modelPriceHighlight,
         typesafeApiKey: form.typesafeApiKey || undefined,
         typesafeModel: form.typesafeModel,
+        typesafeSource: form.typesafeSource,
         typesafeInputPricePer1M: form.typesafeInputPricePer1M,
         openaiAdminKey: form.openaiAdminKey || undefined,
       });

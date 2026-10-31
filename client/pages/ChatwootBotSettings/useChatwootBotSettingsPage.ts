@@ -121,7 +121,7 @@ export function useChatwootBotSettingsPage() {
             hasOpenaiApiKey: llm.hasOpenaiApiKey,
             hasGoogleApiKey: llm.hasGoogleApiKey,
             hasOpenrouterApiKey: llm.hasOpenrouterApiKey,
-            hasTypesafeApiKey: llm.hasTypesafeApiKey,
+            jevApiKeyReady: llm.jevApiKeyReady,
             openaiDefaultModel: llm.openaiDefaultModel,
             googleDefaultModel: llm.googleDefaultModel,
             openrouterDefaultModel: llm.openrouterDefaultModel,

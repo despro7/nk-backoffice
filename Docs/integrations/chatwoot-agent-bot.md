@@ -132,7 +132,7 @@ https://<публічний-хост-backoffice>/api/webhooks/chatwoot
 | `topicsSyncDelaySeconds` | 30 | 5–600 |
 | `topicsCronMinutes` | 10 | 0–120 |
 
-Без ключа TypeSafe режим `jev` працює як `local` (вкладка показує попередження з посиланням на `/settings/llm`).
+Jev викликається через OpenRouter (ключ OpenRouter) або напряму в TypeSafe — джерело задається в `/settings/llm`. Без ключа обраного джерела режим `jev` працює як `local` (вкладка показує попередження з посиланням на `/settings/llm`).
 
 ## Налаштування
 

@@ -8,6 +8,7 @@ import type {
   TypesafeJevTestResponse,
   LlmUsageSummaryResponse,
   LlmBalancesResponse,
+  LlmTypesafeSource,
 } from '@shared/types/llm';
 
 async function parseJson<T>(res: Response): Promise<T> {
@@ -60,10 +61,7 @@ export const llmSettingsApi = {
     return parseJson(res);
   },
 
-  async listModels(
-    provider: LlmProvider,
-    draftApiKey?: string,
-  ): Promise<LlmModelOption[]> {
+  async listModels(provider: LlmProvider, draftApiKey?: string): Promise<LlmModelOption[]> {
     if (draftApiKey?.trim()) {
       const res = await fetch(`/api/llm/models/${provider}`, {
         method: 'POST',
@@ -77,12 +75,16 @@ export const llmSettingsApi = {
     return parseJson(res);
   },
 
-  async testTypesafe(draftApiKey?: string, model?: string): Promise<TypesafeJevTestResponse> {
+  async testTypesafe(
+    draftApiKey?: string,
+    model?: string,
+    source?: LlmTypesafeSource,
+  ): Promise<TypesafeJevTestResponse> {
     const res = await fetch('/api/llm/typesafe/test', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey: draftApiKey?.trim() || undefined, model: model?.trim() || undefined }),
+      body: JSON.stringify({ apiKey: draftApiKey?.trim() || undefined, model: model?.trim() || undefined, source }),
     });
     return parseJson(res);
   },
@@ -128,6 +130,8 @@ export type LlmSettingsFormState = {
   typesafeApiKeyMasked: string;
   hasTypesafeApiKey: boolean;
   typesafeModel: string;
+  typesafeSource: LlmTypesafeSource;
+  jevApiKeyReady: boolean;
   typesafeInputPricePer1M: number;
   openaiAdminKey: string;
   openaiAdminKeyMasked: string;
@@ -155,6 +159,8 @@ export function toLlmFormState(data: LlmPlatformSettingsResponse): LlmSettingsFo
     typesafeApiKeyMasked: data.typesafeApiKeyMasked,
     hasTypesafeApiKey: data.hasTypesafeApiKey,
     typesafeModel: data.typesafeModel,
+    typesafeSource: data.typesafeSource,
+    jevApiKeyReady: data.jevApiKeyReady,
     typesafeInputPricePer1M: data.typesafeInputPricePer1M,
     openaiAdminKey: '',
     openaiAdminKeyMasked: data.openaiAdminKeyMasked,

@@ -1,28 +1,65 @@
 /**
  * TypeSafe Jev (`POST /v1/systemone`) — швидкий класифікатор: питання типу `choice` повертає
  * вибраний варіант, confidence і ймовірності всіх варіантів. Платні лише input tokens.
- * https://docs.typesafe.ai/introduction/quickstart
+ * Та сама API доступна напряму в TypeSafe і через OpenRouter (ключ OpenRouter, `usage.cost` у відповіді).
+ * https://docs.typesafe.ai/introduction/quickstart · https://openrouter.ai/docs/guides/community/typesafe-sdk
  */
 
-import type { LlmUsageFeature } from '../../../shared/types/llm.js';
+import type { LlmPlatformSettings, LlmUsageFeature } from '../../../shared/types/llm.js';
+import { getOpenRouterBaseUrl, getOpenRouterDefaultHeaders } from '../../../shared/constants/openRouterConfig.js';
 import { llmUsageLogService } from './LlmUsageLogService.js';
 import { jevCostUsd } from './llmUsageSummary.js';
 
-const TYPESAFE_API_URL = 'https://api.typesafe.ai/v1/systemone';
+const TYPESAFE_API_BASE_URL = 'https://api.typesafe.ai/v1';
 const REQUEST_TIMEOUT_MS = 20_000;
 /** Ліміт API на кількість варіантів у `criteria`. */
 export const JEV_MAX_CHOICES = 255;
 
-export type JevChoiceRequest = {
+/** Куди і з яким ключем слати запит Jev. */
+export type JevConnection = {
   apiKey: string;
   model: string;
+  /** База до `/systemone`, напр. `https://openrouter.ai/api/v1`. */
+  baseUrl: string;
+  headers?: Record<string, string>;
+  /** USD / 1M input для оцінки вартості, якщо відповідь без `usage.cost`. */
+  inputPricePer1M: number;
+};
+
+/** Підключення Jev з налаштувань LLM; `draftApiKey` — чернетка ключа з UI (лише для прямого TypeSafe). */
+export function resolveJevConnection(
+  settings: Pick<
+    LlmPlatformSettings,
+    'typesafeSource' | 'typesafeApiKey' | 'openrouterApiKey' | 'typesafeModel' | 'typesafeInputPricePer1M'
+  >,
+  overrides?: { apiKey?: string; model?: string },
+): JevConnection {
+  const model = overrides?.model?.trim() || settings.typesafeModel;
+  if (settings.typesafeSource === 'openrouter') {
+    return {
+      apiKey: settings.openrouterApiKey,
+      model,
+      baseUrl: getOpenRouterBaseUrl(),
+      headers: getOpenRouterDefaultHeaders(),
+      inputPricePer1M: 0,
+    };
+  }
+  return {
+    apiKey: overrides?.apiKey?.trim() || settings.typesafeApiKey,
+    model,
+    baseUrl: TYPESAFE_API_BASE_URL,
+    inputPricePer1M: settings.typesafeInputPricePer1M,
+  };
+}
+
+export type JevChoiceRequest = JevConnection & {
   /** Текст, який класифікуємо. */
   state: string;
   instructions: string;
   /** Ключ варіанта → опис. */
   criteria: Record<string, string>;
-  /** Записати виклик у журнал витрат (ціна — з налаштувань LLM). */
-  usage?: { feature: LlmUsageFeature; inputPricePer1M: number };
+  /** Записати виклик у журнал витрат з цією функцією. */
+  usageFeature?: LlmUsageFeature;
 };
 
 export type JevChoiceResult = {
@@ -32,6 +69,8 @@ export type JevChoiceResult = {
   probabilities: Record<string, number>;
   inputTokens: number;
   outputTokens: number;
+  /** USD з відповіді (OpenRouter `usage.cost`). */
+  costUsd: number | null;
 };
 
 export class TypesafeJevError extends Error {
@@ -50,7 +89,7 @@ type SystemOneResponse = {
     string,
     { type?: string; choice?: string; confidence?: number; probabilities?: Record<string, number> }
   >;
-  usage?: { input_tokens?: number; output_tokens?: number };
+  usage?: { input_tokens?: number; output_tokens?: number; cost?: number };
   error?: string | { message?: string };
   detail?: string;
 };
@@ -64,21 +103,21 @@ function errorMessage(body: SystemOneResponse | null, status: number): string {
 export async function jevClassifyChoice(input: JevChoiceRequest): Promise<JevChoiceResult> {
   try {
     const result = await requestChoice(input);
-    if (input.usage) {
+    if (input.usageFeature) {
       llmUsageLogService.record({
         provider: 'typesafe',
         model: result.model,
-        feature: input.usage.feature,
+        feature: input.usageFeature,
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
-        costUsd: jevCostUsd(result.inputTokens, input.usage.inputPricePer1M),
+        costUsd: result.costUsd ?? jevCostUsd(result.inputTokens, input.inputPricePer1M),
       });
     }
     return result;
   } catch (error) {
     // Без ключа запиту не було — нічого не витрачено.
-    if (input.usage && input.apiKey) {
-      llmUsageLogService.record({ provider: 'typesafe', model: input.model, feature: input.usage.feature, error });
+    if (input.usageFeature && input.apiKey) {
+      llmUsageLogService.record({ provider: 'typesafe', model: input.model, feature: input.usageFeature, error });
     }
     throw error;
   }
@@ -90,9 +129,9 @@ async function requestChoice(input: JevChoiceRequest): Promise<JevChoiceResult> 
   if (choices.length < 2) throw new TypesafeJevError('Потрібно щонайменше 2 варіанти');
   if (choices.length > JEV_MAX_CHOICES) throw new TypesafeJevError(`Більше ${JEV_MAX_CHOICES} варіантів`);
 
-  const res = await fetch(TYPESAFE_API_URL, {
+  const res = await fetch(`${input.baseUrl.replace(/\/$/, '')}/systemone`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${input.apiKey}`, 'Content-Type': 'application/json' },
+    headers: { ...input.headers, Authorization: `Bearer ${input.apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: input.model,
       state: input.state,
@@ -116,5 +155,6 @@ async function requestChoice(input: JevChoiceRequest): Promise<JevChoiceResult> 
     probabilities: answer.probabilities ?? {},
     inputTokens: Number(body?.usage?.input_tokens ?? 0),
     outputTokens: Number(body?.usage?.output_tokens ?? 0),
+    costUsd: typeof body?.usage?.cost === 'number' && Number.isFinite(body.usage.cost) ? body.usage.cost : null,
   };
 }

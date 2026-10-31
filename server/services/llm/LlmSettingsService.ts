@@ -75,6 +75,7 @@ function mergeWithDefaults(raw: Partial<LlmPlatformSettings>): LlmPlatformSettin
       typeof raw.typesafeModel === 'string' && raw.typesafeModel.trim()
         ? raw.typesafeModel.trim()
         : DEFAULT_LLM_PLATFORM_SETTINGS.typesafeModel,
+    typesafeSource: raw.typesafeSource === 'typesafe' ? 'typesafe' : 'openrouter',
     typesafeInputPricePer1M: normalizePricePer1M(raw.typesafeInputPricePer1M),
     openaiAdminKey: typeof raw.openaiAdminKey === 'string' ? raw.openaiAdminKey.trim() : '',
   };
@@ -139,6 +140,10 @@ export class LlmSettingsService {
       typesafeApiKey: revealSecrets ? settings.typesafeApiKey : '',
       typesafeApiKeyMasked: maskSecret(settings.typesafeApiKey),
       hasTypesafeApiKey: Boolean(settings.typesafeApiKey),
+      typesafeSource: settings.typesafeSource,
+      jevApiKeyReady: Boolean(
+        settings.typesafeSource === 'openrouter' ? settings.openrouterApiKey : settings.typesafeApiKey,
+      ),
       typesafeInputPricePer1M: settings.typesafeInputPricePer1M,
       openaiAdminKey: revealSecrets ? settings.openaiAdminKey : '',
       openaiAdminKeyMasked: maskSecret(settings.openaiAdminKey),

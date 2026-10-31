@@ -7,7 +7,7 @@ import {
   type ChatwootBotTopicQuestionsAction,
   type ChatwootBotTopicRef,
 } from '../../../shared/types/chatwootBotTopics.js';
-import { jevClassifyChoice } from '../../services/llm/typesafeJevClient.js';
+import { jevClassifyChoice, resolveJevConnection } from '../../services/llm/typesafeJevClient.js';
 import { llmSettingsService } from '../../services/llm/LlmSettingsService.js';
 import { chatwootBotSettingsService } from './ChatwootBotSettingsService.js';
 import { topicStems } from './chatwootBotQuestionClusters.js';
@@ -242,7 +242,8 @@ export class ChatwootBotQuestionTopicsService {
       chatwootBotSettingsService.getSettings(),
       llmSettingsService.getSettings(),
     ]);
-    if (botSettings.topicsClassifier !== 'jev' || !llm.typesafeApiKey) return [];
+    const jev = resolveJevConnection(llm);
+    if (botSettings.topicsClassifier !== 'jev' || !jev.apiKey) return [];
 
     const topics = await prisma.chatwootBotQuestionTopic.findMany({
       where: { id: { in: [...members.keys()] } },
@@ -275,12 +276,11 @@ export class ChatwootBotQuestionTopicsService {
     for (const question of candidates) {
       try {
         const answer = await jevClassifyChoice({
-          apiKey: llm.typesafeApiKey,
-          model: llm.typesafeModel,
+          ...jev,
           state: question.text,
           instructions: JEV_TOPIC_INSTRUCTIONS,
           criteria,
-          usage: { feature: 'topics_jev', inputPricePer1M: llm.typesafeInputPricePer1M },
+          usageFeature: 'topics_jev',
         });
         inputTokens += answer.inputTokens;
         const topicId = topicIdFromJevChoice(answer.choice);

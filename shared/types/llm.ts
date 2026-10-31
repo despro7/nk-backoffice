@@ -2,6 +2,9 @@
 
 export type LlmProvider = 'openai' | 'google' | 'openrouter';
 
+/** Звідки викликати TypeSafe Jev: напряму або через System One API OpenRouter (ключ OpenRouter). */
+export type LlmTypesafeSource = 'typesafe' | 'openrouter';
+
 export type LlmModelOption = {
   id: string;
   label: string;
@@ -151,7 +154,8 @@ export type LlmPlatformSettings = {
   /** TypeSafe Jev — класифікатор (не chat-модель), напр. теми питань чат-бота. */
   typesafeApiKey: string;
   typesafeModel: string;
-  /** USD за 1M input tokens Jev (API ціну не віддає); 0 — невідомо. */
+  typesafeSource: LlmTypesafeSource;
+  /** USD за 1M input tokens Jev при прямому TypeSafe (API ціну не віддає); 0 — невідомо. OpenRouter повертає `usage.cost`. */
   typesafeInputPricePer1M: number;
   /** Необовʼязковий OpenAI Admin key (`sk-admin-…`) — витрати організації через /v1/organization/costs. */
   openaiAdminKey: string;
@@ -181,6 +185,8 @@ export type LlmPlatformSettingsResponse = Omit<
   typesafeApiKey: string;
   typesafeApiKeyMasked: string;
   hasTypesafeApiKey: boolean;
+  /** Є ключ для обраного джерела Jev (TypeSafe або OpenRouter). */
+  jevApiKeyReady: boolean;
   openaiAdminKey: string;
   openaiAdminKeyMasked: string;
   hasOpenaiAdminKey: boolean;
@@ -195,6 +201,9 @@ export type TypesafeJevTestResponse = {
   latencyMs: number;
   inputTokens: number;
   outputTokens: number;
+  /** USD з відповіді OpenRouter; null — прямий TypeSafe. */
+  costUsd: number | null;
+  source: LlmTypesafeSource;
   question: string;
 };
 
@@ -261,6 +270,7 @@ export const DEFAULT_LLM_PLATFORM_SETTINGS: LlmPlatformSettings = {
   },
   typesafeApiKey: '',
   typesafeModel: 'jev-latest',
+  typesafeSource: 'openrouter',
   typesafeInputPricePer1M: 0,
   openaiAdminKey: '',
 };

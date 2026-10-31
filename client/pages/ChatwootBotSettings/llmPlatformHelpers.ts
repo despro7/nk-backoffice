@@ -12,7 +12,8 @@ export type LlmPlatformSnapshot = {
   hasOpenaiApiKey: boolean;
   hasGoogleApiKey: boolean;
   hasOpenrouterApiKey: boolean;
-  hasTypesafeApiKey: boolean;
+  /** Є ключ для обраного джерела Jev (TypeSafe або OpenRouter). */
+  jevApiKeyReady: boolean;
   openaiDefaultModel: string;
   googleDefaultModel: string;
   openrouterDefaultModel: string;
@@ -45,7 +46,7 @@ export function defaultLlmPlatformSnapshot(): LlmPlatformSnapshot {
     hasOpenaiApiKey: false,
     hasGoogleApiKey: false,
     hasOpenrouterApiKey: false,
-    hasTypesafeApiKey: false,
+    jevApiKeyReady: false,
     openaiDefaultModel: DEFAULT_LLM_PLATFORM_SETTINGS.openaiDefaultModel,
     googleDefaultModel: DEFAULT_LLM_PLATFORM_SETTINGS.googleDefaultModel,
     openrouterDefaultModel: DEFAULT_LLM_PLATFORM_SETTINGS.openrouterDefaultModel,

@@ -33,12 +33,12 @@
   - `LLM_OPENROUTER_BASE_URL` — за замовч. `https://openrouter.ai/api/v1`; для EU in-region: `https://eu.openrouter.ai/api/v1` (потрібен Business/Enterprise)
   - `LLM_OPENROUTER_HTTP_REFERER`, `LLM_OPENROUTER_APP_TITLE` — опційно для OpenRouter rankings
   - `LLM_DEFAULT_PROVIDER` — `openai` \| `google` \| `openrouter`
-  - `LLM_TYPESAFE_API_KEY` — TypeSafe Jev
+  - `LLM_TYPESAFE_API_KEY` — TypeSafe Jev (лише джерело `typesafe`)
   - `LLM_OPENAI_ADMIN_KEY` — OpenAI Admin key (`sk-admin-…`), лише для витрат організації
 
 Порожнє поле API key при **Зберегти** не затирає вже збережений ключ (як у Chatwoot). Очистити: `clearOpenaiApiKey` / `clearGoogleApiKey` / `clearOpenrouterApiKey` / `clearTypesafeApiKey` / `clearOpenaiAdminKey` у PUT.
 
-Інші поля: `typesafeModel` (дефолт `jev-latest`), `typesafeInputPricePer1M` (USD за 1M input tokens Jev; 0 — невідомо).
+Інші поля: `typesafeSource` (`openrouter` \| `typesafe`, дефолт `openrouter`), `typesafeModel` (дефолт `jev-latest`), `typesafeInputPricePer1M` (USD за 1M input tokens для прямого TypeSafe; 0 — невідомо).
 
 Дефолти типів: `shared/types/llm.ts` (`DEFAULT_LLM_PLATFORM_SETTINGS`).
 
@@ -69,7 +69,18 @@
 
 ## TypeSafe Jev
 
-Швидкий класифікатор (не chat-модель): `POST https://api.typesafe.ai/v1/systemone`, Bearer-ключ, питання типу `choice` → `choice`, `confidence`, `probabilities`. Платні лише input tokens. Використовується для тем питань чат-бота — див. [chatwoot-agent-bot.md](../integrations/chatwoot-agent-bot.md#теми-питань-статистика). Картка в табі **Провайдери**: ключ, модель, ціна за 1M input, кнопка **Тест Jev**.
+Швидкий класифікатор (не chat-модель): `POST {base}/systemone`, Bearer-ключ, питання типу `choice` → `choice`, `confidence`, `probabilities`. Платні лише input tokens. Використовується для тем питань чат-бота — див. [chatwoot-agent-bot.md](../integrations/chatwoot-agent-bot.md#теми-питань-статистика).
+
+Джерело — `typesafeSource` (`resolveJevConnection` у `typesafeJevClient.ts`):
+
+| Джерело | Base URL | Ключ | Вартість у журналі |
+|---------|----------|------|--------------------|
+| `openrouter` (дефолт) | `{LLM_OPENROUTER_BASE_URL}` → `https://openrouter.ai/api/v1/systemone` | ключ OpenRouter | `usage.cost` з відповіді |
+| `typesafe` | `https://api.typesafe.ai/v1/systemone` | `typesafeApiKey` / `LLM_TYPESAFE_API_KEY` | input tokens × `typesafeInputPricePer1M` |
+
+Формат запиту й відповіді однаковий ([OpenRouter: TypeSafe SDK](https://openrouter.ai/docs/guides/community/typesafe-sdk)); OpenRouter мапить `jev-latest` на `~typesafe/jev-latest` і повертає фактичну версію в `model`. `jevApiKeyReady` у відповіді налаштувань — чи є ключ для обраного джерела.
+
+Картка в табі **Провайдери**: перемикач джерела; для TypeSafe напряму — ключ і ціна за 1M input; модель; кнопка **Тест Jev** (бере джерело з форми, до збереження).
 
 ## Витрати і баланси
 
@@ -77,7 +88,7 @@
 
 - Пишуть: `LlmService.complete` / `completeWithTools` (і при помилці — з токенами, накопиченими до збою), тест моделі (`LlmModelsService.testModel`), `jevClassifyChoice` з параметром `usage`.
 - `feature`: `chatwoot_bot_reply`, `topics_jev`, `llm_test`, `jev_test`, `other` (дефолт, якщо в `LlmCompletionRequest` немає `feature`).
-- Вартість: `estimatedCostUsd` з usage (OpenRouter `usage.cost` або офіційні ціни OpenAI/Gemini); Jev — input tokens × `typesafeInputPricePer1M`.
+- Вартість: `estimatedCostUsd` з usage (OpenRouter `usage.cost` або офіційні ціни OpenAI/Gemini); Jev — `usage.cost` від OpenRouter, для прямого TypeSafe — input tokens × `typesafeInputPricePer1M`.
 - Записи старші за 365 днів видаляє cron щодня о 04:15 (`startLlmUsageLogCleanup`, лише прод).
 
 **Баланси:**
@@ -86,7 +97,7 @@
 |-----------|---------|
 | OpenRouter | `GET {base}/credits` (кредити акаунта); якщо ключ без доступу — `GET {base}/key` (ліміт ключа) |
 | OpenAI | Лише з Admin key: `GET /v1/organization/costs` — витрати організації за 30 днів. Балансу API не віддає |
-| Google Gemini, TypeSafe | API балансу немає — лише наші витрати з журналу |
+| Google Gemini, TypeSafe | API балансу немає — лише наші витрати з журналу (Jev через OpenRouter списується з кредитів OpenRouter) |
 
 Таб **Витрати і баланси:** перемикач 7 / 30 днів, підсумки (USD, виклики, tokens), графік по днях, таблиці по провайдерах / функціях / топ-10 моделях, баланси; кнопка оновлення бере баланси без кешу.
 
