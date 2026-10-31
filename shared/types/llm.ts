@@ -56,7 +56,15 @@ export type LlmToolDefinition = {
   parameters: LlmToolParameterSchema;
 };
 
+/** Провайдер у журналі витрат: chat-LLM або класифікатор TypeSafe. */
+export type LlmUsageProvider = LlmProvider | 'typesafe';
+
+/** Звідки платний виклик — для розбивки витрат. */
+export type LlmUsageFeature = 'chatwoot_bot_reply' | 'topics_jev' | 'llm_test' | 'jev_test' | 'other';
+
 export type LlmCompletionRequest = {
+  /** Для журналу витрат; без нього — `other`. */
+  feature?: LlmUsageFeature;
   provider?: LlmProvider;
   model?: string;
   system?: string;
@@ -143,6 +151,10 @@ export type LlmPlatformSettings = {
   /** TypeSafe Jev — класифікатор (не chat-модель), напр. теми питань чат-бота. */
   typesafeApiKey: string;
   typesafeModel: string;
+  /** USD за 1M input tokens Jev (API ціну не віддає); 0 — невідомо. */
+  typesafeInputPricePer1M: number;
+  /** Необовʼязковий OpenAI Admin key (`sk-admin-…`) — витрати організації через /v1/organization/costs. */
+  openaiAdminKey: string;
 };
 
 export type LlmPlatformSettingsUpdate = Partial<LlmPlatformSettings> & {
@@ -150,11 +162,12 @@ export type LlmPlatformSettingsUpdate = Partial<LlmPlatformSettings> & {
   clearGoogleApiKey?: boolean;
   clearOpenrouterApiKey?: boolean;
   clearTypesafeApiKey?: boolean;
+  clearOpenaiAdminKey?: boolean;
 };
 
 export type LlmPlatformSettingsResponse = Omit<
   LlmPlatformSettings,
-  'openaiApiKey' | 'googleApiKey' | 'openrouterApiKey' | 'typesafeApiKey'
+  'openaiApiKey' | 'googleApiKey' | 'openrouterApiKey' | 'typesafeApiKey' | 'openaiAdminKey'
 > & {
   openaiApiKey: string;
   openaiApiKeyMasked: string;
@@ -168,6 +181,9 @@ export type LlmPlatformSettingsResponse = Omit<
   typesafeApiKey: string;
   typesafeApiKeyMasked: string;
   hasTypesafeApiKey: boolean;
+  openaiAdminKey: string;
+  openaiAdminKeyMasked: string;
+  hasOpenaiAdminKey: boolean;
 };
 
 /** Тест Jev у /settings/llm: класифікація прикладу питання. */
@@ -180,6 +196,50 @@ export type TypesafeJevTestResponse = {
   inputTokens: number;
   outputTokens: number;
   question: string;
+};
+
+/** Агрегат журналу витрат за період (провайдер / функція / модель / день). */
+export type LlmUsageTotals = {
+  calls: number;
+  errors: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  /** Викликів без відомої ціни — сума costUsd неповна. */
+  unpricedCalls: number;
+};
+
+export type LlmUsageSummaryResponse = {
+  days: number;
+  from: string;
+  to: string;
+  total: LlmUsageTotals;
+  byProvider: Array<{ provider: LlmUsageProvider } & LlmUsageTotals>;
+  byFeature: Array<{ feature: string } & LlmUsageTotals>;
+  byModel: Array<{ provider: LlmUsageProvider; model: string } & LlmUsageTotals>;
+  /** YYYY-MM-DD (Europe/Kyiv) → витрати; усі дні періоду, порожні теж. */
+  byDay: Array<{ day: string; costUsd: number; calls: number }>;
+};
+
+export type LlmProviderBalance = {
+  provider: LlmUsageProvider;
+  /** available — дані є; no_key — ключ не задано; unsupported — API балансу немає; error — запит упав. */
+  status: 'available' | 'no_key' | 'unsupported' | 'error';
+  /** Залишок кредитів / ліміту, USD. */
+  remainingUsd?: number | null;
+  /** Ліміт ключа або куплені кредити, USD. */
+  limitUsd?: number | null;
+  /** Витрачено за даними провайдера, USD. */
+  usedUsd?: number | null;
+  /** Що саме означає usedUsd (напр. «за весь час», «30 днів»). */
+  usedPeriod?: string;
+  note?: string;
+  error?: string;
+};
+
+export type LlmBalancesResponse = {
+  fetchedAt: string;
+  balances: LlmProviderBalance[];
 };
 
 export const LLM_PLATFORM_SETTINGS_KEY = 'llm_platform_settings';
@@ -201,6 +261,8 @@ export const DEFAULT_LLM_PLATFORM_SETTINGS: LlmPlatformSettings = {
   },
   typesafeApiKey: '',
   typesafeModel: 'jev-latest',
+  typesafeInputPricePer1M: 0,
+  openaiAdminKey: '',
 };
 
 export class LlmServiceError extends Error {

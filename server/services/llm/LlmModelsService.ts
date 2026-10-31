@@ -12,6 +12,8 @@ import { openaiComplete } from './providers/openaiLlmProvider.js';
 import { openRouterComplete } from './providers/openRouterLlmProvider.js';
 import { getOpenRouterBaseUrl, getOpenRouterDefaultHeaders } from '../../../shared/constants/openRouterConfig.js';
 import { resolveLlmApiKey, resolveLlmDefaultModel } from './llmPlatformResolve.js';
+import { enrichLlmTokenUsageCost } from './llmUsageCostEnrichment.js';
+import { llmUsageLogService } from './LlmUsageLogService.js';
 import { isLlmProvider } from '../../../shared/constants/llmProviders.js';
 import {
   isGeminiPlatformChatModel,
@@ -305,7 +307,23 @@ export class LlmModelsService {
       temperature: 0.2,
     };
     const started = Date.now();
-    const result = await this.runCompletion(provider, apiKey, model, request);
+    let result: Awaited<ReturnType<LlmModelsService['runCompletion']>>;
+    try {
+      result = await this.runCompletion(provider, apiKey, model, request);
+    } catch (error) {
+      llmUsageLogService.record({ provider, model, feature: 'llm_test', error });
+      throw error;
+    }
+    const usage = await enrichLlmTokenUsageCost(provider, model, result.usage);
+    if (usage !== result.usage) result = { ...result, usage };
+    llmUsageLogService.record({
+      provider,
+      model,
+      feature: 'llm_test',
+      inputTokens: usage?.promptTokens,
+      outputTokens: usage?.completionTokens,
+      costUsd: usage?.estimatedCostUsd,
+    });
     const latencyMs = Date.now() - started;
     const reply = result.text.trim();
     if (!reply) {

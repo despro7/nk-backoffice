@@ -4,6 +4,10 @@
  * https://docs.typesafe.ai/introduction/quickstart
  */
 
+import type { LlmUsageFeature } from '../../../shared/types/llm.js';
+import { llmUsageLogService } from './LlmUsageLogService.js';
+import { jevCostUsd } from './llmUsageSummary.js';
+
 const TYPESAFE_API_URL = 'https://api.typesafe.ai/v1/systemone';
 const REQUEST_TIMEOUT_MS = 20_000;
 /** Ліміт API на кількість варіантів у `criteria`. */
@@ -17,6 +21,8 @@ export type JevChoiceRequest = {
   instructions: string;
   /** Ключ варіанта → опис. */
   criteria: Record<string, string>;
+  /** Записати виклик у журнал витрат (ціна — з налаштувань LLM). */
+  usage?: { feature: LlmUsageFeature; inputPricePer1M: number };
 };
 
 export type JevChoiceResult = {
@@ -56,6 +62,29 @@ function errorMessage(body: SystemOneResponse | null, status: number): string {
 }
 
 export async function jevClassifyChoice(input: JevChoiceRequest): Promise<JevChoiceResult> {
+  try {
+    const result = await requestChoice(input);
+    if (input.usage) {
+      llmUsageLogService.record({
+        provider: 'typesafe',
+        model: result.model,
+        feature: input.usage.feature,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        costUsd: jevCostUsd(result.inputTokens, input.usage.inputPricePer1M),
+      });
+    }
+    return result;
+  } catch (error) {
+    // Без ключа запиту не було — нічого не витрачено.
+    if (input.usage && input.apiKey) {
+      llmUsageLogService.record({ provider: 'typesafe', model: input.model, feature: input.usage.feature, error });
+    }
+    throw error;
+  }
+}
+
+async function requestChoice(input: JevChoiceRequest): Promise<JevChoiceResult> {
   if (!input.apiKey) throw new TypesafeJevError('TypeSafe API key не налаштовано');
   const choices = Object.keys(input.criteria);
   if (choices.length < 2) throw new TypesafeJevError('Потрібно щонайменше 2 варіанти');

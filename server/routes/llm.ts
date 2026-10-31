@@ -7,6 +7,8 @@ import { llmModelsService } from '../services/llm/LlmModelsService.js';
 import type { LlmProvider } from '../../shared/types/llm.js';
 import { isLlmProvider } from '../../shared/constants/llmProviders.js';
 import { jevClassifyChoice } from '../services/llm/typesafeJevClient.js';
+import { llmUsageLogService } from '../services/llm/LlmUsageLogService.js';
+import { llmBalancesService } from '../services/llm/LlmBalancesService.js';
 
 const router = Router();
 const llmAdmin = requirePermission('settings', 'admin', 'Змінювати адмінські налаштування');
@@ -147,6 +149,7 @@ router.post('/typesafe/test', async (req: Request, res: Response) => {
         menu: 'Страви, склад, асортимент',
         none: 'Жодна з тем не підходить',
       },
+      usage: { feature: 'jev_test', inputPricePer1M: settings.typesafeInputPricePer1M },
     });
     res.json({
       success: true,
@@ -170,10 +173,42 @@ router.post('/typesafe/test', async (req: Request, res: Response) => {
   }
 });
 
+const USAGE_PERIOD_DAYS = [7, 30];
+
+/** GET /api/llm/usage?days=7|30 — наші витрати з журналу. */
+router.get('/usage', async (req: Request, res: Response) => {
+  try {
+    const days = Number(req.query.days);
+    const data = await llmUsageLogService.getSummary(USAGE_PERIOD_DAYS.includes(days) ? days : 7);
+    res.json({ success: true, data });
+  } catch (error) {
+    logServer('[LLM] GET usage failed', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to load LLM usage',
+    });
+  }
+});
+
+/** GET /api/llm/balances?refresh=true — баланси провайдерів (кеш 5 хв). */
+router.get('/balances', async (req: Request, res: Response) => {
+  try {
+    const data = await llmBalancesService.getBalances(String(req.query.refresh ?? '') === 'true');
+    res.json({ success: true, data });
+  } catch (error) {
+    logServer('[LLM] GET balances failed', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to load LLM balances',
+    });
+  }
+});
+
 router.put('/settings', async (req: Request, res: Response) => {
   try {
     const body = (req.body ?? {}) as LlmPlatformSettingsUpdate;
     await llmSettingsService.saveSettings(body);
+    llmBalancesService.invalidateCache();
     const data = await llmSettingsService.getSettingsForAdmin(false);
     res.json({ success: true, data });
   } catch (error) {

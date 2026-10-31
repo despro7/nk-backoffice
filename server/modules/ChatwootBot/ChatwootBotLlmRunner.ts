@@ -91,6 +91,7 @@ export class ChatwootBotLlmRunner {
     try {
       const result = await llmService.completeWithTools(
         {
+          feature: 'chatwoot_bot_reply',
           provider,
           model,
           system,

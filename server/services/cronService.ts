@@ -116,6 +116,7 @@ export class CronService {
   private chatwootDevWebhookGuardJob: cron.ScheduledTask | null = null;
   private isChatwootDevWebhookGuardRunning = false;
   private chatwootBotTopicsSyncJob: cron.ScheduledTask | null = null;
+  private llmUsageLogCleanupJob: cron.ScheduledTask | null = null;
   private isTaskRunning = false;
   private isProductsSyncRunning = false;
   private isStockSyncRunning = false;
@@ -653,6 +654,7 @@ export class CronService {
     this.startChatwootBotLogCleanup();
     this.startChatwootDevWebhookGuard();
     this.startChatwootBotTopicsSync();
+    this.startLlmUsageLogCleanup();
   }
 
   stopAll(): void {
@@ -822,6 +824,25 @@ export class CronService {
     this.chatwootBotTopicsSyncJob.start();
     cronJobsRegistry.add(this.chatwootBotTopicsSyncJob);
     console.log('🤖 [CronService] Chatwoot bot topics sync запущено (інтервал з налаштувань бота)');
+  }
+
+  /** Журнал витрат LLM: записи старші за рік. */
+  startLlmUsageLogCleanup(): void {
+    if (this.llmUsageLogCleanupJob) return;
+
+    // 15 4 * * * — щодня о 04:15
+    this.llmUsageLogCleanupJob = cron.schedule('15 4 * * *', async () => {
+      try {
+        const { llmUsageLogService } = await import('./llm/LlmUsageLogService.js');
+        const removed = await llmUsageLogService.purgeOld();
+        if (removed > 0) console.log(`🧹 [CronService] LLM usage log: видалено ${removed} старих записів`);
+      } catch (error) {
+        console.error('🧹 [CronService] LLM usage log cleanup failed:', error);
+      }
+    });
+
+    this.llmUsageLogCleanupJob.start();
+    cronJobsRegistry.add(this.llmUsageLogCleanupJob);
   }
 
   stopChatwootBotTopicsSync(): void {

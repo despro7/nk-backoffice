@@ -6,6 +6,8 @@ import type {
   LlmProvider,
   LlmTestModelResponse,
   TypesafeJevTestResponse,
+  LlmUsageSummaryResponse,
+  LlmBalancesResponse,
 } from '@shared/types/llm';
 
 async function parseJson<T>(res: Response): Promise<T> {
@@ -85,6 +87,16 @@ export const llmSettingsApi = {
     return parseJson(res);
   },
 
+  async getUsage(days: number): Promise<LlmUsageSummaryResponse> {
+    const res = await fetch(`/api/llm/usage?days=${days}`, { credentials: 'include' });
+    return parseJson(res);
+  },
+
+  async getBalances(refresh = false): Promise<LlmBalancesResponse> {
+    const res = await fetch(`/api/llm/balances${refresh ? '?refresh=true' : ''}`, { credentials: 'include' });
+    return parseJson(res);
+  },
+
   async updateSettings(input: LlmPlatformSettingsUpdate): Promise<LlmPlatformSettingsResponse> {
     const res = await fetch('/api/llm/settings', {
       method: 'PUT',
@@ -116,6 +128,10 @@ export type LlmSettingsFormState = {
   typesafeApiKeyMasked: string;
   hasTypesafeApiKey: boolean;
   typesafeModel: string;
+  typesafeInputPricePer1M: number;
+  openaiAdminKey: string;
+  openaiAdminKeyMasked: string;
+  hasOpenaiAdminKey: boolean;
 };
 
 export function toLlmFormState(data: LlmPlatformSettingsResponse): LlmSettingsFormState {
@@ -139,5 +155,9 @@ export function toLlmFormState(data: LlmPlatformSettingsResponse): LlmSettingsFo
     typesafeApiKeyMasked: data.typesafeApiKeyMasked,
     hasTypesafeApiKey: data.hasTypesafeApiKey,
     typesafeModel: data.typesafeModel,
+    typesafeInputPricePer1M: data.typesafeInputPricePer1M,
+    openaiAdminKey: '',
+    openaiAdminKeyMasked: data.openaiAdminKeyMasked,
+    hasOpenaiAdminKey: data.hasOpenaiAdminKey,
   };
 }

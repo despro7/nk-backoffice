@@ -35,7 +35,13 @@ function applyEnvFallback(settings: LlmPlatformSettings): LlmPlatformSettings {
     googleApiKey: settings.googleApiKey || process.env.LLM_GOOGLE_API_KEY || '',
     openrouterApiKey: settings.openrouterApiKey || process.env.LLM_OPENROUTER_API_KEY || '',
     typesafeApiKey: settings.typesafeApiKey || process.env.LLM_TYPESAFE_API_KEY || '',
+    openaiAdminKey: settings.openaiAdminKey || process.env.LLM_OPENAI_ADMIN_KEY || '',
   };
+}
+
+function normalizePricePer1M(raw: unknown): number {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.min(1000, value) : 0;
 }
 
 function mergeWithDefaults(raw: Partial<LlmPlatformSettings>): LlmPlatformSettings {
@@ -69,6 +75,8 @@ function mergeWithDefaults(raw: Partial<LlmPlatformSettings>): LlmPlatformSettin
       typeof raw.typesafeModel === 'string' && raw.typesafeModel.trim()
         ? raw.typesafeModel.trim()
         : DEFAULT_LLM_PLATFORM_SETTINGS.typesafeModel,
+    typesafeInputPricePer1M: normalizePricePer1M(raw.typesafeInputPricePer1M),
+    openaiAdminKey: typeof raw.openaiAdminKey === 'string' ? raw.openaiAdminKey.trim() : '',
   };
   return applyEnvFallback(merged);
 }
@@ -131,12 +139,23 @@ export class LlmSettingsService {
       typesafeApiKey: revealSecrets ? settings.typesafeApiKey : '',
       typesafeApiKeyMasked: maskSecret(settings.typesafeApiKey),
       hasTypesafeApiKey: Boolean(settings.typesafeApiKey),
+      typesafeInputPricePer1M: settings.typesafeInputPricePer1M,
+      openaiAdminKey: revealSecrets ? settings.openaiAdminKey : '',
+      openaiAdminKeyMasked: maskSecret(settings.openaiAdminKey),
+      hasOpenaiAdminKey: Boolean(settings.openaiAdminKey),
     };
   }
 
   async saveSettings(incoming: LlmPlatformSettingsUpdate): Promise<LlmPlatformSettings> {
     const current = await this.getSettings();
-    const { clearOpenaiApiKey, clearGoogleApiKey, clearOpenrouterApiKey, clearTypesafeApiKey, ...rest } = incoming;
+    const {
+      clearOpenaiApiKey,
+      clearGoogleApiKey,
+      clearOpenrouterApiKey,
+      clearTypesafeApiKey,
+      clearOpenaiAdminKey,
+      ...rest
+    } = incoming;
     const next = mergeWithDefaults({
       ...current,
       ...rest,
@@ -160,6 +179,11 @@ export class LlmSettingsService {
         : rest.typesafeApiKey !== undefined && rest.typesafeApiKey !== ''
           ? rest.typesafeApiKey
           : current.typesafeApiKey,
+      openaiAdminKey: clearOpenaiAdminKey
+        ? ''
+        : rest.openaiAdminKey !== undefined && rest.openaiAdminKey !== ''
+          ? rest.openaiAdminKey
+          : current.openaiAdminKey,
     });
 
     await prisma.settingsBase.upsert({

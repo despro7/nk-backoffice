@@ -1251,3 +1251,26 @@ model ChatwootBotQuestionAssignment {
   @@index([topicId])
   @@map("chatwoot_bot_question_assignments")
 }
+
+/// Платні виклики LLM/класифікаторів: токени й вартість для дашборда витрат.
+model LlmUsageLog {
+  id           Int      @id @default(autoincrement())
+  createdAt    DateTime @default(now())
+  /// openai | google | openrouter | typesafe
+  provider     String   @db.VarChar(16)
+  model        String   @db.VarChar(191)
+  /// Звідки виклик: chatwoot_bot_reply, topics_jev, llm_test, jev_test, other.
+  feature      String   @db.VarChar(48)
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  /// Раундів API (tool loop).
+  apiCalls     Int      @default(1)
+  /// USD; null — ціна моделі невідома.
+  costUsd      Decimal? @db.Decimal(12, 6)
+  ok           Boolean  @default(true)
+  error        String?  @db.VarChar(255)
+
+  @@index([createdAt])
+  @@index([provider, createdAt])
+  @@map("llm_usage_log")
+}

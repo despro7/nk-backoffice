@@ -20,6 +20,7 @@ import { formatOpenRouterError } from './openRouterProviderError.js';
 import { resolveLlmApiKey, resolveLlmDefaultModel } from './llmPlatformResolve.js';
 import { mergeLlmTokenUsage } from './llmTokenUsage.js';
 import { enrichLlmTokenUsageCost } from './llmUsageCostEnrichment.js';
+import { llmUsageLogService } from './LlmUsageLogService.js';
 
 const MAX_TOOL_LOOP_ITERATIONS = 8;
 
@@ -53,8 +54,10 @@ export class LlmService {
     try {
       const result = await this.dispatchComplete(provider, apiKey, model, request);
       const usage = await enrichLlmTokenUsageCost(provider, model, result.usage);
+      this.logUsage(request, provider, model, usage, 1);
       return usage === result.usage ? result : { ...result, usage };
     } catch (error) {
+      this.logUsage(request, provider, model, undefined, 1, error);
       logServer('[LlmService] complete failed', error);
       throw new LlmServiceError(this.formatProviderError(provider, error), 'provider_error');
     }
@@ -98,12 +101,15 @@ export class LlmService {
           providerRequestIds.push(lastResult.providerRequestId);
         }
       } catch (error) {
+        const usage = await enrichLlmTokenUsageCost(provider, model, accumulatedUsage);
+        this.logUsage(request, provider, model, usage, i + 1, error);
         logServer('[LlmService] completeWithTools failed', error);
         throw new LlmServiceError(this.formatProviderError(provider, error), 'provider_error');
       }
 
       if (lastResult.finishReason !== 'tool_calls' || lastResult.toolCalls.length === 0) {
         const usage = await enrichLlmTokenUsageCost(provider, model, accumulatedUsage);
+        this.logUsage(request, provider, model, usage, i + 1);
         return finalizeToolLoopResult(
           model,
           lastResult,
@@ -163,6 +169,7 @@ export class LlmService {
       };
     }
     const usage = await enrichLlmTokenUsageCost(provider, model, accumulatedUsage);
+    this.logUsage(request, provider, model, usage, MAX_TOOL_LOOP_ITERATIONS, 'tool loop limit');
     return finalizeToolLoopResult(
       model,
       { ...lastResult, finishReason: 'error' },
@@ -172,6 +179,26 @@ export class LlmService {
       providerRequestIds,
       captureToolTrace ? toolTrace : undefined,
     );
+  }
+
+  private logUsage(
+    request: LlmCompletionRequest,
+    provider: LlmProvider,
+    model: string,
+    usage: LlmTokenUsage | undefined,
+    apiCalls: number,
+    error?: unknown,
+  ): void {
+    llmUsageLogService.record({
+      provider,
+      model,
+      feature: request.feature,
+      inputTokens: usage?.promptTokens,
+      outputTokens: usage?.completionTokens,
+      apiCalls,
+      costUsd: usage?.estimatedCostUsd,
+      error,
+    });
   }
 
   private formatProviderError(provider: LlmProvider, error: unknown): string {

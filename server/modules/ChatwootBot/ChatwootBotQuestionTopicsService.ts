@@ -280,6 +280,7 @@ export class ChatwootBotQuestionTopicsService {
           state: question.text,
           instructions: JEV_TOPIC_INSTRUCTIONS,
           criteria,
+          usage: { feature: 'topics_jev', inputPricePer1M: llm.typesafeInputPricePer1M },
         });
         inputTokens += answer.inputTokens;
         const topicId = topicIdFromJevChoice(answer.choice);
