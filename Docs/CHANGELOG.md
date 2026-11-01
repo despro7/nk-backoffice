@@ -5,9 +5,9 @@
 
 ---
 
-## 2026-11-01 — Chatwoot Bot: асинхронний webhook, typing, передача оператору з LLM, пісочниця, пошук страв
+## 2026-11-01 — Chatwoot Bot: асинхронний webhook, передача оператору з LLM, пісочниця, пошук страв, профіль контакту, скасування замовлень
 
-**Files:** `server/routes/chatwoot-webhooks.ts`, `server/routes/chatwoot-bot.ts`, `ChatwootBotSandboxService.ts`, `chatwootBotCatalogSearch.ts`, `ChatwootBotCatalogToolService.ts`, `ChatwootBotSettings/tabs/SandboxTab.tsx`, `client/services/ChatwootBotService.ts`, `shared/types/chatwootBotSandbox.ts`, `shared/types/chatwootBotTools.ts`, `ChatwootBotContactSyncService.ts`, `chatwootBotContactFields.ts`, `ChatwootApiClient.ts`, `HandoverReclaimTab.tsx`, `ChatwootBotReplyRouter.ts`, `ChatwootBotLlmRunner.ts`, `ChatwootBotOrchestrator.ts`, `chatwootBotConversationContext.ts`, `chatwootBotLoopGuard.ts`, `shared/constants/chatwootBotLlmTools.ts`
+**Files:** `server/routes/chatwoot-webhooks.ts`, `server/routes/chatwoot-bot.ts`, `ChatwootBotSandboxService.ts`, `chatwootBotCatalogSearch.ts`, `ChatwootBotCatalogToolService.ts`, `ChatwootBotSettings/tabs/SandboxTab.tsx`, `client/services/ChatwootBotService.ts`, `shared/types/chatwootBotSandbox.ts`, `shared/types/chatwootBotTools.ts`, `ChatwootBotContactSyncService.ts`, `chatwootBotContactFields.ts`, `ChatwootApiClient.ts`, `HandoverReclaimTab.tsx`, `ChatwootBotOrderCancelService.ts`, `chatwootBotOrderCancelRules.ts`, `chatwootBotTelegramNotifier.ts`, `shared/constants/chatwootBotOrderCancel.ts`, `ChatwootBotSettings/tabs/OrderCancelTab.tsx`, `ChatwootBotSettingsService.ts`, `ChatwootBotReplyRouter.ts`, `ChatwootBotLlmRunner.ts`, `ChatwootBotOrchestrator.ts`, `chatwootBotConversationContext.ts`, `chatwootBotLoopGuard.ts`, `shared/constants/chatwootBotLlmTools.ts`
 
 - **Фікс «error with the agent bot»:** webhook відповідає Chatwoot до обробки; LLM-цикл довший за таймаут Chatwoot, через що розмови йшли в `open` до операторів. Порядок повідомлень — черга по розмові.
 - **Typing indicator:** «друкує…» у віджеті на час LLM-циклу.
@@ -16,6 +16,7 @@
 - **Пісочниця** (вкладка налаштувань): діалог з ботом без Chatwoot — результат, вартість і trace інструментів під кожною відповіддю; збережені сценарії й «Прогнати всі».
 - **Профіль контакту:** телефон / email, які клієнт написав у чаті, записуються в порожні поля контакту Chatwoot (`contactSyncEnabled`); номер уже в іншого контакту — приватна нотатка оператору.
 - **Сторінка клієнта:** товар або URL сторінки (скрипт на сайті → custom attributes, інакше referer віджета) у контексті LLM — «цей товар» зрозумілий боту.
+- **Скасування замовлення** (вкладка «Скасування», дефолт вимк.): tool `request_order_cancellation` — телефон + прізвище й імʼя, вибір серед активних замовлень, причина й пропозиція допомоги; автоскасування («Відмова» в SalesDrive) для обраних статусів (дефолт Новий, Підтверджено), решта — оператору. Оператор: приватна нотатка завжди, за налаштуванням — призначення (авто або конкретний) і Telegram (окремий бот, кнопка «Тест»).
 - **Каталог для бота:** пошук за категорією, складом і описом (не лише назва), синоніми інгредієнтів, фільтр «без мʼяса»; у відповіді tool — категорія, склад, опис, `meatFree`.
 
 **Документація:** [`chatwoot-agent-bot.md`](integrations/chatwoot-agent-bot.md).

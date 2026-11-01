@@ -13,6 +13,7 @@ import { HandoverReclaimTab } from './tabs/HandoverReclaimTab';
 import { JournalTab } from './tabs/JournalTab';
 import { TopicsTab } from './tabs/TopicsTab';
 import { SandboxTab } from './tabs/SandboxTab';
+import { OrderCancelTab } from './tabs/OrderCancelTab';
 
 const SettingsChatwootBot: React.FC = () => {
   const { hasPermission } = useRoleAccess();
@@ -126,6 +127,7 @@ const SettingsChatwootBot: React.FC = () => {
           {activeTab === 'ai' && <AiVerifyTab page={page} />}
           {activeTab === 'handover' && <HandoverReclaimTab page={page} />}
           {activeTab === 'topics' && <TopicsTab page={page} />}
+          {activeTab === 'cancel' && <OrderCancelTab page={page} />}
           {activeTab === 'sandbox' && <SandboxTab page={page} />}
         </fieldset>
         {activeTab === 'journal' && <JournalTab page={page} />}

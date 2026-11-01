@@ -1,6 +1,10 @@
 /** Chatwoot Agent Bot v0 – settings + webhook event types. */
 
 import type { ChatwootBotTopicQuestionDto, ChatwootBotTopicRef } from './chatwootBotTopics.js';
+import {
+  DEFAULT_ORDER_CANCEL_AUTO_STATUSES,
+  DEFAULT_ORDER_CANCEL_SEMI_AUTO_STATUSES,
+} from '../constants/chatwootBotOrderCancel.js';
 
 /** Маркер реалізації handover у health – перевірка, що webhook б’є в актуальний код. */
 export const CHATWOOT_BOT_HANDOVER_BUILD = 'handover-trace-assign-v7';
@@ -138,6 +142,21 @@ export type ChatwootBotSettings = {
   resolveCleanupEnabled: boolean;
   /** Телефон / email з повідомлення клієнта → порожні поля контакту Chatwoot (User PAT). */
   contactSyncEnabled: boolean;
+  /** Tool `request_order_cancellation` (вимкнено — бот передає запит оператору). */
+  orderCancelEnabled: boolean;
+  /** Статуси SalesDrive, з яких бот сам ставить «Відмова». */
+  orderCancelAutoStatuses: string[];
+  /** Статуси, з яких скасування — після підтвердження оператором. */
+  orderCancelSemiAutoStatuses: string[];
+  /** Призначати оператора й слати Telegram для запитів скасування (приватна нотатка — завжди). */
+  orderCancelNotifyEnabled: boolean;
+  orderCancelAssignMode: ChatwootHandoverAssignMode;
+  /** Chatwoot user id для режиму specific_agent. */
+  orderCancelAssigneeId: number | null;
+  /** Telegram-бот для сповіщень операторів (окремий від звітів підтримки). */
+  telegramNotifyBotToken: string;
+  /** Chat id (група або користувач), куди бот пише сповіщення. */
+  telegramNotifyChatId: string;
   /** Без ключа TypeSafe `jev` працює як `local`. */
   topicsClassifier: ChatwootBotTopicsClassifier;
   /** 0–1: нижче — Jev не впевнений, питання розкладає локальний алгоритм. */
@@ -250,13 +269,17 @@ export type ChatwootInboxHoursStatus = {
 export type ChatwootBotSettingsUpdate = Partial<ChatwootBotSettings> & {
   clearWebhookSecret?: boolean;
   clearInboxApiAccessToken?: boolean;
+  clearTelegramNotifyBotToken?: boolean;
 };
 
 /** GET response – token і secret маскуються. */
 export type ChatwootBotSettingsResponse = Omit<
   ChatwootBotSettings,
-  'apiAccessToken' | 'webhookSecret' | 'inboxApiAccessToken'
+  'apiAccessToken' | 'webhookSecret' | 'inboxApiAccessToken' | 'telegramNotifyBotToken'
 > & {
+  telegramNotifyBotToken: string;
+  telegramNotifyBotTokenMasked: string;
+  hasTelegramNotifyBotToken: boolean;
   apiAccessToken: string;
   apiAccessTokenMasked: string;
   hasApiAccessToken: boolean;
@@ -474,6 +497,14 @@ export const DEFAULT_CHATWOOT_BOT_SETTINGS: ChatwootBotSettings = {
   reclaimContinueWithEcho: true,
   resolveCleanupEnabled: true,
   contactSyncEnabled: true,
+  orderCancelEnabled: false,
+  orderCancelAutoStatuses: [...DEFAULT_ORDER_CANCEL_AUTO_STATUSES],
+  orderCancelSemiAutoStatuses: [...DEFAULT_ORDER_CANCEL_SEMI_AUTO_STATUSES],
+  orderCancelNotifyEnabled: true,
+  orderCancelAssignMode: 'auto_inbox',
+  orderCancelAssigneeId: null,
+  telegramNotifyBotToken: '',
+  telegramNotifyChatId: '',
   topicsClassifier: 'local',
   topicsJevMinConfidence: 0.6,
   topicsJevExamplesPerTopic: 4,

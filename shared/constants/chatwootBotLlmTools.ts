@@ -170,6 +170,38 @@ export const CHATWOOT_BOT_LLM_TOOLS: ChatwootBotLlmToolMeta[] = [
     ],
   },
   {
+    name: 'request_order_cancellation',
+    description:
+      'Запит клієнта скасувати замовлення. Сувора перевірка: телефон і прізвище + імʼя одержувача (як у замовленні). Викликай поступово: бекенд у code скаже, чого бракує (phone_required, name_required, choose_order зі списком замовлень, reason_required). Перш ніж передати reason, спитай причину й запропонуй допомогу (змінити склад, дату, адресу). Далі бекенд сам скасує замовлення або передасть оператору – повідом клієнту результат за hint.',
+    parameters: {
+      type: 'object',
+      properties: {
+        phone: { type: 'string', description: 'Телефон, якщо клієнт його щойно назвав' },
+        fullName: { type: 'string', description: 'Прізвище та імʼя (можна з по батькові), як назвав клієнт' },
+        orderNumber: { type: 'string', description: 'Номер замовлення, якщо клієнт його назвав або обрав зі списку' },
+        reason: { type: 'string', description: 'Причина скасування словами клієнта' },
+      },
+    },
+    adminTestNote:
+      'Вмикається на вкладці «Скасування». У пісочниці дія лише моделюється (simulated): SalesDrive і оператора не чіпає.',
+    examples: [
+      {
+        label: 'Кілька активних замовлень',
+        arguments: { fullName: 'Іванов Петро' },
+        resultSample: {
+          code: 'choose_order',
+          orders: [{ orderNumber: '24155', date: '30.10.2026', status: 'Новий', total: 640 }],
+          hint: 'Клієнт має кілька активних замовлень…',
+        },
+      },
+      {
+        label: 'Автоскасування',
+        arguments: { fullName: 'Іванов Петро', orderNumber: '24155', reason: 'Передумав' },
+        resultSample: { code: 'cancelled', order: { orderNumber: '24155', status: 'Відмова' }, hint: '…' },
+      },
+    ],
+  },
+  {
     name: 'request_operator',
     description:
       'Передає розмову оператору. Викликай, коли клієнт просить людину, або коли після пошуку в базі знань, на сайті й у каталозі відповіді немає. Бекенд сам надішле клієнту повідомлення з урахуванням робочих годин (у неробочий час – запропонує залишити телефон для дзвінка), тож свій текст після виклику не пиши.',

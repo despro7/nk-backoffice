@@ -66,6 +66,18 @@ export type FormState = {
   reclaimContinueWithEcho: boolean;
   resolveCleanupEnabled: boolean;
   contactSyncEnabled: boolean;
+  orderCancelEnabled: boolean;
+  orderCancelAutoStatuses: string[];
+  orderCancelSemiAutoStatuses: string[];
+  orderCancelNotifyEnabled: boolean;
+  orderCancelAssignMode: ChatwootHandoverAssignMode;
+  orderCancelAssigneeId: number | null;
+  telegramNotifyBotToken: string;
+  telegramNotifyBotTokenMasked: string;
+  hasTelegramNotifyBotToken: boolean;
+  /** Очистити збережений токен при «Зберегти». */
+  clearTelegramNotifyBotToken: boolean;
+  telegramNotifyChatId: string;
   topicsClassifier: ChatwootBotTopicsClassifier;
   topicsJevMinConfidence: number;
   topicsJevExamplesPerTopic: number;
@@ -144,6 +156,17 @@ export function toFormState(data: ChatwootBotSettingsResponse): FormState {
     reclaimContinueWithEcho: data.reclaimContinueWithEcho,
     resolveCleanupEnabled: data.resolveCleanupEnabled,
     contactSyncEnabled: data.contactSyncEnabled,
+    orderCancelEnabled: data.orderCancelEnabled,
+    orderCancelAutoStatuses: data.orderCancelAutoStatuses,
+    orderCancelSemiAutoStatuses: data.orderCancelSemiAutoStatuses,
+    orderCancelNotifyEnabled: data.orderCancelNotifyEnabled,
+    orderCancelAssignMode: data.orderCancelAssignMode,
+    orderCancelAssigneeId: data.orderCancelAssigneeId,
+    telegramNotifyBotToken: '',
+    telegramNotifyBotTokenMasked: data.telegramNotifyBotTokenMasked,
+    hasTelegramNotifyBotToken: data.hasTelegramNotifyBotToken,
+    clearTelegramNotifyBotToken: false,
+    telegramNotifyChatId: data.telegramNotifyChatId,
     topicsClassifier: data.topicsClassifier,
     topicsJevMinConfidence: data.topicsJevMinConfidence,
     topicsJevExamplesPerTopic: data.topicsJevExamplesPerTopic,

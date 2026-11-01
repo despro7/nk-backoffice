@@ -18,7 +18,7 @@
 
 Старий шлях `/settings/chatwoot-bot` перенаправляється на `/chatwoot-bot/settings`.
 
-**Налаштування (таби + hash):** `/chatwoot-bot/settings#tab=ai` — ключі `connection` | `replies` | `ai` | `handover` | `topics` | `sandbox` | `journal` (для «Підключення» hash порожній). Компоненти: `client/pages/ChatwootBotSettings/` (`SettingsChatwootBot.tsx` — re-export).
+**Налаштування (таби + hash):** `/chatwoot-bot/settings#tab=ai` — ключі `connection` | `replies` | `ai` | `handover` | `topics` | `cancel` | `sandbox` | `journal` (для «Підключення» hash порожній). Компоненти: `client/pages/ChatwootBotSettings/` (`SettingsChatwootBot.tsx` — re-export).
 
 **Права (група «Чат-бот»):** сторінки `pages.chatwoot.statistics` / `.knowledge` / `.settings`; дії `actions.chatwoot.knowledgeManage` (редагування бази знань), `.topicsManage` (ручне керування темами), `.settingsManage` (зміна налаштувань і тести). Seed — лише admin. Без `settingsManage` вкладки налаштувань відкриваються лише на перегляд.
 
@@ -83,6 +83,7 @@ https://<публічний-хост-backoffice>/api/webhooks/chatwoot
 | POST | `/api/chatwoot-bot/tools/site-pages` | Текст публічних сторінок сайту (WP REST → HTML fallback, кеш 6 год) |
 | POST | `/api/chatwoot-bot/tools/verify-order` | Verify: `{ phone, orderNumber }` → DTO без PII |
 | POST | `/api/chatwoot-bot/tools/verify-by-date` | Verify: `{ phone, lastOrderDate }` |
+| POST | `/api/chatwoot-bot/telegram/test` | Тестове сповіщення в Telegram (`settingsManage`) |
 | POST | `/api/chatwoot-bot/sandbox/reply` | Хід бота в пісочниці (`settingsManage`) |
 | GET/PUT | `/api/chatwoot-bot/sandbox/scenarios` | Сценарії пісочниці (PUT замінює список) |
 | POST | `/api/chatwoot-bot/ai/test` | Тест LLM (admin); помилки провайдера **не** маскуються fallback |
@@ -111,6 +112,18 @@ https://<публічний-хост-backoffice>/api/webhooks/chatwoot
 - Поки триває LLM-цикл, бот вмикає typing indicator у віджеті (`toggle_typing_status`), після відповіді — вимикає (лише `live`).
 - На вкладці **AI і verify** — довідник tools з описом, прикладами JSON і admin-тестами API.
 - У проді webhook при збої LLM → **fallback**; `POST /ai/test` пробрасує помилку провайдера в відповідь API.
+
+### Скасування замовлення
+
+Tool `request_order_cancellation` (лише коли `orderCancelEnabled`, дефолт **вимк.**; вкладка **«Скасування»**). Логіка — `ChatwootBotOrderCancelService.ts`, правила — `chatwootBotOrderCancelRules.ts`:
+
+1. **Сувора перевірка:** телефон (з аргументу, збережений у розмові або з каналу) + прізвище та імʼя одержувача: щонайменше два слова, кожне є в `customerName` замовлення (порядок і регістр неважливі). Невдача не каже, що саме не збіглося; 3 невдачі за 30 хв — `rate_limited`, бот передає оператору.
+2. **Кандидати:** замовлення телефону, крім Продаж / Відмова / Повернення / Видалений, з ПІБ, що збігся. Кілька — `choose_order` зі списком (номер, дата, статус, сума).
+3. **Причина:** без `reason` — `reason_required`: бот питає причину й пропонує допомогу (склад, дата, адреса).
+4. **За статусом:** `orderCancelAutoStatuses` (дефолт Новий, Підтверджено) — `updateSalesDriveOrderStatus(id, '6')` («Відмова»), локальний статус + `orders_history` (`source = chatwoot_bot`, причина в notes); WooCommerce шле клієнту email про зміну статусу. `orderCancelSemiAutoStatuses` (дефолт На відправку, Відправлено, На утриманні) та інші — передача оператору, клієнту «запит передано». Збій SalesDrive — теж оператору.
+5. **Сповіщення:** приватна нотатка (номер, статус, результат, причина) — завжди. Якщо `orderCancelNotifyEnabled`: Telegram (`telegramNotifyBotToken` + `telegramNotifyChatId`, кнопка **Тест**) з посиланням на розмову; коли потрібна дія оператора — призначення (`orderCancelAssignMode`: `auto_inbox` | `specific_agent` + `orderCancelAssigneeId`) і `bot_human_handover_active`.
+
+`dry_run` і пісочниця лише моделюють дію (`simulated: true`): SalesDrive, нотатки й Telegram не чіпають.
 
 ### Профіль контакту і сторінка клієнта
 
@@ -205,6 +218,10 @@ Chatwoot на VPS не достукаться до `localhost` – потріб�
 | `server/modules/ChatwootBot/ChatwootBotLlmRunner.ts` | Маска + tool loop через `llmService` |
 | `server/modules/ChatwootBot/ChatwootBotCatalogToolService.ts` | Каталог для tool |
 | `server/modules/ChatwootBot/chatwootBotCatalogSearch.ts` | Пошук страв: основи слів, синоніми, фільтр без мʼяса |
+| `server/modules/ChatwootBot/ChatwootBotOrderCancelService.ts` | Скасування замовлення: перевірка, SalesDrive, сповіщення |
+| `server/modules/ChatwootBot/chatwootBotOrderCancelRules.ts` | ПІБ, статуси, номер замовлення |
+| `server/modules/ChatwootBot/chatwootBotTelegramNotifier.ts` | Telegram-сповіщення операторів |
+| `shared/constants/chatwootBotOrderCancel.ts` | Статуси SalesDrive для скасування, дефолти |
 | `server/modules/ChatwootBot/ChatwootBotContactSyncService.ts` | Телефон / email з чату → профіль контакту |
 | `server/modules/ChatwootBot/chatwootBotContactFields.ts` | Email і контекст сторінки з payload |
 | `server/modules/ChatwootBot/ChatwootBotSandboxService.ts` | Пісочниця: хід бота без Chatwoot, сценарії |

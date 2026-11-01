@@ -20,8 +20,11 @@ import { chatwootBotVerifyService } from './ChatwootBotVerifyService.js';
 import { isTrustedPhoneChannel } from './chatwootBotOrderLookup.js';
 import { chatwootBotStorefrontSiteToolService } from './ChatwootBotStorefrontSiteToolService.js';
 import { chatwootBotLlmToolDefinitions } from '../../../shared/constants/chatwootBotLlmTools.js';
+import { chatwootBotOrderCancelService } from './ChatwootBotOrderCancelService.js';
 
 const BOT_TOOLS = chatwootBotLlmToolDefinitions();
+/** Без увімкненого скасування tool не показуємо: модель передає такі запити через request_operator. */
+const BOT_TOOLS_WITHOUT_CANCEL = BOT_TOOLS.filter((t) => t.name !== 'request_order_cancellation');
 
 export type ChatwootBotGenerateReplyResult = {
   text: string | null;
@@ -107,7 +110,7 @@ export class ChatwootBotLlmRunner {
           system,
           messages,
           maxOutputTokens: platform.maxOutputTokens,
-          tools: BOT_TOOLS,
+          tools: settings.orderCancelEnabled ? BOT_TOOLS : BOT_TOOLS_WITHOUT_CANCEL,
         },
         async (name, args) => {
           if (name === 'get_storefront_catalog') {
@@ -167,6 +170,17 @@ export class ChatwootBotLlmRunner {
               slugs: args.slugs,
               limit: typeof args.limit === 'number' ? args.limit : undefined,
             });
+          }
+          if (name === 'request_order_cancellation') {
+            const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+            return await chatwootBotOrderCancelService.handle(
+              {
+                settings,
+                conversationId: options?.sandbox ? null : (options?.conversationId ?? null),
+                knownPhone: state?.pendingPhone ?? channelPhone,
+              },
+              { phone: str(args.phone), fullName: str(args.fullName), orderNumber: str(args.orderNumber), reason: str(args.reason) },
+            );
           }
           if (name === 'request_operator') {
             if (options?.conversationId == null && !options?.sandbox) {

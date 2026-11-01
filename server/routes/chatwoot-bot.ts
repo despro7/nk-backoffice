@@ -42,6 +42,7 @@ import { toVerifiedOrderDto } from '../modules/ChatwootBot/chatwootBotOrderRedac
 import { chatwootBotLlmRunner } from '../modules/ChatwootBot/ChatwootBotLlmRunner.js';
 import { chatwootBotDevWebhookService } from '../modules/ChatwootBot/ChatwootBotDevWebhookService.js';
 import { chatwootBotSandboxService } from '../modules/ChatwootBot/ChatwootBotSandboxService.js';
+import { chatwootBotTelegramNotifier } from '../modules/ChatwootBot/chatwootBotTelegramNotifier.js';
 import type { ChatwootBotSandboxReplyRequest } from '../../shared/types/chatwootBotSandbox.js';
 import { prisma } from '../lib/utils.js';
 import { roleService } from '../services/RoleService.js';
@@ -672,6 +673,33 @@ router.post('/ai/test', settingsManage, async (req: Request, res: Response) => {
       success: false,
       error: error instanceof Error ? error.message : 'AI test failed',
     });
+  }
+});
+
+/**
+ * POST /api/chatwoot-bot/telegram/test — тестове сповіщення; body { botToken?, chatId? } — чернетка з форми.
+ */
+router.post('/telegram/test', settingsManage, async (req: Request, res: Response) => {
+  try {
+    const settings = await chatwootBotSettingsService.getSettings();
+    const body = (req.body ?? {}) as { botToken?: string; chatId?: string };
+    const target = {
+      telegramNotifyBotToken: body.botToken?.trim() || settings.telegramNotifyBotToken,
+      telegramNotifyChatId: body.chatId?.trim() || settings.telegramNotifyChatId,
+    };
+    if (!chatwootBotTelegramNotifier.isConfigured(target)) {
+      res.status(400).json({ success: false, error: 'Вкажіть токен Telegram-бота і chat id' });
+      return;
+    }
+    const sent = await chatwootBotTelegramNotifier.send(target, 'Тестове сповіщення чат-бота NK Food: Telegram підключено.');
+    if (!sent) {
+      res.status(400).json({ success: false, error: 'Telegram не прийняв повідомлення: перевірте токен, chat id і чи бот доданий у чат' });
+      return;
+    }
+    res.json({ success: true, data: { sent: true } });
+  } catch (error) {
+    logServer('[ChatwootBot] telegram test failed', error);
+    res.status(500).json({ success: false, error: 'Telegram test failed' });
   }
 });
 

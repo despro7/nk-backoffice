@@ -21,6 +21,11 @@ import {
   type ChatwootBotSettingsUpdate,
 } from '../../../shared/types/chatwootBot.js';
 import { resolveGoogleLlmModelId } from '../../../shared/constants/googleLlmModelAliases.js';
+import {
+  DEFAULT_ORDER_CANCEL_AUTO_STATUSES,
+  DEFAULT_ORDER_CANCEL_SEMI_AUTO_STATUSES,
+  normalizeOrderCancelStatuses,
+} from '../../../shared/constants/chatwootBotOrderCancel.js';
 
 const CACHE_TTL_MS = 60_000;
 
@@ -231,6 +236,21 @@ function applyEnvFallback(settings: ChatwootBotSettings): ChatwootBotSettings {
   };
 }
 
+/** Автоматичні й напівавтоматичні статуси не перетинаються: автоматичне має пріоритет. */
+function normalizeOrderCancelStatusSettings(
+  raw: Partial<ChatwootBotSettings>,
+): Pick<ChatwootBotSettings, 'orderCancelAutoStatuses' | 'orderCancelSemiAutoStatuses'> {
+  const auto = normalizeOrderCancelStatuses(raw.orderCancelAutoStatuses, DEFAULT_ORDER_CANCEL_AUTO_STATUSES);
+  return {
+    orderCancelAutoStatuses: auto,
+    orderCancelSemiAutoStatuses: normalizeOrderCancelStatuses(
+      raw.orderCancelSemiAutoStatuses,
+      DEFAULT_ORDER_CANCEL_SEMI_AUTO_STATUSES,
+      auto,
+    ),
+  };
+}
+
 function mergeWithDefaults(raw: Partial<ChatwootBotSettings>): ChatwootBotSettings {
   const accountId = Number(raw.accountId ?? DEFAULT_CHATWOOT_BOT_SETTINGS.accountId);
   const { echoMessage, fallbackMessage } = resolveFallbackAndEcho(raw);
@@ -397,6 +417,21 @@ function mergeWithDefaults(raw: Partial<ChatwootBotSettings>): ChatwootBotSettin
       raw.resolveCleanupEnabled ?? DEFAULT_CHATWOOT_BOT_SETTINGS.resolveCleanupEnabled,
     ),
     contactSyncEnabled: Boolean(raw.contactSyncEnabled ?? DEFAULT_CHATWOOT_BOT_SETTINGS.contactSyncEnabled),
+    orderCancelEnabled: Boolean(raw.orderCancelEnabled ?? DEFAULT_CHATWOOT_BOT_SETTINGS.orderCancelEnabled),
+    ...normalizeOrderCancelStatusSettings(raw),
+    orderCancelNotifyEnabled: Boolean(
+      raw.orderCancelNotifyEnabled ?? DEFAULT_CHATWOOT_BOT_SETTINGS.orderCancelNotifyEnabled,
+    ),
+    orderCancelAssignMode: raw.orderCancelAssignMode === 'specific_agent' ? 'specific_agent' : 'auto_inbox',
+    orderCancelAssigneeId:
+      Number.isInteger(Number(raw.orderCancelAssigneeId)) && Number(raw.orderCancelAssigneeId) > 0
+        ? Number(raw.orderCancelAssigneeId)
+        : null,
+    telegramNotifyBotToken: typeof raw.telegramNotifyBotToken === 'string' ? raw.telegramNotifyBotToken.trim() : '',
+    telegramNotifyChatId:
+      typeof raw.telegramNotifyChatId === 'string' || typeof raw.telegramNotifyChatId === 'number'
+        ? String(raw.telegramNotifyChatId).trim().slice(0, 64)
+        : '',
     topicsClassifier: raw.topicsClassifier === 'jev' ? 'jev' : 'local',
     topicsJevMinConfidence: normalizeJevConfidence(raw.topicsJevMinConfidence),
     topicsJevExamplesPerTopic: normalizeIntInRange(
@@ -474,12 +509,15 @@ export class ChatwootBotSettingsService {
       webhookSecret: revealSecrets ? settings.webhookSecret : '',
       webhookSecretMasked: maskSecret(settings.webhookSecret),
       hasWebhookSecret: Boolean(settings.webhookSecret),
+      telegramNotifyBotToken: revealSecrets ? settings.telegramNotifyBotToken : '',
+      telegramNotifyBotTokenMasked: maskSecret(settings.telegramNotifyBotToken),
+      hasTelegramNotifyBotToken: Boolean(settings.telegramNotifyBotToken),
     };
   }
 
   async saveSettings(incoming: ChatwootBotSettingsUpdate): Promise<ChatwootBotSettings> {
     const current = await this.getSettings();
-    const { clearWebhookSecret, clearInboxApiAccessToken, ...rest } = incoming;
+    const { clearWebhookSecret, clearInboxApiAccessToken, clearTelegramNotifyBotToken, ...rest } = incoming;
 
     const next = mergeWithDefaults({
       ...current,
@@ -493,6 +531,11 @@ export class ChatwootBotSettingsService {
         : rest.inboxApiAccessToken !== undefined && rest.inboxApiAccessToken !== ''
           ? rest.inboxApiAccessToken
           : current.inboxApiAccessToken,
+      telegramNotifyBotToken: clearTelegramNotifyBotToken
+        ? ''
+        : rest.telegramNotifyBotToken !== undefined && rest.telegramNotifyBotToken !== ''
+          ? rest.telegramNotifyBotToken
+          : current.telegramNotifyBotToken,
       webhookSecret: clearWebhookSecret
         ? ''
         : rest.webhookSecret !== undefined && rest.webhookSecret !== ''

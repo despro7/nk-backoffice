@@ -180,6 +180,10 @@ export const chatwootBotApi = {
     return parseJson(res);
   },
 
+  async testTelegram(botToken?: string, chatId?: string): Promise<{ sent: boolean }> {
+    return sendJson('/api/chatwoot-bot/telegram/test', 'POST', { botToken, chatId });
+  },
+
   async sandboxReply(request: ChatwootBotSandboxReplyRequest): Promise<ChatwootBotSandboxReplyResult> {
     return sendJson('/api/chatwoot-bot/sandbox/reply', 'POST', request);
   },
