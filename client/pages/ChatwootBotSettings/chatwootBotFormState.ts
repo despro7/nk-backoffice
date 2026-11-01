@@ -54,6 +54,9 @@ export type FormState = {
   handoverEmergencyEnabled: boolean;
   handoverEmergencyKeywordsText: string;
   handoverMessageEmergency: string;
+  handoverEmergencyTimeoutMinutes: number;
+  handoverMessageEmergencyFallback: string;
+  handoverEmergencyTelegramEnabled: boolean;
   reclaimEnabled: boolean;
   reclaimOnAssigneeOffline: boolean;
   reclaimOnOohAgentSilent: boolean;
@@ -146,6 +149,9 @@ export function toFormState(data: ChatwootBotSettingsResponse): FormState {
     handoverEmergencyEnabled: data.handoverEmergencyEnabled,
     handoverEmergencyKeywordsText: keywordsToText(data.handoverEmergencyKeywords),
     handoverMessageEmergency: data.handoverMessageEmergency,
+    handoverEmergencyTimeoutMinutes: data.handoverEmergencyTimeoutMinutes,
+    handoverMessageEmergencyFallback: data.handoverMessageEmergencyFallback,
+    handoverEmergencyTelegramEnabled: data.handoverEmergencyTelegramEnabled,
     reclaimEnabled: data.reclaimEnabled,
     reclaimOnAssigneeOffline: data.reclaimOnAssigneeOffline,
     reclaimOnOohAgentSilent: data.reclaimOnOohAgentSilent,

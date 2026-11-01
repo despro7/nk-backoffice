@@ -30,10 +30,10 @@ export function BotStatusCard({ page }: SettingsCardProps) {
         description="Вимкнено – у журналі bot_disabled, без echo/handover."
       />
       <FormSwitchField
-        isSelected={form.replyMode === 'live'}
-        onValueChange={(v) => updateField('replyMode', v ? 'live' : 'dry_run')}
-        title="Відповідати клієнтам (live)"
-        description="Увімкнено – бот пише в Chatwoot. Вимкнено (dry_run) – лише журнал, клієнт нічого не отримує."
+        isSelected={form.replyMode === 'dry_run'}
+        onValueChange={(v) => updateField('replyMode', v ? 'dry_run' : 'live')}
+        title="Тестовий режим (dry_run)"
+        description="Увімкнено – бот лише пише в журнал, клієнт нічого не отримує. Вимкнено (live) – бот відповідає в Chatwoot."
       />
       <DevWebhookSwitch onChanged={() => void loadWebhookProcessorHealth()} />
       <Button

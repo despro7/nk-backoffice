@@ -69,6 +69,11 @@ export async function minutesSinceLastAgentPublicReply(
   return (now - lastAgentReplyAt) / 60_000;
 }
 
+/** Свіже значення при наступному запиті (напр. перевірка таймауту екстреного виклику). */
+export function invalidateLastAgentReplyCache(conversationId: number): void {
+  byConversation.delete(conversationId);
+}
+
 export function clearLastAgentReplyCacheForTests(): void {
   byConversation.clear();
 }

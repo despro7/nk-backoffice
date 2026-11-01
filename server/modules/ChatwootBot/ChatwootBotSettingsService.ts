@@ -9,6 +9,7 @@ import {
   DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_END,
   DEFAULT_CHATWOOT_BOT_HANDOVER_WORK_START,
   DEFAULT_CHATWOOT_BOT_SETTINGS,
+  CHATWOOT_BOT_EMERGENCY_TIMEOUT_LIMITS,
   CHATWOOT_BOT_TOPICS_LIMITS,
   DEFAULT_CHATWOOT_BOT_VERIFY_RATE_MAX,
   DEFAULT_CHATWOOT_BOT_VERIFY_RATE_WINDOW_MIN,
@@ -377,6 +378,18 @@ function mergeWithDefaults(raw: Partial<ChatwootBotSettings>): ChatwootBotSettin
     handoverMessageEmergency: normalizeMessage(
       raw.handoverMessageEmergency,
       DEFAULT_CHATWOOT_BOT_SETTINGS.handoverMessageEmergency,
+    ),
+    handoverEmergencyTimeoutMinutes: normalizeIntInRange(
+      raw.handoverEmergencyTimeoutMinutes,
+      CHATWOOT_BOT_EMERGENCY_TIMEOUT_LIMITS,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.handoverEmergencyTimeoutMinutes,
+    ),
+    handoverMessageEmergencyFallback: normalizeMessage(
+      raw.handoverMessageEmergencyFallback,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.handoverMessageEmergencyFallback,
+    ),
+    handoverEmergencyTelegramEnabled: Boolean(
+      raw.handoverEmergencyTelegramEnabled ?? DEFAULT_CHATWOOT_BOT_SETTINGS.handoverEmergencyTelegramEnabled,
     ),
     reclaimEnabled: Boolean(raw.reclaimEnabled ?? DEFAULT_CHATWOOT_BOT_SETTINGS.reclaimEnabled),
     reclaimOnAssigneeOffline: Boolean(

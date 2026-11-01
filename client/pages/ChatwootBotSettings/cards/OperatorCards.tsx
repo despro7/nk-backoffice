@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button, Chip, Divider, Input, Select, SelectItem, Textarea } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { CHATWOOT_BOT_EMERGENCY_TIMEOUT_LIMITS } from '@shared/types/chatwootBot';
 import { textToKeywords } from '../chatwootBotFormState';
 import { FormSwitchField } from '../components/FormSwitchField';
 import { SettingsCard, type SettingsCardProps } from './SettingsCard';
@@ -85,6 +86,23 @@ export function OperatorCallCard({ page }: SettingsCardProps) {
         isDisabled={!form.handoverEmergencyEnabled}
         value={form.handoverEmergencyKeywordsText}
         onValueChange={(v) => updateField('handoverEmergencyKeywordsText', v)}
+      />
+      <Input
+        type="number"
+        label="Чекати відповідь оператора, хв"
+        min={CHATWOOT_BOT_EMERGENCY_TIMEOUT_LIMITS.min}
+        max={CHATWOOT_BOT_EMERGENCY_TIMEOUT_LIMITS.max}
+        isDisabled={!form.handoverEmergencyEnabled}
+        value={String(form.handoverEmergencyTimeoutMinutes)}
+        onValueChange={(v) => updateField('handoverEmergencyTimeoutMinutes', Number(v) || 5)}
+        description="Не відповів публічно за цей час (або не вдалося призначити) – бот забирає розмову, надсилає текст «оператор не відповів» і просить контакти."
+      />
+      <FormSwitchField
+        isSelected={form.handoverEmergencyTelegramEnabled}
+        isDisabled={!form.handoverEmergencyEnabled}
+        onValueChange={(v) => updateField('handoverEmergencyTelegramEnabled', v)}
+        title="Екстрений виклик – у Telegram"
+        description="Одразу при виклику і повторно, якщо оператор не відповів. Бот – вкладка «Підключення»."
       />
     </SettingsCard>
   );
@@ -177,6 +195,13 @@ export function ClientMessagesCard({ page }: SettingsCardProps) {
         isDisabled={!form.handoverEmergencyEnabled}
         value={form.handoverMessageEmergency}
         onValueChange={(v) => updateField('handoverMessageEmergency', v)}
+      />
+      <Textarea
+        label="Екстрений виклик: оператор не відповів"
+        minRows={2}
+        isDisabled={!form.handoverEmergencyEnabled}
+        value={form.handoverMessageEmergencyFallback}
+        onValueChange={(v) => updateField('handoverMessageEmergencyFallback', v)}
       />
     </SettingsCard>
   );

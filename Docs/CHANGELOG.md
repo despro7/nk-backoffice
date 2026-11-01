@@ -7,12 +7,13 @@
 
 ## 2026-11-02 — Chatwoot Bot: перебудова налаштувань, текст «бот не знайшов відповіді»
 
-**Files:** `client/pages/ChatwootBotSettings/**` (`cards/*`, `tabs/AiTab.tsx`, `OperatorTab.tsx`, `OrdersTab.tsx`, `chatwootBotTabKeys.ts`, `useChatwootBotSettingsPage.ts`, `index.tsx`), `ChatwootBotOrchestrator.ts`, `ChatwootBotReplyRouter.ts`, `chatwootBotLoopGuard.ts`, `ChatwootBotSandboxService.ts`, `ChatwootBotSettingsService.ts`, `shared/types/chatwootBot.ts`
+**Files:** `client/components/PageTabs.tsx`, `chatwootBotEmergencyWatch.ts`, `chatwootLastAgentReplyCache.ts`, `client/pages/ChatwootBotSettings/**` (`cards/*`, `tabs/AiTab.tsx`, `OperatorTab.tsx`, `OrdersTab.tsx`, `chatwootBotTabKeys.ts`, `useChatwootBotSettingsPage.ts`, `index.tsx`), `ChatwootBotOrchestrator.ts`, `ChatwootBotReplyRouter.ts`, `chatwootBotLoopGuard.ts`, `ChatwootBotSandboxService.ts`, `ChatwootBotSettingsService.ts`, `shared/types/chatwootBot.ts`
 
 - **Вкладки:** Підключення · AI · Відповіді · Оператор · Замовлення й клієнти · Теми питань · Пісочниця · Журнал. Ключові слова оператора — разом з призначенням; верифікація, скасування й профіль контакту — на одній вкладці; Telegram — у «Підключенні»; тест AI замінила пісочниця. Старі hash `handover` / `cancel` ведуть на нові вкладки.
 - **Збереження:** одна панель «Є незбережені зміни · Скасувати · Зберегти» замість кнопки в кожній картці.
 - **Поза годинами, бот не знайшов відповіді:** окремий текст (одразу просимо контакти); питання клієнта йде оператору разом з телефоном і імʼям — приватна нотатка і, за налаштуванням, Telegram.
-- Адаптація карток під вузькі екрани (ручні правки UI).
+- Адаптація карток під вузькі екрани (ручні правки UI); `PageTabs` не ширші за контейнер; «Тестовий режим (dry_run)» — перемикач.
+- **Екстрений виклик:** Telegram одразу; таймаут очікування оператора (дефолт 5 хв), під час нього без reclaim; не вдалося призначити або оператор мовчить — fallback-текст, збір контактів, нотатка й повторний Telegram.
 
 **Документація:** [`chatwoot-agent-bot.md`](integrations/chatwoot-agent-bot.md).
 

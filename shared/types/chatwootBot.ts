@@ -118,6 +118,12 @@ export type ChatwootBotSettings = {
   handoverEmergencyEnabled: boolean;
   handoverEmergencyKeywords: string[];
   handoverMessageEmergency: string;
+  /** Хвилин чекаємо публічної відповіді оператора на екстрений виклик, далі — fallback. */
+  handoverEmergencyTimeoutMinutes: number;
+  /** Клієнту, якщо оператор не відповів (або не вдалося призначити): просимо контакти. */
+  handoverMessageEmergencyFallback: string;
+  /** Екстрений виклик і «ніхто не відповів» — у Telegram. */
+  handoverEmergencyTelegramEnabled: boolean;
   /** Увімкнути reclaim (повернення діалогу боту від людини-assignee). */
   reclaimEnabled: boolean;
   /** Reclaim, якщо assignee offline (у т.ч. в робочі години). */
@@ -176,6 +182,8 @@ export type ChatwootBotSettings = {
 };
 
 /** Межі числових налаштувань тем питань (сервер і UI). */
+export const CHATWOOT_BOT_EMERGENCY_TIMEOUT_LIMITS = { min: 1, max: 60 } as const;
+
 export const CHATWOOT_BOT_TOPICS_LIMITS = {
   jevExamplesPerTopic: { min: 0, max: 10 },
   jevMaxPerSync: { min: 1, max: 200 },
@@ -489,6 +497,10 @@ export const DEFAULT_CHATWOOT_BOT_SETTINGS: ChatwootBotSettings = {
   handoverEmergencyKeywords: [...DEFAULT_CHATWOOT_BOT_EMERGENCY_KEYWORDS],
   handoverMessageEmergency:
     'Розуміємо, що ситуація термінова. Підключаємо оператора незважаючи на неробочий час.',
+  handoverEmergencyTimeoutMinutes: 5,
+  handoverMessageEmergencyFallback:
+    'Не вдалося швидко зʼєднати вас з оператором. Залиште, будь ласка, імʼя та телефон – передзвонимо, щойно зможемо.',
+  handoverEmergencyTelegramEnabled: true,
   reclaimEnabled: true,
   reclaimOnAssigneeOffline: true,
   reclaimOnOohAgentSilent: true,

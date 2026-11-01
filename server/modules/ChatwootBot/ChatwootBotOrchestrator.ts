@@ -47,6 +47,15 @@ import { getChatwootProcessorStamp } from './chatwootProcessorStamp.js';
 import { runWithConversationLock } from './conversationWebhookQueue.js';
 import { chatwootBotContactSyncService, getContactId } from './ChatwootBotContactSyncService.js';
 import { chatwootBotTelegramNotifier } from './chatwootBotTelegramNotifier.js';
+import {
+  agentRepliedSince,
+  isEmergencyWatchActive,
+  startEmergencyWatch,
+} from './chatwootBotEmergencyWatch.js';
+import {
+  invalidateLastAgentReplyCache,
+  minutesSinceLastAgentPublicReply,
+} from './chatwootLastAgentReplyCache.js';
 import type { ChatwootBotEscalationDetail } from './chatwootBotLoopGuard.js';
 import {
   claimHumanAgentActivePersistSlot,
@@ -184,6 +193,11 @@ function getConversationCustomAttributes(
   return attrs && typeof attrs === 'object' ? attrs : {};
 }
 
+
+/** Посилання на розмову в Chatwoot для сповіщень операторам. */
+function conversationUrl(settings: ChatwootBotSettings, conversationId: number): string {
+  return `${settings.baseUrl.replace(/\/+$/, '')}/app/accounts/${settings.accountId}/conversations/${conversationId}`;
+}
 
 export class ChatwootBotOrchestrator {
   async processWebhook(
@@ -395,12 +409,11 @@ export class ChatwootBotOrchestrator {
 
     const customAttrsEarly = getConversationCustomAttributes(payload);
     if (isConversationHandledByHuman(payload, customAttrsEarly)) {
-      const reclaimDecision = await evaluateHumanHandoverReclaim(
-        settings,
-        payload,
-        conversationId,
-        inHours,
-      );
+      // Під час очікування оператора на екстрений виклик не забираємо розмову («оператор офлайн» вночі —
+      // норма); якщо ніхто не відповість, спрацює fallback за таймаутом.
+      const reclaimDecision = isEmergencyWatchActive(conversationId)
+        ? { shouldReclaim: false as const }
+        : await evaluateHumanHandoverReclaim(settings, payload, conversationId, inHours);
       if (!reclaimDecision.shouldReclaim) {
         let typingOff: 'ok' | 'fail' | 'skipped' | 'dry_run' = 'skipped';
         if (dryRun) {
@@ -448,18 +461,7 @@ export class ChatwootBotOrchestrator {
     const callbackPending = isOohCallbackPending(customAttrs);
 
     if (!inHours && emergency) {
-      return this.handleAgentAssign(
-        settings,
-        logCtx,
-        conversationId,
-        dryRun,
-        contentPreview,
-        messageId,
-        settings.handoverMessageEmergency,
-        'emergency',
-        'Handover: екстрений виклик поза робочими годинами.',
-        hoursLog,
-      );
+      return this.handleEmergency(settings, logCtx, payload, conversationId, dryRun, contentPreview, messageId, content, hoursLog);
     }
 
     if (handoverKw && inHours) {
@@ -905,6 +907,122 @@ export class ChatwootBotOrchestrator {
     }
   }
 
+  /**
+   * Екстрений виклик поза годинами: призначення оператора + Telegram. Не вдалося призначити або
+   * оператор не відповів публічно за `handoverEmergencyTimeoutMinutes` — fallback: бот забирає розмову
+   * й просить контакти для дзвінка.
+   */
+  private async handleEmergency(
+    settings: ChatwootBotSettings,
+    logCtx: ProcessLogContext,
+    payload: ChatwootWebhookMessageCreated,
+    conversationId: number,
+    dryRun: boolean,
+    contentPreview: string,
+    messageId: number | null,
+    content: string,
+    hoursLog: string,
+  ): Promise<ChatwootBotProcessResult> {
+    const result = await this.handleAgentAssign(
+      settings,
+      logCtx,
+      conversationId,
+      dryRun,
+      contentPreview,
+      messageId,
+      settings.handoverMessageEmergency,
+      'emergency',
+      'Handover: екстрений виклик поза робочими годинами.',
+      hoursLog,
+    );
+    if (dryRun) return result;
+
+    const contactName = payload.sender?.name ?? payload.conversation?.meta?.sender?.name ?? null;
+    const call = { content, contactName };
+    if (settings.handoverEmergencyTelegramEnabled) {
+      await chatwootBotTelegramNotifier.send(
+        settings,
+        [
+          `Екстрений виклик поза робочими годинами${result.success ? '' : ' – призначити оператора не вдалося'}`,
+          contactName ? `Контакт: ${contactName}` : null,
+          `Повідомлення: ${previewContent(content, 300)}`,
+          conversationUrl(settings, conversationId),
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      );
+    }
+
+    if (!result.success) {
+      await this.runEmergencyFallback(settings, conversationId, call, 'assign_failed');
+      return result;
+    }
+    startEmergencyWatch(conversationId, settings.handoverEmergencyTimeoutMinutes * 60_000, async (startedAt) => {
+      const current = await chatwootBotSettingsService.getSettings();
+      invalidateLastAgentReplyCache(conversationId);
+      const minutes = await minutesSinceLastAgentPublicReply(current, conversationId).catch(() => null);
+      if (agentRepliedSince(startedAt, minutes)) return;
+      await this.runEmergencyFallback(current, conversationId, call, 'timeout');
+    });
+    return result;
+  }
+
+  private async runEmergencyFallback(
+    settings: ChatwootBotSettings,
+    conversationId: number,
+    call: { content: string; contactName: string | null },
+    why: 'assign_failed' | 'timeout',
+  ): Promise<void> {
+    if (settings.replyMode === 'dry_run') return;
+    const headline =
+      why === 'timeout'
+        ? `Екстрений виклик: оператор не відповів за ${settings.handoverEmergencyTimeoutMinutes} хв – бот просить контакти для дзвінка.`
+        : 'Екстрений виклик: призначити оператора не вдалося – бот просить контакти для дзвінка.';
+    try {
+      if (why === 'timeout') {
+        await resetHumanHandoverOnConversation(settings, conversationId, false);
+      }
+      const client = createChatwootApiClient(botMessagingCredentials(settings));
+      await client.createOutgoingMessage(conversationId, settings.handoverMessageEmergencyFallback, false);
+      await client.mergeConversationCustomAttributesBestEffort(conversationId, {
+        [CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING]: true,
+        [CHATWOOT_BOT_ATTR_CALLBACK_QUESTION]: `Екстрений виклик: ${previewContent(call.content, 400)}`,
+      });
+      try {
+        await client.createOutgoingMessage(conversationId, headline, true);
+      } catch (noteErr) {
+        logServer('[ChatwootBot] emergency fallback note failed (non-fatal)', noteErr);
+      }
+      if (settings.handoverEmergencyTelegramEnabled) {
+        await chatwootBotTelegramNotifier.send(
+          settings,
+          [
+            headline,
+            call.contactName ? `Контакт: ${call.contactName}` : null,
+            `Повідомлення: ${previewContent(call.content, 300)}`,
+            conversationUrl(settings, conversationId),
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        );
+      }
+      await chatwootBotEventLogService.append({
+        source: 'webhook',
+        action: 'handover',
+        reason: `emergency_fallback_${why}`,
+        conversationId,
+        messageId: null,
+        contentPreview: previewContent(call.content, 120),
+        replyMode: settings.replyMode,
+        dryRun: false,
+        details: headline,
+      });
+      logServer(`[ChatwootBot] emergency fallback ${why} conv=${conversationId}`);
+    } catch (err) {
+      logServer(`[ChatwootBot] emergency fallback failed conv=${conversationId}`, err);
+    }
+  }
+
   private async handleOohOffer(
     settings: ChatwootBotSettings,
     logCtx: ProcessLogContext,
@@ -1083,8 +1201,7 @@ export class ChatwootBotOrchestrator {
         logServer('[ChatwootBot] ooh_callback private note failed (non-fatal)', noteErr);
       }
       if (settings.handoverCallbackTelegramEnabled) {
-        const url = `${settings.baseUrl.replace(/\/+$/, '')}/app/accounts/${settings.accountId}/conversations/${conversationId}`;
-        await chatwootBotTelegramNotifier.send(settings, [...noteLines, url].join('\n'));
+        await chatwootBotTelegramNotifier.send(settings, [...noteLines, conversationUrl(settings, conversationId)].join('\n'));
       }
 
       const event = await persistEvent(logCtx, settings, {
