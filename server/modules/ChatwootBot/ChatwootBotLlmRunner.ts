@@ -52,6 +52,8 @@ export class ChatwootBotLlmRunner {
       messageId?: number | null;
       /** Робочі години операторів зараз (для контексту моделі). */
       inBusinessHours?: boolean | null;
+      /** Пісочниця: request_operator працює без розмови (лише фіксує причину). */
+      sandbox?: boolean;
     },
   ): Promise<ChatwootBotGenerateReplyResult> {
     if (!settings.aiEnabled) return { text: null };
@@ -165,7 +167,7 @@ export class ChatwootBotLlmRunner {
             });
           }
           if (name === 'request_operator') {
-            if (options?.conversationId == null) {
+            if (options?.conversationId == null && !options?.sandbox) {
               return { ok: false, hint: 'Передача оператору доступна лише в розмові з клієнтом.' };
             }
             const reason = typeof args.reason === 'string' ? args.reason.trim() : '';

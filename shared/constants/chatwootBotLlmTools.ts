@@ -19,11 +19,15 @@ export type ChatwootBotLlmToolMeta = {
 export const CHATWOOT_BOT_LLM_TOOLS: ChatwootBotLlmToolMeta[] = [
   {
     name: 'get_storefront_catalog',
-    description: 'Публічний каталог вітрини з приблизною наявністю (без персональних даних).',
+    description:
+      'Каталог страв вітрини: назва, категорія, склад, короткий опис, ціна, приблизна наявність, meatFree (без мʼяса, птиці й риби). Шукає за словами в назві, категорії, складі й описі; результати від найкращого збігу. Для порад («щось з куркою», «друга страва», «без мʼяса») клади в query суть, а не всю фразу клієнта. Порожній query – увесь асортимент.',
     parameters: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Пошук за назвою або SKU' },
+        query: {
+          type: 'string',
+          description: 'Ключові слова: назва, SKU, категорія, інгредієнт («курка», «суп», «друга страва», «без мʼяса»)',
+        },
         limit: { type: 'number', description: 'Максимум позицій (1-30)' },
       },
     },
@@ -38,6 +42,9 @@ export const CHATWOOT_BOT_LLM_TOOLS: ChatwootBotLlmToolMeta[] = [
             sku: '01013',
             retailPrice: 95,
             stockTier: 'enough',
+            category: 'Перші страви',
+            ingredients: ['бульйон з курки', 'гречка', 'морква'],
+            meatFree: false,
           },
         ],
       },

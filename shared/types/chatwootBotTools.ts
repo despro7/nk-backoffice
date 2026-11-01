@@ -48,6 +48,14 @@ export type ChatwootBotCatalogItemDto = {
   stockTier: ChatwootBotCatalogStockTier;
   /** Лише для tier exact – приблизна кількість порцій. */
   effectiveStock?: number;
+  /** Категорія вітрини (папка каталогу): «Перші страви», «Другі страви»… */
+  category?: string | null;
+  /** Склад з картки товару (до 12 позицій). */
+  ingredients?: string[];
+  /** Без мʼяса, птиці й риби за складом; null — склад невідомий. */
+  meatFree?: boolean | null;
+  /** Короткий опис вітрини (до 240 символів). */
+  description?: string;
 };
 
 export type ChatwootBotSitePageSource = 'wp_rest' | 'html_fallback';

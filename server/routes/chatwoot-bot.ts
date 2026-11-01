@@ -41,6 +41,8 @@ import { chatwootBotVerifyService } from '../modules/ChatwootBot/ChatwootBotVeri
 import { toVerifiedOrderDto } from '../modules/ChatwootBot/chatwootBotOrderRedaction.js';
 import { chatwootBotLlmRunner } from '../modules/ChatwootBot/ChatwootBotLlmRunner.js';
 import { chatwootBotDevWebhookService } from '../modules/ChatwootBot/ChatwootBotDevWebhookService.js';
+import { chatwootBotSandboxService } from '../modules/ChatwootBot/ChatwootBotSandboxService.js';
+import type { ChatwootBotSandboxReplyRequest } from '../../shared/types/chatwootBotSandbox.js';
 import { prisma } from '../lib/utils.js';
 import { roleService } from '../services/RoleService.js';
 import { PERMISSIONS } from '../../shared/constants/permissions.js';
@@ -670,6 +672,44 @@ router.post('/ai/test', settingsManage, async (req: Request, res: Response) => {
       success: false,
       error: error instanceof Error ? error.message : 'AI test failed',
     });
+  }
+});
+
+/**
+ * POST /api/chatwoot-bot/sandbox/reply — один хід бота в пісочниці (handover-слова → патерни → LLM).
+ */
+router.post('/sandbox/reply', settingsManage, async (req: Request, res: Response) => {
+  try {
+    const data = await chatwootBotSandboxService.reply((req.body ?? {}) as ChatwootBotSandboxReplyRequest);
+    res.json({ success: true, data });
+  } catch (error) {
+    logServer('[ChatwootBot] sandbox reply failed', error);
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Sandbox reply failed',
+    });
+  }
+});
+
+/**
+ * GET/PUT /api/chatwoot-bot/sandbox/scenarios — збережені сценарії пісочниці (PUT замінює весь список).
+ */
+router.get('/sandbox/scenarios', settingsRead, async (_req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: await chatwootBotSandboxService.listScenarios() });
+  } catch (error) {
+    logServer('[ChatwootBot] sandbox scenarios load failed', error);
+    res.status(500).json({ success: false, error: 'Failed to load sandbox scenarios' });
+  }
+});
+
+router.put('/sandbox/scenarios', settingsManage, async (req: Request, res: Response) => {
+  try {
+    const body = (req.body ?? {}) as { scenarios?: unknown };
+    res.json({ success: true, data: await chatwootBotSandboxService.saveScenarios(body.scenarios) });
+  } catch (error) {
+    logServer('[ChatwootBot] sandbox scenarios save failed', error);
+    res.status(500).json({ success: false, error: 'Failed to save sandbox scenarios' });
   }
 });
 

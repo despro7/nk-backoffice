@@ -13,6 +13,11 @@ import type {
   ChatwootBotVerifiedOrderDto,
 } from '@shared/types/chatwootBotTools';
 import type { LlmTestModelResponse } from '@shared/types/llm';
+import type {
+  ChatwootBotSandboxReplyRequest,
+  ChatwootBotSandboxReplyResult,
+  ChatwootBotSandboxScenario,
+} from '@shared/types/chatwootBotSandbox';
 import type { ChatwootBotDevWebhookStatus } from '@shared/types/chatwootBotDevWebhook';
 import type {
   ChatwootBotTopicDeleteMode,
@@ -171,6 +176,25 @@ export const chatwootBotApi = {
     const res = await fetch(`/api/chatwoot-bot/conversations/${conversationId}/unassign`, {
       method: 'POST',
       credentials: 'include',
+    });
+    return parseJson(res);
+  },
+
+  async sandboxReply(request: ChatwootBotSandboxReplyRequest): Promise<ChatwootBotSandboxReplyResult> {
+    return sendJson('/api/chatwoot-bot/sandbox/reply', 'POST', request);
+  },
+
+  async getSandboxScenarios(): Promise<ChatwootBotSandboxScenario[]> {
+    const res = await fetch('/api/chatwoot-bot/sandbox/scenarios', { credentials: 'include' });
+    return parseJson(res);
+  },
+
+  async saveSandboxScenarios(scenarios: ChatwootBotSandboxScenario[]): Promise<ChatwootBotSandboxScenario[]> {
+    const res = await fetch('/api/chatwoot-bot/sandbox/scenarios', {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenarios }),
     });
     return parseJson(res);
   },

@@ -4,6 +4,7 @@ export const CHATWOOT_SETTINGS_TAB_KEYS = [
   'ai',
   'handover',
   'topics',
+  'sandbox',
   'journal',
 ] as const;
 
@@ -22,5 +23,6 @@ export const CHATWOOT_SETTINGS_TAB_LABELS: Record<ChatwootSettingsTabKey, string
   ai: 'AI і verify',
   handover: 'Handover',
   topics: 'Теми питань',
+  sandbox: 'Пісочниця',
   journal: 'Журнал',
 };

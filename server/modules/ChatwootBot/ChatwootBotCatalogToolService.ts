@@ -3,7 +3,12 @@ import { getPortionsInOrdersBySku } from '../../services/productExportHelper.js'
 import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
 import { computeEffectiveStock } from '../Storefront/WooCommerceStockService.js';
 import type { ChatwootBotCatalogItemDto } from '../../../shared/types/chatwootBotTools.js';
-import { textMatchesCatalogQuery } from '../../../shared/utils/catalogNameQueryMatch.js';
+import {
+  isMeatFree,
+  parseIngredientsJson,
+  plainCatalogDescription,
+  searchCatalogDocs,
+} from './chatwootBotCatalogSearch.js';
 import { stockTierFromEffective } from './chatwootBotCatalogStockTier.js';
 
 export class ChatwootBotCatalogToolService {
@@ -12,7 +17,7 @@ export class ChatwootBotCatalogToolService {
     limit?: number;
   }): Promise<ChatwootBotCatalogItemDto[]> {
     const limit = Math.max(1, Math.min(30, params.limit ?? 15));
-    const q = params.query?.trim().toLowerCase() ?? '';
+    const q = params.query?.trim() ?? '';
 
     const storefrontRows = await prisma.catalogGood.findMany({
       where: {
@@ -21,22 +26,31 @@ export class ChatwootBotCatalogToolService {
         wooProductId: { not: null },
         NOT: { sku: null },
       },
-      select: { sku: true },
+      select: { sku: true, description: true, productIngredientsJson: true },
     });
-    const allowedSkus = new Set(
-      storefrontRows.map((r) => r.sku?.trim()).filter((s): s is string => Boolean(s)),
+    const storefrontBySku = new Map(
+      storefrontRows
+        .filter((r): r is typeof r & { sku: string } => Boolean(r.sku?.trim()))
+        .map((r) => [
+          r.sku.trim(),
+          {
+            description: plainCatalogDescription(r.description),
+            ingredients: parseIngredientsJson(r.productIngredientsJson),
+          },
+        ]),
     );
 
     const products = await catalogOpsLookup.listFinishedProducts({ includeOutdated: false });
     const portionsMap = await getPortionsInOrdersBySku();
 
-    let filtered = products.filter((p) => allowedSkus.has(p.sku.trim()));
-    if (q) {
-      filtered = filtered.filter((p) => textMatchesCatalogQuery(q, p.name, p.sku));
-    }
+    const docs = products.flatMap((product) => {
+      const extra = storefrontBySku.get(product.sku.trim());
+      return extra ? [{ product, name: product.name, sku: product.sku, category: product.categoryName, ...extra }] : [];
+    });
+    const found = searchCatalogDocs(docs, q);
 
     const items: ChatwootBotCatalogItemDto[] = [];
-    for (const product of filtered.slice(0, limit)) {
+    for (const { product, category, ingredients, description } of found.slice(0, limit)) {
       const effective = computeEffectiveStock(
         product.stockBalanceByStock,
         portionsMap.get(product.sku.trim()) ?? 0,
@@ -52,6 +66,10 @@ export class ChatwootBotCatalogToolService {
         retailPrice: Number.isFinite(retailPrice) ? retailPrice : null,
         stockTier: tier,
         effectiveStock: tier === 'exact' ? effective : undefined,
+        category,
+        ingredients: ingredients.length ? ingredients.slice(0, 12) : undefined,
+        meatFree: isMeatFree(ingredients),
+        description: description || undefined,
       });
     }
     return items;

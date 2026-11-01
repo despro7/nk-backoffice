@@ -18,7 +18,7 @@
 
 Старий шлях `/settings/chatwoot-bot` перенаправляється на `/chatwoot-bot/settings`.
 
-**Налаштування (таби + hash):** `/chatwoot-bot/settings#tab=ai` — ключі `connection` | `replies` | `ai` | `handover` | `topics` | `journal` (для «Підключення» hash порожній). Компоненти: `client/pages/ChatwootBotSettings/` (`SettingsChatwootBot.tsx` — re-export).
+**Налаштування (таби + hash):** `/chatwoot-bot/settings#tab=ai` — ключі `connection` | `replies` | `ai` | `handover` | `topics` | `sandbox` | `journal` (для «Підключення» hash порожній). Компоненти: `client/pages/ChatwootBotSettings/` (`SettingsChatwootBot.tsx` — re-export).
 
 **Права (група «Чат-бот»):** сторінки `pages.chatwoot.statistics` / `.knowledge` / `.settings`; дії `actions.chatwoot.knowledgeManage` (редагування бази знань), `.topicsManage` (ручне керування темами), `.settingsManage` (зміна налаштувань і тести). Seed — лише admin. Без `settingsManage` вкладки налаштувань відкриваються лише на перегляд.
 
@@ -83,6 +83,8 @@ https://<публічний-хост-backoffice>/api/webhooks/chatwoot
 | POST | `/api/chatwoot-bot/tools/site-pages` | Текст публічних сторінок сайту (WP REST → HTML fallback, кеш 6 год) |
 | POST | `/api/chatwoot-bot/tools/verify-order` | Verify: `{ phone, orderNumber }` → DTO без PII |
 | POST | `/api/chatwoot-bot/tools/verify-by-date` | Verify: `{ phone, lastOrderDate }` |
+| POST | `/api/chatwoot-bot/sandbox/reply` | Хід бота в пісочниці (`settingsManage`) |
+| GET/PUT | `/api/chatwoot-bot/sandbox/scenarios` | Сценарії пісочниці (PUT замінює список) |
 | POST | `/api/chatwoot-bot/ai/test` | Тест LLM (admin); помилки провайдера **не** маскуються fallback |
 | GET/PUT | `/api/llm/settings` | Глобальні ключі/моделі OpenAI, Gemini, OpenRouter, TypeSafe Jev |
 | UI | `/settings/llm` | Налаштування → **LLM** (admin) |
@@ -102,13 +104,19 @@ https://<публічний-хост-backoffice>/api/webhooks/chatwoot
 
 - Ключі й дефолтна модель — з **глобальних** LLM-налаштувань; у боті можна перевизначити `aiProvider` / `aiModel` (порожнє = платформа).
 - **Маски** (`aiMasks`, `aiMaskId`): system prompt; без prompt LLM не викликається.
-- Tools у циклі: `search_knowledge_base` (база знань, викликається першою для загальних питань), `get_storefront_catalog` (SKU-каталог BO; пошук за назвою — `textMatchesCatalogQuery`, порядок слів неважливий), `get_storefront_site_pages` (сторінки WordPress сайту, кеш **6 год**), `get_verified_order` (після verify).
+- Tools у циклі: `search_knowledge_base` (база знань, викликається першою для загальних питань), `get_storefront_catalog` (страви вітрини: назва, категорія, склад, короткий опис, ціна, наявність, `meatFree`; пошук — `chatwootBotCatalogSearch.ts`: основи слів у назві/категорії/складі/описі з вагами, синоніми інгредієнтів («куркою» = «курятиною»), лише позиції з найбільшим покриттям слів запиту; «без мʼяса», «вегетаріанське», «пісне» — фільтр за складом), `get_storefront_site_pages` (сторінки WordPress сайту, кеш **6 год**), `get_verified_order` (після verify).
 - `request_operator` — модель передає розмову людині (клієнт просить оператора або після пошуку відповіді немає). Текст моделі не надсилається: запускається той самий handover, що й за ключовим словом (у робочі години — assign + `handoverMessageInHours`, поза ними — пропозиція дзвінка).
 - **Правила поверх маски** (`CHATWOOT_BOT_REPLY_POLICY` у `chatwootBotConversationContext.ts`, йдуть одразу після prompt маски): персонаж чоловічого роду; перед «не знаю» — база знань → сайт → каталог; оператор лише через `request_operator`. Маска їх не вимикає.
 - **Контекст розмови** (службовий блок): дата за Києвом, стан verify, телефон, **робочі години зараз** (бот не обіцяє підключити оператора вночі).
 - Поки триває LLM-цикл, бот вмикає typing indicator у віджеті (`toggle_typing_status`), після відповіді — вимикає (лише `live`).
 - На вкладці **AI і verify** — довідник tools з описом, прикладами JSON і admin-тестами API.
 - У проді webhook при збої LLM → **fallback**; `POST /ai/test` пробрасує помилку провайдера в відповідь API.
+
+### Пісочниця
+
+Вкладка **«Пісочниця»** (`#tab=sandbox`, право `settingsManage`): діалог від імені клієнта через той самий шлях, що в live (handover-слова → патерни → LLM з реальними tools → fallback), без Chatwoot. Маска, провайдер і модель — з форми, зокрема незбережені. Робочі години — за розкладом inbox або примусово «робочий / неробочий». Під кожною відповіддю — результат (`llm` | `pattern` | `handover_keyword` | `operator_tool` | `fallback`), модель, час, tokens, USD і trace інструментів (аргументи + відповідь). `verify_customer` недоступний (немає розмови).
+
+**Сценарії:** діалог зберігається як список реплік клієнта (`settings_base.key = chatwoot_bot_sandbox_scenarios`, до 100); «Прогнати всі» проганяє їх по черзі — для перевірки після зміни маски чи бази знань.
 
 ### База знань
 
@@ -191,6 +199,8 @@ Chatwoot на VPS не достукаться до `localhost` – потріб�
 | `server/modules/ChatwootBot/ChatwootBotVerifyService.ts` | Backend verify (телефон + order/date) |
 | `server/modules/ChatwootBot/ChatwootBotLlmRunner.ts` | Маска + tool loop через `llmService` |
 | `server/modules/ChatwootBot/ChatwootBotCatalogToolService.ts` | Каталог для tool |
+| `server/modules/ChatwootBot/chatwootBotCatalogSearch.ts` | Пошук страв: основи слів, синоніми, фільтр без мʼяса |
+| `server/modules/ChatwootBot/ChatwootBotSandboxService.ts` | Пісочниця: хід бота без Chatwoot, сценарії |
 | `server/modules/ChatwootBot/ChatwootBotStorefrontSiteToolService.ts` | Сторінки сайту (WP REST / HTML, TTL 6 год) |
 | `shared/constants/chatwootBotLlmTools.ts` | Метадані LLM tools (runner + UI) |
 | `server/modules/ChatwootBot/ChatwootBotOrderToolService.ts` | Verified order для tool |
