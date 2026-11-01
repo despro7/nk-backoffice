@@ -162,6 +162,26 @@ export const CHATWOOT_BOT_LLM_TOOLS: ChatwootBotLlmToolMeta[] = [
       },
     ],
   },
+  {
+    name: 'request_operator',
+    description:
+      'Передає розмову оператору. Викликай, коли клієнт просить людину, або коли після пошуку в базі знань, на сайті й у каталозі відповіді немає. Бекенд сам надішле клієнту повідомлення з урахуванням робочих годин (у неробочий час – запропонує залишити телефон для дзвінка), тож свій текст після виклику не пиши.',
+    parameters: {
+      type: 'object',
+      properties: {
+        reason: { type: 'string', description: 'Коротко, з чим потрібна допомога (без телефону та імені)' },
+      },
+      required: ['reason'],
+    },
+    adminTestNote: 'Працює лише в розмові: запускає той самий handover, що й ключові слова «оператор».',
+    examples: [
+      {
+        label: 'Немає відповіді в базі знань',
+        arguments: { reason: 'Питання про знижку для військових' },
+        resultSample: { ok: true, hint: 'Оператора буде підключено автоматично…' },
+      },
+    ],
+  },
 ];
 
 export function chatwootBotLlmToolDefinitions(): LlmToolDefinition[] {

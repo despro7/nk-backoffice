@@ -1,6 +1,6 @@
 import type { LlmMessage, LlmProvider, LlmTestModelResponse } from '../../../shared/types/llm.js';
 import type { ChatwootBotSettings, ChatwootWebhookMessageCreated } from '../../../shared/types/chatwootBot.js';
-import { buildConversationContextNote } from './chatwootBotConversationContext.js';
+import { buildConversationContextNote, CHATWOOT_BOT_REPLY_POLICY } from './chatwootBotConversationContext.js';
 import {
   activeVerifiedOrderIds,
   type ChatwootBotConversationStateSnapshot,
@@ -28,6 +28,8 @@ export type ChatwootBotGenerateReplyResult = {
   conversationState?: ChatwootBotConversationStateSnapshot;
   /** verify_customer відповів rate_limited у цьому ході. */
   toolVerifyRateLimited?: boolean;
+  /** Модель викликала request_operator — причина (текст моделі не надсилаємо, працює handover). */
+  operatorRequested?: string;
   /** Заповнюється після успішного виклику LLM (для адмін-тесту). */
   testMeta?: Omit<LlmTestModelResponse, 'reply'>;
 };
@@ -48,6 +50,8 @@ export class ChatwootBotLlmRunner {
       /** Потрібен для tool verify_customer (зберігає результат у стан розмови). */
       conversationId?: number;
       messageId?: number | null;
+      /** Робочі години операторів зараз (для контексту моделі). */
+      inBusinessHours?: boolean | null;
     },
   ): Promise<ChatwootBotGenerateReplyResult> {
     if (!settings.aiEnabled) return { text: null };
@@ -73,6 +77,7 @@ export class ChatwootBotLlmRunner {
     // Стан змінюється, якщо модель пройде verify_customer у цьому ж ході.
     let state = options?.conversationState;
     let toolVerifyRateLimited = false;
+    let operatorRequested: string | undefined;
     const verifiedIds = state ? activeVerifiedOrderIds(state, now.getTime()) : [];
     const contextNote = buildConversationContextNote({
       now,
@@ -81,8 +86,9 @@ export class ChatwootBotLlmRunner {
       channelPhoneKnown: Boolean(channelPhone),
       channelPhoneTrusted,
       phoneOnFile: Boolean(state?.pendingPhone),
+      inBusinessHours: options?.inBusinessHours,
     });
-    const system = [mask.systemPrompt, contextNote, options?.systemNote?.trim()]
+    const system = [mask.systemPrompt, CHATWOOT_BOT_REPLY_POLICY, contextNote, options?.systemNote?.trim()]
       .filter((part): part is string => Boolean(part))
       .join('\n\n');
     const messages: LlmMessage[] = [...(options?.history ?? []), { role: 'user', content: userContent }];
@@ -158,6 +164,17 @@ export class ChatwootBotLlmRunner {
               limit: typeof args.limit === 'number' ? args.limit : undefined,
             });
           }
+          if (name === 'request_operator') {
+            if (options?.conversationId == null) {
+              return { ok: false, hint: 'Передача оператору доступна лише в розмові з клієнтом.' };
+            }
+            const reason = typeof args.reason === 'string' ? args.reason.trim() : '';
+            operatorRequested = reason || 'operator_requested';
+            return {
+              ok: true,
+              hint: 'Оператора буде підключено автоматично, клієнт отримає повідомлення від системи. Свій текст не пиши.',
+            };
+          }
           return { error: 'unknown_tool' };
         },
         { captureToolTrace: Boolean(options?.propagateErrors) },
@@ -180,6 +197,7 @@ export class ChatwootBotLlmRunner {
         text: emptyReply ? null : text,
         conversationState: state,
         toolVerifyRateLimited,
+        operatorRequested,
         testMeta,
       };
     } catch (error) {

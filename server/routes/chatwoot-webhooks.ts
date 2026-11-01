@@ -3,6 +3,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { logServer } from '../lib/utils.js';
 import {
   CHATWOOT_BOT_HANDOVER_BUILD,
+  CHATWOOT_WEBHOOK_PROBE_CONTENT_MARKER,
   CHATWOOT_WEBHOOK_SECRET_HEADER,
   type ChatwootWebhookMessageCreated,
 } from '../../shared/types/chatwootBot.js';
@@ -105,20 +106,32 @@ router.post('/', verifyWebhookSecret, async (req: Request, res: Response) => {
         `message_type=${String(payload.message_type ?? '∅')}`,
     );
     res.setHeader('X-Chatwoot-Bot-Processor', processor);
-    const result = await chatwootBotOrchestrator.processWebhook(payload, {
-      source: 'webhook',
-      headersMeta,
-    });
-    logServer(
-      `[ChatwootBot] webhook done conv=${result.conversationId ?? 'n/a'} ` +
-        `action=${result.action} reason=${result.reason}`,
-    );
-    res.status(200).json({
-      success: true,
-      action: result.action,
-      reason: result.reason,
-      dryRun: result.dryRun,
-    });
+
+    const run = chatwootBotOrchestrator
+      .processWebhook(payload, { source: 'webhook', headersMeta })
+      .then((result) => {
+        logServer(
+          `[ChatwootBot] webhook done conv=${result.conversationId ?? 'n/a'} ` +
+            `action=${result.action} reason=${result.reason}`,
+        );
+        return result;
+      });
+
+    // Probe з налаштувань чекає результат; Chatwoot — ні: його таймаут (~5 с) коротший за LLM-цикл,
+    // і після нього розмова йде в open з «error with the agent bot». Порядок у розмові тримає черга в orchestrator.
+    if (String(payload.content ?? '').includes(CHATWOOT_WEBHOOK_PROBE_CONTENT_MARKER)) {
+      const result = await run;
+      res.status(200).json({
+        success: true,
+        action: result.action,
+        reason: result.reason,
+        dryRun: result.dryRun,
+      });
+      return;
+    }
+
+    res.status(200).json({ success: true, accepted: true });
+    run.catch((error) => logServer('[ChatwootBot] webhook async processing error', error));
   } catch (error) {
     logServer('[ChatwootBot] webhook processing error', error);
     res.status(200).json({

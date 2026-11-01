@@ -71,6 +71,8 @@ export type ChatwootBotReplyRouteInput = {
   messageId: number | null;
   content: string;
   payload: ChatwootWebhookMessageCreated;
+  /** Робочі години операторів зараз — у контекст моделі (що обіцяти клієнту). */
+  inHours?: boolean;
   /**
    * Передача оператору, коли бот зациклився (handover у робочі години, пропозиція дзвінка поза ними).
    * Без нього бот відповідає як завжди.
@@ -89,6 +91,7 @@ export class ChatwootBotReplyRouter {
       messageId,
       content,
       payload,
+      inHours,
       escalate,
     } = input;
 
@@ -137,17 +140,34 @@ export class ChatwootBotReplyRouter {
       );
     }
 
-    const history = settings.aiEnabled
-      ? await this.loadHistory(settings, conversationId, messageId)
-      : [];
-    const llm = await chatwootBotLlmRunner.generateReply(settings, payload, content, {
-      conversationState: verify.state,
-      conversationId,
-      messageId,
-      systemNote: verify.attempt ? buildVerifyResultNote(verify.attempt) : undefined,
-      history,
-    });
+    // «Друкує…» у віджеті, поки йде LLM-цикл: без нього клієнт секунди бачить тишу.
+    const typingClient =
+      settings.aiEnabled && !dryRun ? createChatwootApiClient(botMessagingCredentials(settings)) : null;
+    if (typingClient) await typingClient.toggleTypingStatusBestEffort(conversationId, 'on');
+    let llm: Awaited<ReturnType<typeof chatwootBotLlmRunner.generateReply>>;
+    let history: LlmMessage[] = [];
+    try {
+      history = settings.aiEnabled
+        ? await this.loadHistory(settings, conversationId, messageId)
+        : [];
+      llm = await chatwootBotLlmRunner.generateReply(settings, payload, content, {
+        conversationState: verify.state,
+        conversationId,
+        messageId,
+        systemNote: verify.attempt ? buildVerifyResultNote(verify.attempt) : undefined,
+        history,
+        inBusinessHours: inHours ?? null,
+      });
+    } finally {
+      if (typingClient) await typingClient.toggleTypingStatusBestEffort(conversationId, 'off');
+    }
     const llmText = llm.text;
+
+    if (llm.operatorRequested) {
+      logServer(`[ChatwootBot] request_operator conv=${conversationId}: ${previewContent(llm.operatorRequested, 120)}`);
+      const escalated = await escalateWith('operator_requested');
+      if (escalated) return escalated;
+    }
 
     // Невдачі verify_customer у цьому ж ході моделі.
     if (llm.toolVerifyRateLimited) {

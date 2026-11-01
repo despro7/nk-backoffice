@@ -78,4 +78,16 @@ describe('buildConversationContextNote', () => {
     });
     expect(note).toContain('підтверджено каналом');
   });
+
+  it('tells the model whether operators are online', () => {
+    const base = {
+      now: new Date('2026-10-30T10:05:00Z'),
+      verifiedOrderCount: 0,
+      verifyExpiresAt: null,
+      channelPhoneKnown: false,
+    };
+    expect(buildConversationContextNote({ ...base, inBusinessHours: true })).toContain('Зараз робочі години');
+    expect(buildConversationContextNote({ ...base, inBusinessHours: false })).toContain('Зараз неробочий час');
+    expect(buildConversationContextNote(base)).not.toContain('робоч');
+  });
 });

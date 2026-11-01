@@ -517,6 +517,7 @@ export class ChatwootBotOrchestrator {
       messageId,
       content: content,
       payload,
+      inHours,
       escalate: (reason) =>
         inHours
           ? this.handleAgentAssign(

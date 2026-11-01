@@ -47,7 +47,7 @@ https://<публічний-хост-backoffice>/api/webhooks/chatwoot
 
 ## Потік даних
 
-1. Chatwoot надсилає події (наприклад `message_created`) на **POST** `/api/webhooks/chatwoot`.
+1. Chatwoot надсилає події (наприклад `message_created`) на **POST** `/api/webhooks/chatwoot`. Endpoint **одразу** відповідає `200 { accepted: true }`, обробка йде у фоні: таймаут Chatwoot (~5 с) коротший за LLM-цикл, і без цього розмова переходить в `open` з активністю «Conversation was marked open by system due to an error with the agent bot». Порядок у межах розмови — черга `conversationWebhookQueue.ts`. Probe з налаштувань (маркер у content) чекає результат.
 2. Orchestrator відфільтровує outgoing / private / повідомлення агента (з опційним debug-журналом).
 3. Якщо діалог у людини-assignee і **reclaim** увімкнено – перевірка offline / поза годинами / таймаут мовчання (`chatwootReclaimDecision.ts`).
 4. Handover-keyword у тексті клієнта → assign / open + unassign за режимом (`specific_agent` | `auto_inbox`).
@@ -103,6 +103,10 @@ https://<публічний-хост-backoffice>/api/webhooks/chatwoot
 - Ключі й дефолтна модель — з **глобальних** LLM-налаштувань; у боті можна перевизначити `aiProvider` / `aiModel` (порожнє = платформа).
 - **Маски** (`aiMasks`, `aiMaskId`): system prompt; без prompt LLM не викликається.
 - Tools у циклі: `search_knowledge_base` (база знань, викликається першою для загальних питань), `get_storefront_catalog` (SKU-каталог BO; пошук за назвою — `textMatchesCatalogQuery`, порядок слів неважливий), `get_storefront_site_pages` (сторінки WordPress сайту, кеш **6 год**), `get_verified_order` (після verify).
+- `request_operator` — модель передає розмову людині (клієнт просить оператора або після пошуку відповіді немає). Текст моделі не надсилається: запускається той самий handover, що й за ключовим словом (у робочі години — assign + `handoverMessageInHours`, поза ними — пропозиція дзвінка).
+- **Правила поверх маски** (`CHATWOOT_BOT_REPLY_POLICY` у `chatwootBotConversationContext.ts`, йдуть одразу після prompt маски): персонаж чоловічого роду; перед «не знаю» — база знань → сайт → каталог; оператор лише через `request_operator`. Маска їх не вимикає.
+- **Контекст розмови** (службовий блок): дата за Києвом, стан verify, телефон, **робочі години зараз** (бот не обіцяє підключити оператора вночі).
+- Поки триває LLM-цикл, бот вмикає typing indicator у віджеті (`toggle_typing_status`), після відповіді — вимикає (лише `live`).
 - На вкладці **AI і verify** — довідник tools з описом, прикладами JSON і admin-тестами API.
 - У проді webhook при збої LLM → **fallback**; `POST /ai/test` пробрасує помилку провайдера в відповідь API.
 

@@ -65,7 +65,20 @@ export type ConversationContextInput = {
   channelPhoneTrusted?: boolean;
   /** Клієнт уже надав телефон у цій розмові (збережено зашифрованим). */
   phoneOnFile?: boolean;
+  /** Робочі години операторів зараз (null — невідомо, рядок не додаємо). */
+  inBusinessHours?: boolean | null;
 };
+
+/**
+ * Незмінні правила поверх маски: рід персонажа, пошук перед «не знаю», передача оператору лише через tool.
+ * Маска задає тон і сценарії, але не може їх вимкнути.
+ */
+export const CHATWOOT_BOT_REPLY_POLICY = [
+  'Обовʼязкові правила (службово, не цитуй клієнту):',
+  '- Ти чоловічого роду: «знайшов», «перевірив», «радий», «зміг». Ніколи не пиши про себе в жіночому роді.',
+  '- Перш ніж сказати, що інформації немає, пошукай: search_knowledge_base для умов, доставки, оплати, знижок; get_storefront_site_pages, якщо в базі знань не знайшлось; get_storefront_catalog для страв, складу, цін і наявності (шукай за ключовим словом: «курка», «суп», «вареники»).',
+  '- Якщо після пошуку відповіді немає, або клієнт просить людину – виклич request_operator. Не пиши «зверніться до оператора» без виклику: клієнт не знає, як це зробити.',
+].join('\n');
 
 function kyivParts(date: Date): { weekday: string; date: string; time: string } {
   const tz = 'Europe/Kyiv';
@@ -104,6 +117,13 @@ export function buildConversationContextNote(input: ConversationContextInput): s
     );
   } else {
     lines.push(`- Телефон з каналу: ${input.channelPhoneKnown ? 'відомий' : 'невідомий'}.`);
+  }
+  if (input.inBusinessHours === true) {
+    lines.push('- Зараз робочі години: оператори на звʼязку, request_operator підключить людину.');
+  } else if (input.inBusinessHours === false) {
+    lines.push(
+      '- Зараз неробочий час: оператор відповість лише в робочі години. Не обіцяй підключити людину зараз; request_operator запропонує клієнту залишити телефон для дзвінка.',
+    );
   }
   return lines.join('\n');
 }

@@ -7,7 +7,7 @@ export const CHATWOOT_BOT_ESCALATE_AFTER_FAILED_VERIFY = 3;
 const REPEAT_MIN_WORDS = 6;
 const REPEAT_SIMILARITY = 0.8;
 
-export type ChatwootBotEscalationReason = 'verify_failed' | 'verify_rate_limited' | 'repeat_reply';
+export type ChatwootBotEscalationReason = 'verify_failed' | 'verify_rate_limited' | 'repeat_reply' | 'operator_requested';
 
 function normalizeReply(text: string): string {
   return text
