@@ -18,7 +18,18 @@
 
 Старий шлях `/settings/chatwoot-bot` перенаправляється на `/chatwoot-bot/settings`.
 
-**Налаштування (таби + hash):** `/chatwoot-bot/settings#tab=ai` — ключі `connection` | `replies` | `ai` | `handover` | `topics` | `cancel` | `sandbox` | `journal` (для «Підключення» hash порожній). Компоненти: `client/pages/ChatwootBotSettings/` (`SettingsChatwootBot.tsx` — re-export).
+**Налаштування (таби + hash):** `/chatwoot-bot/settings#tab=operator` — ключі `connection` | `ai` | `replies` | `operator` | `orders` | `topics` | `sandbox` | `journal` (для «Підключення» hash порожній; старі `handover` → `operator`, `cancel` → `orders`). Компоненти: `client/pages/ChatwootBotSettings/` — вкладки в `tabs/`, картки в `cards/` (`SettingsCard` + картки за темою), `SettingsChatwootBot.tsx` — re-export.
+
+| Вкладка | Картки |
+|---------|--------|
+| Підключення | Chatwoot (URL, Account, токени, Webhook Secret, Outgoing URL) · Стан бота (увімкнено, `dry_run`/`live`, dev-webhook, перевірка зʼєднання) · Telegram для сповіщень |
+| AI | Маска і модель (system prompt) · довідник інструментів LLM |
+| Відповіді | Патерни (автовідповіді) · Fallback |
+| Оператор | Виклик оператора (ключові слова, призначення, екстрений виклик) · Робочі години · Тексти клієнту · Reclaim |
+| Замовлення й клієнти | Верифікація · Тест верифікації · Скасування · Сповіщення про скасування · Профіль контакту |
+| Теми питань / Пісочниця / Журнал | без змін |
+
+**Збереження:** форма спільна для всіх вкладок; коли є незбережені зміни, внизу зʼявляється панель «Є незбережені зміни · Скасувати · Зберегти» (лише з правом `settingsManage`).
 
 **Права (група «Чат-бот»):** сторінки `pages.chatwoot.statistics` / `.knowledge` / `.settings`; дії `actions.chatwoot.knowledgeManage` (редагування бази знань), `.topicsManage` (ручне керування темами), `.settingsManage` (зміна налаштувань і тести). Seed — лише admin. Без `settingsManage` вкладки налаштувань відкриваються лише на перегляд.
 
@@ -99,23 +110,24 @@ https://<публічний-хост-backoffice>/api/webhooks/chatwoot
 - Клієнт у чаті може підтвердити себе **телефон + номер замовлення** або **телефон + дата останнього замовлення** (парсинг дат у `chatwootBotVerifyDateParse.ts`).
 - Стан сесії verify зберігається в `conversation.custom_attributes` (TTL і rate limit у налаштуваннях бота).
 - Tool `get_verified_order` для LLM повертає **лише** redacted DTO після успішного verify (`chatwootBotOrderRedaction.ts`); телефон у tool-аргументах не приймається.
-- Admin-тести: **Тест verify** / **Тест AI** на сторінці налаштувань бота.
+- Admin-тест: **Тест verify** (вкладка «Замовлення й клієнти»); відповіді AI — у **Пісочниці**.
 
 ### LLM у боті
 
 - Ключі й дефолтна модель — з **глобальних** LLM-налаштувань; у боті можна перевизначити `aiProvider` / `aiModel` (порожнє = платформа).
 - **Маски** (`aiMasks`, `aiMaskId`): system prompt; без prompt LLM не викликається.
 - Tools у циклі: `search_knowledge_base` (база знань, викликається першою для загальних питань), `get_storefront_catalog` (страви вітрини: назва, категорія, склад, короткий опис, ціна, наявність, `meatFree`; пошук — `chatwootBotCatalogSearch.ts`: основи слів у назві/категорії/складі/описі з вагами, синоніми інгредієнтів («куркою» = «курятиною»), лише позиції з найбільшим покриттям слів запиту; «без мʼяса», «вегетаріанське», «пісне» — фільтр за складом), `get_storefront_site_pages` (сторінки WordPress сайту, кеш **6 год**), `get_verified_order` (після verify).
+- **Поза годинами після `request_operator`** клієнт отримує `handoverMessageNoAnswerOutOfHours` (не `handoverMessageOutOfHours`, який для прохання «покличте оператора»): одразу просимо контакти. Питання клієнта зберігається в custom attribute `bot_callback_question`; коли клієнт лишає телефон — приватна нотатка з телефоном, імʼям контакту, повідомленням і питанням, а за `handoverCallbackTelegramEnabled` (дефолт увімк.) — те саме в Telegram. У робочі години нотатка handover теж містить питання й тему.
 - `request_operator` — модель передає розмову людині (клієнт просить оператора або після пошуку відповіді немає). Текст моделі не надсилається: запускається той самий handover, що й за ключовим словом (у робочі години — assign + `handoverMessageInHours`, поза ними — пропозиція дзвінка).
 - **Правила поверх маски** (`CHATWOOT_BOT_REPLY_POLICY` у `chatwootBotConversationContext.ts`, йдуть одразу після prompt маски): персонаж чоловічого роду; перед «не знаю» — база знань → сайт → каталог; оператор лише через `request_operator`. Маска їх не вимикає.
 - **Контекст розмови** (службовий блок): дата за Києвом, стан verify, телефон, **робочі години зараз** (бот не обіцяє підключити оператора вночі).
 - Поки триває LLM-цикл, бот вмикає typing indicator у віджеті (`toggle_typing_status`), після відповіді — вимикає (лише `live`).
-- На вкладці **AI і verify** — довідник tools з описом, прикладами JSON і admin-тестами API.
+- На вкладці **AI** — довідник tools з описом, прикладами JSON і admin-тестами API.
 - У проді webhook при збої LLM → **fallback**; `POST /ai/test` пробрасує помилку провайдера в відповідь API.
 
 ### Скасування замовлення
 
-Tool `request_order_cancellation` (лише коли `orderCancelEnabled`, дефолт **вимк.**; вкладка **«Скасування»**). Логіка — `ChatwootBotOrderCancelService.ts`, правила — `chatwootBotOrderCancelRules.ts`:
+Tool `request_order_cancellation` (лише коли `orderCancelEnabled`, дефолт **вимк.**; вкладка **«Замовлення й клієнти»**). Логіка — `ChatwootBotOrderCancelService.ts`, правила — `chatwootBotOrderCancelRules.ts`:
 
 1. **Сувора перевірка:** телефон (з аргументу, збережений у розмові або з каналу) + прізвище та імʼя одержувача: щонайменше два слова, кожне є в `customerName` замовлення (порядок і регістр неважливі). Невдача не каже, що саме не збіглося; 3 невдачі за 30 хв — `rate_limited`, бот передає оператору.
 2. **Кандидати:** замовлення телефону, крім Продаж / Відмова / Повернення / Видалений, з ПІБ, що збігся. Кілька — `choose_order` зі списком (номер, дата, статус, сума).
@@ -127,7 +139,7 @@ Tool `request_order_cancellation` (лише коли `orderCancelEnabled`, де�
 
 ### Профіль контакту і сторінка клієнта
 
-- **Телефон / email з чату → контакт Chatwoot** (`contactSyncEnabled`, дефолт увімк., вкладка Handover): orchestrator фоном (`ChatwootBotContactSyncService`) шукає в повідомленні клієнта телефон UA (E.164) і email і записує їх лише в **порожні** поля контакту (`GET/PUT /contacts/{id}`, потрібен **User PAT**). Якщо Chatwoot відповідає 422 (номер уже в іншого контакту) — приватна нотатка оператору з пропозицією обʼєднати контакти вручну. `dry_run` нічого не пише.
+- **Телефон / email з чату → контакт Chatwoot** (`contactSyncEnabled`, дефолт увімк., вкладка «Замовлення й клієнти»): orchestrator фоном (`ChatwootBotContactSyncService`) шукає в повідомленні клієнта телефон UA (E.164) і email і записує їх лише в **порожні** поля контакту (`GET/PUT /contacts/{id}`, потрібен **User PAT**). Якщо Chatwoot відповідає 422 (номер уже в іншого контакту) — приватна нотатка оператору з пропозицією обʼєднати контакти вручну. `dry_run` нічого не пише.
 - **Сторінка, з якої пише клієнт:** у контекст LLM іде товар або URL сторінки (`chatwootBotContactFields.ts` → `extractPageContext`). Джерело — custom attributes розмови від скрипта на сайті (`page_url`, `page_title`, `product_name`, `product_sku`; тема `breakdance-zero-theme-master/functions.php`, поруч з embed віджета, `$chatwoot.setConversationCustomAttributes` на `chatwoot:ready` і `chatwoot:on-message`), інакше `additional_attributes.referer` віджета (сторінка, де відкрили чат). Атрибути розмови пишуться лише коли розмова вже існує, тому для першого повідомлення часто працює лише referer.
 
 ### Пісочниця

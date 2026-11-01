@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, CardBody, Tab } from '@heroui/react';
+import { Button, Card, CardBody, Tab } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import PageTabs from '@/components/PageTabs';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
@@ -7,18 +7,19 @@ import { PERMISSIONS } from '@shared/constants/permissions';
 import { CHATWOOT_SETTINGS_TAB_LABELS, type ChatwootSettingsTabKey } from './chatwootBotTabKeys';
 import { useChatwootBotSettingsPage } from './useChatwootBotSettingsPage';
 import { ConnectionTab } from './tabs/ConnectionTab';
+import { AiTab } from './tabs/AiTab';
 import { RepliesTab } from './tabs/RepliesTab';
-import { AiVerifyTab } from './tabs/AiVerifyTab';
-import { HandoverReclaimTab } from './tabs/HandoverReclaimTab';
+import { OperatorTab } from './tabs/OperatorTab';
+import { OrdersTab } from './tabs/OrdersTab';
 import { JournalTab } from './tabs/JournalTab';
 import { TopicsTab } from './tabs/TopicsTab';
 import { SandboxTab } from './tabs/SandboxTab';
-import { OrderCancelTab } from './tabs/OrderCancelTab';
 
 const SettingsChatwootBot: React.FC = () => {
   const { hasPermission } = useRoleAccess();
   const page = useChatwootBotSettingsPage();
-  const { form, isLoading, webhookProcessorHealth, activeTab, setActiveTab } = page;
+  const { form, isLoading, webhookProcessorHealth, activeTab, setActiveTab, isDirty, isSaving, handleSave, discardChanges } =
+    page;
 
   const canManage = hasPermission(PERMISSIONS.ACTION_CHATWOOT_SETTINGS_MANAGE);
 
@@ -123,15 +124,30 @@ const SettingsChatwootBot: React.FC = () => {
         {/* Без права на зміну — нативний disabled блокує всі поля й кнопки вкладок. */}
         <fieldset disabled={!canManage} className="contents">
           {activeTab === 'connection' && <ConnectionTab page={page} />}
+          {activeTab === 'ai' && <AiTab page={page} />}
           {activeTab === 'replies' && <RepliesTab page={page} />}
-          {activeTab === 'ai' && <AiVerifyTab page={page} />}
-          {activeTab === 'handover' && <HandoverReclaimTab page={page} />}
+          {activeTab === 'operator' && <OperatorTab page={page} />}
+          {activeTab === 'orders' && <OrdersTab page={page} />}
           {activeTab === 'topics' && <TopicsTab page={page} />}
-          {activeTab === 'cancel' && <OrderCancelTab page={page} />}
           {activeTab === 'sandbox' && <SandboxTab page={page} />}
         </fieldset>
         {activeTab === 'journal' && <JournalTab page={page} />}
       </div>
+
+      {canManage && isDirty ? (
+        // Одна панель на всі вкладки: форма спільна, «Зберегти» в кожній картці зберігав усе одразу.
+        <div className="sticky bottom-24 lg:bottom-4 z-20 flex justify-center pointer-events-none">
+          <div className="pointer-events-auto flex flex-wrap items-center gap-3 rounded-xl border border-default-200 bg-content1 px-4 py-2 shadow-md">
+            <span className="text-sm text-default-700">Є незбережені зміни</span>
+            <Button size="sm" variant="light" isDisabled={isSaving} onPress={discardChanges}>
+              Скасувати
+            </Button>
+            <Button size="sm" color="primary" isLoading={isSaving} onPress={() => void handleSave()}>
+              Зберегти
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

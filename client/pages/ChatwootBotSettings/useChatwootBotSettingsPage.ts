@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ToastService } from '@/services/ToastService';
 import { chatwootBotApi } from '@/services/ChatwootBotService';
 import { llmSettingsApi } from '@/services/LlmSettingsService';
@@ -21,6 +21,8 @@ import { type LlmPlatformSnapshot, defaultLlmPlatformSnapshot } from './llmPlatf
 
 export function useChatwootBotSettingsPage() {
   const [form, setForm] = useState<FormState | null>(null);
+  /** Останній стан із сервера — для «Є незбережені зміни» і «Скасувати». */
+  const [savedForm, setSavedForm] = useState<FormState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -42,9 +44,6 @@ export function useChatwootBotSettingsPage() {
   const [verifyTestDate, setVerifyTestDate] = useState('');
   const [verifyTestResult, setVerifyTestResult] = useState('');
   const [isVerifyTesting, setIsVerifyTesting] = useState(false);
-  const [aiTestMessage, setAiTestMessage] = useState('Що є в наявності на вітрині?');
-  const [aiTestReply, setAiTestReply] = useState('');
-  const [isAiTesting, setIsAiTesting] = useState(false);
   const [llmPlatform, setLlmPlatform] = useState<LlmPlatformSnapshot | null>(null);
   const [webhookProcessorHealth, setWebhookProcessorHealth] = useState<{
     localBuild: string;
@@ -103,11 +102,24 @@ export function useChatwootBotSettingsPage() {
     }
   }, []);
 
+  const applyServerSettings = useCallback((data: Parameters<typeof toFormState>[0]) => {
+    const next = toFormState(data);
+    setForm(next);
+    setSavedForm(next);
+  }, []);
+
+  const isDirty = useMemo(
+    () => Boolean(form && savedForm && JSON.stringify(form) !== JSON.stringify(savedForm)),
+    [form, savedForm],
+  );
+
+  const discardChanges = () => setForm(savedForm);
+
   const loadSettings = useCallback(async () => {
     try {
       setIsLoading(true);
       const data = await chatwootBotApi.getSettings(false);
-      setForm(toFormState(data));
+      applyServerSettings(data);
       void chatwootBotApi.listAgents().then(setAgents).catch(() => setAgents([]));
       void loadInboxHours(data.handoverDefaultInboxId);
       await loadEvents();
@@ -138,7 +150,7 @@ export function useChatwootBotSettingsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [loadEvents, loadInboxHours, loadWebhookProcessorHealth]);
+  }, [applyServerSettings, loadEvents, loadInboxHours, loadWebhookProcessorHealth]);
 
   useEffect(() => {
     void loadSettings();
@@ -223,7 +235,7 @@ export function useChatwootBotSettingsPage() {
         topicsSyncDelaySeconds: Number(form.topicsSyncDelaySeconds),
         topicsCronMinutes: Number(form.topicsCronMinutes),
       });
-      setForm(toFormState(saved));
+      applyServerSettings(saved);
       setTokenVisible(false);
       setSecretVisible(false);
       ToastService.show({
@@ -247,7 +259,7 @@ export function useChatwootBotSettingsPage() {
     setIsClearingWebhookSecret(true);
     try {
       const saved = await chatwootBotApi.updateSettings({ clearWebhookSecret: true });
-      setForm(toFormState(saved));
+      applyServerSettings(saved);
       setSecretVisible(false);
       ToastService.show({
         title: 'Webhook Secret очищено',
@@ -365,12 +377,6 @@ export function useChatwootBotSettingsPage() {
     setVerifyTestResult,
     isVerifyTesting,
     setIsVerifyTesting,
-    aiTestMessage,
-    setAiTestMessage,
-    aiTestReply,
-    setAiTestReply,
-    isAiTesting,
-    setIsAiTesting,
     llmPlatform,
     setLlmPlatform,
     webhookProcessorHealth,
@@ -383,6 +389,8 @@ export function useChatwootBotSettingsPage() {
     updateField,
     setForm,
     handleSave,
+    isDirty,
+    discardChanges,
     handleClearWebhookSecret,
     handleTest,
     handleClearEvents,

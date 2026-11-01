@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-11-02 — Chatwoot Bot: перебудова налаштувань, текст «бот не знайшов відповіді»
+
+**Files:** `client/pages/ChatwootBotSettings/**` (`cards/*`, `tabs/AiTab.tsx`, `OperatorTab.tsx`, `OrdersTab.tsx`, `chatwootBotTabKeys.ts`, `useChatwootBotSettingsPage.ts`, `index.tsx`), `ChatwootBotOrchestrator.ts`, `ChatwootBotReplyRouter.ts`, `chatwootBotLoopGuard.ts`, `ChatwootBotSandboxService.ts`, `ChatwootBotSettingsService.ts`, `shared/types/chatwootBot.ts`
+
+- **Вкладки:** Підключення · AI · Відповіді · Оператор · Замовлення й клієнти · Теми питань · Пісочниця · Журнал. Ключові слова оператора — разом з призначенням; верифікація, скасування й профіль контакту — на одній вкладці; Telegram — у «Підключенні»; тест AI замінила пісочниця. Старі hash `handover` / `cancel` ведуть на нові вкладки.
+- **Збереження:** одна панель «Є незбережені зміни · Скасувати · Зберегти» замість кнопки в кожній картці.
+- **Поза годинами, бот не знайшов відповіді:** окремий текст (одразу просимо контакти); питання клієнта йде оператору разом з телефоном і імʼям — приватна нотатка і, за налаштуванням, Telegram.
+- Адаптація карток під вузькі екрани (ручні правки UI).
+
+**Документація:** [`chatwoot-agent-bot.md`](integrations/chatwoot-agent-bot.md).
+
+---
+
 ## 2026-11-01 — Chatwoot Bot: асинхронний webhook, передача оператору з LLM, пісочниця, пошук страв, профіль контакту, скасування замовлень
 
 **Files:** `server/routes/chatwoot-webhooks.ts`, `server/routes/chatwoot-bot.ts`, `ChatwootBotSandboxService.ts`, `chatwootBotCatalogSearch.ts`, `ChatwootBotCatalogToolService.ts`, `ChatwootBotSettings/tabs/SandboxTab.tsx`, `client/services/ChatwootBotService.ts`, `shared/types/chatwootBotSandbox.ts`, `shared/types/chatwootBotTools.ts`, `ChatwootBotContactSyncService.ts`, `chatwootBotContactFields.ts`, `ChatwootApiClient.ts`, `HandoverReclaimTab.tsx`, `ChatwootBotOrderCancelService.ts`, `chatwootBotOrderCancelRules.ts`, `chatwootBotTelegramNotifier.ts`, `shared/constants/chatwootBotOrderCancel.ts`, `ChatwootBotSettings/tabs/OrderCancelTab.tsx`, `ChatwootBotSettingsService.ts`, `ChatwootBotReplyRouter.ts`, `ChatwootBotLlmRunner.ts`, `ChatwootBotOrchestrator.ts`, `chatwootBotConversationContext.ts`, `chatwootBotLoopGuard.ts`, `shared/constants/chatwootBotLlmTools.ts`

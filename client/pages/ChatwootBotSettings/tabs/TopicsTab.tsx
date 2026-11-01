@@ -3,7 +3,6 @@ import {
   Button,
   Card,
   CardBody,
-  CardFooter,
   CardHeader,
   Divider,
   Input,
@@ -42,7 +41,7 @@ function CardRadio({ children, ...props }: RadioProps) {
 type NumberField = 'topicsJevExamplesPerTopic' | 'topicsJevMaxPerSync' | 'topicsSyncDelaySeconds' | 'topicsCronMinutes';
 
 export function TopicsTab({ page }: Props) {
-  const { form, updateField, isSaving, handleSave, llmPlatform } = page;
+  const { form, updateField, llmPlatform } = page;
 
   if (!form) return null;
 
@@ -159,11 +158,6 @@ export function TopicsTab({ page }: Props) {
           )}
         </div>
       </CardBody>
-      <CardFooter className="p-4">
-        <Button color="primary" isLoading={isSaving} onPress={() => void handleSave()}>
-          Зберегти
-        </Button>
-      </CardFooter>
     </Card>
   );
 }
