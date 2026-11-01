@@ -12,7 +12,10 @@ interface Props {
 /** Ширина затухання країв і відступ, ближче якого активна вкладка прокручується до центру, px. */
 const EDGE_FADE_PX = 32;
 
-/** Затухання країв tabList там, де є вкладки за межами видимої області. */
+/**
+ * Затухання вкладок біля країв tabList, де є приховані вкладки. Маска на tabList, а фон і рамка — на base,
+ * тож гасне лише вміст, а не сам контейнер.
+ */
 function applyEdgeFade(tabList: HTMLElement) {
   const maxScroll = tabList.scrollWidth - tabList.clientWidth;
   const fadeLeft = tabList.scrollLeft > 1;
@@ -36,10 +39,11 @@ function scrollActiveTabIntoView(tabList: HTMLElement, behavior: ScrollBehavior)
 }
 
 export default function PageTabs({ selectedKey, onSelectionChange, children, className, classNames, variant = 'solid', color = 'default', size = 'lg', ...rest }: Props) {
-  const wrapperRef = useRef<HTMLDivElement>(null);
+  // HeroUI віддає ref саме tabList (елемент, що прокручується).
+  const tabListRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const tabList = wrapperRef.current?.querySelector<HTMLElement>('[role="tablist"]');
+    const tabList = tabListRef.current;
     if (!tabList) return;
     const update = () => applyEdgeFade(tabList);
     update();
@@ -54,7 +58,7 @@ export default function PageTabs({ selectedKey, onSelectionChange, children, cla
 
   const isFirstScroll = useRef(true);
   useEffect(() => {
-    const tabList = wrapperRef.current?.querySelector<HTMLElement>('[role="tablist"]');
+    const tabList = tabListRef.current;
     if (!tabList) return;
     // Після кадру: HeroUI ставить data-selected на новій вкладці вже після рендеру.
     const frame = requestAnimationFrame(() => {
@@ -65,32 +69,31 @@ export default function PageTabs({ selectedKey, onSelectionChange, children, cla
   }, [selectedKey]);
 
   return (
-    // contents: обгортка лише для ref, на розкладку не впливає.
-    <div ref={wrapperRef} className="contents">
-      <Tabs
-        selectedKey={selectedKey}
-        onSelectionChange={onSelectionChange}
-        variant={variant}
-        color={color}
-        size={size}
-        className={className}
-        classNames={
-          color === 'default' && !classNames
-            ? {
-                // Не ширше за батька: зайві вкладки гортаються всередині tabList (HeroUI: overflow-x-scroll).
-                base: "max-w-full",
-                tabList: "gap-2 p-[6px] bg-gray-100 rounded-lg",
-                cursor: `${color === 'primary' ? 'bg-primary' : 'bg-slate-600'} text-white shadow-sm rounded-md`,
-                tab: "px-3 py-1.5 text-sm font-normal data-[hover-unselected=true]:opacity-100",
-                tabContent: "group-data-[selected=true]:text-white text-neutral-500",
-              }
-            : classNames ?? undefined
-        }
+    <Tabs
+      ref={tabListRef}
+      selectedKey={selectedKey}
+      onSelectionChange={onSelectionChange}
+      variant={variant}
+      color={color}
+      size={size}
+      className={className}
+      classNames={
+        color === 'default' && !classNames
+          ? {
+              // Не ширше за батька: зайві вкладки гортаються всередині tabList (HeroUI: overflow-x-scroll).
+              // Фон і відступ — на base: маска затухання на tabList гасить лише вкладки.
+              base: "max-w-full p-1 bg-gray-100 rounded-lg",
+              tabList: "gap-2 p-0.5 bg-transparent rounded-md",
+              cursor: `${color === 'primary' ? 'bg-primary' : 'bg-slate-600'} text-white shadow-sm rounded-md`,
+              tab: "px-3 py-1.5 text-sm font-normal data-[hover-unselected=true]:opacity-100",
+              tabContent: "group-data-[selected=true]:text-white text-neutral-500",
+            }
+          : classNames ?? undefined
+      }
 
-        {...rest}
-      >
-        {children}
-      </Tabs>
-    </div>
+      {...rest}
+    >
+      {children}
+    </Tabs>
   );
 }
