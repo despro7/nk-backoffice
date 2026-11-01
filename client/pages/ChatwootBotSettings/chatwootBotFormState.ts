@@ -65,6 +65,7 @@ export type FormState = {
   reclaimMessageInHours: string;
   reclaimContinueWithEcho: boolean;
   resolveCleanupEnabled: boolean;
+  contactSyncEnabled: boolean;
   topicsClassifier: ChatwootBotTopicsClassifier;
   topicsJevMinConfidence: number;
   topicsJevExamplesPerTopic: number;
@@ -142,6 +143,7 @@ export function toFormState(data: ChatwootBotSettingsResponse): FormState {
     reclaimMessageInHours: data.reclaimMessageInHours,
     reclaimContinueWithEcho: data.reclaimContinueWithEcho,
     resolveCleanupEnabled: data.resolveCleanupEnabled,
+    contactSyncEnabled: data.contactSyncEnabled,
     topicsClassifier: data.topicsClassifier,
     topicsJevMinConfidence: data.topicsJevMinConfidence,
     topicsJevExamplesPerTopic: data.topicsJevExamplesPerTopic,

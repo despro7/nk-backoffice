@@ -204,6 +204,7 @@ export function useChatwootBotSettingsPage() {
         reclaimMessageInHours: form.reclaimMessageInHours,
         reclaimContinueWithEcho: form.reclaimContinueWithEcho,
         resolveCleanupEnabled: form.resolveCleanupEnabled,
+        contactSyncEnabled: form.contactSyncEnabled,
         topicsClassifier: form.topicsClassifier,
         topicsJevMinConfidence: Number(form.topicsJevMinConfidence),
         topicsJevExamplesPerTopic: Number(form.topicsJevExamplesPerTopic),

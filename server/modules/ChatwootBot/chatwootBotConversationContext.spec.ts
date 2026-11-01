@@ -91,3 +91,25 @@ describe('buildConversationContextNote', () => {
     expect(buildConversationContextNote(base)).not.toContain('робоч');
   });
 });
+
+describe('buildConversationContextNote page', () => {
+  const base = {
+    now: new Date('2026-10-30T10:05:00Z'),
+    verifiedOrderCount: 0,
+    verifyExpiresAt: null,
+    channelPhoneKnown: false,
+  };
+
+  it('names the product the client is looking at', () => {
+    const note = buildConversationContextNote({
+      ...base,
+      page: { url: 'https://nk-food.shop/product/plov/', productName: 'Плов з курятиною', productSku: '03001' },
+    });
+    expect(note).toContain('Клієнт дивиться товар: Плов з курятиною, SKU 03001');
+  });
+
+  it('falls back to the page url', () => {
+    const note = buildConversationContextNote({ ...base, page: { url: 'https://nk-food.shop/dostavka/' } });
+    expect(note).toContain('Клієнт пише зі сторінки: https://nk-food.shop/dostavka/');
+  });
+});

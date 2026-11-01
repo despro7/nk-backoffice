@@ -1,6 +1,7 @@
 import type { LlmMessage, LlmProvider, LlmTestModelResponse } from '../../../shared/types/llm.js';
 import type { ChatwootBotSettings, ChatwootWebhookMessageCreated } from '../../../shared/types/chatwootBot.js';
 import { buildConversationContextNote, CHATWOOT_BOT_REPLY_POLICY } from './chatwootBotConversationContext.js';
+import { extractPageContext } from './chatwootBotContactFields.js';
 import {
   activeVerifiedOrderIds,
   type ChatwootBotConversationStateSnapshot,
@@ -89,6 +90,7 @@ export class ChatwootBotLlmRunner {
       channelPhoneTrusted,
       phoneOnFile: Boolean(state?.pendingPhone),
       inBusinessHours: options?.inBusinessHours,
+      page: extractPageContext(payload),
     });
     const system = [mask.systemPrompt, CHATWOOT_BOT_REPLY_POLICY, contextNote, options?.systemNote?.trim()]
       .filter((part): part is string => Boolean(part))

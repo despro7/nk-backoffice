@@ -112,6 +112,11 @@ https://<публічний-хост-backoffice>/api/webhooks/chatwoot
 - На вкладці **AI і verify** — довідник tools з описом, прикладами JSON і admin-тестами API.
 - У проді webhook при збої LLM → **fallback**; `POST /ai/test` пробрасує помилку провайдера в відповідь API.
 
+### Профіль контакту і сторінка клієнта
+
+- **Телефон / email з чату → контакт Chatwoot** (`contactSyncEnabled`, дефолт увімк., вкладка Handover): orchestrator фоном (`ChatwootBotContactSyncService`) шукає в повідомленні клієнта телефон UA (E.164) і email і записує їх лише в **порожні** поля контакту (`GET/PUT /contacts/{id}`, потрібен **User PAT**). Якщо Chatwoot відповідає 422 (номер уже в іншого контакту) — приватна нотатка оператору з пропозицією обʼєднати контакти вручну. `dry_run` нічого не пише.
+- **Сторінка, з якої пише клієнт:** у контекст LLM іде товар або URL сторінки (`chatwootBotContactFields.ts` → `extractPageContext`). Джерело — custom attributes розмови від скрипта на сайті (`page_url`, `page_title`, `product_name`, `product_sku`; тема `breakdance-zero-theme-master/functions.php`, поруч з embed віджета, `$chatwoot.setConversationCustomAttributes` на `chatwoot:ready` і `chatwoot:on-message`), інакше `additional_attributes.referer` віджета (сторінка, де відкрили чат). Атрибути розмови пишуться лише коли розмова вже існує, тому для першого повідомлення часто працює лише referer.
+
 ### Пісочниця
 
 Вкладка **«Пісочниця»** (`#tab=sandbox`, право `settingsManage`): діалог від імені клієнта через той самий шлях, що в live (handover-слова → патерни → LLM з реальними tools → fallback), без Chatwoot. Маска, провайдер і модель — з форми, зокрема незбережені. Робочі години — за розкладом inbox або примусово «робочий / неробочий». Під кожною відповіддю — результат (`llm` | `pattern` | `handover_keyword` | `operator_tool` | `fallback`), модель, час, tokens, USD і trace інструментів (аргументи + відповідь). `verify_customer` недоступний (немає розмови).
@@ -200,6 +205,8 @@ Chatwoot на VPS не достукаться до `localhost` – потріб�
 | `server/modules/ChatwootBot/ChatwootBotLlmRunner.ts` | Маска + tool loop через `llmService` |
 | `server/modules/ChatwootBot/ChatwootBotCatalogToolService.ts` | Каталог для tool |
 | `server/modules/ChatwootBot/chatwootBotCatalogSearch.ts` | Пошук страв: основи слів, синоніми, фільтр без мʼяса |
+| `server/modules/ChatwootBot/ChatwootBotContactSyncService.ts` | Телефон / email з чату → профіль контакту |
+| `server/modules/ChatwootBot/chatwootBotContactFields.ts` | Email і контекст сторінки з payload |
 | `server/modules/ChatwootBot/ChatwootBotSandboxService.ts` | Пісочниця: хід бота без Chatwoot, сценарії |
 | `server/modules/ChatwootBot/ChatwootBotStorefrontSiteToolService.ts` | Сторінки сайту (WP REST / HTML, TTL 6 год) |
 | `shared/constants/chatwootBotLlmTools.ts` | Метадані LLM tools (runner + UI) |

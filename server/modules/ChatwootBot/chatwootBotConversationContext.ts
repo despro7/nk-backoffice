@@ -67,6 +67,8 @@ export type ConversationContextInput = {
   phoneOnFile?: boolean;
   /** Робочі години операторів зараз (null — невідомо, рядок не додаємо). */
   inBusinessHours?: boolean | null;
+  /** Сторінка сайту, з якої пише клієнт (custom attributes скрипта або referer віджета). */
+  page?: { url: string; title?: string; productName?: string; productSku?: string } | null;
 };
 
 /**
@@ -117,6 +119,17 @@ export function buildConversationContextNote(input: ConversationContextInput): s
     );
   } else {
     lines.push(`- Телефон з каналу: ${input.channelPhoneKnown ? 'відомий' : 'невідомий'}.`);
+  }
+  if (input.page) {
+    const { url, title, productName, productSku } = input.page;
+    if (productName || productSku) {
+      const product = [productName, productSku ? `SKU ${productSku}` : null].filter(Boolean).join(', ');
+      lines.push(
+        `- Клієнт дивиться товар: ${product} (${url}). «Цей товар», «ця страва» – про нього; деталі бери з get_storefront_catalog.`,
+      );
+    } else {
+      lines.push(`- Клієнт пише зі сторінки: ${title ? `«${title}» ` : ''}${url}.`);
+    }
   }
   if (input.inBusinessHours === true) {
     lines.push('- Зараз робочі години: оператори на звʼязку, request_operator підключить людину.');

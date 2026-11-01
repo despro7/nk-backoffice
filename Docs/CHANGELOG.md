@@ -7,13 +7,15 @@
 
 ## 2026-11-01 — Chatwoot Bot: асинхронний webhook, typing, передача оператору з LLM, пісочниця, пошук страв
 
-**Files:** `server/routes/chatwoot-webhooks.ts`, `server/routes/chatwoot-bot.ts`, `ChatwootBotSandboxService.ts`, `chatwootBotCatalogSearch.ts`, `ChatwootBotCatalogToolService.ts`, `ChatwootBotSettings/tabs/SandboxTab.tsx`, `client/services/ChatwootBotService.ts`, `shared/types/chatwootBotSandbox.ts`, `shared/types/chatwootBotTools.ts`, `ChatwootBotReplyRouter.ts`, `ChatwootBotLlmRunner.ts`, `ChatwootBotOrchestrator.ts`, `chatwootBotConversationContext.ts`, `chatwootBotLoopGuard.ts`, `shared/constants/chatwootBotLlmTools.ts`
+**Files:** `server/routes/chatwoot-webhooks.ts`, `server/routes/chatwoot-bot.ts`, `ChatwootBotSandboxService.ts`, `chatwootBotCatalogSearch.ts`, `ChatwootBotCatalogToolService.ts`, `ChatwootBotSettings/tabs/SandboxTab.tsx`, `client/services/ChatwootBotService.ts`, `shared/types/chatwootBotSandbox.ts`, `shared/types/chatwootBotTools.ts`, `ChatwootBotContactSyncService.ts`, `chatwootBotContactFields.ts`, `ChatwootApiClient.ts`, `HandoverReclaimTab.tsx`, `ChatwootBotReplyRouter.ts`, `ChatwootBotLlmRunner.ts`, `ChatwootBotOrchestrator.ts`, `chatwootBotConversationContext.ts`, `chatwootBotLoopGuard.ts`, `shared/constants/chatwootBotLlmTools.ts`
 
 - **Фікс «error with the agent bot»:** webhook відповідає Chatwoot до обробки; LLM-цикл довший за таймаут Chatwoot, через що розмови йшли в `open` до операторів. Порядок повідомлень — черга по розмові.
 - **Typing indicator:** «друкує…» у віджеті на час LLM-циклу.
 - **Tool `request_operator`:** модель сама запускає handover (робочі години — assign, поза ними — пропозиція дзвінка) замість порад «зверніться до оператора».
 - **Правила поверх маски:** чоловічий рід персонажа, пошук у базі знань / на сайті / в каталозі перед «не знаю», оператор лише через tool; робочі години в контексті моделі.
 - **Пісочниця** (вкладка налаштувань): діалог з ботом без Chatwoot — результат, вартість і trace інструментів під кожною відповіддю; збережені сценарії й «Прогнати всі».
+- **Профіль контакту:** телефон / email, які клієнт написав у чаті, записуються в порожні поля контакту Chatwoot (`contactSyncEnabled`); номер уже в іншого контакту — приватна нотатка оператору.
+- **Сторінка клієнта:** товар або URL сторінки (скрипт на сайті → custom attributes, інакше referer віджета) у контексті LLM — «цей товар» зрозумілий боту.
 - **Каталог для бота:** пошук за категорією, складом і описом (не лише назва), синоніми інгредієнтів, фільтр «без мʼяса»; у відповіді tool — категорія, склад, опис, `meatFree`.
 
 **Документація:** [`chatwoot-agent-bot.md`](integrations/chatwoot-agent-bot.md).

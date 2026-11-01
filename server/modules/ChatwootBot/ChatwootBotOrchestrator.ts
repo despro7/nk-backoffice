@@ -44,6 +44,7 @@ import { assignHumanAgentWithBotFallback } from './chatwootHandoverAssign.js';
 import { ChatwootHandoverTrace } from './chatwootHandoverTrace.js';
 import { getChatwootProcessorStamp } from './chatwootProcessorStamp.js';
 import { runWithConversationLock } from './conversationWebhookQueue.js';
+import { chatwootBotContactSyncService, getContactId } from './ChatwootBotContactSyncService.js';
 import {
   claimHumanAgentActivePersistSlot,
   releaseHumanAgentActivePersistSlot,
@@ -180,12 +181,6 @@ function getConversationCustomAttributes(
   return attrs && typeof attrs === 'object' ? attrs : {};
 }
 
-function getContactId(payload: ChatwootWebhookMessageCreated): number | null {
-  const senderId = payload.sender?.id;
-  if (senderId && payload.sender?.type?.toLowerCase() === 'contact') return senderId;
-  const metaId = payload.conversation?.meta?.sender?.id;
-  return metaId ?? null;
-}
 
 export class ChatwootBotOrchestrator {
   async processWebhook(
@@ -369,6 +364,9 @@ export class ChatwootBotOrchestrator {
     if (!conversationId) {
       return finish({ action: 'error', reason: 'missing_conversation_id', success: false });
     }
+
+    // Фоном: телефон / email з тексту → профіль контакту (не затримує відповідь).
+    void chatwootBotContactSyncService.syncFromMessage(settings, payload, conversationId, content, dryRun);
 
     const inboxId =
       payload.conversation?.inbox_id ??

@@ -198,6 +198,12 @@ export function HandoverReclaimTab({ page }: Props) {
             title="Скидати «замок» при «Вирішити»"
             description="Зняти оператора з діалогу й дозволити боту після reopen (без публічного повідомлення)."
           />
+          <FormSwitchField
+            isSelected={form.contactSyncEnabled}
+            onValueChange={(v) => updateField('contactSyncEnabled', v)}
+            title="Записувати телефон і email у профіль контакту"
+            description="Що клієнт написав у чаті – в порожні поля контакту Chatwoot (потрібен User PAT). Якщо номер уже в іншого контакту – приватна нотатка оператору."
+          />
           <Divider />
           <p className="text-sm font-semibold text-default-800">Завжди (і в робочі, і поза годинами)</p>
           <FormSwitchField

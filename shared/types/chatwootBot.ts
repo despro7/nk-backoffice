@@ -136,6 +136,8 @@ export type ChatwootBotSettings = {
   reclaimContinueWithEcho: boolean;
   /** На «Вирішити» – unassign + скинути bot_human_handover_active. */
   resolveCleanupEnabled: boolean;
+  /** Телефон / email з повідомлення клієнта → порожні поля контакту Chatwoot (User PAT). */
+  contactSyncEnabled: boolean;
   /** Без ключа TypeSafe `jev` працює як `local`. */
   topicsClassifier: ChatwootBotTopicsClassifier;
   /** 0–1: нижче — Jev не впевнений, питання розкладає локальний алгоритм. */
@@ -332,6 +334,8 @@ export type ChatwootWebhookMessageCreated = {
     channel?: string;
     assignee_id?: number | null;
     custom_attributes?: Record<string, unknown>;
+    /** Web widget: `referer` (сторінка, де відкрили чат), `browser`, `initiated_at`. */
+    additional_attributes?: Record<string, unknown>;
     meta?: {
       assignee?: { id?: number; type?: string; name?: string } | null;
       sender?: { id?: number; name?: string; phone_number?: string | null } | null;
@@ -469,6 +473,7 @@ export const DEFAULT_CHATWOOT_BOT_SETTINGS: ChatwootBotSettings = {
     'Оператор ще не відповів. Тимчасово допоможу я – опишіть ваше питання.',
   reclaimContinueWithEcho: true,
   resolveCleanupEnabled: true,
+  contactSyncEnabled: true,
   topicsClassifier: 'local',
   topicsJevMinConfidence: 0.6,
   topicsJevExamplesPerTopic: 4,

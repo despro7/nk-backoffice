@@ -396,6 +396,7 @@ function mergeWithDefaults(raw: Partial<ChatwootBotSettings>): ChatwootBotSettin
     resolveCleanupEnabled: Boolean(
       raw.resolveCleanupEnabled ?? DEFAULT_CHATWOOT_BOT_SETTINGS.resolveCleanupEnabled,
     ),
+    contactSyncEnabled: Boolean(raw.contactSyncEnabled ?? DEFAULT_CHATWOOT_BOT_SETTINGS.contactSyncEnabled),
     topicsClassifier: raw.topicsClassifier === 'jev' ? 'jev' : 'local',
     topicsJevMinConfidence: normalizeJevConfidence(raw.topicsJevMinConfidence),
     topicsJevExamplesPerTopic: normalizeIntInRange(

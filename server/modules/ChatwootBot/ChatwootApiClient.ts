@@ -314,6 +314,24 @@ export class ChatwootApiClient {
     }
   }
 
+  async getContact(contactId: number): Promise<{ phone_number: string | null; email: string | null }> {
+    const raw = await fetchChatwoot<{
+      payload?: { phone_number?: string | null; email?: string | null };
+      phone_number?: string | null;
+      email?: string | null;
+    }>(this.creds, `/contacts/${contactId}`);
+    const contact = raw?.payload ?? raw ?? {};
+    return { phone_number: contact.phone_number || null, email: contact.email || null };
+  }
+
+  /** PUT контакту; помилку (напр. 422 — телефон уже в іншого контакту) кидає. */
+  async updateContactOrThrow(
+    contactId: number,
+    fields: { phone_number?: string; email?: string },
+  ): Promise<void> {
+    await fetchChatwoot(this.creds, `/contacts/${contactId}`, { method: 'PUT', body: fields });
+  }
+
   async updateContact(
     contactId: number,
     fields: { phone_number?: string; name?: string },
