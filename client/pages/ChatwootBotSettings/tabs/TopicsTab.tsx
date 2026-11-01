@@ -10,6 +10,7 @@ import {
   Link,
   Radio,
   RadioGroup,
+  type RadioProps,
   Slider,
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
@@ -18,6 +19,25 @@ import type { FormState } from '../chatwootBotFormState';
 import type { ChatwootBotSettingsPageModel } from '../useChatwootBotSettingsPage';
 
 type Props = { page: ChatwootBotSettingsPageModel };
+
+/** Radio як картка-варіант (назва + опис, вибраний – з рамкою). */
+function CardRadio({ children, ...props }: RadioProps) {
+  return (
+    <Radio
+      {...props}
+      classNames={{
+        base: [
+          'inline-flex m-0 bg-content2 items-start justify-between',
+          'flex-row-reverse cursor-pointer rounded-lg gap-4 p-2 border-2 border-transparent hover:border-primary-200',
+          'data-[selected=true]:border-primary',
+        ],
+        description: 'text-xs',
+      }}
+    >
+      {children}
+    </Radio>
+  );
+}
 
 type NumberField = 'topicsJevExamplesPerTopic' | 'topicsJevMaxPerSync' | 'topicsSyncDelaySeconds' | 'topicsCronMinutes';
 
@@ -47,24 +67,6 @@ export function TopicsTab({ page }: Props) {
 
   const jevWithoutKey = form.topicsClassifier === 'jev' && llmPlatform != null && !llmPlatform.jevApiKeyReady;
 
-  const CustomRadio = (props) => {
-    const {children, ...otherProps} = props;
-
-  return (
-    <Radio
-      {...otherProps}
-      classNames={{
-        base: ['inline-flex m-0 bg-content2 items-start justify-between',
-              'flex-row-reverse cursor-pointer rounded-lg gap-4 p-2 border-2 border-transparent hover:border-primary-200',
-              'data-[selected=true]:border-primary'],
-        description: 'text-xs',
-      }}
-    >
-      {children}
-    </Radio>
-  );
-  };
-
   return (
     <Card className="max-w-3xl">
       <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
@@ -85,15 +87,15 @@ export function TopicsTab({ page }: Props) {
             wrapper: 'grid grid-cols-1 md:grid-cols-2 gap-4',
           }}
         >
-          <CustomRadio value="local" description="Схожість слів з учасниками тем. Безкоштовно, без зовнішніх сервісів.">
+          <CardRadio value="local" description="Схожість слів з учасниками тем. Безкоштовно, без зовнішніх сервісів.">
             Локальний
-          </CustomRadio>
-          <CustomRadio
+          </CardRadio>
+          <CardRadio
             value="jev"
             description="Jev вибирає тему за змістом. Невпевнені й нові питання – локальному алгоритму."
           >
             Jev <small>(TypeSafe)</small>
-          </CustomRadio>
+          </CardRadio>
         </RadioGroup>
         {jevWithoutKey && (
           <div className="flex gap-2 items-start rounded-lg bg-warning-50 p-3 text-sm text-warning-800">

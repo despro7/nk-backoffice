@@ -48,7 +48,9 @@ export type FormState = {
   hasInboxApiAccessToken: boolean;
   handoverMessageInHours: string;
   handoverMessageOutOfHours: string;
+  handoverMessageNoAnswerOutOfHours: string;
   handoverCallbackAckMessage: string;
+  handoverCallbackTelegramEnabled: boolean;
   handoverEmergencyEnabled: boolean;
   handoverEmergencyKeywordsText: string;
   handoverMessageEmergency: string;
@@ -138,7 +140,9 @@ export function toFormState(data: ChatwootBotSettingsResponse): FormState {
     hasInboxApiAccessToken: data.hasInboxApiAccessToken,
     handoverMessageInHours: data.handoverMessageInHours,
     handoverMessageOutOfHours: data.handoverMessageOutOfHours,
+    handoverMessageNoAnswerOutOfHours: data.handoverMessageNoAnswerOutOfHours,
     handoverCallbackAckMessage: data.handoverCallbackAckMessage,
+    handoverCallbackTelegramEnabled: data.handoverCallbackTelegramEnabled,
     handoverEmergencyEnabled: data.handoverEmergencyEnabled,
     handoverEmergencyKeywordsText: keywordsToText(data.handoverEmergencyKeywords),
     handoverMessageEmergency: data.handoverMessageEmergency,

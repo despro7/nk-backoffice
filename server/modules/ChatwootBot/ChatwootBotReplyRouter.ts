@@ -13,6 +13,7 @@ import {
   isRepeatedReply,
   lastAssistantMessage,
   shouldEscalateAfterFailedVerify,
+  type ChatwootBotEscalationDetail,
   type ChatwootBotEscalationReason,
 } from './chatwootBotLoopGuard.js';
 import { createChatwootApiClient } from './ChatwootApiClient.js';
@@ -77,7 +78,10 @@ export type ChatwootBotReplyRouteInput = {
    * Передача оператору, коли бот зациклився (handover у робочі години, пропозиція дзвінка поза ними).
    * Без нього бот відповідає як завжди.
    */
-  escalate?: (reason: ChatwootBotEscalationReason) => Promise<ChatwootBotProcessResult>;
+  escalate?: (
+    reason: ChatwootBotEscalationReason,
+    detail?: ChatwootBotEscalationDetail,
+  ) => Promise<ChatwootBotProcessResult>;
 };
 
 export class ChatwootBotReplyRouter {
@@ -103,7 +107,10 @@ export class ChatwootBotReplyRouter {
       messageId,
     );
 
-    const escalateWith = async (reason: ChatwootBotEscalationReason): Promise<ChatwootBotProcessResult | null> => {
+    const escalateWith = async (
+      reason: ChatwootBotEscalationReason,
+      detail?: ChatwootBotEscalationDetail,
+    ): Promise<ChatwootBotProcessResult | null> => {
       if (!escalate) return null;
       chatwootBotAnalyticsService.recordBestEffort({
         kind: 'bot_action',
@@ -112,7 +119,7 @@ export class ChatwootBotReplyRouter {
         meta: { kind: 'escalate', reason },
       });
       logServer(`[ChatwootBot] escalate ${reason} conv=${conversationId}`);
-      return escalate(reason);
+      return escalate(reason, detail);
     };
 
     if (verify.attempt?.ok === false) {
@@ -165,7 +172,7 @@ export class ChatwootBotReplyRouter {
 
     if (llm.operatorRequested) {
       logServer(`[ChatwootBot] request_operator conv=${conversationId}: ${previewContent(llm.operatorRequested, 120)}`);
-      const escalated = await escalateWith('operator_requested');
+      const escalated = await escalateWith('operator_requested', { question: content, topic: llm.operatorRequested });
       if (escalated) return escalated;
     }
 

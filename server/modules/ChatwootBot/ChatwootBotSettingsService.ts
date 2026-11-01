@@ -356,6 +356,13 @@ function mergeWithDefaults(raw: Partial<ChatwootBotSettings>): ChatwootBotSettin
       raw.handoverMessageOutOfHours,
       DEFAULT_CHATWOOT_BOT_SETTINGS.handoverMessageOutOfHours,
     ),
+    handoverMessageNoAnswerOutOfHours: normalizeMessage(
+      raw.handoverMessageNoAnswerOutOfHours,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.handoverMessageNoAnswerOutOfHours,
+    ),
+    handoverCallbackTelegramEnabled: Boolean(
+      raw.handoverCallbackTelegramEnabled ?? DEFAULT_CHATWOOT_BOT_SETTINGS.handoverCallbackTelegramEnabled,
+    ),
     handoverCallbackAckMessage: normalizeMessage(
       raw.handoverCallbackAckMessage,
       DEFAULT_CHATWOOT_BOT_SETTINGS.handoverCallbackAckMessage,

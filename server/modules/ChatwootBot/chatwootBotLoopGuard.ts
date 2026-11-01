@@ -9,6 +9,9 @@ const REPEAT_SIMILARITY = 0.8;
 
 export type ChatwootBotEscalationReason = 'verify_failed' | 'verify_rate_limited' | 'repeat_reply' | 'operator_requested';
 
+/** Бот сам передав питання (request_operator): що питав клієнт і як модель сформулювала тему. */
+export type ChatwootBotEscalationDetail = { question: string; topic?: string };
+
 function normalizeReply(text: string): string {
   return text
     .toLowerCase()

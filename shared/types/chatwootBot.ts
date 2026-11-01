@@ -110,7 +110,11 @@ export type ChatwootBotSettings = {
   handoverWorkEnd: string;
   handoverMessageInHours: string;
   handoverMessageOutOfHours: string;
+  /** Поза годинами, коли бот сам не знайшов відповіді (request_operator): одразу просимо контакти. */
+  handoverMessageNoAnswerOutOfHours: string;
   handoverCallbackAckMessage: string;
+  /** Контакти для дзвінка + питання клієнта — ще й у Telegram (якщо налаштовано бота). */
+  handoverCallbackTelegramEnabled: boolean;
   handoverEmergencyEnabled: boolean;
   handoverEmergencyKeywords: string[];
   handoverMessageEmergency: string;
@@ -393,6 +397,8 @@ export const CHATWOOT_BOT_ATTR_HUMAN_HANDOVER_ACTIVE = 'bot_human_handover_activ
 export const CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING = 'bot_ooh_callback_pending';
 export const CHATWOOT_BOT_ATTR_CALLBACK_REQUESTED = 'callback_requested';
 export const CHATWOOT_BOT_ATTR_CALLBACK_PHONE = 'callback_phone';
+/** Питання клієнта, на яке бот не знайшов відповіді поза годинами (для нотатки після контактів). */
+export const CHATWOOT_BOT_ATTR_CALLBACK_QUESTION = 'bot_callback_question';
 /** Лише для відображення в Chatwoot; стан верифікації — у таблиці chatwoot_bot_conversation_states. */
 export const CHATWOOT_BOT_ATTR_VERIFIED = 'bot_verified';
 
@@ -474,6 +480,9 @@ export const DEFAULT_CHATWOOT_BOT_SETTINGS: ChatwootBotSettings = {
     'Зараз підключаю оператора. Зачекайте, будь ласка, кілька хвилин.',
   handoverMessageOutOfHours:
     'Зараз неробочий час. Можу спробувати допомогти сам – опишіть питання. Або залиште імʼя та телефон, і оператор передзвонить у робочі години. Якщо ситуація критична – напишіть «терміново».',
+  handoverMessageNoAnswerOutOfHours:
+    'Не знайшов точної відповіді. Зараз неробочий час – залиште імʼя та телефон, і оператор передзвонить у робочі години.',
+  handoverCallbackTelegramEnabled: true,
   handoverCallbackAckMessage:
     'Дякуємо! Передаємо контакти оператору – звʼяжемося з вами в робочі години.',
   handoverEmergencyEnabled: true,

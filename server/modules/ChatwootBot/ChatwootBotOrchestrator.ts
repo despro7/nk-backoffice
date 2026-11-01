@@ -1,6 +1,7 @@
 import { logServer } from '../../lib/utils.js';
 import {
   CHATWOOT_BOT_ATTR_CALLBACK_PHONE,
+  CHATWOOT_BOT_ATTR_CALLBACK_QUESTION,
   CHATWOOT_BOT_ATTR_CALLBACK_REQUESTED,
   CHATWOOT_BOT_ATTR_HUMAN_HANDOVER_ACTIVE,
   CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING,
@@ -45,6 +46,8 @@ import { ChatwootHandoverTrace } from './chatwootHandoverTrace.js';
 import { getChatwootProcessorStamp } from './chatwootProcessorStamp.js';
 import { runWithConversationLock } from './conversationWebhookQueue.js';
 import { chatwootBotContactSyncService, getContactId } from './ChatwootBotContactSyncService.js';
+import { chatwootBotTelegramNotifier } from './chatwootBotTelegramNotifier.js';
+import type { ChatwootBotEscalationDetail } from './chatwootBotLoopGuard.js';
 import {
   claimHumanAgentActivePersistSlot,
   releaseHumanAgentActivePersistSlot,
@@ -516,7 +519,7 @@ export class ChatwootBotOrchestrator {
       content: content,
       payload,
       inHours,
-      escalate: (reason) =>
+      escalate: (reason, detail) =>
         inHours
           ? this.handleAgentAssign(
               settings,
@@ -527,10 +530,18 @@ export class ChatwootBotOrchestrator {
               messageId,
               settings.handoverMessageInHours,
               'in_hours',
-              `Handover: бот не впорався (${reason}).`,
+              detail
+                ? [
+                    'Handover: бот не знайшов відповіді.',
+                    detail.topic ? `Тема: ${detail.topic}` : null,
+                    `Питання клієнта: ${previewContent(detail.question, 500)}`,
+                  ]
+                    .filter(Boolean)
+                    .join('\n')
+                : `Handover: бот не впорався (${reason}).`,
               hoursLog,
             )
-          : this.handleOohOffer(settings, logCtx, conversationId, dryRun, contentPreview, messageId, hoursLog),
+          : this.handleOohOffer(settings, logCtx, conversationId, dryRun, contentPreview, messageId, hoursLog, detail),
     });
   }
 
@@ -902,8 +913,15 @@ export class ChatwootBotOrchestrator {
     contentPreview: string,
     messageId: number | null,
     hoursLog?: string,
+    /** Бот сам не знайшов відповіді: інший текст і питання зберігаємо до отримання контактів. */
+    noAnswer?: ChatwootBotEscalationDetail,
   ): Promise<ChatwootBotProcessResult> {
-    const publicMessage = settings.handoverMessageOutOfHours;
+    const publicMessage = noAnswer
+      ? settings.handoverMessageNoAnswerOutOfHours
+      : settings.handoverMessageOutOfHours;
+    const question = noAnswer
+      ? [noAnswer.topic, previewContent(noAnswer.question, 500)].filter(Boolean).join(' · ')
+      : null;
     const dryReason = 'dry_run_ooh_offer';
     const liveReason = 'ooh_offer';
 
@@ -938,12 +956,15 @@ export class ChatwootBotOrchestrator {
         step = 'custom_attributes';
         await client.mergeConversationCustomAttributesBestEffort(conversationId, {
           [CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING]: true,
+          ...(question ? { [CHATWOOT_BOT_ATTR_CALLBACK_QUESTION]: question } : {}),
         });
         step = 'private_note';
         try {
           await client.createOutgoingMessage(
             conversationId,
-            'Handover OOH: клієнт просив оператора поза робочими годинами – очікуємо контакти або допомогу бота.',
+            question
+              ? `Handover OOH: бот не знайшов відповіді поза робочими годинами – просимо контакти.\nПитання: ${question}`
+              : 'Handover OOH: клієнт просив оператора поза робочими годинами – очікуємо контакти або допомогу бота.',
             true,
           );
         } catch (noteErr) {
@@ -1043,14 +1064,27 @@ export class ChatwootBotOrchestrator {
         ...(phone ? { [CHATWOOT_BOT_ATTR_CALLBACK_PHONE]: phone } : {}),
       });
       await client.createOutgoingMessage(conversationId, ack, false);
+      const attrs = getConversationCustomAttributes(payload);
+      const question =
+        typeof attrs[CHATWOOT_BOT_ATTR_CALLBACK_QUESTION] === 'string'
+          ? (attrs[CHATWOOT_BOT_ATTR_CALLBACK_QUESTION] as string)
+          : null;
+      const contactName = payload.sender?.name ?? payload.conversation?.meta?.sender?.name ?? null;
+      const noteLines = [
+        'Клієнт просить передзвонити (поза робочими годинами).',
+        `Телефон: ${phone ?? 'не вказано'}`,
+        contactName ? `Контакт: ${contactName}` : null,
+        `Повідомлення: ${previewContent(content, 300)}`,
+        question ? `Питання, на яке бот не відповів: ${question}` : null,
+      ].filter((line): line is string => Boolean(line));
       try {
-        await client.createOutgoingMessage(
-          conversationId,
-          `Callback OOH: ${phone ?? 'без телефону'} · ${previewContent(content, 300)}`,
-          true,
-        );
+        await client.createOutgoingMessage(conversationId, noteLines.join('\n'), true);
       } catch (noteErr) {
         logServer('[ChatwootBot] ooh_callback private note failed (non-fatal)', noteErr);
+      }
+      if (settings.handoverCallbackTelegramEnabled) {
+        const url = `${settings.baseUrl.replace(/\/+$/, '')}/app/accounts/${settings.accountId}/conversations/${conversationId}`;
+        await chatwootBotTelegramNotifier.send(settings, [...noteLines, url].join('\n'));
       }
 
       const event = await persistEvent(logCtx, settings, {
