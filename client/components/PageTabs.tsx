@@ -21,6 +21,8 @@ export default function PageTabs({ selectedKey, onSelectionChange, children, cla
       classNames={
         color === 'default' && !classNames
           ? {
+              // Не ширше за батька: зайві вкладки гортаються всередині tabList (HeroUI: overflow-x-scroll).
+              base: "max-w-full",
               tabList: "gap-2 p-[6px] bg-gray-100 rounded-lg",
               cursor: `${color === 'primary' ? 'bg-primary' : 'bg-slate-600'} text-white shadow-sm rounded-md`,
               tab: "px-3 py-1.5 text-sm font-normal data-[hover-unselected=true]:opacity-100",

@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
-import { Button, Input, RadioGroup, Switch, Tooltip } from '@heroui/react';
+import { Button, Input, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ToastService } from '@/services/ToastService';
 import { chatwootBotApi } from '@/services/ChatwootBotService';
-import type { ChatwootBotReplyMode } from '@shared/types/chatwootBot';
-import { ReplyModeRadio } from '../components/FormSwitchField';
+import { FormSwitchField } from '../components/FormSwitchField';
 import { DevWebhookSwitch } from '../components/DevWebhookSwitch';
 import { SettingsCard, type SettingsCardProps } from './SettingsCard';
 
@@ -24,30 +23,18 @@ export function BotStatusCard({ page }: SettingsCardProps) {
   if (!form) return null;
   return (
     <SettingsCard icon="power" title="Стан бота">
-      <div className="flex items-center gap-3">
-        <Switch size="sm" isSelected={form.enabled} onValueChange={(v) => updateField('enabled', v)} />
-        <div>
-          <p className="text-sm font-medium">Бот увімкнено</p>
-          <p className="text-xs text-default-500">
-            Вимкнено – у журналі <span className="font-mono">bot_disabled</span>, без echo/handover
-          </p>
-        </div>
-      </div>
-      <RadioGroup
-        label="Режим відповіді"
-        size="sm"
-        orientation="horizontal"
-        value={form.replyMode}
-        onValueChange={(v) => updateField('replyMode', v as ChatwootBotReplyMode)}
-        classNames={{ base: 'gap-2', wrapper: 'flex flex-row flex-wrap gap-2 w-full' }}
-      >
-        <ReplyModeRadio value="dry_run" description="Лише журнал">
-          dry_run
-        </ReplyModeRadio>
-        <ReplyModeRadio value="live" description="POST у Chatwoot">
-          live
-        </ReplyModeRadio>
-      </RadioGroup>
+      <FormSwitchField
+        isSelected={form.enabled}
+        onValueChange={(v) => updateField('enabled', v)}
+        title="Бот увімкнено"
+        description="Вимкнено – у журналі bot_disabled, без echo/handover."
+      />
+      <FormSwitchField
+        isSelected={form.replyMode === 'live'}
+        onValueChange={(v) => updateField('replyMode', v ? 'live' : 'dry_run')}
+        title="Відповідати клієнтам (live)"
+        description="Увімкнено – бот пише в Chatwoot. Вимкнено (dry_run) – лише журнал, клієнт нічого не отримує."
+      />
       <DevWebhookSwitch onChanged={() => void loadWebhookProcessorHealth()} />
       <Button
         variant="flat"
