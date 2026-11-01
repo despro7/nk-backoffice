@@ -92,6 +92,7 @@ export function DevWebhookSwitch({ onChanged }: Props) {
   return (
     <div className="flex items-center gap-3">
       <Switch
+        size="sm"
         color="warning"
         isSelected={enabled}
         isDisabled={!canToggle}

@@ -35,8 +35,8 @@ export function JournalTab({ page }: Props) {
   if (!form) return null;
 
   return (
-    <div className="flex flex-col md:flex-row gap-6 items-start">
-      <Card className="flex-1 shrink-0">
+    <div className="flex flex-col xl:flex-row gap-6 items-start">
+      <Card className="flex-1 shrink-0 w-full xl:w-auto xl:max-w-lg">
         <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
           <DynamicIcon name="database" size={20} className="text-default-600" />
           <h2 className="text-lg font-semibold">Журнал webhook</h2>
@@ -99,7 +99,7 @@ export function JournalTab({ page }: Props) {
         </CardBody>
       </Card>
 
-      <Card className="flex flex-col min-h-0">
+      <Card className="flex flex-col min-h-0 flex-1 shrink-0 w-full xl:w-auto">
         <CardHeader className="flex gap-2 px-4 items-center justify-between border-b border-default-200 shrink-0">
           <div className="flex gap-2 items-center">
             <DynamicIcon name="scroll-text" size={20} className="text-default-600" />

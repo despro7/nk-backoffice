@@ -68,8 +68,8 @@ export function AiVerifyTab({ page }: Props) {
   if (!form) return null;
 
   return (
-    <div className="flex flex-col md:flex-row gap-6 items-start">
-      <Card className="flex-1">
+    <div className="flex flex-col xl:flex-row gap-6 items-start">
+      <Card className="flex-1 w-full">
         <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
           <DynamicIcon name="bot" size={20} className="text-default-600" />
           <h2 className="text-lg font-semibold">AI і verify</h2>
@@ -197,7 +197,7 @@ export function AiVerifyTab({ page }: Props) {
         </CardFooter>
       </Card>
 
-      <div className="flex-1 space-y-4">
+      <div className="flex-1 space-y-4 w-full xl:w-1/2">
         <Card>
           <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
             <DynamicIcon name="flask-conical" size={20} className="text-default-600" />
@@ -205,7 +205,7 @@ export function AiVerifyTab({ page }: Props) {
           </CardHeader>
           <CardBody className="gap-4 p-4">
             <p className="text-sm font-medium">Тести (без PII у відповіді)</p>
-            <div className="flex flex-col md:flex-row md:items-center gap-3">
+            <div className="flex flex-col md:flex-row md:items-center md:flex-wrap gap-3">
               <Input
                 className="flex-1 min-w-[10rem]"
                 label="Телефон"

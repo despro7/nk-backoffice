@@ -67,7 +67,7 @@ export function OrderCancelTab({ page }: Props) {
   );
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
       <Card>
         <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
           <DynamicIcon name="circle-x" size={20} className="text-default-600" />
@@ -82,6 +82,7 @@ export function OrderCancelTab({ page }: Props) {
           />
           <Divider />
           <CheckboxGroup
+            size="sm"
             label="Автоматичне скасування"
             description="Бот сам ставить статус «Відмова» в SalesDrive. Клієнту прийде email від WooCommerce, якщо email є в замовленні."
             orientation="horizontal"
@@ -96,6 +97,7 @@ export function OrderCancelTab({ page }: Props) {
             ))}
           </CheckboxGroup>
           <CheckboxGroup
+            size="sm"
             label="Після підтвердження оператором"
             description="Бот передає запит оператору, клієнту – що запит опрацюють. Статуси поза обома списками теж ідуть оператору."
             orientation="horizontal"
@@ -109,8 +111,8 @@ export function OrderCancelTab({ page }: Props) {
               </Checkbox>
             ))}
           </CheckboxGroup>
-          <p className="text-xs text-default-500">
-            Продаж, Відмова, Повернення й видалені замовлення бот не пропонує скасувати.
+          <p className="text-xs text-default-500 border-t border-default-200/75 pt-4">
+            Замовлення в статусі «Продаж», «Відмова», «Повернення» й видалені замовлення – бот не пропонує скасувати.
           </p>
         </CardBody>
         {saveFooter}
@@ -224,8 +226,9 @@ export function OrderCancelTab({ page }: Props) {
               onValueChange={(v) => updateField('telegramNotifyChatId', v)}
             />
             <Button
+              size="lg"
               variant="flat"
-              className="mt-2 shrink-0"
+              className="h-14 shrink-0"
               isDisabled={isTestingTelegram}
               startContent={
                 <DynamicIcon

@@ -47,6 +47,24 @@ export function TopicsTab({ page }: Props) {
 
   const jevWithoutKey = form.topicsClassifier === 'jev' && llmPlatform != null && !llmPlatform.jevApiKeyReady;
 
+  const CustomRadio = (props) => {
+    const {children, ...otherProps} = props;
+
+  return (
+    <Radio
+      {...otherProps}
+      classNames={{
+        base: ['inline-flex m-0 bg-content2 items-start justify-between',
+              'flex-row-reverse cursor-pointer rounded-lg gap-4 p-2 border-2 border-transparent hover:border-primary-200',
+              'data-[selected=true]:border-primary'],
+        description: 'text-xs',
+      }}
+    >
+      {children}
+    </Radio>
+  );
+  };
+
   return (
     <Card className="max-w-3xl">
       <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
@@ -62,16 +80,20 @@ export function TopicsTab({ page }: Props) {
           label="Класифікатор"
           value={form.topicsClassifier}
           onValueChange={(v) => updateField('topicsClassifier', v === 'jev' ? 'jev' : 'local')}
+          classNames={{
+            label: 'text-sm text-default-700 font-semibold',
+            wrapper: 'grid grid-cols-1 md:grid-cols-2 gap-4',
+          }}
         >
-          <Radio value="local" description="Схожість слів з учасниками тем. Безкоштовно, без зовнішніх сервісів.">
+          <CustomRadio value="local" description="Схожість слів з учасниками тем. Безкоштовно, без зовнішніх сервісів.">
             Локальний
-          </Radio>
-          <Radio
+          </CustomRadio>
+          <CustomRadio
             value="jev"
-            description="TypeSafe Jev вибирає тему за змістом. Невпевнені й нові питання — локальному алгоритму."
+            description="Jev вибирає тему за змістом. Невпевнені й нові питання – локальному алгоритму."
           >
-            Jev
-          </Radio>
+            Jev <small>(TypeSafe)</small>
+          </CustomRadio>
         </RadioGroup>
         {jevWithoutKey && (
           <div className="flex gap-2 items-start rounded-lg bg-warning-50 p-3 text-sm text-warning-800">

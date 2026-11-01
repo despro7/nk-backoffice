@@ -35,14 +35,14 @@ export function HandoverReclaimTab({ page }: Props) {
   if (!form) return null;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
       <Card>
         <CardHeader className="flex gap-2 px-4 items-center border-b border-default-200">
           <DynamicIcon name="headset" size={20} className="text-default-600" />
           <h2 className="text-lg font-semibold">Handover і робочі години</h2>
         </CardHeader>
         <CardBody className="gap-4 p-4">
-          <div className="flex flex-col sm:flex-row gap-4 sm:items-start">
+          <div className="flex flex-col gap-4">
             <Select
               label="Призначення при handover"
               selectedKeys={[form.handoverAssignMode]}
@@ -61,38 +61,40 @@ export function HandoverReclaimTab({ page }: Props) {
                 Конкретний агент
               </SelectItem>
             </Select>
-            <Select
-              label="Агент для виклику"
-              placeholder="Оберіть агента або введіть ID нижче"
-              isDisabled={form.handoverAssignMode === 'auto_inbox'}
-              selectedKeys={
-                form.handoverAssigneeId != null ? [String(form.handoverAssigneeId)] : []
-              }
-              onSelectionChange={(keys) => {
-                const key = Array.from(keys)[0];
-                updateField('handoverAssigneeId', key ? Number(key) : null);
-              }}
-              description="ID користувача-агента в Chatwoot (не Agent Bot). Список – через User PAT у полі «Inbox API token»."
-            >
-              {agents.map((a) => (
-                <SelectItem key={String(a.id)} textValue={a.name}>
-                  {a.name} (#{a.id})
-                </SelectItem>
-              ))}
-            </Select>
-            <Input
-              type="number"
-              label="Агент ID (вручну)"
-              placeholder="напр. 2"
-              className="w-full sm:w-40 sm:shrink-0"
-              isDisabled={form.handoverAssignMode === 'auto_inbox'}
-              value={form.handoverAssigneeId != null ? String(form.handoverAssigneeId) : ''}
-              onValueChange={(v) =>
-                updateField('handoverAssigneeId', v.trim() ? Number(v) || null : null)
-              }
-            />
+            {form.handoverAssignMode === 'specific_agent' && (
+              <div className="flex flex-col lg:flex-row gap-4 lg:items-start">
+                <Select
+                  label="Агент для виклику"
+                  placeholder="Оберіть агента або введіть ID нижче"
+                  selectedKeys={
+                    form.handoverAssigneeId != null ? [String(form.handoverAssigneeId)] : []
+                  }
+                  onSelectionChange={(keys) => {
+                    const key = Array.from(keys)[0];
+                    updateField('handoverAssigneeId', key ? Number(key) : null);
+                  }}
+                  description="ID користувача-агента в Chatwoot (не Agent Bot). Список – через User PAT у полі «Inbox API token»."
+                >
+                  {agents.map((a) => (
+                    <SelectItem key={String(a.id)} textValue={a.name}>
+                      {a.name} (#{a.id})
+                    </SelectItem>
+                  ))}
+                </Select>
+                <Input
+                  type="number"
+                  label="Агент ID (вручну)"
+                  placeholder="напр. 2"
+                  className="w-full sm:w-40 sm:shrink-0"
+                  value={form.handoverAssigneeId != null ? String(form.handoverAssigneeId) : ''}
+                  onValueChange={(v) =>
+                    updateField('handoverAssigneeId', v.trim() ? Number(v) || null : null)
+                  }
+                />
+              </div>
+            )}
           </div>
-          <div className="flex flex-col sm:flex-row gap-4 sm:items-start">
+          <div className="flex flex-col gap-2">
             <Input
               type="number"
               label="Inbox ID (fallback / симуляція)"
@@ -103,12 +105,12 @@ export function HandoverReclaimTab({ page }: Props) {
                 updateField('handoverDefaultInboxId', v.trim() ? Number(v) || null : null)
               }
             />
-            <div className="flex flex-col items-start gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
               {inboxHours ? (
                 <Chip
-                  size="sm"
                   variant="flat"
                   color={inboxHours.inHours ? 'success' : 'warning'}
+                  className="rounded-sm h-8"
                 >
                   Зараз: {inboxHours.inHours ? 'робочі години' : 'поза годинами'} ·{' '}
                   {inboxHours.schedule.name} ({inboxHours.source})
@@ -120,8 +122,9 @@ export function HandoverReclaimTab({ page }: Props) {
               )}
               <Button
                 size="sm"
-                color="primary"
-                data-btn-tone="primary-blue-flat"
+                variant="bordered"
+                color="secondary"
+                className="h-8 border-1"
                 isLoading={isLoadingInboxHours}
                 onPress={() => void loadInboxHours(form.handoverDefaultInboxId)}
               >
@@ -149,6 +152,7 @@ export function HandoverReclaimTab({ page }: Props) {
           />
           <div className="flex items-center gap-3">
             <Switch
+              size="sm"
               isSelected={form.handoverEmergencyEnabled}
               onValueChange={(v) => updateField('handoverEmergencyEnabled', v)}
             />

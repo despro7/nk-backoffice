@@ -16,6 +16,7 @@ export function FormSwitchField({
   return (
     <div className="flex items-start gap-3">
       <Switch
+        size="sm"
         classNames={{ base: 'mt-0.5' }}
         isSelected={isSelected}
         isDisabled={isDisabled}

@@ -348,8 +348,8 @@ export function QuestionTopicsCard({
                       <p className="text-xs text-default-500 truncate">{otherPhrasings.join(' · ')}</p>
                     )}
                   </div>
-                  <span className="w-20 text-sm px-2">{row.count}</span>
-                  <span className="w-[220px] px-2">
+                  <span className="w-20 text-sm px-1">{row.count}</span>
+                  <span className="w-[220px]">
                     {row.knowledgeEntry ? (
                       <Chip
                         size="sm"
