@@ -69,6 +69,10 @@ function TurnMeta({ result }: { result: ChatwootBotSandboxReplyResult }) {
   const [open, setOpen] = useState(false);
   const meta = result.meta;
   const trace = meta?.toolTrace ?? [];
+  // Скасування замовлення тощо в пісочниці лише моделюються (`simulated: true` у відповіді інструмента).
+  const simulated = trace.some(
+    (entry) => typeof entry.result === 'object' && entry.result !== null && (entry.result as { simulated?: unknown }).simulated === true,
+  );
   const outcome = OUTCOME_META[result.outcome];
   const cost = meta?.usage?.estimatedCostUsd;
   return (
@@ -78,6 +82,13 @@ function TurnMeta({ result }: { result: ChatwootBotSandboxReplyResult }) {
           {outcome.label}
         </Chip>
         {result.detail ? <span className="truncate max-w-xs">{result.detail}</span> : null}
+        {simulated ? (
+          <Tooltip content="Інструмент лише змоделював дію: у SalesDrive нічого не змінено, оператора не сповіщено" placement="top">
+            <Chip size="sm" variant="flat" color="secondary" startContent={<DynamicIcon name="flask-conical" size={12} />}>
+              симуляція
+            </Chip>
+          </Tooltip>
+        ) : null}
         {meta ? (
           <span className="font-mono">
             {meta.model} · {(meta.latencyMs / 1000).toFixed(1)} с
