@@ -241,6 +241,7 @@ export function useChatwootBotSettingsPage() {
         topicsJevMaxPerSync: Number(form.topicsJevMaxPerSync),
         topicsSyncDelaySeconds: Number(form.topicsSyncDelaySeconds),
         topicsCronMinutes: Number(form.topicsCronMinutes),
+        topicsIntentsEnabled: form.topicsIntentsEnabled,
       });
       applyServerSettings(saved);
       setTokenVisible(false);

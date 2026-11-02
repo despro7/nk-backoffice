@@ -45,7 +45,7 @@ describe('summarizeLlmUsage', () => {
     );
     expect(summary.total.calls).toBe(1);
     expect(summary.byDay).toHaveLength(8);
-    expect(summary.byDay.at(-1)).toMatchObject({ day: '2026-10-31', calls: 1 });
+    expect(summary.byDay[summary.byDay.length - 1]).toMatchObject({ day: '2026-10-31', calls: 1 });
     expect(summary.byDay.filter((d) => d.calls === 0)).toHaveLength(7);
   });
 

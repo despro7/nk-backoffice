@@ -187,6 +187,8 @@ export type ChatwootBotSettings = {
   topicsSyncDelaySeconds: number;
   /** Інтервал підстраховувального cron (прод), хвилин; 0 — вимкнено. */
   topicsCronMinutes: number;
+  /** Розбирати повідомлення LLM на питання / дії / відповіді / шум перед розкладкою по темах. */
+  topicsIntentsEnabled: boolean;
 };
 
 /** Межі числових налаштувань тем питань (сервер і UI). */
@@ -575,6 +577,7 @@ export const DEFAULT_CHATWOOT_BOT_SETTINGS: ChatwootBotSettings = {
   topicsJevMaxPerSync: 40,
   topicsSyncDelaySeconds: 30,
   topicsCronMinutes: 10,
+  topicsIntentsEnabled: true,
 };
 
 /** @deprecated Використовуйте `settings.reclaimOohSilentMinutes`. */

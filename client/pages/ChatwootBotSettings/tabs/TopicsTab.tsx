@@ -15,6 +15,7 @@ import {
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { CHATWOOT_BOT_TOPICS_LIMITS as LIMITS } from '@shared/types/chatwootBot';
 import type { FormState } from '../chatwootBotFormState';
+import { FormSwitchField } from '../components/FormSwitchField';
 import type { ChatwootBotSettingsPageModel } from '../useChatwootBotSettingsPage';
 
 type Props = { page: ChatwootBotSettingsPageModel };
@@ -96,6 +97,12 @@ export function TopicsTab({ page }: Props) {
             Jev <small>(TypeSafe)</small>
           </CardRadio>
         </RadioGroup>
+        <FormSwitchField
+          isSelected={form.topicsIntentsEnabled}
+          onValueChange={(v) => updateField('topicsIntentsEnabled', v)}
+          title="Розбирати повідомлення на питання й дії (LLM)"
+          description="Перед розкладкою по темах модель платформи ділить кожне нове повідомлення на питання, запити на дію, відповіді клієнта й шум. У теми йде лише очищене питання; відповіді («Замовлю пізніше», ПІБ) – у шум; запити на дію – в окремий блок статистики. Один виклик на унікальний текст, витрати – у журналі LLM («Розбір повідомлень»)."
+        />
         {jevWithoutKey && (
           <div className="flex gap-2 items-start rounded-lg bg-warning-50 p-3 text-sm text-warning-800">
             <DynamicIcon name="triangle-alert" size={16} className="shrink-0 mt-0.5" />

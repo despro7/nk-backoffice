@@ -23,6 +23,7 @@ import { chatwootBotApi } from '@/services/ChatwootBotService';
 import { ToastService } from '@/services/ToastService';
 import type { ChatwootBotQuestionClusterDto } from '@shared/types/chatwootBot';
 import type {
+  ChatwootBotIntentKind,
   ChatwootBotQuestionContextDto,
   ChatwootBotTopicDeleteMode,
   ChatwootBotTopicQuestionDto,
@@ -71,6 +72,14 @@ type DeleteDialog = {
   mode: ChatwootBotTopicDeleteMode;
 };
 
+/** Що ще є в повідомленні, крім питання (розбір LLM). */
+const INTENT_KIND_META: Record<ChatwootBotIntentKind, { label: string; color: 'primary' | 'warning' | 'default' }> = {
+  question: { label: 'питання', color: 'primary' },
+  action: { label: 'запит на дію', color: 'warning' },
+  answer: { label: 'відповідь', color: 'default' },
+  noise: { label: 'шум', color: 'default' },
+};
+
 const CONTEXT_LABEL: Record<ChatwootBotQuestionContextDto['by'], string> = {
   bot: 'у відповідь на бота',
   agent: 'у відповідь на оператора',
@@ -110,6 +119,18 @@ function QuestionRow({
         <span className="text-default-700">
           {question.text} ({question.count})
         </span>
+        {question.kinds
+          ?.filter((kind) => kind !== 'question')
+          .map((kind) => (
+            <Chip key={kind} size="sm" variant="flat" color={INTENT_KIND_META[kind].color} className="h-5 ml-1 text-[11px]">
+              {INTENT_KIND_META[kind].label}
+            </Chip>
+          ))}
+        {question.original && (
+          <p className="text-xs text-default-400 truncate" title={question.original}>
+            клієнт написав: «{question.original}»
+          </p>
+        )}
         <QuestionContextLine context={context ?? question.context} />
       </div>
       {question.source === 'manual' && (
@@ -648,7 +669,8 @@ export function QuestionTopicsCard({
       {showIgnored && (
         <div className="mt-1 pl-3 border-l border-default-200">
           <p className="text-xs text-default-500 mb-1">
-            Не рахуються в темах: телефони, подяки та питання, позначені вручну.
+            Не рахуються в темах: телефони, подяки, відповіді клієнта на питання бота, запити на дію без питання і
+            питання, позначені вручну.
           </p>
           {ignoredQuestions.map((q) => (
             <QuestionRow

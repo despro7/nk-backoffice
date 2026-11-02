@@ -487,6 +487,7 @@ function mergeWithDefaults(raw: Partial<ChatwootBotSettings>): ChatwootBotSettin
       CHATWOOT_BOT_TOPICS_LIMITS.syncDelaySeconds,
       DEFAULT_CHATWOOT_BOT_SETTINGS.topicsSyncDelaySeconds,
     ),
+    topicsIntentsEnabled: Boolean(raw.topicsIntentsEnabled ?? DEFAULT_CHATWOOT_BOT_SETTINGS.topicsIntentsEnabled),
     topicsCronMinutes: normalizeIntInRange(
       raw.topicsCronMinutes,
       CHATWOOT_BOT_TOPICS_LIMITS.cronMinutes,

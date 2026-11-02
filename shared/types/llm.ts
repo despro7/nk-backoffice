@@ -64,7 +64,7 @@ export type LlmToolDefinition = {
 export type LlmUsageProvider = LlmProvider | 'typesafe';
 
 /** Звідки платний виклик — для розбивки витрат. */
-export type LlmUsageFeature = 'chatwoot_bot_reply' | 'topics_jev' | 'llm_test' | 'jev_test' | 'other';
+export type LlmUsageFeature = 'chatwoot_bot_reply' | 'topics_jev' | 'topics_intents' | 'llm_test' | 'jev_test' | 'other';
 
 export type LlmCompletionRequest = {
   /** Для журналу витрат; без нього — `other`. */

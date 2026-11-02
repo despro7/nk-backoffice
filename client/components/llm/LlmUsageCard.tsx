@@ -41,6 +41,7 @@ const PROVIDER_LABELS: Record<LlmUsageProvider, string> = {
 const FEATURE_LABELS: Record<string, string> = {
   chatwoot_bot_reply: 'Відповіді чат-бота',
   topics_jev: 'Теми питань (Jev)',
+  topics_intents: 'Розбір повідомлень (питання / дії)',
   llm_test: 'Тести моделей',
   jev_test: 'Тест Jev',
   other: 'Інше',

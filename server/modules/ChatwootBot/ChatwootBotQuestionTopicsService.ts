@@ -1,3 +1,5 @@
+import { chatwootBotIntentService } from './ChatwootBotIntentService.js';
+import { intentQuestionText } from './chatwootBotIntents.js';
 import { displayQuestionText } from './chatwootBotContentNorm.js';
 import { createHash } from 'crypto';
 import type { Prisma } from '@prisma/client';
@@ -132,16 +134,42 @@ export class ChatwootBotQuestionTopicsService {
         count: g._count._all,
       }));
 
+    // Розбір LLM: у теми йде лише текст питань; повідомлення без питань (дія, відповідь, шум) — у шум.
+    const intentNoise = await this.applyIntents(questions);
+
     const assignments = await prisma.chatwootBotQuestionAssignment.findMany({
       select: { contentNorm: true, topicId: true, ignored: true, source: true },
     });
+    // Автопризначені раніше, а тепер розібрані як «не питання» — прибрати з тем (ручні не чіпаємо).
+    const reclassified = assignments.filter(
+      (a) => intentNoise.has(a.contentNorm) && a.source !== 'manual' && !a.ignored,
+    );
+    for (const a of reclassified) {
+      await prisma.chatwootBotQuestionAssignment.update({
+        where: { questionHash: questionHash(a.contentNorm) },
+        data: { topicId: null, ignored: true, method: 'intent', confidence: null },
+      });
+      a.topicId = null;
+      a.ignored = true;
+    }
     const assignedNorms = new Map(assignments.map((a) => [a.contentNorm, a]));
-    const pendingKeys = questions
+    const unassigned = questions
       .filter((q) => {
         const row = assignedNorms.get(q.key);
         return !row || (row.topicId == null && !row.ignored);
       })
       .map((q) => q.key);
+    const intentNoiseKeys = unassigned.filter((key) => intentNoise.has(key));
+    const pendingKeys = unassigned.filter((key) => !intentNoise.has(key));
+    for (const key of intentNoiseKeys) {
+      const preview = (questions.find((q) => q.key === key)?.text ?? key).slice(0, 512);
+      const data = { topicId: null, ignored: true, confidence: null, source: 'auto', method: 'intent', preview };
+      await prisma.chatwootBotQuestionAssignment.upsert({
+        where: { questionHash: questionHash(key) },
+        create: { questionHash: questionHash(key), contentNorm: key, ...data },
+        update: data,
+      });
+    }
 
     if (pendingKeys.length > 0) {
       const members = new Map<number, string[]>();
@@ -233,6 +261,29 @@ export class ChatwootBotQuestionTopicsService {
    * Jev вибирає тему серед наявних. Невпевнене, «none» чи помилка API — питання лишається
    * локальному алгоритму. Без ключа або в режимі local — нічого не робить.
    */
+  /**
+   * Розбір повідомлень LLM (якщо увімкнено): текст питань замінює повідомлення для розкладки по темах.
+   * Повертає ключі повідомлень, у яких питань немає — їм місце в шумі.
+   */
+  private async applyIntents(questions: Array<{ key: string; text: string; count: number }>): Promise<Set<string>> {
+    const noise = new Set<string>();
+    const settings = await chatwootBotSettingsService.getSettings();
+    if (!settings.topicsIntentsEnabled || questions.length === 0) return noise;
+    const messages = [...questions]
+      .sort((a, b) => b.count - a.count)
+      .map((q) => ({ hash: questionHash(q.key), contentNorm: q.key, text: q.text }));
+    await chatwootBotIntentService.classifyPending(messages);
+    const intents = await chatwootBotIntentService.loadIntents(messages.map((m) => m.hash));
+    for (const question of questions) {
+      const parts = intents.get(questionHash(question.key));
+      if (!parts) continue;
+      const text = intentQuestionText(parts);
+      if (text) question.text = text;
+      else noise.add(question.key);
+    }
+    return noise;
+  }
+
   private async classifyWithJev(
     pending: PendingQuestion[],
     members: Map<number, string[]>,

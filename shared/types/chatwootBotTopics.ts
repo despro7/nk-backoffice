@@ -12,6 +12,10 @@ export type ChatwootBotTopicQuestionDto = {
   source: ChatwootBotTopicAssignSource;
   /** Що було в розмові перед питанням (останнє входження); немає — перше повідомлення або дані старі. */
   context?: ChatwootBotQuestionContextDto | null;
+  /** Типи частин після розбору LLM (якщо розібрано): у шумі видно, чому питання туди потрапило. */
+  kinds?: ChatwootBotIntentKind[];
+  /** Повідомлення як написав клієнт, якщо `text` — очищене питання з розбору. */
+  original?: string;
 };
 
 /** Попереднє повідомлення в розмові: бот, оператор або сам клієнт. */
@@ -38,3 +42,7 @@ export const CHATWOOT_BOT_TOPIC_LIMITS = {
   descriptionMax: 2000,
   hashesMax: 500,
 } as const;
+
+/** Тип частини повідомлення клієнта після розбору LLM. */
+export type ChatwootBotIntentKind = 'question' | 'action' | 'answer' | 'noise';
+export type ChatwootBotIntentPart = { kind: ChatwootBotIntentKind; text: string };

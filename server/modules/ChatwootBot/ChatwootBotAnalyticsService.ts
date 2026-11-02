@@ -1,3 +1,5 @@
+import { chatwootBotIntentService } from './ChatwootBotIntentService.js';
+import { intentQuestionText } from './chatwootBotIntents.js';
 import { createChatwootApiClient } from './ChatwootApiClient.js';
 import { handoverAssignmentCredentials } from './chatwootCredentials.js';
 import { chatwootBotSettingsService } from './ChatwootBotSettingsService.js';
@@ -159,12 +161,19 @@ export class ChatwootBotAnalyticsService {
 
     const byTopic = new Map<number, ChatwootBotTopicQuestionDto[]>();
     const ignoredQuestions: ChatwootBotTopicQuestionDto[] = [];
+    const intents = await chatwootBotIntentService.loadIntents(
+      [...questionCounts.keys()].flatMap((norm) => snapshot.assignments.get(norm)?.questionHash ?? []),
+    );
     for (const [norm, { count, preview }] of questionCounts) {
       const row = snapshot.assignments.get(norm);
       if (!row) continue;
+      const parts = intents.get(row.questionHash);
+      const questionText = parts ? intentQuestionText(parts) : null;
       const question: ChatwootBotTopicQuestionDto = {
         hash: row.questionHash,
-        text: preview,
+        text: questionText ?? preview,
+        ...(questionText && questionText !== preview ? { original: preview } : {}),
+        ...(parts ? { kinds: [...new Set(parts.map((p) => p.kind))] } : {}),
         count,
         source: row.source === 'manual' ? 'manual' : 'auto',
         context: contexts.get(norm) ?? null,

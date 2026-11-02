@@ -1252,6 +1252,19 @@ model ChatwootBotQuestionAssignment {
   @@map("chatwoot_bot_question_assignments")
 }
 
+/// Розбір повідомлення клієнта LLM на частини: питання, запит на дію, відповідь, шум.
+model ChatwootBotMessageIntent {
+  /// sha256(contentNorm), як у chatwoot_bot_question_assignments.
+  questionHash String   @id @db.Char(64)
+  contentNorm  String   @db.VarChar(512)
+  /// [{ kind: 'question' | 'action' | 'answer' | 'noise', text }]
+  parts        Json
+  model        String?  @db.VarChar(191)
+  createdAt    DateTime @default(now())
+
+  @@map("chatwoot_bot_message_intents")
+}
+
 /// Платні виклики LLM/класифікаторів: токени й вартість для дашборда витрат.
 model LlmUsageLog {
   id           Int      @id @default(autoincrement())

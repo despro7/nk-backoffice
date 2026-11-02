@@ -93,6 +93,7 @@ export type FormState = {
   topicsJevMaxPerSync: number;
   topicsSyncDelaySeconds: number;
   topicsCronMinutes: number;
+  topicsIntentsEnabled: boolean;
 };
 
 export function keywordsToText(keywords: string[]): string {
@@ -191,5 +192,6 @@ export function toFormState(data: ChatwootBotSettingsResponse): FormState {
     topicsJevMaxPerSync: data.topicsJevMaxPerSync,
     topicsSyncDelaySeconds: data.topicsSyncDelaySeconds,
     topicsCronMinutes: data.topicsCronMinutes,
+    topicsIntentsEnabled: data.topicsIntentsEnabled,
   };
 }
