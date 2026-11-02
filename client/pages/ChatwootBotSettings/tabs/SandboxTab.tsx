@@ -12,6 +12,7 @@ import {
   Tooltip,
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { useLocation, useNavigate } from 'react-router-dom';
 import type {
   ChatwootBotSandboxOutcome,
   ChatwootBotSandboxReplyResult,
@@ -20,6 +21,9 @@ import type {
 import { chatwootBotApi } from '@/services/ChatwootBotService';
 import { ToastService } from '@/services/ToastService';
 import type { ChatwootBotSettingsPageModel } from '../useChatwootBotSettingsPage';
+
+/** `navigate(…, { state })` зі статистики: одразу поставити це питання боту. */
+export type SandboxNavigationState = { sandboxAsk?: string };
 
 type Props = { page: ChatwootBotSettingsPageModel };
 
@@ -202,8 +206,8 @@ export function SandboxTab({ page }: Props) {
     [askBot],
   );
 
-  const send = async () => {
-    const text = draft.trim();
+  const send = async (override?: string) => {
+    const text = (override ?? draft).trim();
     if (!text || busy) return;
     const history: Turn[] = [...turns, { role: 'user', content: text }];
     setTurns(history);
@@ -223,6 +227,20 @@ export function SandboxTab({ page }: Props) {
       setBusy(false);
     }
   };
+
+  // «Протестувати в пісочниці» зі статистики тем: питання приходить у state навігації.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const askedRef = useRef(false);
+  useEffect(() => {
+    const ask = (location.state as SandboxNavigationState | null)?.sandboxAsk?.trim();
+    if (!ask || askedRef.current) return;
+    askedRef.current = true;
+    // Прибрати state, щоб «Назад» / оновлення не надсилали питання вдруге.
+    navigate(`${location.pathname}${location.hash}`, { replace: true, state: null });
+    void send(ask);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const persistScenarios = async (next: ChatwootBotSandboxScenario[]) => {
     try {

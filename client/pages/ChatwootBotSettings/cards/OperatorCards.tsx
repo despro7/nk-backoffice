@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button, Chip, Divider, Input, Select, SelectItem, Textarea } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { CHATWOOT_BOT_EMERGENCY_TIMEOUT_LIMITS } from '@shared/types/chatwootBot';
+import { CHATWOOT_BOT_EMERGENCY_TIMEOUT_LIMITS, type ChatwootInboxSchedule } from '@shared/types/chatwootBot';
+import { chatwootScheduleState, formatScheduleDuration } from '@shared/utils/chatwootInboxScheduleNext';
 import { textToKeywords } from '../chatwootBotFormState';
 import { FormSwitchField } from '../components/FormSwitchField';
 import { SettingsCard, type SettingsCardProps } from './SettingsCard';
@@ -74,66 +75,66 @@ export function OperatorCallCard({ page }: SettingsCardProps) {
           />
         </div>
       )}
-      <Divider />
-      <FormSwitchField
-        isSelected={form.handoverEmergencyEnabled}
-        onValueChange={(v) => updateField('handoverEmergencyEnabled', v)}
-        title="Екстрений виклик поза годинами"
-        description="Ключове слово підключає оператора навіть уночі."
-      />
-      <Input
-        label="Ключові слова екстреного виклику"
-        isDisabled={!form.handoverEmergencyEnabled}
-        value={form.handoverEmergencyKeywordsText}
-        onValueChange={(v) => updateField('handoverEmergencyKeywordsText', v)}
-      />
-      <Input
-        type="number"
-        label="Чекати відповідь оператора, хв"
-        min={CHATWOOT_BOT_EMERGENCY_TIMEOUT_LIMITS.min}
-        max={CHATWOOT_BOT_EMERGENCY_TIMEOUT_LIMITS.max}
-        isDisabled={!form.handoverEmergencyEnabled}
-        value={String(form.handoverEmergencyTimeoutMinutes)}
-        onValueChange={(v) => updateField('handoverEmergencyTimeoutMinutes', Number(v) || 5)}
-        description="Не відповів публічно за цей час (або не вдалося призначити) – бот забирає розмову, надсилає текст «оператор не відповів» і просить контакти."
-      />
-      <FormSwitchField
-        isSelected={form.handoverEmergencyTelegramEnabled}
-        isDisabled={!form.handoverEmergencyEnabled}
-        onValueChange={(v) => updateField('handoverEmergencyTelegramEnabled', v)}
-        title="Екстрений виклик – у Telegram"
-        description="Одразу при виклику і повторно, якщо оператор не відповів. Бот – вкладка «Підключення»."
-      />
     </SettingsCard>
   );
 }
 
+/** Пн → Нд; `day_of_week` у Chatwoot: 0 — неділя. */
+const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
+const DAY_LABELS = ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+
+function pad(n: number | null): string {
+  return String(n ?? 0).padStart(2, '0');
+}
+
+function ScheduleTable({ schedule }: { schedule: ChatwootInboxSchedule }) {
+  if (!schedule.workingHoursEnabled) {
+    return <p className="text-xs text-default-500">Робочі години в inbox вимкнено – бот вважає, що оператори завжди на звʼязку.</p>;
+  }
+  return (
+    <div className="grid grid-cols-7 gap-1 text-center text-xs">
+      {WEEK_ORDER.map((day) => {
+        const slot = schedule.workingHours.find((s) => s.day_of_week === day);
+        const closed = !slot || slot.closed_all_day;
+        return (
+          <div
+            key={day}
+            className={`rounded-md px-1 py-1.5 ${closed ? 'bg-default-100 text-default-400' : 'bg-success-50 text-success-700'}`}
+          >
+            <div className="font-semibold">{DAY_LABELS[day]}</div>
+            <div className="leading-tight">
+              {closed
+                ? 'вихідний'
+                : slot.open_all_day
+                  ? 'цілодобово'
+                  : `${pad(slot.open_hour)}:${pad(slot.open_minutes)}–${pad(slot.close_hour)}:${pad(slot.close_minutes)}`}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Розклад inbox Chatwoot, поточний стан і відлік до початку / кінця зміни (оновлюється щохвилини). */
 export function WorkingHoursCard({ page }: SettingsCardProps) {
   const { form, updateField, inboxHours, isLoadingInboxHours, loadInboxHours } = page;
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
   if (!form) return null;
+  const state = inboxHours ? chatwootScheduleState(inboxHours.schedule, now) : null;
+
   return (
-    <SettingsCard icon="clock" title="Робочі години">
-      <Input
-        type="number"
-        label="Inbox ID (fallback / симуляція)"
-        description="Години беруться з Chatwoot → Inbox → Робочий час. У webhook – inbox_id розмови; це поле – якщо його немає."
-        value={form.handoverDefaultInboxId != null ? String(form.handoverDefaultInboxId) : ''}
-        onValueChange={(v) => updateField('handoverDefaultInboxId', v.trim() ? Number(v) || null : null)}
-      />
-      <div className="flex flex-wrap items-center gap-2 min-w-0">
-        {inboxHours ? (
-          <Chip variant="flat" color={inboxHours.inHours ? 'success' : 'warning'} className="rounded-sm h-8">
-            Зараз: {inboxHours.inHours ? 'робочі години' : 'поза годинами'} · {inboxHours.schedule.name} (
-            {inboxHours.source})
-          </Chip>
-        ) : (
-          <span className="text-xs text-default-500">Не вдалося зчитати години inbox – перевірте User PAT.</span>
-        )}
+    <SettingsCard
+      icon="clock"
+      title="Робочі години"
+      headerEnd={
         <Button
           size="sm"
-          variant="bordered"
-          color="secondary"
-          className="h-8 border-1"
+          variant="light"
           isDisabled={isLoadingInboxHours}
           startContent={
             <DynamicIcon
@@ -146,7 +147,37 @@ export function WorkingHoursCard({ page }: SettingsCardProps) {
         >
           Оновити з Chatwoot
         </Button>
-      </div>
+      }
+    >
+      {inboxHours && state ? (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <Chip variant="flat" color={state.inHours ? 'success' : 'warning'} className="rounded-sm h-8">
+              Зараз: {state.inHours ? 'робочі години' : 'поза годинами'}
+            </Chip>
+            {state.minutesToChange != null && (
+              <span className="text-sm text-default-700">
+                {state.inHours ? 'До кінця зміни' : 'До початку зміни'}:{' '}
+                <strong>{formatScheduleDuration(state.minutesToChange)}</strong>
+              </span>
+            )}
+          </div>
+          <ScheduleTable schedule={inboxHours.schedule} />
+          <p className="text-xs text-default-500">
+            {inboxHours.schedule.name} · {inboxHours.schedule.timezone} · джерело: {inboxHours.source}. Змінити розклад –
+            Chatwoot → Inbox → Робочий час.
+          </p>
+        </>
+      ) : (
+        <p className="text-xs text-default-500">Не вдалося зчитати години inbox – перевірте User PAT.</p>
+      )}
+      <Input
+        type="number"
+        label="Inbox ID (fallback / симуляція)"
+        description="У webhook – inbox_id розмови; це поле – якщо його немає."
+        value={form.handoverDefaultInboxId != null ? String(form.handoverDefaultInboxId) : ''}
+        onValueChange={(v) => updateField('handoverDefaultInboxId', v.trim() ? Number(v) || null : null)}
+      />
     </SettingsCard>
   );
 }
@@ -156,7 +187,7 @@ export function InHoursMessagesCard({ page }: SettingsCardProps) {
   const { form, updateField } = page;
   if (!form) return null;
   return (
-    <SettingsCard icon="sun" title="Тексти клієнту: робочі години">
+    <SettingsCard icon="message-circle-more" title="Тексти клієнту">
       <Textarea
         label="Клієнт просить оператора"
         description="Бот призначає оператора й більше не відповідає в цій розмові."
@@ -180,7 +211,7 @@ export function OutOfHoursMessagesCard({ page }: SettingsCardProps) {
   const { form, updateField } = page;
   if (!form) return null;
   return (
-    <SettingsCard icon="moon" title="Тексти клієнту: поза годинами">
+    <SettingsCard icon="message-circle-more" title="Тексти клієнту">
       <Textarea
         label="Клієнт просить оператора"
         description="Бот лишається в розмові й пропонує допомогу або дзвінок."
@@ -207,19 +238,59 @@ export function OutOfHoursMessagesCard({ page }: SettingsCardProps) {
         title="Контакти для дзвінка – ще й у Telegram"
         description="Телефон, імʼя і питання клієнта. Приватна нотатка в розмові – завжди. Бот – вкладка «Підключення»."
       />
+    </SettingsCard>
+  );
+}
+
+/** Екстрений виклик поза годинами: слова, очікування оператора, fallback і тексти. */
+export function EmergencyCard({ page }: SettingsCardProps) {
+  const { form, updateField } = page;
+  if (!form) return null;
+  const disabled = !form.handoverEmergencyEnabled;
+  return (
+    <SettingsCard icon="siren" title="Екстрений виклик">
+      <FormSwitchField
+        isSelected={form.handoverEmergencyEnabled}
+        onValueChange={(v) => updateField('handoverEmergencyEnabled', v)}
+        title="Підключати оператора навіть уночі"
+        description="Ключове слово поза годинами призначає оператора замість збору контактів."
+      />
+      <Input
+        label="Ключові слова екстреного виклику"
+        isDisabled={disabled}
+        value={form.handoverEmergencyKeywordsText}
+        onValueChange={(v) => updateField('handoverEmergencyKeywordsText', v)}
+      />
       <Textarea
-        label="Екстрений виклик"
+        label="Текст клієнту при виклику"
         minRows={2}
-        isDisabled={!form.handoverEmergencyEnabled}
+        isDisabled={disabled}
         value={form.handoverMessageEmergency}
         onValueChange={(v) => updateField('handoverMessageEmergency', v)}
       />
+      <Input
+        type="number"
+        label="Чекати відповідь оператора, хв"
+        min={CHATWOOT_BOT_EMERGENCY_TIMEOUT_LIMITS.min}
+        max={CHATWOOT_BOT_EMERGENCY_TIMEOUT_LIMITS.max}
+        isDisabled={disabled}
+        value={String(form.handoverEmergencyTimeoutMinutes)}
+        onValueChange={(v) => updateField('handoverEmergencyTimeoutMinutes', Number(v) || 5)}
+        description="Не відповів публічно за цей час (або не вдалося призначити) – бот забирає розмову і просить контакти текстом нижче."
+      />
       <Textarea
-        label="Екстрений виклик: оператор не відповів"
+        label="Текст клієнту: оператор не відповів"
         minRows={2}
-        isDisabled={!form.handoverEmergencyEnabled}
+        isDisabled={disabled}
         value={form.handoverMessageEmergencyFallback}
         onValueChange={(v) => updateField('handoverMessageEmergencyFallback', v)}
+      />
+      <FormSwitchField
+        isSelected={form.handoverEmergencyTelegramEnabled}
+        isDisabled={disabled}
+        onValueChange={(v) => updateField('handoverEmergencyTelegramEnabled', v)}
+        title="Екстрений виклик – у Telegram"
+        description="Одразу при виклику і повторно, якщо оператор не відповів. Бот – вкладка «Підключення»."
       />
     </SettingsCard>
   );

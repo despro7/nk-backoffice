@@ -13,6 +13,7 @@ import ReportDateRangeFilter from '@/pages/Reports/shared/filters/ReportDateRang
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PERMISSIONS } from '@shared/constants/permissions';
 import { QuestionTopicsCard } from './components/QuestionTopicsCard';
+import type { SandboxNavigationState } from '@/pages/ChatwootBotSettings/tabs/SandboxTab';
 import { clusterPhrasings, KnowledgeAttachModal, KnowledgeCoverage } from './components/KnowledgeCoverage';
 
 function formatSeconds(seconds: number | null): string {
@@ -132,6 +133,12 @@ const ChatwootBotStatistics: React.FC = () => {
   const { hasPermission } = useRoleAccess();
   const canManageKnowledge = hasPermission(PERMISSIONS.ACTION_CHATWOOT_KNOWLEDGE_MANAGE);
   const canManageTopics = hasPermission(PERMISSIONS.ACTION_CHATWOOT_TOPICS_MANAGE);
+  const canTestBot = hasPermission(PERMISSIONS.ACTION_CHATWOOT_SETTINGS_MANAGE);
+  /** Пісочниця налаштувань бота одразу ставить боту назву теми як питання клієнта. */
+  const testInSandbox = (row: ChatwootBotQuestionClusterDto): void => {
+    const state: SandboxNavigationState = { sandboxAsk: row.label };
+    navigate('/chatwoot-bot/settings#tab=sandbox', { state });
+  };
   /** Нова стаття з усіма формулюваннями теми як варіантами питання (без телефонів). */
   const createKnowledgeEntry = (row: ChatwootBotQuestionClusterDto): void => {
     navigate(`/chatwoot-bot/knowledge#new=${encodeURIComponent(clusterPhrasings(row).join('\n'))}`);
@@ -256,6 +263,7 @@ const ChatwootBotStatistics: React.FC = () => {
             canManageKnowledge={canManageKnowledge}
             onKnowledgeAction={onKnowledgeAction}
             onOpenKnowledge={() => navigate('/chatwoot-bot/knowledge')}
+            onTestInSandbox={canTestBot ? testInSandbox : undefined}
             onChanged={() => load({ silent: true })}
           />
 

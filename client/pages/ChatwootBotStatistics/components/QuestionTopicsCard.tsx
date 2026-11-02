@@ -45,6 +45,8 @@ type Props = {
   /** Додати питання теми в базу знань (нова або існуюча стаття). */
   onKnowledgeAction: (row: ChatwootBotQuestionClusterDto) => void;
   onOpenKnowledge: () => void;
+  /** Поставити питання теми боту в пісочниці; немає — немає права на тести бота. */
+  onTestInSandbox?: (row: ChatwootBotQuestionClusterDto) => void;
   /** Після будь-якої зміни — перезавантажити статистику. */
   onChanged: () => Promise<void>;
 };
@@ -105,6 +107,7 @@ export function QuestionTopicsCard({
   canManageKnowledge,
   onKnowledgeAction,
   onOpenKnowledge,
+  onTestInSandbox,
   onChanged,
 }: Props) {
   const managed = rows.some((row) => row.topicId != null);
@@ -228,6 +231,10 @@ export function QuestionTopicsCard({
   };
 
   const onTopicAction = (row: ChatwootBotQuestionClusterDto, key: string) => {
+    if (key === 'sandbox') {
+      onTestInSandbox?.(row);
+      return;
+    }
     if (row.topicId == null) return;
     if (key === 'rename')
       setTitleDialog({
@@ -506,14 +513,26 @@ export function QuestionTopicsCard({
                     />
                   </span>
                   <span className="w-9 flex justify-end">
-                    {canManage && row.topicId != null && (
+                    {((canManage && row.topicId != null) || onTestInSandbox) && (
                       <Dropdown>
                         <DropdownTrigger>
                           <Button isIconOnly size="sm" variant="light" aria-label="Дії з темою" isDisabled={busy}>
                             <DynamicIcon name="ellipsis-vertical" size={16} />
                           </Button>
                         </DropdownTrigger>
-                        <DropdownMenu aria-label="Дії з темою" onAction={(key) => onTopicAction(row, String(key))}>
+                        <DropdownMenu
+                          aria-label="Дії з темою"
+                          onAction={(key) => onTopicAction(row, String(key))}
+                          disabledKeys={canManage && row.topicId != null ? [] : ['rename', 'merge', 'reassign', 'ignore']}
+                        >
+                          <DropdownItem
+                            key="sandbox"
+                            className={onTestInSandbox ? undefined : 'hidden'}
+                            description="Бот одразу відповість на це питання"
+                            startContent={<DynamicIcon name="flask-conical" size={14} />}
+                          >
+                            Протестувати в пісочниці
+                          </DropdownItem>
                           <DropdownItem key="rename" startContent={<DynamicIcon name="pencil" size={14} />}>
                             Перейменувати
                           </DropdownItem>
