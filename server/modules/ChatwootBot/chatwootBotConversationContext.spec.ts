@@ -113,3 +113,18 @@ describe('buildConversationContextNote page', () => {
     expect(note).toContain('Клієнт пише зі сторінки: https://nk-food.shop/dostavka/');
   });
 });
+
+describe('buildScenariosBlock', () => {
+  it('lists enabled scenarios with triggers and skips disabled or empty ones', async () => {
+    const { buildScenariosBlock } = await import('./chatwootBotConversationContext.js');
+    const block = buildScenariosBlock([
+      { id: 'a', title: 'Надіслати прайс', enabled: true, triggers: ['Надішліть прайс', ''], instructions: 'Дай посилання на каталог.' },
+      { id: 'b', title: 'Вимкнений', enabled: false, triggers: [], instructions: 'x' },
+      { id: 'c', title: 'Без кроків', enabled: true, triggers: [], instructions: '  ' },
+    ]);
+    expect(block).toContain('### Надіслати прайс\nКоли клієнт просить: «Надішліть прайс».\nДай посилання на каталог.');
+    expect(block).not.toContain('Вимкнений');
+    expect(block).not.toContain('Без кроків');
+    expect(buildScenariosBlock([])).toBeNull();
+  });
+});

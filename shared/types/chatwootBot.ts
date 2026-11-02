@@ -1,6 +1,7 @@
 /** Chatwoot Agent Bot v0 – settings + webhook event types. */
 
 import type { ChatwootBotTopicQuestionDto, ChatwootBotTopicRef } from './chatwootBotTopics.js';
+import type { ChatwootBotActionRequestDto, ChatwootBotActionScenario } from './chatwootBotScenarios.js';
 import {
   DEFAULT_ORDER_CANCEL_AUTO_STATUSES,
   DEFAULT_ORDER_CANCEL_SEMI_AUTO_STATUSES,
@@ -61,6 +62,8 @@ export type ChatwootBotSettings = {
   aiMasks: ChatwootBotAiMask[];
   /** Змінені інструкції для LLM (ключ → текст); решта — за замовчуванням з `chatwootBotInstructions.ts`. */
   aiInstructions: Record<string, string>;
+  /** Сценарії відповідей на запити дій (конструктор). */
+  actionScenarios: ChatwootBotActionScenario[];
   /** Порожньо – з глобальних llm_platform_settings. */
   aiProvider: ChatwootBotAiProviderOverride;
   aiModel: string;
@@ -238,6 +241,8 @@ export type ChatwootBotAnalyticsOverview = {
   ignoredQuestions: ChatwootBotTopicQuestionDto[];
   /** Теми, за якими бот шукав у базі знань і нічого не знайшов. */
   knowledgeMisses: ChatwootBotQuestionClusterDto[];
+  /** Запити на дію (розбір LLM) за період, згруповані, з рішенням. */
+  actionRequests: ChatwootBotActionRequestDto[];
   knowledgeLookups: { total: number; found: number };
   /** Найперша подія аналітики (ISO) — нижня межа календаря; null — подій ще немає. */
   firstEventAt: string | null;
@@ -487,6 +492,7 @@ export const DEFAULT_CHATWOOT_BOT_SETTINGS: ChatwootBotSettings = {
   aiEnabled: false,
   aiMaskId: DEFAULT_CHATWOOT_BOT_AI_MASK_ID,
   aiInstructions: {},
+  actionScenarios: [],
   aiMasks: [
     {
       id: DEFAULT_CHATWOOT_BOT_AI_MASK_ID,

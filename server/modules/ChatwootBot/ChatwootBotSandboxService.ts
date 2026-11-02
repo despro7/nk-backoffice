@@ -76,6 +76,7 @@ export class ChatwootBotSandboxService {
       aiMaskId: request.aiMaskId,
       aiMasks: request.aiMasks,
       aiInstructions: request.aiInstructions,
+      actionScenarios: request.actionScenarios,
     });
     const inHours =
       typeof request.inBusinessHours === 'boolean'

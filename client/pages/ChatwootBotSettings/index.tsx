@@ -8,6 +8,7 @@ import { CHATWOOT_SETTINGS_TAB_LABELS, type ChatwootSettingsTabKey } from './cha
 import { useChatwootBotSettingsPage } from './useChatwootBotSettingsPage';
 import { ConnectionTab } from './tabs/ConnectionTab';
 import { AiTab } from './tabs/AiTab';
+import { ScenariosTab } from './tabs/ScenariosTab';
 import { RepliesTab } from './tabs/RepliesTab';
 import { OperatorTab } from './tabs/OperatorTab';
 import { OrdersTab } from './tabs/OrdersTab';
@@ -127,6 +128,7 @@ const SettingsChatwootBot: React.FC = () => {
         <fieldset disabled={!canManage} className="contents">
           {activeTab === 'connection' && <ConnectionTab page={page} />}
           {activeTab === 'ai' && <AiTab page={page} />}
+          {activeTab === 'scenarios' && <ScenariosTab page={page} />}
           {activeTab === 'replies' && <RepliesTab page={page} />}
           {activeTab === 'operator' && <OperatorTab page={page} />}
           {activeTab === 'orders' && <OrdersTab page={page} />}

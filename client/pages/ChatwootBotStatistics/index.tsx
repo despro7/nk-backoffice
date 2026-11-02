@@ -16,6 +16,8 @@ import { createStandardDatePresets } from '@/lib/dateReportingUtils';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PERMISSIONS } from '@shared/constants/permissions';
 import { QuestionTopicsCard } from './components/QuestionTopicsCard';
+import { ActionRequestsCard } from './components/ActionRequestsCard';
+import type { ScenarioNavigationState } from '@/pages/ChatwootBotSettings/tabs/ScenariosTab';
 import type { SandboxNavigationState } from '@/pages/ChatwootBotSettings/tabs/SandboxTab';
 import { clusterPhrasings, KnowledgeAttachModal, KnowledgeCoverage } from './components/KnowledgeCoverage';
 
@@ -142,6 +144,10 @@ const ChatwootBotStatistics: React.FC = () => {
   const canManageTopics = hasPermission(PERMISSIONS.ACTION_CHATWOOT_TOPICS_MANAGE);
   const canTestBot = hasPermission(PERMISSIONS.ACTION_CHATWOOT_SETTINGS_MANAGE);
   /** Пісочниця налаштувань бота одразу ставить боту назву теми як питання клієнта. */
+  /** Конструктор сценаріїв у налаштуваннях: новий (з фразами запиту) або наявний. */
+  const openScenarios = (state: ScenarioNavigationState): void => {
+    navigate('/chatwoot-bot/settings#tab=scenarios', { state });
+  };
   const testInSandbox = (row: ChatwootBotQuestionClusterDto): void => {
     const state: SandboxNavigationState = { sandboxAsk: row.label };
     navigate('/chatwoot-bot/settings#tab=sandbox', { state });
@@ -315,6 +321,15 @@ const ChatwootBotStatistics: React.FC = () => {
             onOpenKnowledge={() => navigate('/chatwoot-bot/knowledge')}
             onTestInSandbox={canTestBot ? testInSandbox : undefined}
             onChanged={() => load({ silent: true })}
+          />
+
+          <ActionRequestsCard
+            rows={overview.actionRequests ?? []}
+            canManageScenarios={canTestBot}
+            onCreateScenario={(row) =>
+              openScenarios({ scenarioDraft: { title: row.label, triggers: [...new Set([row.label, ...row.examples])] } })
+            }
+            onOpenScenario={(scenarioId) => openScenarios({ scenarioId })}
           />
 
           <KnowledgeMissesCard

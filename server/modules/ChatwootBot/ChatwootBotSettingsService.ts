@@ -1,3 +1,7 @@
+import {
+  CHATWOOT_BOT_SCENARIO_LIMITS,
+  type ChatwootBotActionScenario,
+} from '../../../shared/types/chatwootBotScenarios.js';
 import { prisma, logServer } from '../../lib/utils.js';
 import {
   CHATWOOT_BOT_SETTINGS_CATEGORY,
@@ -179,6 +183,7 @@ export function applyChatwootAiTestOverrides(
     aiMaskId?: unknown;
     aiMasks?: unknown;
     aiInstructions?: unknown;
+    actionScenarios?: unknown;
   },
 ): ChatwootBotSettings {
   const next: ChatwootBotSettings = { ...settings, aiEnabled: true };
@@ -209,6 +214,9 @@ export function applyChatwootAiTestOverrides(
   }
   if (overrides.aiInstructions !== undefined) {
     next.aiInstructions = normalizeInstructionOverrides(overrides.aiInstructions);
+  }
+  if (overrides.actionScenarios !== undefined) {
+    next.actionScenarios = normalizeActionScenarios(overrides.actionScenarios);
   }
 
   return next;
@@ -257,6 +265,29 @@ function normalizeOrderCancelStatusSettings(
   };
 }
 
+/** Сценарії дій: обрізані довжини, без порожніх, унікальні id. */
+function normalizeActionScenarios(raw: unknown): ChatwootBotActionScenario[] {
+  if (!Array.isArray(raw)) return [];
+  const L = CHATWOOT_BOT_SCENARIO_LIMITS;
+  const seen = new Set<string>();
+  const result: ChatwootBotActionScenario[] = [];
+  for (const item of raw.slice(0, L.scenariosMax)) {
+    if (!item || typeof item !== 'object') continue;
+    const r = item as Record<string, unknown>;
+    const title = String(r.title ?? '').trim().slice(0, L.titleMax);
+    const instructions = String(r.instructions ?? '').trim().slice(0, L.instructionsMax);
+    if (!title || !instructions) continue;
+    let id = String(r.id ?? '').trim().slice(0, 64) || `scenario_${Date.now()}_${result.length}`;
+    if (seen.has(id)) id = `${id}_${result.length}`;
+    seen.add(id);
+    const triggers = Array.isArray(r.triggers)
+      ? [...new Set(r.triggers.map((t) => String(t ?? '').trim().slice(0, L.triggerMax)).filter(Boolean))].slice(0, L.triggersMax)
+      : [];
+    result.push({ id, title, enabled: r.enabled !== false, triggers, instructions });
+  }
+  return result;
+}
+
 function mergeWithDefaults(raw: Partial<ChatwootBotSettings>): ChatwootBotSettings {
   const accountId = Number(raw.accountId ?? DEFAULT_CHATWOOT_BOT_SETTINGS.accountId);
   const { echoMessage, fallbackMessage } = resolveFallbackAndEcho(raw);
@@ -274,6 +305,7 @@ function mergeWithDefaults(raw: Partial<ChatwootBotSettings>): ChatwootBotSettin
         : DEFAULT_CHATWOOT_BOT_SETTINGS.aiMaskId,
     aiMasks: normalizeAiMasks(raw.aiMasks, DEFAULT_CHATWOOT_BOT_SETTINGS.aiMasks),
     aiInstructions: normalizeInstructionOverrides(raw.aiInstructions),
+    actionScenarios: normalizeActionScenarios(raw.actionScenarios),
     aiProvider: normalizeAiProvider(raw.aiProvider),
     aiModel:
       typeof raw.aiModel === 'string' && raw.aiModel.trim()

@@ -1,4 +1,5 @@
 import { DEFAULT_CHATWOOT_BOT_SETTINGS } from '@shared/types/chatwootBot';
+import type { ChatwootBotActionScenario } from '@shared/types/chatwootBotScenarios';
 import type {
   ChatwootBotReplyMode,
   ChatwootBotSettingsResponse,
@@ -24,6 +25,7 @@ export type FormState = {
   aiMaskId: string;
   aiMasks: ChatwootBotAiMask[];
   aiInstructions: Record<string, string>;
+  actionScenarios: ChatwootBotActionScenario[];
   aiProvider: '' | 'openai' | 'google' | 'openrouter';
   aiModel: string;
   verifySessionTtlHours: number;
@@ -123,6 +125,7 @@ export function toFormState(data: ChatwootBotSettingsResponse): FormState {
     aiEnabled: data.aiEnabled,
     aiMaskId: data.aiMaskId,
     aiInstructions: data.aiInstructions ?? {},
+    actionScenarios: data.actionScenarios ?? [],
     aiMasks: data.aiMasks ?? [],
     aiProvider: data.aiProvider,
     aiModel: data.aiModel,

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Accordion, AccordionItem, Button, Chip, Input, Textarea, Tooltip } from '@heroui/react';
+import { Accordion, AccordionItem, Button, Chip, Input, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import {
   CHATWOOT_BOT_INSTRUCTION_GROUPS,
@@ -8,6 +8,7 @@ import {
   type ChatwootBotInstructionGroup,
 } from '@shared/constants/chatwootBotInstructions';
 import { SettingsCard, type SettingsCardProps } from './SettingsCard';
+import { InstructionEditor } from '../components/InstructionEditor';
 
 const GROUP_ORDER = Object.keys(CHATWOOT_BOT_INSTRUCTION_GROUPS) as ChatwootBotInstructionGroup[];
 
@@ -127,14 +128,14 @@ export function AiInstructionsCard({ page }: SettingsCardProps) {
                           </>
                         )}
                       </div>
-                      <Textarea
-                        aria-label={item.label}
+                      <InstructionEditor
+                        ariaLabel={item.label}
                         minRows={2}
                         maxRows={12}
                         maxLength={CHATWOOT_BOT_INSTRUCTION_MAX_LENGTH}
                         value={overrides[item.key] ?? item.defaultText}
-                        onValueChange={(v) => setText(item.key, item.defaultText, v)}
-                        classNames={{ inputWrapper: isChanged ? 'ring-1 ring-warning-300' : undefined }}
+                        onChange={(v) => setText(item.key, item.defaultText, v)}
+                        highlighted={isChanged}
                       />
                     </div>
                   );

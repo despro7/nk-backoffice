@@ -31,6 +31,8 @@ export type ChatwootBotSandboxReplyRequest = {
   aiMasks?: Array<{ id: string; name: string; systemPrompt: string }>;
   /** Чернетка інструкцій для AI з форми. */
   aiInstructions?: Record<string, string>;
+  /** Чернетка сценаріїв дій з форми. */
+  actionScenarios?: unknown[];
   aiProvider?: '' | 'openai' | 'google' | 'openrouter';
   aiModel?: string;
 };

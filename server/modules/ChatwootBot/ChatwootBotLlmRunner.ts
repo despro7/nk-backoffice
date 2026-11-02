@@ -5,7 +5,7 @@ import {
   type ChatwootBotSettings,
   type ChatwootWebhookMessageCreated,
 } from '../../../shared/types/chatwootBot.js';
-import { buildConversationContextNote, buildReplyPolicy } from './chatwootBotConversationContext.js';
+import { buildConversationContextNote, buildReplyPolicy, buildScenariosBlock } from './chatwootBotConversationContext.js';
 import { botInstruction } from '../../../shared/constants/chatwootBotInstructions.js';
 import { extractPageContext } from './chatwootBotContactFields.js';
 import {
@@ -102,7 +102,7 @@ export class ChatwootBotLlmRunner {
       page: extractPageContext(payload),
     });
     const instructions = settings.aiInstructions;
-    const system = [mask.systemPrompt, buildReplyPolicy(instructions), contextNote, options?.systemNote?.trim()]
+    const system = [mask.systemPrompt, buildReplyPolicy(instructions), buildScenariosBlock(settings.actionScenarios), contextNote, options?.systemNote?.trim()]
       .filter((part): part is string => Boolean(part))
       .join('\n\n');
     const messages: LlmMessage[] = [...(options?.history ?? []), { role: 'user', content: userContent }];

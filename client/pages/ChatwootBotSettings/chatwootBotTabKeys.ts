@@ -1,6 +1,7 @@
 export const CHATWOOT_SETTINGS_TAB_KEYS = [
   'connection',
   'ai',
+  'scenarios',
   'replies',
   'operator',
   'orders',
@@ -28,6 +29,7 @@ export function parseChatwootSettingsTabKey(raw: string | null): ChatwootSetting
 export const CHATWOOT_SETTINGS_TAB_LABELS: Record<ChatwootSettingsTabKey, string> = {
   connection: 'Підключення',
   ai: 'AI',
+  scenarios: 'Сценарії',
   replies: 'Відповіді',
   operator: 'Оператор',
   orders: 'Замовлення й клієнти',

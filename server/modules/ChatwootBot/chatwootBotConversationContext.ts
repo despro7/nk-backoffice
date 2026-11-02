@@ -1,6 +1,7 @@
 import type { LlmMessage } from '../../../shared/types/llm.js';
 import { CHATWOOT_WEBHOOK_PROBE_CONTENT_MARKER } from '../../../shared/types/chatwootBot.js';
 import { botInstruction } from '../../../shared/constants/chatwootBotInstructions.js';
+import type { ChatwootBotActionScenario } from '../../../shared/types/chatwootBotScenarios.js';
 
 /** Скільки попередніх повідомлень розмови передаємо в LLM. */
 export const CHATWOOT_BOT_HISTORY_LIMIT = 20;
@@ -76,6 +77,27 @@ export type ConversationContextInput = {
  * Незмінні правила поверх маски: рід персонажа, пошук перед «не знаю», передача оператору лише через tool.
  * Маска задає тон і сценарії, але не може їх вимкнути.
  */
+/** Скільки символів сценаріїв максимум іде в промпт (решту відкидаємо, щоб не роздувати запит). */
+const SCENARIOS_PROMPT_MAX = 8000;
+
+/** Увімкнені сценарії дій — окремим блоком після правил: «коли клієнт просить X — зроби кроки». */
+export function buildScenariosBlock(scenarios: ChatwootBotActionScenario[] | null | undefined): string | null {
+  const enabled = (scenarios ?? []).filter((s) => s.enabled && s.instructions.trim());
+  if (enabled.length === 0) return null;
+  const blocks: string[] = [];
+  let size = 0;
+  for (const scenario of enabled) {
+    const triggers = scenario.triggers.filter((t) => t.trim()).map((t) => `«${t}»`).join(', ');
+    const block = [`### ${scenario.title}`, triggers ? `Коли клієнт просить: ${triggers}.` : null, scenario.instructions.trim()]
+      .filter(Boolean)
+      .join('\n');
+    if (size + block.length > SCENARIOS_PROMPT_MAX) break;
+    blocks.push(block);
+    size += block.length;
+  }
+  return ['Сценарії для запитів на дію (службово, не цитуй клієнту). Якщо запит клієнта підходить – виконай кроки сценарію:', ...blocks].join('\n\n');
+}
+
 export function buildReplyPolicy(overrides?: Record<string, string> | null): string {
   return [
     'Обовʼязкові правила (службово, не цитуй клієнту):',

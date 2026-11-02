@@ -1,3 +1,5 @@
+import { buildActionRequests } from './chatwootBotActionRequests.js';
+import type { ChatwootBotActionRequestDto } from '../../../shared/types/chatwootBotScenarios.js';
 import { chatwootBotIntentService } from './ChatwootBotIntentService.js';
 import { intentQuestionText } from './chatwootBotIntents.js';
 import { createChatwootApiClient } from './ChatwootApiClient.js';
@@ -14,7 +16,7 @@ import type {
   ChatwootBotQuestionClusterDto,
 } from '../../../shared/types/chatwootBot.js';
 import type { ChatwootBotTopicQuestionDto, ChatwootBotTopicRef } from '../../../shared/types/chatwootBotTopics.js';
-import { chatwootBotQuestionTopicsService, type TopicsSnapshot } from './ChatwootBotQuestionTopicsService.js';
+import { chatwootBotQuestionTopicsService, questionHash, type TopicsSnapshot } from './ChatwootBotQuestionTopicsService.js';
 import { chatwootBotKnowledgeService } from './ChatwootBotKnowledgeService.js';
 import { clusterQuestions, type QuestionCluster, type QuestionSample } from './chatwootBotQuestionClusters.js';
 import {
@@ -111,6 +113,24 @@ export class ChatwootBotAnalyticsService {
       by: incoming ? 'client' : senderType === 'user' ? 'agent' : 'bot',
       text: text.length > 200 ? `${text.slice(0, 200)}…` : text,
     };
+  }
+
+  /** Частини `action` з розбору повідомлень періоду → групи запитів на дію з рішенням. */
+  private async buildActionRequestsForPeriod(
+    questionCounts: Map<string, { count: number; preview: string }>,
+  ): Promise<ChatwootBotActionRequestDto[]> {
+    const norms = [...questionCounts.keys()];
+    const intents = await chatwootBotIntentService.loadIntents(norms.map(questionHash));
+    const samples: QuestionSample[] = [];
+    for (const norm of norms) {
+      const parts = intents.get(questionHash(norm));
+      for (const part of parts ?? []) {
+        if (part.kind === 'action' && part.text) samples.push({ text: part.text, count: questionCounts.get(norm)!.count });
+      }
+    }
+    if (samples.length === 0) return [];
+    const settings = await chatwootBotSettingsService.getSettings();
+    return buildActionRequests(samples, settings);
   }
 
   /** Публічна відповідь бота клієнту — контекст для наступного питання в статистиці тем. */
@@ -291,6 +311,7 @@ export class ChatwootBotAnalyticsService {
     );
     // Стаття могла зʼявитись пізніше (або пошук покращився): покажемо, що відповідь уже є.
     const knowledgeMisses = await this.withKnowledgeCoverage(clusterQuestions(toSamples(missCounts), { maxClusters: 10 }));
+    const actionRequests = await this.buildActionRequestsForPeriod(questionCounts);
 
     const pendingByConv = new Map<number, Date[]>();
     const responseSecondsByAgent = new Map<number, number[]>();
@@ -373,6 +394,7 @@ export class ChatwootBotAnalyticsService {
       topics,
       ignoredQuestions,
       knowledgeMisses,
+      actionRequests,
       knowledgeLookups: { total: knowledgeLookups, found: knowledgeFound },
       firstEventAt: firstEvent?.createdAt.toISOString() ?? null,
       agentSla,
