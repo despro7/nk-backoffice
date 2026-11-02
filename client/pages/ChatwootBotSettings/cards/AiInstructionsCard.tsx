@@ -8,7 +8,7 @@ import {
   type ChatwootBotInstructionGroup,
 } from '@shared/constants/chatwootBotInstructions';
 import { SettingsCard, type SettingsCardProps } from './SettingsCard';
-import { InstructionEditor } from '../components/InstructionEditor';
+import { InstructionEditor, InstructionPreview } from '../components/InstructionEditor';
 
 const GROUP_ORDER = Object.keys(CHATWOOT_BOT_INSTRUCTION_GROUPS) as ChatwootBotInstructionGroup[];
 
@@ -145,6 +145,7 @@ export function AiInstructionsCard({ page }: SettingsCardProps) {
                             )}
                           </>
                         }
+                        context={<InstructionPreview text={item.usage} />}
                         minRows={2}
                         maxLength={CHATWOOT_BOT_INSTRUCTION_MAX_LENGTH}
                         value={overrides[item.key] ?? item.defaultText}

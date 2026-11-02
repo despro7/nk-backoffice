@@ -125,8 +125,7 @@ export function InstructionPreview({ text }: { text: string }) {
             size="sm"
             variant="flat"
             classNames={{
-              base: cn('h-5 mx-0.5 align-middle cursor-pointer', meta?.chip ?? FALLBACK_CHIP),
-              content: 'px-5',
+              base: cn('h-5 align-middle cursor-pointer', meta?.chip ?? FALLBACK_CHIP),
             }}
             startContent={<DynamicIcon name={meta?.icon ?? 'wrench'} size={12} />}
           >
@@ -141,7 +140,7 @@ export function InstructionPreview({ text }: { text: string }) {
     last = index + match[0].length;
   }
   if (last < text.length) nodes.push(text.slice(last));
-  return <p className="text-sm text-default-700 whitespace-pre-wrap leading-7">{nodes}</p>;
+  return <p className="text-xs text-default-500 whitespace-pre-wrap leading-relaxed font-mono">{nodes}</p>;
 }
 
 function chipElement(name: string): HTMLSpanElement {
@@ -224,6 +223,7 @@ export function InstructionEditor({
   label,
   ariaLabel,
   headerExtra,
+  context,
   minRows = 3,
   description,
   highlighted,
@@ -235,6 +235,8 @@ export function InstructionEditor({
   ariaLabel?: string;
   /** Поряд з назвою в одному рядку (ключ, «змінено», скидання). */
   headerExtra?: React.ReactNode;
+  /** Під назвою: коли й де бот отримує цей текст. */
+  context?: React.ReactNode;
   minRows?: number;
   maxRows?: number;
   maxLength?: number;
@@ -372,6 +374,7 @@ export function InstructionEditor({
         {label ? <span className="text-sm font-semibold">{label}</span> : null}
         {headerExtra}
       </div>
+      {context ? <div className="-mt-1 text-xs leading-relaxed text-default-500">{context}</div> : null}
       <div
         ref={editorRef}
         role="textbox"

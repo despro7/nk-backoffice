@@ -99,7 +99,7 @@ function ScheduleTable({ schedule }: { schedule: ChatwootInboxSchedule }) {
         return (
           <div
             key={day}
-            className={`rounded-md px-1 py-1.5 ${closed ? 'bg-default-100 text-default-400' : 'bg-lime-100 text-lime-700'}`}
+            className={`rounded-md px-1 py-1.5 ${closed ? 'bg-default-100 text-default-400' : 'bg-lime-500/30 text-lime-700'}`}
           >
             <div className="font-semibold">{DAY_LABELS[day]}</div>
             <div className="leading-tight">
