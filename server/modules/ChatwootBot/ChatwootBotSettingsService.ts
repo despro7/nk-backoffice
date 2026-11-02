@@ -22,6 +22,7 @@ import {
   type ChatwootBotSettingsUpdate,
 } from '../../../shared/types/chatwootBot.js';
 import { resolveGoogleLlmModelId } from '../../../shared/constants/googleLlmModelAliases.js';
+import { normalizeInstructionOverrides } from '../../../shared/constants/chatwootBotInstructions.js';
 import {
   DEFAULT_ORDER_CANCEL_AUTO_STATUSES,
   DEFAULT_ORDER_CANCEL_SEMI_AUTO_STATUSES,
@@ -177,6 +178,7 @@ export function applyChatwootAiTestOverrides(
     aiModel?: unknown;
     aiMaskId?: unknown;
     aiMasks?: unknown;
+    aiInstructions?: unknown;
   },
 ): ChatwootBotSettings {
   const next: ChatwootBotSettings = { ...settings, aiEnabled: true };
@@ -204,6 +206,9 @@ export function applyChatwootAiTestOverrides(
     if (masks.length > 0) {
       next.aiMasks = masks;
     }
+  }
+  if (overrides.aiInstructions !== undefined) {
+    next.aiInstructions = normalizeInstructionOverrides(overrides.aiInstructions);
   }
 
   return next;
@@ -268,6 +273,7 @@ function mergeWithDefaults(raw: Partial<ChatwootBotSettings>): ChatwootBotSettin
         ? raw.aiMaskId.trim()
         : DEFAULT_CHATWOOT_BOT_SETTINGS.aiMaskId,
     aiMasks: normalizeAiMasks(raw.aiMasks, DEFAULT_CHATWOOT_BOT_SETTINGS.aiMasks),
+    aiInstructions: normalizeInstructionOverrides(raw.aiInstructions),
     aiProvider: normalizeAiProvider(raw.aiProvider),
     aiModel:
       typeof raw.aiModel === 'string' && raw.aiModel.trim()

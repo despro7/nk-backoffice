@@ -194,10 +194,11 @@ export function SandboxTab({ page }: Props) {
         aiModel: form?.aiModel,
         aiMaskId: form?.aiMaskId,
         aiMasks: form?.aiMasks,
+        aiInstructions: form?.aiInstructions,
       });
       return { role: 'assistant', content: result.text, result };
     },
-    [form?.aiMaskId, form?.aiMasks, form?.aiModel, form?.aiProvider, hoursMode],
+    [form?.aiInstructions, form?.aiMaskId, form?.aiMasks, form?.aiModel, form?.aiProvider, hoursMode],
   );
 
   const runScenario = useCallback(

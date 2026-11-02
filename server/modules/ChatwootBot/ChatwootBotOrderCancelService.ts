@@ -1,3 +1,4 @@
+import { botInstruction } from '../../../shared/constants/chatwootBotInstructions.js';
 import { logServer, prisma } from '../../lib/utils.js';
 import {
   CHATWOOT_BOT_ATTR_HUMAN_HANDOVER_ACTIVE,
@@ -108,16 +109,17 @@ export class ChatwootBotOrderCancelService {
   async handle(ctx: OrderCancelContext, args: OrderCancelToolArgs): Promise<OrderCancelToolResult> {
     const { settings, conversationId } = ctx;
     const now = Date.now();
+    const ins = (key: string) => botInstruction(settings.aiInstructions, key);
     if (!settings.orderCancelEnabled) {
       return {
         code: 'disabled',
-        hint: 'Скасування через бота вимкнене. Виклич request_operator, щоб передати запит оператору.',
+        hint: ins('cancel.disabled'),
       };
     }
     if (isRateLimited(conversationId, now)) {
       return {
         code: 'rate_limited',
-        hint: 'Забагато невдалих спроб. Не проси дані знову – виклич request_operator.',
+        hint: ins('cancel.rateLimited'),
       };
     }
 
@@ -125,13 +127,13 @@ export class ChatwootBotOrderCancelService {
     const phone =
       (phoneArg ? safeNormalizePhone(extractCallbackPhone(phoneArg) ?? phoneArg) : null) ?? ctx.knownPhone;
     if (!phone) {
-      return { code: 'phone_required', hint: 'Попроси номер телефону, на який оформлене замовлення.' };
+      return { code: 'phone_required', hint: ins('cancel.phoneRequired') };
     }
     const fullName = args.fullName?.trim() ?? '';
     if (!hasFullName(fullName)) {
       return {
         code: 'name_required',
-        hint: 'Для скасування потрібні прізвище та імʼя одержувача, як у замовленні. Попроси їх.',
+        hint: ins('cancel.nameRequired'),
       };
     }
 
@@ -142,7 +144,7 @@ export class ChatwootBotOrderCancelService {
       recordFailure(conversationId, now);
       return {
         code: 'not_found',
-        hint: 'Активних замовлень з таким телефоном і ПІБ не знайдено. Не уточнюй, що саме не збіглося; запропонуй перевірити дані або виклич request_operator.',
+        hint: ins('cancel.notFound'),
       };
     }
 
@@ -156,8 +158,8 @@ export class ChatwootBotOrderCancelService {
       return {
         code: 'choose_order',
         hint: token
-          ? 'Замовлення з цим номером серед активних не знайдено. Покажи клієнту список і попроси обрати.'
-          : 'Клієнт має кілька активних замовлень. Покажи список (номер, дата, сума) і попроси обрати.',
+          ? ins('cancel.orderNumberNotFound')
+          : ins('cancel.chooseOrder'),
         orders: orders.slice(0, 10).map((o) => ({
           orderNumber: o.orderNumber,
           date: kyivDate(o.orderDate),
@@ -173,7 +175,7 @@ export class ChatwootBotOrderCancelService {
       return {
         code: 'reason_required',
         order: { orderNumber: order.orderNumber, status },
-        hint: 'Спитай, чому клієнт хоче скасувати, і запропонуй допомогу (змінити склад, дату чи адресу доставки). Якщо все ж скасувати – виклич цей tool знову з reason.',
+        hint: ins('cancel.reasonRequired'),
       };
     }
 
@@ -198,14 +200,14 @@ export class ChatwootBotOrderCancelService {
       return {
         code: 'cancelled',
         order: { orderNumber: order.orderNumber, status: ORDER_CANCEL_TARGET_STATUS_TEXT },
-        hint: 'Замовлення скасовано. Повідом клієнту коротко; якщо він залишав email у замовленні, лист прийде автоматично.',
+        hint: ins('cancel.cancelled'),
         ...(simulated ? { simulated: true } : {}),
       };
     }
     return {
       code: mode === 'operator' ? 'operator_required' : 'pending_operator',
       order: { orderNumber: order.orderNumber, status },
-      hint: 'Скажи клієнту, що запит на скасування передано оператору, він перевірить і підтвердить. Нічого не обіцяй щодо результату.',
+      hint: ins('cancel.pendingOperator'),
       ...(simulated ? { simulated: true } : {}),
     };
   }

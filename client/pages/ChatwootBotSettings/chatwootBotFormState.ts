@@ -23,6 +23,7 @@ export type FormState = {
   aiEnabled: boolean;
   aiMaskId: string;
   aiMasks: ChatwootBotAiMask[];
+  aiInstructions: Record<string, string>;
   aiProvider: '' | 'openai' | 'google' | 'openrouter';
   aiModel: string;
   verifySessionTtlHours: number;
@@ -120,6 +121,7 @@ export function toFormState(data: ChatwootBotSettingsResponse): FormState {
     autoReplyRules: data.autoReplyRules ?? [],
     aiEnabled: data.aiEnabled,
     aiMaskId: data.aiMaskId,
+    aiInstructions: data.aiInstructions ?? {},
     aiMasks: data.aiMasks ?? [],
     aiProvider: data.aiProvider,
     aiModel: data.aiModel,

@@ -59,6 +59,8 @@ export type ChatwootBotSettings = {
   aiEnabled: boolean;
   aiMaskId: string;
   aiMasks: ChatwootBotAiMask[];
+  /** Змінені інструкції для LLM (ключ → текст); решта — за замовчуванням з `chatwootBotInstructions.ts`. */
+  aiInstructions: Record<string, string>;
   /** Порожньо – з глобальних llm_platform_settings. */
   aiProvider: ChatwootBotAiProviderOverride;
   aiModel: string;
@@ -480,6 +482,7 @@ export const DEFAULT_CHATWOOT_BOT_SETTINGS: ChatwootBotSettings = {
   autoReplyRules: [],
   aiEnabled: false,
   aiMaskId: DEFAULT_CHATWOOT_BOT_AI_MASK_ID,
+  aiInstructions: {},
   aiMasks: [
     {
       id: DEFAULT_CHATWOOT_BOT_AI_MASK_ID,

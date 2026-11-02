@@ -1,3 +1,4 @@
+import { botInstruction } from '../../../shared/constants/chatwootBotInstructions.js';
 import { logServer, prisma } from '../../lib/utils.js';
 import {
   CHATWOOT_BOT_KNOWLEDGE_LIMITS as LIMITS,
@@ -170,22 +171,22 @@ export class ChatwootBotKnowledgeService {
   }
 
   /** LLM tool search_knowledge_base: факти без службових полів + лічильник використань. */
-  async searchForTool(query: string): Promise<ChatwootBotKnowledgeToolResult> {
+  async searchForTool(query: string, instructions?: Record<string, string>): Promise<ChatwootBotKnowledgeToolResult> {
     const trimmed = query.trim();
     if (!trimmed) {
-      return { found: false, hint: 'Передай у query суть питання клієнта.' };
+      return { found: false, hint: botInstruction(instructions, 'knowledge.emptyQuery') };
     }
     let hits: ChatwootBotKnowledgeSearchHit[];
     try {
       hits = await this.search(trimmed);
     } catch (err) {
       logServer('[ChatwootBot] knowledge search failed (non-fatal)', err);
-      return { found: false, hint: 'База знань тимчасово недоступна. Спробуй get_storefront_site_pages або запропонуй оператора.' };
+      return { found: false, hint: botInstruction(instructions, 'knowledge.unavailable') };
     }
     if (hits.length === 0) {
       return {
         found: false,
-        hint: 'У базі знань немає відповіді. Спробуй get_storefront_site_pages; якщо й там немає – чесно скажи й запропонуй оператора.',
+        hint: botInstruction(instructions, 'knowledge.notFound'),
       };
     }
     void prisma.chatwootBotKnowledgeEntry
@@ -194,7 +195,7 @@ export class ChatwootBotKnowledgeService {
     return {
       found: true,
       entries: hits.map((h) => ({ title: h.title, answer: h.answer })),
-      hint: 'Сформулюй відповідь своїми словами лише за цими фактами; не вигадуй того, чого тут немає.',
+      hint: botInstruction(instructions, 'knowledge.found'),
     };
   }
 }

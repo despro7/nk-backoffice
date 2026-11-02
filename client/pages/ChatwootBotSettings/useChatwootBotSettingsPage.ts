@@ -176,6 +176,7 @@ export function useChatwootBotSettingsPage() {
         aiEnabled: form.aiEnabled,
         aiMaskId: form.aiMaskId,
         aiMasks: form.aiMasks,
+        aiInstructions: form.aiInstructions,
         aiProvider: form.aiProvider,
         aiModel: form.aiModel,
         verifySessionTtlHours: Number(form.verifySessionTtlHours),

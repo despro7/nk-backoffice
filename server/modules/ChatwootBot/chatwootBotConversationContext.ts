@@ -1,5 +1,6 @@
 import type { LlmMessage } from '../../../shared/types/llm.js';
 import { CHATWOOT_WEBHOOK_PROBE_CONTENT_MARKER } from '../../../shared/types/chatwootBot.js';
+import { botInstruction } from '../../../shared/constants/chatwootBotInstructions.js';
 
 /** Скільки попередніх повідомлень розмови передаємо в LLM. */
 export const CHATWOOT_BOT_HISTORY_LIMIT = 20;
@@ -75,13 +76,14 @@ export type ConversationContextInput = {
  * Незмінні правила поверх маски: рід персонажа, пошук перед «не знаю», передача оператору лише через tool.
  * Маска задає тон і сценарії, але не може їх вимкнути.
  */
-export const CHATWOOT_BOT_REPLY_POLICY = [
-  'Обовʼязкові правила (службово, не цитуй клієнту):',
-  '- Ти чоловічого роду: «знайшов», «перевірив», «радий», «зміг». Ніколи не пиши про себе в жіночому роді.',
-  '- Перш ніж сказати, що інформації немає, пошукай: search_knowledge_base для умов, доставки, оплати, знижок; get_storefront_site_pages, якщо в базі знань не знайшлось; get_storefront_catalog для страв, складу, цін і наявності (шукай за ключовим словом: «курка», «суп», «вареники»).',
-  '- Клієнт хоче скасувати замовлення – request_order_cancellation, якщо такий інструмент є; інакше request_operator.',
-  '- Якщо після пошуку відповіді немає, або клієнт просить людину – виклич request_operator. Не пиши «зверніться до оператора» без виклику: клієнт не знає, як це зробити.',
-].join('\n');
+export function buildReplyPolicy(overrides?: Record<string, string> | null): string {
+  return [
+    'Обовʼязкові правила (службово, не цитуй клієнту):',
+    ...['policy.gender', 'policy.searchFirst', 'policy.cancellation', 'policy.operator'].map(
+      (key) => `- ${botInstruction(overrides, key)}`,
+    ),
+  ].join('\n');
+}
 
 function kyivParts(date: Date): { weekday: string; date: string; time: string } {
   const tz = 'Europe/Kyiv';

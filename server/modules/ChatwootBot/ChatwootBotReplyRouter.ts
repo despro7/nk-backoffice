@@ -161,7 +161,7 @@ export class ChatwootBotReplyRouter {
         conversationState: verify.state,
         conversationId,
         messageId,
-        systemNote: verify.attempt ? buildVerifyResultNote(verify.attempt) : undefined,
+        systemNote: verify.attempt ? buildVerifyResultNote(verify.attempt, settings.aiInstructions) : undefined,
         history,
         inBusinessHours: inHours ?? null,
       });

@@ -1,3 +1,4 @@
+import { botInstruction } from '../../../shared/constants/chatwootBotInstructions.js';
 import { prisma } from '../../lib/utils.js';
 import type { ChatwootBotSettings } from '../../../shared/types/chatwootBot.js';
 import type { ChatwootBotOrderToolResult } from '../../../shared/types/chatwootBotTools.js';
@@ -8,10 +9,6 @@ import { findOrdersByPhone } from './chatwootBotOrderLookup.js';
 /** Скільки останніх замовлень телефону з довіреного каналу відкриваємо повністю. */
 const TRUSTED_PHONE_ORDERS_LIMIT = 20;
 
-const PHONE_ONLY_HINT =
-  'Це короткий статус останнього замовлення за телефоном клієнта. Не називай номер чи дату замовлення. Для складу замовлення й номера ТТН попроси номер замовлення або дату, коли його робили.';
-const PHONE_ONLY_NOT_FOUND_HINT =
-  'За цим телефоном замовлень не знайдено. Попроси перевірити номер телефону або назвати номер замовлення.';
 
 export type ChatwootBotOrderAccess = {
   /** Замовлення з активної сесії верифікації (chatwoot_bot_conversation_states). */
@@ -36,7 +33,7 @@ export class ChatwootBotOrderToolService {
 
     if (ids.size === 0) {
       return access.unverifiedPhone
-        ? this.phoneOnlyStatus(access.unverifiedPhone)
+        ? this.phoneOnlyStatus(access.unverifiedPhone, settings)
         : { verified: false, code: 'verification_required', hint: settings.verifyRequiredHint };
     }
 
@@ -102,16 +99,16 @@ export class ChatwootBotOrderToolService {
   }
 
   /** Рівень 1: лише статус найновішого замовлення, без номера, дати, складу й ТТН. */
-  private async phoneOnlyStatus(phone: string): Promise<ChatwootBotOrderToolResult> {
+  private async phoneOnlyStatus(phone: string, settings: ChatwootBotSettings): Promise<ChatwootBotOrderToolResult> {
     const [latest] = await findOrdersByPhone(phone);
     if (!latest) {
-      return { verified: false, code: 'phone_only', latestOrder: null, hint: PHONE_ONLY_NOT_FOUND_HINT };
+      return { verified: false, code: 'phone_only', latestOrder: null, hint: botInstruction(settings.aiInstructions, 'order.phoneOnlyNotFound') };
     }
     return {
       verified: false,
       code: 'phone_only',
       latestOrder: { status: latest.status, statusText: latest.statusText },
-      hint: PHONE_ONLY_HINT,
+      hint: botInstruction(settings.aiInstructions, 'order.phoneOnly'),
     };
   }
 }

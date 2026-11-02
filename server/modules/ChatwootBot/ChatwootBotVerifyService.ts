@@ -1,3 +1,4 @@
+import { botInstruction } from '../../../shared/constants/chatwootBotInstructions.js';
 import { createHmac } from 'node:crypto';
 import {
   CHATWOOT_BOT_ATTR_VERIFIED,
@@ -56,15 +57,10 @@ function rateConfig(settings: ChatwootBotSettings): VerifyRateLimitConfig {
 }
 
 /** Підказки для LLM у відповіді verify_customer (без PII). */
-const VERIFY_TOOL_HINTS = {
-  success: 'Верифікацію пройдено. Викликай get_verified_order і розкажи клієнту про замовлення.',
-  phoneRequired: 'Попроси номер телефону, на який оформлювали замовлення.',
-  detailsRequired: 'Телефон є. Попроси номер замовлення або дату (приблизно, у межах 1–3 днів), коли його робили.',
-  rangeTooWide: 'Інтервал дат завеликий. Попроси уточнити день (до 3 днів) або назвати номер замовлення.',
-  ambiguous: 'За цей період кілька замовлень. Попроси номер замовлення.',
-  rateLimited: 'Ліміт спроб вичерпано. Не проси дані знову, запропонуй оператора або спробувати пізніше.',
-  invalidInput: 'Дані не розпізнано: телефон український, дата у форматі YYYY-MM-DD. Уточни в клієнта.',
-} as const;
+/** Підказки verify_customer: ключ → інструкція з налаштувань (`verify.<key>`). */
+function verifyHint(settings: ChatwootBotSettings, key: 'success' | 'phoneRequired' | 'detailsRequired' | 'rangeTooWide' | 'ambiguous' | 'rateLimited' | 'invalidInput'): string {
+  return botInstruction(settings.aiInstructions, `verify.${key}`);
+}
 
 export type ChatwootBotVerifyToolArgs = {
   phone?: string;
@@ -248,11 +244,11 @@ export class ChatwootBotVerifyService {
     const phoneArg = args.phone?.trim();
     const phoneFromArgs = phoneArg ? safeNormalizePhone(extractCallbackPhone(phoneArg) ?? phoneArg) : null;
     if (phoneArg && !phoneFromArgs) {
-      return { result: { verified: false, code: 'invalid_input', hint: VERIFY_TOOL_HINTS.invalidInput }, state };
+      return { result: { verified: false, code: 'invalid_input', hint: verifyHint(settings, 'invalidInput') }, state };
     }
     const phone = phoneFromArgs ?? state.pendingPhone ?? channelPhone;
     if (!phone) {
-      return { result: { verified: false, code: 'phone_required', hint: VERIFY_TOOL_HINTS.phoneRequired }, state };
+      return { result: { verified: false, code: 'phone_required', hint: verifyHint(settings, 'phoneRequired') }, state };
     }
 
     const orderArg = args.orderNumber?.trim();
@@ -264,10 +260,10 @@ export class ChatwootBotVerifyService {
         const remembered = await this.rememberPhone(settings, state, phoneFromArgs);
         next = remembered.state;
         if (remembered.limited) {
-          return { result: { verified: false, code: 'rate_limited', hint: VERIFY_TOOL_HINTS.rateLimited }, state: next };
+          return { result: { verified: false, code: 'rate_limited', hint: verifyHint(settings, 'rateLimited') }, state: next };
         }
       }
-      return { result: { verified: false, code: 'details_required', hint: VERIFY_TOOL_HINTS.detailsRequired }, state: next };
+      return { result: { verified: false, code: 'details_required', hint: verifyHint(settings, 'detailsRequired') }, state: next };
     }
 
     const range = hasDates
@@ -275,12 +271,12 @@ export class ChatwootBotVerifyService {
       : null;
     if (!orderToken && range && range.ok === false) {
       const code = range.reason === 'too_wide' ? 'range_too_wide' : 'invalid_input';
-      const hint = range.reason === 'too_wide' ? VERIFY_TOOL_HINTS.rangeTooWide : VERIFY_TOOL_HINTS.invalidInput;
+      const hint = range.reason === 'too_wide' ? verifyHint(settings, 'rangeTooWide') : verifyHint(settings, 'invalidInput');
       return { result: { verified: false, code, hint }, state };
     }
 
     if (isVerifyRateLimited(state, rateConfig(settings), now)) {
-      return { result: { verified: false, code: 'rate_limited', hint: VERIFY_TOOL_HINTS.rateLimited }, state };
+      return { result: { verified: false, code: 'rate_limited', hint: verifyHint(settings, 'rateLimited') }, state };
     }
 
     let method: ChatwootBotVerifyMethod = orderToken ? 'order_number' : 'date_range';
@@ -295,13 +291,13 @@ export class ChatwootBotVerifyService {
     const next = await this.recordAttempt(settings, conversationId, state, phone, attempt, method, messageId);
     if (attempt.ok === true) {
       const ordersVerified = (attempt.orderIds ?? [attempt.orderId]).length;
-      return { result: { verified: true, ordersVerified, hint: VERIFY_TOOL_HINTS.success }, state: next };
+      return { result: { verified: true, ordersVerified, hint: verifyHint(settings, 'success') }, state: next };
     }
     const failure: Record<typeof attempt.reason, ChatwootBotVerifyToolResult> = {
       mismatch: { verified: false, code: 'mismatch', hint: settings.verifyFailMessage },
-      ambiguous: { verified: false, code: 'ambiguous', hint: VERIFY_TOOL_HINTS.ambiguous },
-      rate_limited: { verified: false, code: 'rate_limited', hint: VERIFY_TOOL_HINTS.rateLimited },
-      invalid_input: { verified: false, code: 'invalid_input', hint: VERIFY_TOOL_HINTS.invalidInput },
+      ambiguous: { verified: false, code: 'ambiguous', hint: verifyHint(settings, 'ambiguous') },
+      rate_limited: { verified: false, code: 'rate_limited', hint: verifyHint(settings, 'rateLimited') },
+      invalid_input: { verified: false, code: 'invalid_input', hint: verifyHint(settings, 'invalidInput') },
     };
     return { result: failure[attempt.reason], state: next };
   }
@@ -311,21 +307,22 @@ export class ChatwootBotVerifyService {
  * Службова примітка для system prompt про результат верифікації в поточному повідомленні.
  * Без PII: лише статус, щоб LLM не переказувала підказку повторно.
  */
-export function buildVerifyResultNote(attempt: ChatwootBotVerifyAttemptResult): string {
+export function buildVerifyResultNote(
+  attempt: ChatwootBotVerifyAttemptResult,
+  instructions?: Record<string, string>,
+): string {
   const prefix = 'Службова примітка (не цитуй клієнту):';
-  if (attempt.ok === true) {
-    return `${prefix} клієнт щойно успішно пройшов верифікацію цим повідомленням. Не проси дані повторно – викликай get_verified_order і відповідай про замовлення.`;
-  }
-  if (attempt.reason === 'rate_limited') {
-    return `${prefix} ліміт спроб верифікації вичерпано. Не проси дані знову – запропонуй звернутися до оператора або спробувати пізніше.`;
-  }
-  if (attempt.reason === 'ambiguous') {
-    return `${prefix} за названий період у клієнта кілька замовлень. Попроси номер замовлення.`;
-  }
-  if (attempt.reason === 'invalid_input') {
-    return `${prefix} спроба верифікації не вдалася: не вдалося розпізнати телефон або дату. Попроси уточнити саме цю частину.`;
-  }
-  return `${prefix} спроба верифікації не вдалася: телефон разом із номером замовлення або датою не збігся з жодним замовленням. Скажи про це прямо й попроси перевірити дані; не повторюй попередню підказку дослівно.`;
+  const key =
+    attempt.ok === true
+      ? 'verifyNote.success'
+      : attempt.reason === 'rate_limited'
+        ? 'verifyNote.rateLimited'
+        : attempt.reason === 'ambiguous'
+          ? 'verifyNote.ambiguous'
+          : attempt.reason === 'invalid_input'
+            ? 'verifyNote.invalidInput'
+            : 'verifyNote.mismatch';
+  return `${prefix} ${botInstruction(instructions, key)}`;
 }
 
 export const chatwootBotVerifyService = new ChatwootBotVerifyService();

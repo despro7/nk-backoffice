@@ -5,7 +5,8 @@ import {
   type ChatwootBotSettings,
   type ChatwootWebhookMessageCreated,
 } from '../../../shared/types/chatwootBot.js';
-import { buildConversationContextNote, CHATWOOT_BOT_REPLY_POLICY } from './chatwootBotConversationContext.js';
+import { buildConversationContextNote, buildReplyPolicy } from './chatwootBotConversationContext.js';
+import { botInstruction } from '../../../shared/constants/chatwootBotInstructions.js';
 import { extractPageContext } from './chatwootBotContactFields.js';
 import {
   activeVerifiedOrderIds,
@@ -100,7 +101,8 @@ export class ChatwootBotLlmRunner {
       inBusinessHours: options?.inBusinessHours,
       page: extractPageContext(payload),
     });
-    const system = [mask.systemPrompt, CHATWOOT_BOT_REPLY_POLICY, contextNote, options?.systemNote?.trim()]
+    const instructions = settings.aiInstructions;
+    const system = [mask.systemPrompt, buildReplyPolicy(instructions), contextNote, options?.systemNote?.trim()]
       .filter((part): part is string => Boolean(part))
       .join('\n\n');
     const messages: LlmMessage[] = [...(options?.history ?? []), { role: 'user', content: userContent }];
@@ -115,7 +117,11 @@ export class ChatwootBotLlmRunner {
           system,
           messages,
           maxOutputTokens: platform.maxOutputTokens,
-          tools: settings.orderCancelEnabled ? BOT_TOOLS : BOT_TOOLS_WITHOUT_CANCEL,
+          // Описи інструментів можна змінити в налаштуваннях (tool.<name>).
+          tools: (settings.orderCancelEnabled ? BOT_TOOLS : BOT_TOOLS_WITHOUT_CANCEL).map((tool) => ({
+            ...tool,
+            description: botInstruction(instructions, `tool.${tool.name}`),
+          })),
         },
         async (name, args) => {
           if (name === 'get_storefront_catalog') {
@@ -139,7 +145,7 @@ export class ChatwootBotLlmRunner {
           if (name === 'verify_customer') {
             const conversationId = options?.conversationId;
             if (!state || conversationId == null) {
-              return { verified: false, code: 'unavailable', hint: 'Перевірка доступна лише в розмові з клієнтом.' };
+              return { verified: false, code: 'unavailable', hint: botInstruction(instructions, 'verify.unavailable') };
             }
             const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
             const { result, state: next } = await chatwootBotVerifyService.verifyFromTool(
@@ -156,7 +162,7 @@ export class ChatwootBotLlmRunner {
           }
           if (name === 'search_knowledge_base') {
             const query = typeof args.query === 'string' ? args.query : '';
-            const result = await chatwootBotKnowledgeService.searchForTool(query);
+            const result = await chatwootBotKnowledgeService.searchForTool(query, instructions);
             // Запит від моделі (без PII за інструкцією tool) — для статистики «бот шукав і не знайшов».
             if (options?.conversationId != null && query.trim()) {
               chatwootBotAnalyticsService.recordBestEffort({
@@ -189,14 +195,14 @@ export class ChatwootBotLlmRunner {
           }
           if (name === 'request_operator') {
             if (options?.conversationId == null && !options?.sandbox) {
-              return { ok: false, hint: 'Передача оператору доступна лише в розмові з клієнтом.' };
+              return { ok: false, hint: botInstruction(instructions, 'operator.unavailable') };
             }
             const reason = typeof args.reason === 'string' ? args.reason.trim() : '';
             const kind = CHATWOOT_BOT_OPERATOR_REQUEST_KINDS.find((k) => k === args.kind) ?? 'no_answer';
             operatorRequested = { reason: reason || 'operator_requested', kind };
             return {
               ok: true,
-              hint: 'Оператора буде підключено автоматично, клієнт отримає повідомлення від системи. Свій текст не пиши.',
+              hint: botInstruction(instructions, 'operator.accepted'),
             };
           }
           return { error: 'unknown_tool' };
