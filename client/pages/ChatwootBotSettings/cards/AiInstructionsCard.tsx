@@ -80,7 +80,17 @@ export function AiInstructionsCard({ page }: SettingsCardProps) {
         onValueChange={setSearch}
         onClear={() => setSearch('')}
       />
-      <Accordion selectionMode="multiple" variant="splitted" className="px-0" itemClasses={{ base: 'shadow-none border border-default-200' }}>
+      <Accordion
+        selectionMode="multiple"
+        variant="splitted"
+        className="px-0"
+        itemClasses={{
+          base: 'shadow-none border border-default-200',
+          title: 'text-base font-semibold text-default-900',
+          subtitle: 'text-xs text-default-500',
+          trigger: 'py-3',
+        }}
+      >
         {GROUP_ORDER.filter((group) => byGroup.has(group)).map((group) => {
           const items = byGroup.get(group) ?? [];
           const changed = items.filter((i) => overrides[i.key] != null).length;
@@ -88,9 +98,11 @@ export function AiInstructionsCard({ page }: SettingsCardProps) {
             <AccordionItem
               key={group}
               title={
-                <span className="flex items-center gap-2 text-sm font-medium">
+                <span className="flex items-center gap-2">
                   {CHATWOOT_BOT_INSTRUCTION_GROUPS[group].title}
-                  <span className="text-xs text-default-400">{items.length}</span>
+                  <Chip size="sm" variant="flat" className="h-5">
+                    {items.length}
+                  </Chip>
                   {changed > 0 && (
                     <Chip size="sm" variant="flat" color="warning" className="h-5">
                       змінено: {changed}
@@ -98,40 +110,41 @@ export function AiInstructionsCard({ page }: SettingsCardProps) {
                   )}
                 </span>
               }
-              subtitle={<span className="text-xs">{CHATWOOT_BOT_INSTRUCTION_GROUPS[group].description}</span>}
+              subtitle={CHATWOOT_BOT_INSTRUCTION_GROUPS[group].description}
             >
-              <div className="flex flex-col gap-4 pb-2">
+              <div className="flex flex-col divide-y divide-default-200 pb-2">
                 {items.map((item) => {
                   const isChanged = overrides[item.key] != null;
                   return (
-                    <div key={item.key} className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{item.label}</span>
-                        <span className="font-mono text-[11px] text-default-400">{item.key}</span>
-                        {isChanged && (
-                          <>
-                            <Chip size="sm" variant="flat" color="warning" className="h-5">
-                              змінено
-                            </Chip>
-                            <Tooltip content="Повернути стандартний текст" placement="top">
-                              <Button
-                                isIconOnly
-                                size="sm"
-                                variant="light"
-                                className="ml-auto"
-                                aria-label={`Скинути «${item.label}»`}
-                                onPress={() => setText(item.key, item.defaultText, null)}
-                              >
-                                <DynamicIcon name="rotate-ccw" size={14} />
-                              </Button>
-                            </Tooltip>
-                          </>
-                        )}
-                      </div>
+                    <div key={item.key} className="py-4 first:pt-1">
                       <InstructionEditor
+                        label={item.label}
                         ariaLabel={item.label}
+                        headerExtra={
+                          <>
+                            <span className="font-mono text-[11px] text-default-400">{item.key}</span>
+                            {isChanged && (
+                              <>
+                                <Chip size="sm" variant="flat" color="warning" className="h-5">
+                                  змінено
+                                </Chip>
+                                <Tooltip content="Повернути стандартний текст" placement="top">
+                                  <Button
+                                    isIconOnly
+                                    size="sm"
+                                    variant="light"
+                                    className="h-7 w-7 min-w-7"
+                                    aria-label={`Скинути «${item.label}»`}
+                                    onPress={() => setText(item.key, item.defaultText, null)}
+                                  >
+                                    <DynamicIcon name="rotate-ccw" size={14} />
+                                  </Button>
+                                </Tooltip>
+                              </>
+                            )}
+                          </>
+                        }
                         minRows={2}
-                        maxRows={12}
                         maxLength={CHATWOOT_BOT_INSTRUCTION_MAX_LENGTH}
                         value={overrides[item.key] ?? item.defaultText}
                         onChange={(v) => setText(item.key, item.defaultText, v)}
