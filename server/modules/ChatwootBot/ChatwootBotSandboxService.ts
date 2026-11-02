@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { summarizeVerify } from './ChatwootBotTurnLogService.js';
 import { prisma } from '../../lib/utils.js';
 import {
   CHATWOOT_BOT_SETTINGS_CATEGORY,
@@ -11,7 +12,6 @@ import {
   type ChatwootBotSandboxReplyRequest,
   type ChatwootBotSandboxReplyResult,
   type ChatwootBotSandboxScenario,
-  type ChatwootBotSandboxVerifyState,
 } from '../../../shared/types/chatwootBotSandbox.js';
 import type { LlmMessage } from '../../../shared/types/llm.js';
 import { applyChatwootAiTestOverrides, chatwootBotSettingsService } from './ChatwootBotSettingsService.js';
@@ -21,7 +21,6 @@ import { matchAutoReplyFromSettings } from './ChatwootBotPatternMatcher.js';
 import { chatwootBotLlmRunner } from './ChatwootBotLlmRunner.js';
 import { buildVerifyResultNote, chatwootBotVerifyService, type ChatwootBotVerifyStateStore } from './ChatwootBotVerifyService.js';
 import {
-  activeVerifiedOrderIds,
   emptyConversationState,
   type ChatwootBotConversationStateSnapshot,
 } from './chatwootBotConversationStateUtils.js';
@@ -120,15 +119,7 @@ export class ChatwootBotSandboxService {
     const payload = { conversation: { custom_attributes: {} } };
     // Як у live: код сам перевіряє телефон / номер / дату з повідомлення ще до моделі.
     const verify = await chatwootBotVerifyService.tryVerifyFromUserMessage(settings, payload, 0, last.content, null, store);
-    const verifyState = (state: ChatwootBotConversationStateSnapshot): ChatwootBotSandboxVerifyState | undefined => {
-      const verifiedOrders = activeVerifiedOrderIds(state, Date.now()).length;
-      if (!verify.attempt && verifiedOrders === 0 && state.failedAttempts === 0) return undefined;
-      return {
-        verifiedOrders,
-        failedAttempts: state.failedAttempts,
-        ...(verify.attempt ? { attempt: verify.attempt.ok === true ? 'ok' : verify.attempt.reason } : {}),
-      };
-    };
+    const verifyState = (state: ChatwootBotConversationStateSnapshot) => summarizeVerify(state, verify.attempt);
 
     if (matchesHandover(last.content, settings.handoverKeywords)) {
       return {

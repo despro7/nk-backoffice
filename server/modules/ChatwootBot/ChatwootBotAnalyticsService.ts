@@ -1,4 +1,5 @@
 import { buildActionRequests } from './chatwootBotActionRequests.js';
+import { chatwootBotTurnLogService } from './ChatwootBotTurnLogService.js';
 import type { ChatwootBotActionRequestDto } from '../../../shared/types/chatwootBotScenarios.js';
 import { chatwootBotIntentService } from './ChatwootBotIntentService.js';
 import { intentQuestionText } from './chatwootBotIntents.js';
@@ -136,6 +137,7 @@ export class ChatwootBotAnalyticsService {
   /** Публічна відповідь бота клієнту — контекст для наступного питання в статистиці тем. */
   recordBotReply(conversationId: number, text: string, messageId: number | null = null): void {
     if (!text.trim()) return;
+    chatwootBotTurnLogService.noteReply(text);
     this.recordBestEffort({ kind: 'bot_action', conversationId, messageId, content: text, meta: { kind: 'reply' } });
   }
 

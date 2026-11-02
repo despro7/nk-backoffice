@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-11-02 — Chatwoot Bot: журнал «Діалоги бота»
+
+**Files:** `prisma/schema.prisma`, `prisma/migrations/20261102200000_chatwoot_bot_turns`, `shared/types/chatwootBotDialogs.ts`, `ChatwootBotTurnLogService.ts` (+ spec), `ChatwootBotOrchestrator.ts`, `ChatwootBotReplyRouter.ts`, `ChatwootBotLlmRunner.ts`, `ChatwootBotAnalyticsService.ts`, `ChatwootBotSandboxService.ts`, `server/routes/chatwoot-bot.ts`, `server/services/cronService.ts`, `client/pages/ChatwootBotDialogs/**`, `components/BotTurnView.tsx`, `tabs/SandboxTab.tsx`, `cards/AiInstructionsCard.tsx`, `ChatwootBotStatistics/dateRange.ts`, `ChatwootBotStatistics/index.tsx`, `client/services/ChatwootBotService.ts`, `client/routes.config.tsx`
+
+- **Журнал ходів бота:** кожна реакція бота на повідомлення клієнта пишеться в `chatwoot_bot_turns` — відповіді, результат (LLM, патерн, fallback, передача оператору з причиною, ключове слово, екстрений, дзвінок, веде оператор, reclaim), діагностика LLM з trace інструментів, верифікація. Збирається з усіх гілок обробки вебхука (`AsyncLocalStorage`), best-effort; зберігається 90 днів (cron 04:30).
+- **Сторінка «Діалоги бота»** (`/chatwoot-bot/dialogs`, право «Статистика»): період як у статистиці, пошук за текстом або № розмови, фільтр за результатом; таблиця з результатами, інструментами, вартістю й посиланням у Chatwoot; drawer з діалогом і логікою кожної відповіді, як у пісочниці (редагування статей, перехід до інструкції).
+- Бульбашки, мітки й trace пісочниці винесено в спільний `BotTurnView.tsx`; trace інструментів LLM збирається завжди, не лише в пісочниці.
+- Вкладка AI приймає `state.instructionSearch` — пошук інструкції за ключем.
+
+**Документація:** `Docs/integrations/chatwoot-agent-bot.md` — «Діалоги бота (журнал)», UI, БД, Код.
+
+---
+
 ## 2026-11-02 — Chatwoot Bot: верифікація в пісочниці, інструменти в темах, склад замовлення
 
 **Files:** `ChatwootBotVerifyService.ts`, `ChatwootBotSandboxService.ts`, `ChatwootBotLlmRunner.ts`, `ChatwootBotAnalyticsService.ts`, `ChatwootBotKnowledgeService.ts`, `chatwootBotOrderRedaction.ts` (+ spec), `shared/types/chatwootBot.ts`, `chatwootBotSandbox.ts`, `chatwootBotKnowledge.ts`, `tabs/SandboxTab.tsx`, `cards/AiInstructionsCard.tsx`, `components/InstructionEditor.tsx`, `ChatwootBotStatistics/components/KnowledgeCoverage.tsx`, `QuestionTopicsCard.tsx`

@@ -26,6 +26,12 @@ import type {
   ChatwootBotQuestionContextDto,
 } from '@shared/types/chatwootBotTopics';
 
+import type {
+  ChatwootBotDialogDto,
+  ChatwootBotDialogsQuery,
+  ChatwootBotDialogsResponse,
+} from '@shared/types/chatwootBotDialogs';
+
 async function parseJson<T>(res: Response): Promise<T> {
   const data = await res.json();
   if (!res.ok || data.success === false) {
@@ -294,6 +300,18 @@ export const chatwootBotApi = {
     const res = await fetch(`/api/chatwoot-bot/analytics/overview${qs}`, {
       credentials: 'include',
     });
+    return parseJson(res);
+  },
+
+  async getDialogs(query: ChatwootBotDialogsQuery): Promise<ChatwootBotDialogsResponse> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) if (value) params.set(key, value);
+    const res = await fetch(`/api/chatwoot-bot/dialogs?${params.toString()}`, { credentials: 'include' });
+    return parseJson(res);
+  },
+
+  async getDialog(conversationId: number): Promise<ChatwootBotDialogDto> {
+    const res = await fetch(`/api/chatwoot-bot/dialogs/${conversationId}`, { credentials: 'include' });
     return parseJson(res);
   },
 

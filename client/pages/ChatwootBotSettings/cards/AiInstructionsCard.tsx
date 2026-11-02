@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Accordion, AccordionItem, Button, Chip, Input, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   CHATWOOT_BOT_INSTRUCTION_GROUPS,
   CHATWOOT_BOT_INSTRUCTION_MAX_LENGTH,
@@ -33,6 +34,16 @@ export function AiInstructionsCard({ page }: SettingsCardProps) {
   const { form, updateField, setActiveTab } = page;
   const [search, setSearch] = useState('');
   const needle = search.trim().toLowerCase();
+
+  // «Редагувати в налаштуваннях» з журналу діалогів: одразу знайти інструкцію за ключем.
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const key = (location.state as { instructionSearch?: string } | null)?.instructionSearch;
+    if (!key) return;
+    setSearch(key);
+    navigate(`${location.pathname}${location.hash}`, { replace: true, state: null });
+  }, [location.state, location.pathname, location.hash, navigate]);
 
   const overridesRef = useRef(form?.aiInstructions);
   overridesRef.current = form?.aiInstructions;

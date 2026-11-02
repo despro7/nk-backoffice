@@ -21,6 +21,7 @@ import { chatwootBotEventLogService } from './ChatwootBotEventLogService.js';
 import { chatwootBotLlmRunner } from './ChatwootBotLlmRunner.js';
 import { matchAutoReplyFromSettings } from './ChatwootBotPatternMatcher.js';
 import { buildVerifyResultNote, chatwootBotVerifyService } from './ChatwootBotVerifyService.js';
+import { chatwootBotTurnLogService, summarizeVerify } from './ChatwootBotTurnLogService.js';
 
 type ProcessLogContext = {
   source: ChatwootBotEventSource;
@@ -106,12 +107,17 @@ export class ChatwootBotReplyRouter {
       content,
       messageId,
     );
+    chatwootBotTurnLogService.note({ verify: summarizeVerify(verify.state, verify.attempt) });
 
     const escalateWith = async (
       reason: ChatwootBotEscalationReason,
       detail?: ChatwootBotEscalationDetail,
     ): Promise<ChatwootBotProcessResult | null> => {
       if (!escalate) return null;
+      chatwootBotTurnLogService.note({
+        outcome: 'handover',
+        detail: [reason, detail?.kind, detail?.topic].filter(Boolean).join(' · '),
+      });
       chatwootBotAnalyticsService.recordBestEffort({
         kind: 'bot_action',
         conversationId,
@@ -134,6 +140,7 @@ export class ChatwootBotReplyRouter {
 
     const pattern = matchAutoReplyFromSettings(content, settings);
     if (pattern) {
+      chatwootBotTurnLogService.note({ outcome: 'pattern', detail: `rule=${pattern.ruleId}` });
       return this.sendReply(
         settings,
         logCtx,
@@ -169,6 +176,10 @@ export class ChatwootBotReplyRouter {
       if (typingClient) await typingClient.toggleTypingStatusBestEffort(conversationId, 'off');
     }
     const llmText = llm.text;
+    chatwootBotTurnLogService.note({
+      llm: llm.testMeta,
+      verify: summarizeVerify(llm.conversationState ?? verify.state, verify.attempt),
+    });
 
     if (llm.operatorRequested) {
       const { reason, kind } = llm.operatorRequested;
@@ -194,6 +205,7 @@ export class ChatwootBotReplyRouter {
     }
 
     if (llmText) {
+      chatwootBotTurnLogService.note({ outcome: 'llm', detail: null });
       return this.sendReply(
         settings,
         logCtx,
@@ -208,6 +220,7 @@ export class ChatwootBotReplyRouter {
     }
 
     const fallback = settings.fallbackMessage || settings.echoMessage;
+    chatwootBotTurnLogService.note({ outcome: 'fallback', detail: null });
     return this.sendReply(
       settings,
       logCtx,
@@ -249,6 +262,7 @@ export class ChatwootBotReplyRouter {
     details: string,
   ): Promise<ChatwootBotProcessResult> {
     if (dryRun) {
+      chatwootBotTurnLogService.noteReply(text);
       const event = await persistEvent(logCtx, settings, {
         action: 'echo',
         reason: `dry_run_${reason}`,

@@ -63,6 +63,7 @@ import {
   claimHumanAgentActivePersistSlot,
   releaseHumanAgentActivePersistSlot,
 } from './humanAgentActivePersistGate.js';
+import { chatwootBotTurnLogService } from './ChatwootBotTurnLogService.js';
 import { chatwootBotReplyRouter } from './ChatwootBotReplyRouter.js';
 import { hasVerifyCredentialToken } from './chatwootBotVerifyDateParse.js';
 import { isDuplicateWebhookMessage } from './webhookMessageDedup.js';
@@ -217,12 +218,13 @@ export class ChatwootBotOrchestrator {
     } = {},
   ): Promise<ChatwootBotProcessResult> {
     const conversationId = resolveConversationApiId(payload);
+    // Хід бота (журнал «Діалоги бота») збирається з усіх гілок і пишеться після обробки.
     if (conversationId != null) {
       return runWithConversationLock(conversationId, () =>
-        this.processWebhookUnlocked(payload, options),
+        chatwootBotTurnLogService.run(() => this.processWebhookUnlocked(payload, options)),
       );
     }
-    return this.processWebhookUnlocked(payload, options);
+    return chatwootBotTurnLogService.run(() => this.processWebhookUnlocked(payload, options));
   }
 
   private async processWebhookUnlocked(
@@ -415,6 +417,7 @@ export class ChatwootBotOrchestrator {
       content,
       inHours,
     });
+    chatwootBotTurnLogService.begin({ conversationId, messageId, inboxId, customerText: content, inHours, dryRun });
 
     const customAttrsEarly = getConversationCustomAttributes(payload);
     if (isConversationHandledByHuman(payload, customAttrsEarly)) {
@@ -436,6 +439,7 @@ export class ChatwootBotOrchestrator {
           typingOff = ok ? 'ok' : 'fail';
         }
 
+        chatwootBotTurnLogService.note({ outcome: 'human_active' });
         const persist = claimHumanAgentActivePersistSlot(conversationId);
         return finish({
           action: 'ignored',
@@ -568,6 +572,7 @@ export class ChatwootBotOrchestrator {
     assigneeId: number | null,
     inHours: boolean,
   ): Promise<{ continueFlow: boolean; result?: ChatwootBotProcessResult }> {
+    chatwootBotTurnLogService.note({ outcome: 'reclaim', detail: reason });
     releaseHumanAgentActivePersistSlot(conversationId);
     chatwootBotAnalyticsService.recordBestEffort({
       kind: 'reclaim',
@@ -749,6 +754,7 @@ export class ChatwootBotOrchestrator {
     privateNote: string,
     hoursLog?: string,
   ): Promise<ChatwootBotProcessResult> {
+    chatwootBotTurnLogService.note({ outcome: 'handover_keyword' }, { keepOutcome: true });
     const assigneeId = resolveHandoverAssigneeId(settings);
     const assignDetail =
       settings.handoverAssignMode === 'auto_inbox'
@@ -933,6 +939,7 @@ export class ChatwootBotOrchestrator {
     content: string,
     hoursLog: string,
   ): Promise<ChatwootBotProcessResult> {
+    chatwootBotTurnLogService.note({ outcome: 'emergency' });
     const result = await this.handleAgentAssign(
       settings,
       logCtx,
@@ -1045,6 +1052,7 @@ export class ChatwootBotOrchestrator {
     /** Бот сам кличе оператора: текст за типом запиту, питання зберігаємо до отримання контактів. */
     noAnswer?: ChatwootBotEscalationDetail,
   ): Promise<ChatwootBotProcessResult> {
+    chatwootBotTurnLogService.note({ outcome: 'handover_keyword', detail: 'ooh' }, { keepOutcome: true });
     const publicMessage = noAnswer
       ? operatorHandoverMessage(settings, noAnswer.kind, false)
       : settings.handoverMessageOutOfHours;
@@ -1157,6 +1165,7 @@ export class ChatwootBotOrchestrator {
     content: string,
     phone: string | null,
   ): Promise<ChatwootBotProcessResult> {
+    chatwootBotTurnLogService.note({ outcome: 'callback' });
     const ack = settings.handoverCallbackAckMessage;
     const contactId = getContactId(payload);
     const dryReason = 'dry_run_ooh_callback';

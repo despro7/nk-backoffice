@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Spinner, Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from '@heroui/react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarDate, getLocalTimeZone, parseAbsoluteToLocal, today, toCalendarDate, type DateValue } from '@internationalized/date';
+import { getLocalTimeZone, parseAbsoluteToLocal, today, toCalendarDate } from '@internationalized/date';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { DateRange } from '@react-types/datepicker';
 import { chatwootBotApi } from '@/services/ChatwootBotService';
@@ -13,6 +13,7 @@ import ReportDateRangeFilter from '@/pages/Reports/shared/filters/ReportDateRang
 import ReportSingleSelectFilter from '@/pages/Reports/shared/filters/ReportSingleSelectFilter';
 import ReportResetFiltersButton from '@/pages/Reports/shared/filters/ReportResetFiltersButton';
 import { createStandardDatePresets } from '@/lib/dateReportingUtils';
+import { clampRange, CUSTOM_PRESET_KEY, dateRangeToIsoBounds, DEFAULT_PRESET_KEY } from './dateRange';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PERMISSIONS } from '@shared/constants/permissions';
 import { QuestionTopicsCard } from './components/QuestionTopicsCard';
@@ -26,53 +27,6 @@ function formatSeconds(seconds: number | null): string {
   if (seconds < 60) return `${Math.round(seconds)} с`;
   const min = Math.round(seconds / 60);
   return `${min} хв`;
-}
-
-function isCompleteCalendarDate(value: DateValue): boolean {
-  const { year, month, day } = value;
-  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
-    return false;
-  }
-  if (month < 1 || month > 12 || day < 1 || day > 31) {
-    return false;
-  }
-  const probe = new Date(year, month - 1, day);
-  return (
-    probe.getFullYear() === year
-    && probe.getMonth() === month - 1
-    && probe.getDate() === day
-  );
-}
-
-function dateRangeToIsoBounds(range: DateRange | null): { from: string; to: string } | null {
-  if (!range?.start || !range?.end) return null;
-  if (!isCompleteCalendarDate(range.start) || !isCompleteCalendarDate(range.end)) {
-    return null;
-  }
-
-  const tz = getLocalTimeZone();
-  const fromDate = (range.start as CalendarDate).toDate(tz);
-  fromDate.setHours(0, 0, 0, 0);
-  const toDate = (range.end as CalendarDate).toDate(tz);
-  toDate.setHours(23, 59, 59, 999);
-
-  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
-    return null;
-  }
-
-  return { from: fromDate.toISOString(), to: toDate.toISOString() };
-}
-
-const DEFAULT_PRESET_KEY = 'last7Days';
-const CUSTOM_PRESET_KEY = 'custom';
-
-/** Пресет обрізаємо знизу датою першої події: раніше статистики немає. */
-function clampRange(range: DateRange, min: DateValue | null): DateRange {
-  if (!min) return range;
-  return {
-    start: range.start.compare(min) < 0 ? min : range.start,
-    end: range.end.compare(min) < 0 ? min : range.end,
-  };
 }
 
 type KnowledgeMissesCardProps = {

@@ -221,7 +221,8 @@ export class ChatwootBotLlmRunner {
           }
           return { error: 'unknown_tool' };
         },
-        { captureToolTrace: Boolean(options?.propagateErrors) },
+        // Trace — для пісочниці й журналу «Діалоги бота».
+        { captureToolTrace: true },
       );
       const text = result.text.trim();
       const emptyReply = text.length === 0;

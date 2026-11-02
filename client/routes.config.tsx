@@ -36,6 +36,7 @@ const SettingsLlm = lazyPage(() => import('./pages/SettingsLlm'));
 const SettingsChatwootBot = lazyPage(() => import('./pages/SettingsChatwootBot'));
 const ChatwootBotStatistics = lazyPage(() => import('./pages/ChatwootBotStatistics'));
 const ChatwootBotKnowledge = lazyPage(() => import('./pages/ChatwootBotKnowledge'));
+const ChatwootBotDialogs = lazyPage(() => import('./pages/ChatwootBotDialogs'));
 const SettingsStorefront = lazyPage(() => import('./pages/SettingsStorefront'));
 const SettingsUsers = lazyPage(() => import('./pages/Settings/Users'));
 const SettingsLabelTemplates = lazyPage(() => import('./pages/SettingsLabelTemplates'));
@@ -825,6 +826,18 @@ export const appRoutes: AppRoute[] = [
       icon: <DynamicIcon name="bot" size={20} />,
       order: 9,
     },
+    permission: { name: 'statistics', group: 'chatwoot', label: 'Статистика' },
+  },
+  {
+    path: '/chatwoot-bot/dialogs',
+    component: ChatwootBotDialogs,
+    title: 'Діалоги бота',
+    pageTitle: 'Діалоги бота | NK Backoffice',
+    navLabel: 'Діалоги бота',
+    icon: <DynamicIcon name="messages-square" size={16} />,
+    inNav: true,
+    parent: 'chatwoot-bot',
+    order: 0.25,
     permission: { name: 'statistics', group: 'chatwoot', label: 'Статистика' },
   },
   {

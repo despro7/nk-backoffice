@@ -42,6 +42,8 @@ import { toVerifiedOrderDto } from '../modules/ChatwootBot/chatwootBotOrderRedac
 import { chatwootBotLlmRunner } from '../modules/ChatwootBot/ChatwootBotLlmRunner.js';
 import { chatwootBotDevWebhookService } from '../modules/ChatwootBot/ChatwootBotDevWebhookService.js';
 import { chatwootBotSandboxService } from '../modules/ChatwootBot/ChatwootBotSandboxService.js';
+import { chatwootBotTurnLogService } from '../modules/ChatwootBot/ChatwootBotTurnLogService.js';
+import type { ChatwootBotTurnOutcome } from '../../shared/types/chatwootBotDialogs.js';
 import { chatwootBotTelegramNotifier } from '../modules/ChatwootBot/chatwootBotTelegramNotifier.js';
 import type { ChatwootBotSandboxReplyRequest } from '../../shared/types/chatwootBotSandbox.js';
 import { prisma } from '../lib/utils.js';
@@ -765,6 +767,62 @@ router.get('/analytics/overview', statisticsRead, async (req: Request, res: Resp
       success: false,
       error: error instanceof Error ? error.message : 'Failed to load analytics',
     });
+  }
+});
+
+/** База посилань на розмови Chatwoot; null — Chatwoot не налаштовано. */
+async function chatwootConversationsUrl(): Promise<string | null> {
+  const settings = await chatwootBotSettingsService.getSettings();
+  const base = settings.baseUrl.trim().replace(/\/+$/, '');
+  return base && settings.accountId ? `${base}/app/accounts/${settings.accountId}/conversations` : null;
+}
+
+/**
+ * GET /api/chatwoot-bot/dialogs?from=&to=&search=&outcome= — розмови з ходами бота (журнал «Діалоги бота»).
+ */
+router.get('/dialogs', statisticsRead, async (req: Request, res: Response) => {
+  try {
+    const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+    const from = str(req.query.from);
+    const to = str(req.query.to);
+    if ([from, to].some((d) => d && Number.isNaN(new Date(d).getTime()))) {
+      res.status(400).json({ success: false, error: 'Invalid from/to date' });
+      return;
+    }
+    const [dialogs, chatwootUrl] = await Promise.all([
+      chatwootBotTurnLogService.listDialogs({
+        from,
+        to,
+        search: str(req.query.search)?.slice(0, 200),
+        outcome: str(req.query.outcome) as ChatwootBotTurnOutcome | undefined,
+      }),
+      chatwootConversationsUrl(),
+    ]);
+    res.json({ success: true, data: { dialogs, chatwootUrl } });
+  } catch (error) {
+    logServer('[ChatwootBot] dialogs list failed', error);
+    res.status(500).json({ success: false, error: 'Не вдалося завантажити діалоги' });
+  }
+});
+
+/**
+ * GET /api/chatwoot-bot/dialogs/:conversationId — усі ходи бота в розмові.
+ */
+router.get('/dialogs/:conversationId', statisticsRead, async (req: Request, res: Response) => {
+  try {
+    const conversationId = Number(req.params.conversationId);
+    if (!Number.isInteger(conversationId) || conversationId <= 0) {
+      res.status(400).json({ success: false, error: 'Невірний id розмови' });
+      return;
+    }
+    const [dialog, chatwootUrl] = await Promise.all([
+      chatwootBotTurnLogService.getDialog(conversationId),
+      chatwootConversationsUrl(),
+    ]);
+    res.json({ success: true, data: { ...dialog, chatwootUrl } });
+  } catch (error) {
+    logServer('[ChatwootBot] dialog load failed', error);
+    res.status(500).json({ success: false, error: 'Не вдалося завантажити діалог' });
   }
 });
 

@@ -13,6 +13,7 @@
 | Розділ | URL |
 |--------|-----|
 | Статистика | `/chatwoot-bot/statistics` |
+| Діалоги бота | `/chatwoot-bot/dialogs` |
 | База знань | `/chatwoot-bot/knowledge` |
 | Налаштування | `/chatwoot-bot/settings` |
 
@@ -168,6 +169,16 @@ Tool `request_order_cancellation` (лише коли `orderCancelEnabled`, де�
 - Пошук без зовнішніх сервісів (`chatwootBotKnowledgeSearch.ts`): збіг основ слів (перші 5 літер) з питаннями, назвою й тегами + словник синонімів предметної області; українські й російські форми зводяться до спільної основи («скидка военным» = «знижка військовим»). Загальні слова магазину («замовлення», «заказ», «товар») у пошуку статті не рахуються — збіг лише по них давав хибні статті; для групування тем вони лишаються. Tool повертає до 3 статей; індекс кешується на 60 с і скидається при записі.
 - LLM відповідає своїми словами лише за фактами з `answer`; якщо `found: false` — пробує `get_storefront_site_pages`.
 
+### Діалоги бота (журнал)
+
+Сторінка **«Діалоги бота»** (`/chatwoot-bot/dialogs`, право «Статистика»): розмови, на які реагував бот, з логікою кожної відповіді — для розбору відповідей і правки сценаріїв, інструкцій і статей. Розмови, які бот не передав оператору, у Chatwoot лишаються в статусі «Очікує» (pending), тому серед «Відкритих» їх не видно.
+
+- **Запис:** `ChatwootBotTurnLogService` обгортає обробку вебхука (`AsyncLocalStorage`): хід починається з повідомлення клієнта (`begin`), гілки оркестратора й роутера позначають результат (`note`), `recordBotReply` додає публічні відповіді; після обробки хід пишеться в `chatwoot_bot_turns` (best-effort, помилка запису не впливає на відповідь). Результати: `llm` · `pattern` · `fallback` · `handover` (бот передав оператору: request_operator, невдала верифікація, повтор — з причиною) · `handover_keyword` · `emergency` · `callback` · `human_active` (розмову веде оператор, бот мовчав) · `reclaim`.
+- **Що зберігається:** текст клієнта, відповіді бота, результат і причина, робочі години, `dry_run`, діагностика LLM як у пісочниці (модель, токени, USD, `toolTrace` — trace тепер збирається завжди; відповіді інструментів довші за ~6000 симв. обрізаються, якщо весь JSON > 60 KB), стан верифікації після ходу (`summarizeVerify`, спільний з пісочницею).
+- **Зберігання:** 90 днів (`CHATWOOT_BOT_TURN_RETENTION_DAYS`), очищення — щоденний cron журналу бота (04:30).
+- **API:** `GET /api/chatwoot-bot/dialogs?from=&to=&search=&outcome=` — розмови за період (до 300): перше питання, ходи, лічильник результатів, інструменти, вартість; пошук за текстом клієнта або № розмови, фільтр — за результатом. `GET /api/chatwoot-bot/dialogs/:conversationId` — усі ходи. Обидва повертають `chatwootUrl` для посилань на розмову.
+- **UI:** фільтр періоду як у статистиці (`ChatwootBotStatistics/dateRange.ts`), таблиця з мітками результатів та інструментів; рядок відкриває drawer з діалогом і тим самим блоком під кожною відповіддю, що в пісочниці (`components/BotTurnView.tsx`). Статті бази знань редагуються з кроку `search_knowledge_base`; інструкції — поповер з поточним текстом і «Редагувати в налаштуваннях» (вкладка AI з пошуком за ключем, `state.instructionSearch`). Відповіді операторів — лише в Chatwoot.
+
 ### Теми питань (статистика)
 
 Унікальні питання клієнтів (`contentNorm` з аналітики) зберігаються в `chatwoot_bot_question_assignments` і групуються в теми `chatwoot_bot_question_topics`. Картка «Теми питань» у статистиці показує теми з кількістю питань і статтю бази знань, яку бот знайде за темою, і в колонці «Відповідь» — інструменти, якими бот відповідав на питання теми; «Немає» — ні статті, ні інструмента.
@@ -241,6 +252,7 @@ Chatwoot на VPS не достукаться до `localhost` – потріб�
 | `20261030140000_chatwoot_bot_knowledge_entries` | `chatwoot_bot_knowledge_entries` |
 | `20261030160000_chatwoot_bot_question_topics` | `chatwoot_bot_question_topics`, `chatwoot_bot_question_assignments` |
 | `20261102120000_chatwoot_bot_message_intents` | `chatwoot_bot_message_intents` |
+| `20261102200000_chatwoot_bot_turns` | `chatwoot_bot_turns` |
 
 Після деплою: `npm run db:migrate:prod` і `npm run db:generate`.
 
@@ -263,6 +275,7 @@ Chatwoot на VPS не достукаться до `localhost` – потріб�
 | `server/modules/ChatwootBot/ChatwootBotContactSyncService.ts` | Телефон / email з чату → профіль контакту |
 | `server/modules/ChatwootBot/chatwootBotContactFields.ts` | Email і контекст сторінки з payload |
 | `server/modules/ChatwootBot/ChatwootBotSandboxService.ts` | Пісочниця: хід бота без Chatwoot, сценарії |
+| `server/modules/ChatwootBot/ChatwootBotTurnLogService.ts` | Журнал ходів бота («Діалоги бота»): збір під час обробки вебхука, список / розмова, retention |
 | `server/modules/ChatwootBot/ChatwootBotStorefrontSiteToolService.ts` | Сторінки сайту (WP REST / HTML, TTL 6 год) |
 | `shared/constants/chatwootBotLlmTools.ts` | Метадані LLM tools (runner + UI) |
 | `server/modules/ChatwootBot/ChatwootBotOrderToolService.ts` | Verified order для tool |

@@ -8,29 +8,29 @@ datasource db {
 }
 
 model User {
-  id                    Int             @id @default(autoincrement())
-  email                 String          @unique
-  name                  String?
-  role                  String
-  roleName              String?
-  password              String
-  refreshToken          String?
-  refreshTokenExpiresAt DateTime?
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
-  isActive              Boolean         @default(true)
-  lastActivityAt        DateTime?
-  lastLoginAt           DateTime?
-  dilovodUserId         String?         // ID користувача в Діловоді (для відправки документів від його імені)
-  OrdersHistory         OrdersHistory[]
-  hrEmployee                 HrEmployee?
-  hrTimesheetLocks           HrTimesheetMonth[]
-  hrTimesheetEntriesCreated  HrTimesheetEntry[]  @relation("HrTimesheetEntryCreatedBy")
-  hrPayrollLocks             HrPayrollPeriod[]   @relation("HrPayrollLockedBy")
-  hrAuditLogs                HrAuditLog[]
-  catalogProductLabels       CatalogProductLabel[]
+  id                               Int                        @id @default(autoincrement())
+  email                            String                     @unique
+  name                             String?
+  role                             String
+  roleName                         String?
+  password                         String
+  refreshToken                     String?
+  refreshTokenExpiresAt            DateTime?
+  createdAt                        DateTime                   @default(now())
+  updatedAt                        DateTime                   @updatedAt
+  isActive                         Boolean                    @default(true)
+  lastActivityAt                   DateTime?
+  lastLoginAt                      DateTime?
+  dilovodUserId                    String? // ID користувача в Діловоді (для відправки документів від його імені)
+  OrdersHistory                    OrdersHistory[]
+  hrEmployee                       HrEmployee?
+  hrTimesheetLocks                 HrTimesheetMonth[]
+  hrTimesheetEntriesCreated        HrTimesheetEntry[]         @relation("HrTimesheetEntryCreatedBy")
+  hrPayrollLocks                   HrPayrollPeriod[]          @relation("HrPayrollLockedBy")
+  hrAuditLogs                      HrAuditLog[]
+  catalogProductLabels             CatalogProductLabel[]
   catalogProductLabelDraftsUpdated CatalogProductLabelDraft[]
-  catalogLabelTemplatesUpdated CatalogLabelTemplate[]
+  catalogLabelTemplatesUpdated     CatalogLabelTemplate[]
 
   @@map("users")
 }
@@ -59,44 +59,44 @@ model RolePermission {
 }
 
 model Order {
-  id              Int             @id
-  externalId      String          @unique
-  orderDate       DateTime?
-  quantity        Int
-  status          String
-  statusText      String
-  items           String          @db.LongText
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime?
-  readyToShipAt   DateTime?       // Дата набуття статусу 3 (Готове до відправки)
-  cityName        String?
-  customerName    String?
-  customerPhone   String?
-  provider        String?
-  ttn             String
-  sajt            String?
-  pricinaZnizki   String?
-  rawData         String          @db.LongText
-  payloadData     Json?
-  deliveryAddress String?
-  lastSynced      DateTime        @default(now())
-  orderNumber     String
-  paymentMethod   String?
-  shippingMethod  String?
-  totalPrice      Float?
-  syncError       String?
-  syncStatus      String          @default("pending")
-  dilovodDocId       String?
-  dilovodSaleExportDate  DateTime?       // Дата відвантаження в Діловод (documents.sale)
-  dilovodSaleDocsCount   Int?            // Кількість документів відвантаження в Діловоді (> 1 = помилка дублікату)
-  dilovodSaleExportLockUntil DateTime?    // TTL-lock для атомарного створення documents.sale
-  dilovodSaleExportLockToken String?      @db.VarChar(64) // Токен власника lock-а
-  dilovodExportDate      DateTime?       // Дата вивантаження в Dilovod
-  dilovodCashInDate      DateTime?       // Дата додавання документу (documents.cashIn)
-  dilovodCashInLastChecked DateTime?     // Дата останньої перевірки cashIn (для уникнення частих запитів)
-  dilovodReturnDate      DateTime?       // Дата документа повернення (documents.saleReturn), тільки для статусів 6/7
-  dilovodReturnDocsCount Int?            // Кількість документів повернення (> 1 = помилка дублікату)
-  OrdersHistory        OrdersHistory[]
+  id                         Int             @id
+  externalId                 String          @unique
+  orderDate                  DateTime?
+  quantity                   Int
+  status                     String
+  statusText                 String
+  items                      String          @db.LongText
+  createdAt                  DateTime        @default(now())
+  updatedAt                  DateTime?
+  readyToShipAt              DateTime? // Дата набуття статусу 3 (Готове до відправки)
+  cityName                   String?
+  customerName               String?
+  customerPhone              String?
+  provider                   String?
+  ttn                        String
+  sajt                       String?
+  pricinaZnizki              String?
+  rawData                    String          @db.LongText
+  payloadData                Json?
+  deliveryAddress            String?
+  lastSynced                 DateTime        @default(now())
+  orderNumber                String
+  paymentMethod              String?
+  shippingMethod             String?
+  totalPrice                 Float?
+  syncError                  String?
+  syncStatus                 String          @default("pending")
+  dilovodDocId               String?
+  dilovodSaleExportDate      DateTime? // Дата відвантаження в Діловод (documents.sale)
+  dilovodSaleDocsCount       Int? // Кількість документів відвантаження в Діловоді (> 1 = помилка дублікату)
+  dilovodSaleExportLockUntil DateTime? // TTL-lock для атомарного створення documents.sale
+  dilovodSaleExportLockToken String?         @db.VarChar(64) // Токен власника lock-а
+  dilovodExportDate          DateTime? // Дата вивантаження в Dilovod
+  dilovodCashInDate          DateTime? // Дата додавання документу (documents.cashIn)
+  dilovodCashInLastChecked   DateTime? // Дата останньої перевірки cashIn (для уникнення частих запитів)
+  dilovodReturnDate          DateTime? // Дата документа повернення (documents.saleReturn), тільки для статусів 6/7
+  dilovodReturnDocsCount     Int? // Кількість документів повернення (> 1 = помилка дублікату)
+  OrdersHistory              OrdersHistory[]
 
   @@index([status])
   @@index([externalId])
@@ -204,30 +204,30 @@ model SettingsBase {
 }
 
 model WarehouseMovement {
-  id                   Int       @id @default(autoincrement())
-  draftCreatedAt       DateTime  @default(now())
-  draftLastEditedAt    DateTime  @updatedAt
-  movementDate         DateTime? // Дата/час переміщення (використовується для запиту партій та формування payload для Діловода)
-  sentToDilovodAt      DateTime? // Дата першої відправки до Діловода
-  lastSentToDilovodAt  DateTime? // Дата останньої (проміжної або фінальної) відправки до Діловода
-  submittedAt          DateTime? // Момент підтвердження відправки на отримання (pending_receipt)
-  receiptScanStartedAt DateTime? // Початок сканування при прийомі на МС
-  receiptScanEndedAt   DateTime? // Останнє сканування при прийомі на МС
-  receiptScannedBy     Int?      // Користувач, який сканував товари при прийомі
-  receivedBy           Int?      // Користувач, який підтвердив отримання
-  receivedAt           DateTime? // Момент підтвердження отримання
-  internalDocNumber    String    @unique @default("00001")
-  docNumber            String?   // Номер документа від Діловода (після відправки)
-  dilovodDocId         String?   @unique // ID документа в Діловоді (унікальний — для upsert при імпорті з history)
-  items                    String    @db.LongText
-  submittedItemsSnapshot   String?   @db.LongText // Snapshot відправлених порцій на момент submit
-  receivedItemsSnapshot    String?   @db.LongText // Snapshot отриманих порцій на момент confirm-receipt
-  deviations               String?   @db.LongText
-  status                   String    @default("draft") // 'draft' | 'active' | 'pending_receipt' | 'finalized' | 'deleted'
-  sourceWarehouse      String
-  destinationWarehouse String
-  notes                String?
-  createdBy            Int
+  id                     Int       @id @default(autoincrement())
+  draftCreatedAt         DateTime  @default(now())
+  draftLastEditedAt      DateTime  @updatedAt
+  movementDate           DateTime? // Дата/час переміщення (використовується для запиту партій та формування payload для Діловода)
+  sentToDilovodAt        DateTime? // Дата першої відправки до Діловода
+  lastSentToDilovodAt    DateTime? // Дата останньої (проміжної або фінальної) відправки до Діловода
+  submittedAt            DateTime? // Момент підтвердження відправки на отримання (pending_receipt)
+  receiptScanStartedAt   DateTime? // Початок сканування при прийомі на МС
+  receiptScanEndedAt     DateTime? // Останнє сканування при прийомі на МС
+  receiptScannedBy       Int? // Користувач, який сканував товари при прийомі
+  receivedBy             Int? // Користувач, який підтвердив отримання
+  receivedAt             DateTime? // Момент підтвердження отримання
+  internalDocNumber      String    @unique @default("00001")
+  docNumber              String? // Номер документа від Діловода (після відправки)
+  dilovodDocId           String?   @unique // ID документа в Діловоді (унікальний — для upsert при імпорті з history)
+  items                  String    @db.LongText
+  submittedItemsSnapshot String?   @db.LongText // Snapshot відправлених порцій на момент submit
+  receivedItemsSnapshot  String?   @db.LongText // Snapshot отриманих порцій на момент confirm-receipt
+  deviations             String?   @db.LongText
+  status                 String    @default("draft") // 'draft' | 'active' | 'pending_receipt' | 'finalized' | 'deleted'
+  sourceWarehouse        String
+  destinationWarehouse   String
+  notes                  String?
+  createdBy              Int
 
   @@index([status])
   @@index([draftCreatedAt])
@@ -266,15 +266,15 @@ model StockMovementHistory {
 
 model WarehouseInventory {
   id            Int       @id @default(autoincrement())
-  warehouse     String    @default("small")   // Склад: "small" = Малий склад
-  status        String    @default("draft")   // draft | in_progress | completed
+  warehouse     String    @default("small") // Склад: "small" = Малий склад
+  status        String    @default("draft") // draft | in_progress | completed
   comment       String?   @db.Text
-  items         String    @db.LongText        // JSON: InventoryProduct[]
+  items         String    @db.LongText // JSON: InventoryProduct[]
   createdBy     Int
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   completedAt   DateTime?
-  inventoryDate DateTime?                     // Логічна дата проведення інвентаризації (задається користувачем)
+  inventoryDate DateTime? // Логічна дата проведення інвентаризації (задається користувачем)
 
   @@index([status])
   @@index([createdBy])
@@ -284,20 +284,20 @@ model WarehouseInventory {
 }
 
 model WarehouseReturnHistory {
-  id            Int         @id @default(autoincrement())
-  orderId       Int
-  orderNumber   String
-  returnNumber  String?     @db.VarChar(255)  // Номер повернення з API Dilovod
-  ttn           String?     @db.VarChar(255)
-  firmId        String?     @db.VarChar(255)
-  returnDate    DateTime?
-  items         String      @db.LongText        // JSON: ReturnHistoryItem[]
-  returnReason  String
-  customReason  String?     @db.Text
-  comment       String?     @db.Text
-  payload       String      @db.LongText        // JSON: повний payload відправки
-  createdBy     Int
-  createdAt     DateTime    @default(now())
+  id           Int       @id @default(autoincrement())
+  orderId      Int
+  orderNumber  String
+  returnNumber String?   @db.VarChar(255) // Номер повернення з API Dilovod
+  ttn          String?   @db.VarChar(255)
+  firmId       String?   @db.VarChar(255)
+  returnDate   DateTime?
+  items        String    @db.LongText // JSON: ReturnHistoryItem[]
+  returnReason String
+  customReason String?   @db.Text
+  comment      String?   @db.Text
+  payload      String    @db.LongText // JSON: повний payload відправки
+  createdBy    Int
+  createdAt    DateTime  @default(now())
 
   @@index([orderId])
   @@index([returnNumber])
@@ -307,22 +307,22 @@ model WarehouseReturnHistory {
 }
 
 model WarehouseWriteOffHistory {
-  id             Int         @id @default(autoincrement())
-  writeOffNumber String?     @unique @db.VarChar(255)  // ID документа в Dilovod (якщо є)
-  docNumber      String?     @db.VarChar(255)
-  firmId         String?     @db.VarChar(255)
-  storageId      String?     @db.VarChar(255)
+  id             Int       @id @default(autoincrement())
+  writeOffNumber String?   @unique @db.VarChar(255) // ID документа в Dilovod (якщо є)
+  docNumber      String?   @db.VarChar(255)
+  firmId         String?   @db.VarChar(255)
+  storageId      String?   @db.VarChar(255)
   writeOffDate   DateTime?
-  items          String      @db.LongText        // JSON: WriteOffItem[]
+  items          String    @db.LongText // JSON: WriteOffItem[]
   writeOffReason String
-  customReason   String?     @db.Text
-  comment        String?     @db.Text
-  remark         String?     @db.Text
-  source         String      @default("local") @db.VarChar(32) // local | dilovod
-  status         String      @default("created") @db.VarChar(32) // created | deleted
-  payload        String      @db.LongText        // JSON: повний payload відправки
+  customReason   String?   @db.Text
+  comment        String?   @db.Text
+  remark         String?   @db.Text
+  source         String    @default("local") @db.VarChar(32) // local | dilovod
+  status         String    @default("created") @db.VarChar(32) // created | deleted
+  payload        String    @db.LongText // JSON: повний payload відправки
   createdBy      Int
-  createdAt      DateTime    @default(now())
+  createdAt      DateTime  @default(now())
 
   @@index([createdAt])
   @@index([createdBy])
@@ -355,21 +355,21 @@ model WarehouseSurplusHistory {
 }
 
 model WarehouseReleaseSet {
-  id                Int      @id @default(autoincrement())
-  internalDocNumber String?  @unique @db.VarChar(32)
-  setSku            String?  @db.VarChar(191)
-  quantity          Int
-  items             Json
-  storageId         String?  @db.VarChar(191)
-  firmId            String?  @db.VarChar(255)
-  dilovodDocId      String?  @db.VarChar(255)
-  operationType        String   @default("kit") @db.VarChar(20)
-  comment              String?  @db.Text
-  correctionSessionId  String?  @db.VarChar(36)
-  status               String   @default("created")
-  createdBy            Int?
-  createdAt            DateTime @default(now())
-  operDate             DateTime @default(now())
+  id                  Int      @id @default(autoincrement())
+  internalDocNumber   String?  @unique @db.VarChar(32)
+  setSku              String?  @db.VarChar(191)
+  quantity            Int
+  items               Json
+  storageId           String?  @db.VarChar(191)
+  firmId              String?  @db.VarChar(255)
+  dilovodDocId        String?  @db.VarChar(255)
+  operationType       String   @default("kit") @db.VarChar(20)
+  comment             String?  @db.Text
+  correctionSessionId String?  @db.VarChar(36)
+  status              String   @default("created")
+  createdBy           Int?
+  createdAt           DateTime @default(now())
+  operDate            DateTime @default(now())
 
   @@index([setSku])
   @@index([status])
@@ -425,7 +425,7 @@ model OrdersCache {
   externalId     String   @unique
   processedItems String?  @db.LongText
   totalQuantity  Int
-  totalWeight    Decimal? @db.Decimal(10,2) // Додаємо вагу у кг
+  totalWeight    Decimal? @db.Decimal(10, 2) // Додаємо вагу у кг
   cacheUpdatedAt DateTime @default(now())
   cacheVersion   Int      @default(1)
   createdAt      DateTime @default(now())
@@ -448,30 +448,31 @@ model AuthSettings {
 }
 
 model ShippingProvider {
-  id                Int      @id @default(autoincrement())
-  name              String   @db.VarChar(100)  // "Нова Пошта", "Укрпошта"
-  providerType      String   @db.VarChar(20)   // "novaposhta", "ukrposhta"
-  senderName        String   @db.VarChar(200)  // "ФОП Бубнов С.В.", "ФОП Бубнова М.В."
-  senderId          Int?                       // Ідентифікатор відправника в SalesDrive
-  isActive          Boolean  @default(false)   // Активний провайдер
-  order             Int      @default(0)       // Порядок сортування
-  
+  id           Int     @id @default(autoincrement())
+  name         String  @db.VarChar(100) // "Нова Пошта", "Укрпошта"
+  providerType String  @db.VarChar(20) // "novaposhta", "ukrposhta"
+  senderName   String  @db.VarChar(200) // "ФОП Бубнов С.В.", "ФОП Бубнова М.В."
+  senderId     Int? // Ідентифікатор відправника в SalesDrive
+  isActive     Boolean @default(false) // Активний провайдер
+  order        Int     @default(0) // Порядок сортування
+
   // API ключі для Нової Пошти
-  apiKey            String?  @db.VarChar(500)  // API ключ НП
-  
+  apiKey String? @db.VarChar(500) // API ключ НП
+
   // API ключі для Укрпошти
-  bearerEcom        String?  @db.VarChar(500)  // Bearer токен для ecom
-  counterpartyToken String?  @db.VarChar(500)  // Counterparty токен
-  bearerStatus      String?  @db.VarChar(500)  // Bearer токен для статусів
-  
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  bearerEcom        String? @db.VarChar(500) // Bearer токен для ecom
+  counterpartyToken String? @db.VarChar(500) // Counterparty токен
+  bearerStatus      String? @db.VarChar(500) // Bearer токен для статусів
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([providerType])
   @@index([isActive])
   @@index([order])
   @@map("shipping_providers")
 }
+
 model meta_logs {
   id          Int      @id @default(autoincrement())
   datetime    DateTime @default(now())
@@ -480,8 +481,8 @@ model meta_logs {
   status      String   @db.VarChar(16)
   message     String?  @db.Text
   data        Json?
-  readBy      Json?    // { [userId]: "ISO", "_all": "ISO" } — хто і коли прочитав
-  hiddenBy    Json?    // { [userId]: "ISO", "_all": "ISO" } — хто і коли приховав
+  readBy      Json? // { [userId]: "ISO", "_all": "ISO" } — хто і коли прочитав
+  hiddenBy    Json? // { [userId]: "ISO", "_all": "ISO" } — хто і коли приховав
   orderNumber String?  @db.VarChar(128)
   initiatedBy String?  @db.VarChar(128) // Ініціатор дії: userId (число) або "cron:назва", "webhook:назва", "system:назва"
 
@@ -496,64 +497,64 @@ model meta_logs {
 
 /// Локальне дзеркало Dilovod catalogs.goods (папки + товари)
 model CatalogGood {
-  id              String   @id @db.VarChar(32) // Dilovod id
-  parentId        String?  @db.VarChar(32)
-  isGroup         Boolean  @default(false)
-  delMark         Boolean  @default(false)
-  name            String   @db.VarChar(512) // uk only
-  sku             String?  @unique @db.VarChar(64) // Dilovod productNum; null для папок без артикула
-  mainUnitId      String?  @db.VarChar(32)
-  packageRatio    Float?
-  weight          Float?
+  id                       String    @id @db.VarChar(32) // Dilovod id
+  parentId                 String?   @db.VarChar(32)
+  isGroup                  Boolean   @default(false)
+  delMark                  Boolean   @default(false)
+  name                     String    @db.VarChar(512) // uk only
+  sku                      String?   @unique @db.VarChar(64) // Dilovod productNum; null для папок без артикула
+  mainUnitId               String?   @db.VarChar(32)
+  packageRatio             Float?
+  weight                   Float?
   /// Dilovod catalogs.goods.specQty — «Розрахунок на N шт.» специфікації продукції
-  specQty         Float?
-  accPolicyId     String?  @db.VarChar(32)
-  printName       String?  @db.VarChar(512)
-  description     String?  @db.Text // короткий опис → Dilovod
+  specQty                  Float?
+  accPolicyId              String?   @db.VarChar(32)
+  printName                String?   @db.VarChar(512)
+  description              String?   @db.Text // короткий опис → Dilovod
   /// Повний опис лише локально (WP-експорт); Dilovod sync не затирає
-  fullDescription String?  @db.Text
+  fullDescription          String?   @db.Text
   /// Не публікувати на вітрину WooCommerce
-  doNotPublish    Boolean  @default(false)
+  doNotPublish             Boolean   @default(false)
   /// Preset конструктора опису; null = default preset
-  storefrontPresetId String? @db.VarChar(36)
+  storefrontPresetId       String?   @db.VarChar(36)
   /// Склад товару — JSON-масив тегів (lowercase)
-  productIngredientsJson String? @db.Text
-  productNutritionJson String? @db.Text
+  productIngredientsJson   String?   @db.Text
+  productNutritionJson     String?   @db.Text
   /// TipTap JSON документ повного опису вітрини (storefrontBlock nodes + абзаци)
-  storefrontDescriptionDoc String? @db.Text
+  storefrontDescriptionDoc String?   @db.Text
   /// Брутто, кг; null → computed з BOM/tech card
-  grossWeight     Float?
+  grossWeight              Float?
   /// Маса осн. продукту, кг (ручне поле упаковки)
-  mainProductWeight Float?
+  mainProductWeight        Float?
   /// Phase 2: WooCommerce product id
-  wooProductId    Int?
-  wooLastSyncedAt DateTime?
+  wooProductId             Int?
+  wooLastSyncedAt          DateTime?
   /// Локальний порядок siblings (інтервал крок 10); не в Dilovod
-  sortOrder       Int      @default(0)
+  sortOrder                Int       @default(0)
   /// Локальний коеф. порцій; dual-write → products.unitRatio
-  unitRatio       Float?   @default(1)
+  unitRatio                Float?    @default(1)
   /// Дзеркало products.stockBalanceByStock JSON {"1":GP,"2":МС}
-  stockBalanceByStock String? @db.LongText
-  syncedAt        DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  createdAt       DateTime @default(now())
+  stockBalanceByStock      String?   @db.LongText
+  syncedAt                 DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  createdAt                DateTime  @default(now())
   /// Локальна дата архівації (папка «Архів – …»); Dilovod не зберігає
-  archivedAt      DateTime?
+  archivedAt               DateTime?
 
-  components CatalogGoodComponent[] @relation("CatalogGoodComponents")
-  usedIn     CatalogGoodComponent[] @relation("CatalogComponentGoods")
-  prices     CatalogGoodPrice[]
-  barcodes   CatalogGoodBarcode[]
-  images     CatalogGoodImage[]
+  components             CatalogGoodComponent[] @relation("CatalogGoodComponents")
+  usedIn                 CatalogGoodComponent[] @relation("CatalogComponentGoods")
+  prices                 CatalogGoodPrice[]
+  barcodes               CatalogGoodBarcode[]
+  images                 CatalogGoodImage[]
   /// Override пресета наліпки «Порція»; null = дефолт Settings
-  portionLabelTemplateId String? @db.VarChar(36)
+  portionLabelTemplateId String?                @db.VarChar(36)
   /// Override пресета наліпки «Коробка»; null = дефолт Settings
-  boxLabelTemplateId String? @db.VarChar(36)
+  boxLabelTemplateId     String?                @db.VarChar(36)
 
-  labelDrafts CatalogProductLabelDraft[]
-  labels     CatalogProductLabel[]
-  portionLabelTemplate CatalogLabelTemplate? @relation("PortionLabelTemplate", fields: [portionLabelTemplateId], references: [id], onDelete: SetNull)
-  boxLabelTemplate     CatalogLabelTemplate? @relation("BoxLabelTemplate", fields: [boxLabelTemplateId], references: [id], onDelete: SetNull)
+  labelDrafts          CatalogProductLabelDraft[]
+  labels               CatalogProductLabel[]
+  portionLabelTemplate CatalogLabelTemplate?      @relation("PortionLabelTemplate", fields: [portionLabelTemplateId], references: [id], onDelete: SetNull)
+  boxLabelTemplate     CatalogLabelTemplate?      @relation("BoxLabelTemplate", fields: [boxLabelTemplateId], references: [id], onDelete: SetNull)
 
   @@index([parentId])
   @@index([parentId, sortOrder])
@@ -604,20 +605,20 @@ model CatalogGoodImage {
 
 /// BOM / tpGoods — склад комплекту
 model CatalogGoodComponent {
-  id              Int      @id @default(autoincrement())
-  parentGoodId    String   @db.VarChar(32)
-  componentGoodId String   @db.VarChar(32)
-  qty             Float    @default(1)
-  rowNum          Int      @default(0)
+  id                 Int      @id @default(autoincrement())
+  parentGoodId       String   @db.VarChar(32)
+  componentGoodId    String   @db.VarChar(32)
+  qty                Float    @default(1)
+  rowNum             Int      @default(0)
   /// Dilovod tpGoods.rowID — стабільний id рядка табличної частини
-  dilovodRowId    String?  @db.VarChar(32)
-  unitId          String?  @db.VarChar(32)
+  dilovodRowId       String?  @db.VarChar(32)
+  unitId             String?  @db.VarChar(32)
   /// Примітка рядка tpGoods → Dilovod `remark` (varchar 150)
-  note            String?  @db.VarChar(512)
+  note               String?  @db.VarChar(512)
   /// Локально: % втрат при готуванні (0–100)
-  cookingLossPercent Float? @default(0)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  cookingLossPercent Float?   @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   parentGood    CatalogGood @relation("CatalogGoodComponents", fields: [parentGoodId], references: [id], onDelete: Cascade)
   componentGood CatalogGood @relation("CatalogComponentGoods", fields: [componentGoodId], references: [id], onDelete: Restrict)
@@ -691,17 +692,17 @@ model CatalogProductLabelDraft {
 }
 
 model CatalogProductLabel {
-  id            Int      @id @default(autoincrement())
-  goodId        String   @db.VarChar(32)
-  batchId       String   @db.VarChar(32)
-  labelKind     String   @db.VarChar(16)
-  batchNumber   String   @db.VarChar(255)
-  version       Int
-  barcode       String   @db.VarChar(64)
-  pdfFileName   String   @db.VarChar(255)
-  payloadJson   Json
-  publishedBy   Int?
-  publishedAt   DateTime @default(now())
+  id          Int      @id @default(autoincrement())
+  goodId      String   @db.VarChar(32)
+  batchId     String   @db.VarChar(32)
+  labelKind   String   @db.VarChar(16)
+  batchNumber String   @db.VarChar(255)
+  version     Int
+  barcode     String   @db.VarChar(64)
+  pdfFileName String   @db.VarChar(255)
+  payloadJson Json
+  publishedBy Int?
+  publishedAt DateTime @default(now())
 
   good CatalogGood @relation(fields: [goodId], references: [id], onDelete: Cascade)
   user User?       @relation(fields: [publishedBy], references: [id], onDelete: SetNull)
@@ -713,25 +714,25 @@ model CatalogProductLabel {
 
 /// Master-шаблон наліпки (pdfme Template JSON).
 model CatalogLabelTemplate {
-  id            String   @id @default(uuid()) @db.VarChar(36)
-  slug          String   @unique @db.VarChar(64)
-  name          String   @db.VarChar(128)
-  iconKey       String?  @db.VarChar(48)
-  labelKind     String   @db.VarChar(16)
-  audience      String   @db.VarChar(16)
-  templateJson  Json
-  basePdfMeta   Json?
-  schemaVersion     Int      @default(1)
-  isArchived        Boolean  @default(false)
-  isDeletionLocked  Boolean  @default(false)
-  updatedBy         Int?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id               String   @id @default(uuid()) @db.VarChar(36)
+  slug             String   @unique @db.VarChar(64)
+  name             String   @db.VarChar(128)
+  iconKey          String?  @db.VarChar(48)
+  labelKind        String   @db.VarChar(16)
+  audience         String   @db.VarChar(16)
+  templateJson     Json
+  basePdfMeta      Json?
+  schemaVersion    Int      @default(1)
+  isArchived       Boolean  @default(false)
+  isDeletionLocked Boolean  @default(false)
+  updatedBy        Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  user            User?                         @relation(fields: [updatedBy], references: [id], onDelete: SetNull)
-  defaults        CatalogLabelTemplateDefault[]
-  portionGoods    CatalogGood[]                 @relation("PortionLabelTemplate")
-  boxGoods        CatalogGood[]                 @relation("BoxLabelTemplate")
+  user         User?                         @relation(fields: [updatedBy], references: [id], onDelete: SetNull)
+  defaults     CatalogLabelTemplateDefault[]
+  portionGoods CatalogGood[]                 @relation("PortionLabelTemplate")
+  boxGoods     CatalogGood[]                 @relation("BoxLabelTemplate")
 
   @@index([labelKind, audience, isArchived])
   @@map("catalog_label_templates")
@@ -816,16 +817,16 @@ model HrPerson {
 
 /// Юрособа / ФОП / «нештатні готівка» для зайнятості HR
 model HrLegalEntity {
-  id            Int            @id @default(autoincrement())
-  code          String         @unique @db.VarChar(32)
-  name          String         @db.VarChar(255)
-  kind          String         @db.VarChar(32)
+  id                   Int            @id @default(autoincrement())
+  code                 String         @unique @db.VarChar(32)
+  name                 String         @db.VarChar(255)
+  kind                 String         @db.VarChar(32)
   dilovodFirmId        String?        @unique @db.VarChar(32)
   dilovodPersonGroupId String?        @unique @db.VarChar(32)
   isActive             Boolean        @default(true)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  employments   HrEmployment[]
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  employments          HrEmployment[]
 
   @@map("hr_legal_entities")
 }
@@ -859,23 +860,23 @@ model HrEmployee {
 
 /// Зайнятість у часі: людина × юрособа × група оплати
 model HrEmployment {
-  id                 Int             @id @default(autoincrement())
+  id                 Int                @id @default(autoincrement())
   employeeId         Int
   legalEntityId      Int
   payGroupId         Int
-  personnelNumber    String?         @db.VarChar(16)
-  dilovodEmployeeId  String?         @unique @db.VarChar(32)
-  officialPosition   String?         @db.VarChar(255)
-  unofficialPosition String?         @db.VarChar(255)
-  employeeCategory   String?         @db.VarChar(64)
-  benefitCode        String?         @db.VarChar(32)
-  validFrom          DateTime        @db.Date
-  validTo            DateTime?       @db.Date
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
-  employee           HrEmployee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  legalEntity        HrLegalEntity   @relation(fields: [legalEntityId], references: [id], onDelete: Restrict)
-  payGroup           HrPayGroup      @relation(fields: [payGroupId], references: [id], onDelete: Restrict)
+  personnelNumber    String?            @db.VarChar(16)
+  dilovodEmployeeId  String?            @unique @db.VarChar(32)
+  officialPosition   String?            @db.VarChar(255)
+  unofficialPosition String?            @db.VarChar(255)
+  employeeCategory   String?            @db.VarChar(64)
+  benefitCode        String?            @db.VarChar(32)
+  validFrom          DateTime           @db.Date
+  validTo            DateTime?          @db.Date
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  employee           HrEmployee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  legalEntity        HrLegalEntity      @relation(fields: [legalEntityId], references: [id], onDelete: Restrict)
+  payGroup           HrPayGroup         @relation(fields: [payGroupId], references: [id], onDelete: Restrict)
   payTerms           HrPayTerms[]
   timesheetEntries   HrTimesheetEntry[]
   payrollLines       HrPayrollLine[]
@@ -976,21 +977,21 @@ model HrTimesheetEntry {
 
 /// Місячний розрахунок виплат: draft → calculated → locked (locked незмінний)
 model HrPayrollPeriod {
-  id               Int              @id @default(autoincrement())
+  id               Int               @id @default(autoincrement())
   year             Int
   month            Int
   /// Ключ режиму періоду: production | month | custom:YYYY-MM-DD:YYYY-MM-DD
-  periodKey        String           @default("production") @db.VarChar(80)
-  status           String           @default("draft") @db.VarChar(16)
-  version          Int              @default(1)
-  formulaId        String           @db.VarChar(64)
+  periodKey        String            @default("production") @db.VarChar(80)
+  status           String            @default("draft") @db.VarChar(16)
+  version          Int               @default(1)
+  formulaId        String            @db.VarChar(64)
   /// Знімок коефіцієнтів формули (не живі ставки)
   formulaSnapshot  Json
   timesheetMonthId Int?
   lockedAt         DateTime?
   lockedByUserId   Int?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
   timesheetMonth   HrTimesheetMonth? @relation(fields: [timesheetMonthId], references: [id], onDelete: SetNull)
   lockedByUser     User?             @relation("HrPayrollLockedBy", fields: [lockedByUserId], references: [id], onDelete: SetNull)
   lines            HrPayrollLine[]
@@ -1003,34 +1004,34 @@ model HrPayrollPeriod {
 
 /// Рядок розрахунку зі знімком входів (ставки, години, формула)
 model HrPayrollLine {
-  id             Int             @id @default(autoincrement())
-  periodId       Int
-  employmentId   Int
-  payGroupId     Int
-  formulaId      String          @db.VarChar(64)
-  rate           Decimal         @db.Decimal(12, 2)
-  rateKind       String          @db.VarChar(16)
-  normHours      Decimal         @db.Decimal(6, 2)
-  hoursByKind    Json
-  ratesUsed      Json
-  weekAmounts    Json
-  breakdown      Json
-  accruedAmount  Decimal         @db.Decimal(12, 2)
-  extraAmount    Decimal         @db.Decimal(12, 2)
-  toPayAmount    Decimal         @db.Decimal(12, 2)
-  skipReason         String?         @db.VarChar(64)
-  esvAmount          Decimal?        @db.Decimal(12, 2)
-  taxAmount          Decimal?        @db.Decimal(12, 2)
-  grossAccrued       Decimal         @default(0) @db.Decimal(12, 2)
-  netToPay           Decimal         @default(0) @db.Decimal(12, 2)
-  employerTotalCost  Decimal         @default(0) @db.Decimal(12, 2)
-  bonusAmount        Decimal         @default(0) @db.Decimal(12, 2)
-  taxBreakdown       Json?
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
-  period             HrPayrollPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
-  employment         HrEmployment    @relation(fields: [employmentId], references: [id], onDelete: Restrict)
-  payGroup           HrPayGroup      @relation(fields: [payGroupId], references: [id], onDelete: Restrict)
+  id                Int             @id @default(autoincrement())
+  periodId          Int
+  employmentId      Int
+  payGroupId        Int
+  formulaId         String          @db.VarChar(64)
+  rate              Decimal         @db.Decimal(12, 2)
+  rateKind          String          @db.VarChar(16)
+  normHours         Decimal         @db.Decimal(6, 2)
+  hoursByKind       Json
+  ratesUsed         Json
+  weekAmounts       Json
+  breakdown         Json
+  accruedAmount     Decimal         @db.Decimal(12, 2)
+  extraAmount       Decimal         @db.Decimal(12, 2)
+  toPayAmount       Decimal         @db.Decimal(12, 2)
+  skipReason        String?         @db.VarChar(64)
+  esvAmount         Decimal?        @db.Decimal(12, 2)
+  taxAmount         Decimal?        @db.Decimal(12, 2)
+  grossAccrued      Decimal         @default(0) @db.Decimal(12, 2)
+  netToPay          Decimal         @default(0) @db.Decimal(12, 2)
+  employerTotalCost Decimal         @default(0) @db.Decimal(12, 2)
+  bonusAmount       Decimal         @default(0) @db.Decimal(12, 2)
+  taxBreakdown      Json?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  period            HrPayrollPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  employment        HrEmployment    @relation(fields: [employmentId], references: [id], onDelete: Restrict)
+  payGroup          HrPayGroup      @relation(fields: [payGroupId], references: [id], onDelete: Restrict)
 
   @@unique([periodId, employmentId])
   @@index([employmentId])
@@ -1075,15 +1076,16 @@ model HrProductionCalendar {
 
 /// Матеріалізований виробничий період
 model HrProductionWeek {
-  id          Int        @id @default(autoincrement())
-  startDate   DateTime   @db.Date
-  endDate     DateTime   @db.Date
+  id          Int      @id @default(autoincrement())
+  startDate   DateTime @db.Date
+  endDate     DateTime @db.Date
   fopWeekdays Json
-  label       String     @db.VarChar(128)
+  label       String   @db.VarChar(128)
   year        Int
   sequence    Int
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
   @@unique([startDate, endDate])
   @@index([year, sequence])
   @@map("hr_production_weeks")
@@ -1111,18 +1113,18 @@ model HrBonus {
 
 /// Тижнева / авансова виплата (не рядок табеля)
 model HrPayout {
-  id            Int             @id @default(autoincrement())
-  periodId      Int
-  employmentId  Int
-  weekId        String?         @db.VarChar(16)
-  kind          String          @db.VarChar(16)
-  amount        Decimal         @db.Decimal(12, 2)
-  paidAt        DateTime?
-  note          String?         @db.VarChar(255)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  period        HrPayrollPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
-  employment    HrEmployment    @relation(fields: [employmentId], references: [id], onDelete: Restrict)
+  id           Int             @id @default(autoincrement())
+  periodId     Int
+  employmentId Int
+  weekId       String?         @db.VarChar(16)
+  kind         String          @db.VarChar(16)
+  amount       Decimal         @db.Decimal(12, 2)
+  paidAt       DateTime?
+  note         String?         @db.VarChar(255)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  period       HrPayrollPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  employment   HrEmployment    @relation(fields: [employmentId], references: [id], onDelete: Restrict)
 
   @@index([periodId])
   @@index([employmentId])
@@ -1131,20 +1133,20 @@ model HrPayout {
 
 /// Журнал Chatwoot Agent Bot (webhook + результат обробки). TTL і max N — у сервісі.
 model ChatwootBotWebhookLog {
-  id               String   @id @default(uuid()) @db.VarChar(36)
-  source           String   @db.VarChar(16)
-  action           String   @db.VarChar(16)
-  reason           String   @db.VarChar(128)
-  conversationId   Int?
-  messageId        Int?
-  contentPreview   String?  @db.VarChar(512)
-  replyMode        String   @db.VarChar(16)
-  dryRun           Boolean  @default(false)
-  details          String?  @db.Text
-  webhookEvent     String?  @db.VarChar(64)
-  headersMeta      Json?
-  payloadJson      Json?
-  createdAt        DateTime @default(now())
+  id             String   @id @default(uuid()) @db.VarChar(36)
+  source         String   @db.VarChar(16)
+  action         String   @db.VarChar(16)
+  reason         String   @db.VarChar(128)
+  conversationId Int?
+  messageId      Int?
+  contentPreview String?  @db.VarChar(512)
+  replyMode      String   @db.VarChar(16)
+  dryRun         Boolean  @default(false)
+  details        String?  @db.Text
+  webhookEvent   String?  @db.VarChar(64)
+  headersMeta    Json?
+  payloadJson    Json?
+  createdAt      DateTime @default(now())
 
   @@index([createdAt])
   @@map("chatwoot_bot_webhook_logs")
@@ -1152,17 +1154,17 @@ model ChatwootBotWebhookLog {
 
 /// Аналітика Chatwoot Bot (окремо від debug-журналу webhook).
 model ChatwootBotAnalyticsEvent {
-  id               String   @id @default(uuid()) @db.VarChar(36)
-  kind             String   @db.VarChar(32)
-  conversationId   Int?
-  messageId        Int?
-  inboxId          Int?
-  agentId          Int?
-  contentPreview   String?  @db.VarChar(512)
-  contentNorm      String?  @db.VarChar(512)
-  inHours          Boolean?
-  meta             Json?
-  createdAt        DateTime @default(now())
+  id             String   @id @default(uuid()) @db.VarChar(36)
+  kind           String   @db.VarChar(32)
+  conversationId Int?
+  messageId      Int?
+  inboxId        Int?
+  agentId        Int?
+  contentPreview String?  @db.VarChar(512)
+  contentNorm    String?  @db.VarChar(512)
+  inHours        Boolean?
+  meta           Json?
+  createdAt      DateTime @default(now())
 
   @@index([createdAt])
   @@index([kind, createdAt])
@@ -1263,6 +1265,31 @@ model ChatwootBotMessageIntent {
   createdAt    DateTime @default(now())
 
   @@map("chatwoot_bot_message_intents")
+}
+
+/// Хід бота на повідомлення клієнта: що відповів і чому (журнал «Діалоги бота», зберігається 90 днів).
+model ChatwootBotTurn {
+  id             Int      @id @default(autoincrement())
+  conversationId Int
+  messageId      Int?
+  inboxId        Int?
+  customerText   String   @db.Text
+  /// Публічні відповіді бота клієнту в цьому ході: string[].
+  replies        Json
+  /// llm | pattern | fallback | handover | handover_keyword | emergency | callback | human_active | reclaim | ignored
+  outcome        String   @db.VarChar(32)
+  detail         String?  @db.VarChar(255)
+  inHours        Boolean?
+  dryRun         Boolean  @default(false)
+  /// Діагностика LLM (модель, токени, toolTrace) — як у пісочниці.
+  llm            Json?
+  /// Стан верифікації після ходу.
+  verify         Json?
+  createdAt      DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([conversationId, createdAt])
+  @@map("chatwoot_bot_turns")
 }
 
 /// Платні виклики LLM/класифікаторів: токени й вартість для дашборда витрат.

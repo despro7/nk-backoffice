@@ -760,6 +760,8 @@ export class CronService {
           '../modules/ChatwootBot/ChatwootBotConversationStateService.js'
         );
         await chatwootBotConversationStateService.purgeStale();
+        const { chatwootBotTurnLogService } = await import('../modules/ChatwootBot/ChatwootBotTurnLogService.js');
+        await chatwootBotTurnLogService.purgeStale();
         console.log('🤖 [CronService] Chatwoot bot webhook log retention completed.');
       } catch (error) {
         console.error('🤖 [CronService] Chatwoot bot log cleanup failed:', error);
