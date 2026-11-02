@@ -19,6 +19,11 @@ const BUILT_IN_ACTIONS: Array<{
     enabled: (settings) => settings.orderCancelEnabled,
   },
   {
+    stems: ['опера', 'людин', 'менедж', 'живою', 'живо'],
+    title: 'Виклик оператора (ключові слова, request_operator)',
+    enabled: () => true,
+  },
+  {
     stems: ['передз', 'зател', 'перез', 'позво', 'дзвін'],
     title: 'Дзвінок оператора: збір контактів поза годинами',
     enabled: () => true,

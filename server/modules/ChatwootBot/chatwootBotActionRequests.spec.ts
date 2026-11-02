@@ -25,6 +25,10 @@ describe('action requests', () => {
     expect(byLabel.get('Надіслати прайс')).toMatchObject({ count: 4, solution: { kind: 'scenario', scenarioId: 'price' } });
     expect(byLabel.get('Скасувати замовлення')?.solution).toMatchObject({ kind: 'tool', enabled: false });
     expect(byLabel.get('Змінити адресу доставки')?.solution.kind).toBe('none');
+    expect(buildActionRequests([{ text: "З'єднати з оператором", count: 1 }], DEFAULT_CHATWOOT_BOT_SETTINGS)[0].solution).toMatchObject({
+      kind: 'tool',
+      enabled: true,
+    });
   });
 
   it('matches scenarios by triggers, not by unrelated words', () => {
