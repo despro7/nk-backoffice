@@ -151,6 +151,10 @@ export class ChatwootBotAnalyticsService {
   }
 
   async getOverview(from: Date, to: Date): Promise<ChatwootBotAnalyticsOverview> {
+    const firstEvent = await prisma.chatwootBotAnalyticsEvent.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { createdAt: true },
+    });
     const rows = await prisma.chatwootBotAnalyticsEvent.findMany({
       where: {
         createdAt: { gte: from, lte: to },
@@ -307,6 +311,7 @@ export class ChatwootBotAnalyticsService {
       ignoredQuestions,
       knowledgeMisses,
       knowledgeLookups: { total: knowledgeLookups, found: knowledgeFound },
+      firstEventAt: firstEvent?.createdAt.toISOString() ?? null,
       agentSla,
       totals: {
         customerMessages,

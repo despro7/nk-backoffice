@@ -237,6 +237,8 @@ export type ChatwootBotAnalyticsOverview = {
   /** Теми, за якими бот шукав у базі знань і нічого не знайшов. */
   knowledgeMisses: ChatwootBotQuestionClusterDto[];
   knowledgeLookups: { total: number; found: number };
+  /** Найперша подія аналітики (ISO) — нижня межа календаря; null — подій ще немає. */
+  firstEventAt: string | null;
   agentSla: Array<{
     agentId: number;
     conversations: number;

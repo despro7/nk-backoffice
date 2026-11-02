@@ -11,6 +11,7 @@ interface ReportDateRangeFilterProps {
   size?: "sm" | "md" | "lg";
   inputWrapperClassName?: string;
   maxValue?: DateValue;
+  minValue?: DateValue;
 }
 
 export default function ReportDateRangeFilter({
@@ -20,6 +21,7 @@ export default function ReportDateRangeFilter({
   size = "md",
   inputWrapperClassName = "h-10",
   maxValue,
+  minValue,
 }: ReportDateRangeFilterProps) {
   return (
     <div className={className ?? "w-fit shrink-0"}>
@@ -29,6 +31,7 @@ export default function ReportDateRangeFilter({
           value={value}
           onChange={onChange}
           maxValue={maxValue}
+          minValue={minValue}
           size={size}
           selectorButtonPlacement="start"
           selectorIcon={<DynamicIcon name="calendar" size={18} />}

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Spinner, Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from '@heroui/react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarDate, getLocalTimeZone, today, type DateValue }   from '@internationalized/date';
+import { CalendarDate, getLocalTimeZone, parseAbsoluteToLocal, today, toCalendarDate, type DateValue } from '@internationalized/date';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { DateRange } from '@react-types/datepicker';
 import { chatwootBotApi } from '@/services/ChatwootBotService';
@@ -10,6 +10,9 @@ import type { ChatwootBotKnowledgeEntry } from '@shared/types/chatwootBotKnowled
 import { ToastService } from '@/services/ToastService';
 import type { ChatwootBotAnalyticsOverview, ChatwootBotQuestionClusterDto } from '@shared/types/chatwootBot';
 import ReportDateRangeFilter from '@/pages/Reports/shared/filters/ReportDateRangeFilter';
+import ReportSingleSelectFilter from '@/pages/Reports/shared/filters/ReportSingleSelectFilter';
+import ReportResetFiltersButton from '@/pages/Reports/shared/filters/ReportResetFiltersButton';
+import { createStandardDatePresets } from '@/lib/dateReportingUtils';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PERMISSIONS } from '@shared/constants/permissions';
 import { QuestionTopicsCard } from './components/QuestionTopicsCard';
@@ -58,11 +61,15 @@ function dateRangeToIsoBounds(range: DateRange | null): { from: string; to: stri
   return { from: fromDate.toISOString(), to: toDate.toISOString() };
 }
 
-function defaultDateRange(): DateRange {
-  const end = today(getLocalTimeZone());
+const DEFAULT_PRESET_KEY = 'last7Days';
+const CUSTOM_PRESET_KEY = 'custom';
+
+/** Пресет обрізаємо знизу датою першої події: раніше статистики немає. */
+function clampRange(range: DateRange, min: DateValue | null): DateRange {
+  if (!min) return range;
   return {
-    start: end.subtract({ days: 7 }),
-    end,
+    start: range.start.compare(min) < 0 ? min : range.start,
+    end: range.end.compare(min) < 0 ? min : range.end,
   };
 }
 
@@ -160,11 +167,27 @@ const ChatwootBotStatistics: React.FC = () => {
     if (knowledgeEntries.length === 0) createKnowledgeEntry(row);
     else setAttachRow(row);
   };
-  const [dateRange, setDateRange] = useState<DateRange | null>(() => defaultDateRange());
+  const datePresets = useMemo(() => createStandardDatePresets(), []);
+  const [datePresetKey, setDatePresetKey] = useState<string>(DEFAULT_PRESET_KEY);
+  const [dateRange, setDateRange] = useState<DateRange | null>(
+    () => datePresets.find((p) => p.key === DEFAULT_PRESET_KEY)?.getRange() ?? null,
+  );
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState<ChatwootBotAnalyticsOverview | null>(null);
 
   const rangeIso = useMemo(() => dateRangeToIsoBounds(dateRange), [dateRange]);
+  const minDate = useMemo(
+    () => (overview?.firstEventAt ? toCalendarDate(parseAbsoluteToLocal(overview.firstEventAt)) : null),
+    [overview?.firstEventAt],
+  );
+  const maxDate = useMemo(() => today(getLocalTimeZone()), []);
+
+  const applyPreset = (key: string | null) => {
+    const preset = datePresets.find((p) => p.key === key);
+    if (!preset) return;
+    setDatePresetKey(preset.key);
+    setDateRange(clampRange(preset.getRange(), minDate));
+  };
 
   /** silent — без спінера (після правок тем), помилка летить у викликача. */
   const load = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
@@ -222,11 +245,38 @@ const ChatwootBotStatistics: React.FC = () => {
       <div className="p-4 bg-white rounded-xl shadow-lg">
         <div className="flex flex-wrap items-center justify-between gap-y-3 gap-x-4">
           <div className="flex flex-wrap items-end gap-3">
+            <ReportSingleSelectFilter
+              ariaLabel="Швидкий вибір періоду"
+              placeholder="Оберіть період"
+              iconName="calendar-check"
+              className="w-48"
+              selectedKey={datePresetKey}
+              onChange={applyPreset}
+              options={[
+                ...datePresets.map(({ key, label }) => ({ key, label })),
+                ...(datePresetKey === CUSTOM_PRESET_KEY ? [{ key: CUSTOM_PRESET_KEY, label: 'Обраний період' }] : []),
+              ]}
+            />
             <ReportDateRangeFilter
               value={dateRange}
-              onChange={setDateRange}
+              onChange={(range) => {
+                setDateRange(range);
+                setDatePresetKey(CUSTOM_PRESET_KEY);
+              }}
+              minValue={minDate ?? undefined}
+              maxValue={maxDate}
             />
-            <Button color="primary" onPress={() => void load()} isLoading={loading}>
+            {datePresetKey !== DEFAULT_PRESET_KEY && (
+              <ReportResetFiltersButton onPress={() => applyPreset(DEFAULT_PRESET_KEY)} />
+            )}
+            <Button
+              variant="flat"
+              isDisabled={loading}
+              startContent={
+                <DynamicIcon name={loading ? 'loader-2' : 'refresh-cw'} size={16} className={loading ? 'animate-spin' : ''} />
+              }
+              onPress={() => void load()}
+            >
               Оновити
             </Button>
           </div>
