@@ -1,24 +1,98 @@
 import React from 'react';
-import { Button, Chip, Table, TableBody, TableCell, TableColumn, TableHeader, TableRow, Tooltip } from '@heroui/react';
-import { DynamicIcon } from 'lucide-react/dynamic';
+import {
+  Button,
+  Chip,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Table,
+  TableBody,
+  TableCell,
+  TableColumn,
+  TableHeader,
+  TableRow,
+  Tooltip,
+} from '@heroui/react';
+import { DynamicIcon, type IconName } from 'lucide-react/dynamic';
+import { InstructionPreview } from '@/pages/ChatwootBotSettings/components/InstructionEditor';
 import type { ChatwootBotActionRequestDto, ChatwootBotActionSolution } from '@shared/types/chatwootBotScenarios';
 
-function SolutionChip({ solution }: { solution: ChatwootBotActionSolution }) {
+const KIND_META: Record<ChatwootBotActionSolution['kind'], { icon: IconName; label: string }> = {
+  scenario: { icon: 'workflow', label: 'Сценарій' },
+  tool: { icon: 'wrench', label: 'Вбудовано в бота' },
+  none: { icon: 'headset', label: 'Немає рішення' },
+};
+
+/** Коротка мітка рішення; по кліку — схема (кроки сценарію / що робить вбудована дія) і посилання в налаштування. */
+function SolutionChip({
+  solution,
+  onOpenScenario,
+  onOpenSettings,
+}: {
+  solution: ChatwootBotActionSolution;
+  onOpenScenario: (scenarioId: string) => void;
+  onOpenSettings: (tab: string) => void;
+}) {
+  const meta = KIND_META[solution.kind];
   if (solution.kind === 'none') {
     return (
-      <Chip size="sm" variant="flat" color="warning">
-        Немає – оператор
+      <Chip size="sm" variant="flat" color="warning" startContent={<DynamicIcon name={meta.icon} size={12} />}>
+        Оператор
       </Chip>
     );
   }
-  const prefix = solution.kind === 'scenario' ? 'Сценарій' : 'Вбудовано';
   return (
-    <Tooltip content={solution.enabled ? 'Увімкнено' : 'Вимкнено – бот передає запит оператору'} placement="top">
-      <Chip size="sm" variant="flat" color={solution.enabled ? 'success' : 'default'} className="max-w-[260px]">
-        {prefix}: {solution.title}
-        {solution.enabled ? '' : ' (вимк.)'}
-      </Chip>
-    </Tooltip>
+    <Popover placement="bottom-start" showArrow>
+      <PopoverTrigger>
+        {/* Button, а не Chip: тригер Popover має бути pressable. */}
+        <Button
+          size="sm"
+          variant="flat"
+          radius="full"
+          color={solution.enabled ? 'success' : 'default'}
+          className="h-6 min-w-0 max-w-[220px] px-2 gap-1 text-xs"
+          startContent={<DynamicIcon name={meta.icon} size={12} className="shrink-0" />}
+        >
+          <span className="truncate">
+            {solution.title}
+            {solution.enabled ? '' : ' · вимк.'}
+          </span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="max-w-sm p-3 items-start gap-2">
+        <div className="flex items-center gap-2 text-xs text-default-500">
+          <DynamicIcon name={meta.icon} size={14} />
+          {meta.label}
+          <Chip size="sm" variant="flat" color={solution.enabled ? 'success' : 'default'} className="h-5">
+            {solution.enabled ? 'увімкнено' : 'вимкнено'}
+          </Chip>
+        </div>
+        <p className="text-sm font-semibold">{solution.title}</p>
+        {solution.summary ? <InstructionPreview text={solution.summary} /> : null}
+        {solution.kind === 'scenario' && solution.triggersCount != null && (
+          <p className="text-xs text-default-500">Фраз клієнтів: {solution.triggersCount}</p>
+        )}
+        {solution.kind === 'scenario' && solution.scenarioId ? (
+          <Button
+            size="sm"
+            variant="flat"
+            startContent={<DynamicIcon name="square-pen" size={14} />}
+            onPress={() => onOpenScenario(solution.scenarioId!)}
+          >
+            Відкрити в конструкторі
+          </Button>
+        ) : solution.settingsTab ? (
+          <Button
+            size="sm"
+            variant="flat"
+            startContent={<DynamicIcon name="settings" size={14} />}
+            onPress={() => onOpenSettings(solution.settingsTab!)}
+          >
+            Налаштування
+          </Button>
+        ) : null}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -28,11 +102,13 @@ export function ActionRequestsCard({
   canManageScenarios,
   onCreateScenario,
   onOpenScenario,
+  onOpenSettings,
 }: {
   rows: ChatwootBotActionRequestDto[];
   canManageScenarios: boolean;
   onCreateScenario: (row: ChatwootBotActionRequestDto) => void;
   onOpenScenario: (scenarioId: string) => void;
+  onOpenSettings: (tab: string) => void;
 }) {
   return (
     <div className="p-4 bg-white rounded-xl shadow-lg">
@@ -53,7 +129,7 @@ export function ActionRequestsCard({
           <TableHeader>
             <TableColumn>Запит</TableColumn>
             <TableColumn width={100}>Кількість</TableColumn>
-            <TableColumn width={300}>Рішення</TableColumn>
+            <TableColumn width={260}>Рішення</TableColumn>
           </TableHeader>
           <TableBody>
             {rows.map((row) => {
@@ -69,21 +145,7 @@ export function ActionRequestsCard({
                   <TableCell>{row.count}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      <SolutionChip solution={row.solution} />
-                      {canManageScenarios && row.solution.kind === 'scenario' && row.solution.scenarioId && (
-                        <Tooltip content="Відкрити сценарій" placement="top">
-                          <Button
-                            isIconOnly
-                            size="sm"
-                            variant="light"
-                            className="ml-auto"
-                            aria-label="Відкрити сценарій"
-                            onPress={() => onOpenScenario(row.solution.scenarioId!)}
-                          >
-                            <DynamicIcon name="square-pen" size={16} />
-                          </Button>
-                        </Tooltip>
-                      )}
+                      <SolutionChip solution={row.solution} onOpenScenario={onOpenScenario} onOpenSettings={onOpenSettings} />
                       {canManageScenarios && row.solution.kind === 'none' && (
                         <Tooltip content="Створити сценарій для цього запиту" placement="top">
                           <Button

@@ -11,21 +11,31 @@ import { clusterQuestions, type QuestionSample } from './chatwootBotQuestionClus
 const BUILT_IN_ACTIONS: Array<{
   stems: string[];
   title: string;
+  summary: string;
+  settingsTab: string;
   enabled: (settings: ChatwootBotSettings) => boolean;
 }> = [
   {
     stems: ['~скасування'],
-    title: 'Скасування замовлення (request_order_cancellation)',
+    title: 'Скасування замовлення',
+    summary:
+      'request_order_cancellation: телефон + прізвище й імʼя, вибір замовлення, причина; автоскасування в SalesDrive для дозволених статусів, решта – оператору.',
+    settingsTab: 'orders',
     enabled: (settings) => settings.orderCancelEnabled,
   },
   {
     stems: ['опера', 'людин', 'менедж', 'живою', 'живо'],
-    title: 'Виклик оператора (ключові слова, request_operator)',
+    title: 'Виклик оператора',
+    summary:
+      'Ключові слова або request_operator (kind: human): у робочі години – призначення оператора, поза годинами – збір контактів для дзвінка.',
+    settingsTab: 'operator',
     enabled: () => true,
   },
   {
     stems: ['передз', 'зател', 'перез', 'позво', 'дзвін'],
-    title: 'Дзвінок оператора: збір контактів поза годинами',
+    title: 'Дзвінок оператора',
+    summary: 'Поза годинами бот просить імʼя та телефон і передає їх оператору разом із запитом (нотатка, Telegram).',
+    settingsTab: 'operator',
     enabled: () => true,
   },
 ];
@@ -34,7 +44,13 @@ function builtInSolution(text: string, settings: ChatwootBotSettings): ChatwootB
   const stems = [...knowledgeStems(text)];
   for (const action of BUILT_IN_ACTIONS) {
     if (stems.some((stem) => action.stems.some((prefix) => stem.startsWith(prefix)))) {
-      return { kind: 'tool', title: action.title, enabled: action.enabled(settings) };
+      return {
+        kind: 'tool',
+        title: action.title,
+        enabled: action.enabled(settings),
+        summary: action.summary,
+        settingsTab: action.settingsTab,
+      };
     }
   }
   return null;
@@ -66,7 +82,14 @@ export function buildActionRequests(
     const texts = [cluster.label, ...cluster.examples].join(' ');
     const scenario = matchScenario(texts, settings.actionScenarios);
     const solution: ChatwootBotActionSolution = scenario
-      ? { kind: 'scenario', title: scenario.title, enabled: scenario.enabled, scenarioId: scenario.id }
+      ? {
+          kind: 'scenario',
+          title: scenario.title,
+          enabled: scenario.enabled,
+          scenarioId: scenario.id,
+          summary: scenario.instructions.length > 400 ? `${scenario.instructions.slice(0, 400)}…` : scenario.instructions,
+          triggersCount: scenario.triggers.length,
+        }
       : (builtInSolution(texts, settings) ?? { kind: 'none', title: 'Передається оператору', enabled: false });
     return { label: cluster.label, count: cluster.count, examples: cluster.examples, solution };
   });

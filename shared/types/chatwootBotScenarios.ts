@@ -22,9 +22,16 @@ export const CHATWOOT_BOT_SCENARIO_LIMITS = {
 export type ChatwootBotActionSolution = {
   /** scenario — сценарій з налаштувань; tool — вбудований інструмент / потік; none — лише оператор. */
   kind: 'scenario' | 'tool' | 'none';
+  /** Коротка назва для чипа. */
   title: string;
   enabled: boolean;
   scenarioId?: string;
+  /** Схема коротко: кроки сценарію або що робить вбудована дія. */
+  summary?: string;
+  /** Скільки фраз-тригерів у сценарії. */
+  triggersCount?: number;
+  /** Вкладка налаштувань бота, де вмикається / налаштовується вбудована дія. */
+  settingsTab?: string;
 };
 
 export type ChatwootBotActionRequestDto = {

@@ -330,6 +330,7 @@ const ChatwootBotStatistics: React.FC = () => {
               openScenarios({ scenarioDraft: { title: row.label, triggers: [...new Set([row.label, ...row.examples])] } })
             }
             onOpenScenario={(scenarioId) => openScenarios({ scenarioId })}
+            onOpenSettings={(tab) => navigate(`/chatwoot-bot/settings#tab=${tab}`)}
           />
 
           <KnowledgeMissesCard
