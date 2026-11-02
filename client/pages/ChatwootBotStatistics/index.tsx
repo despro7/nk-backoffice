@@ -1,21 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Chip, Spinner, Table, TableBody, TableCell, TableColumn, TableHeader, TableRow, Tooltip } from '@heroui/react';
+import { Button, Spinner, Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from '@heroui/react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarDate, getLocalTimeZone, today, type DateValue }   from '@internationalized/date';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { DateRange } from '@react-types/datepicker';
 import { chatwootBotApi } from '@/services/ChatwootBotService';
+import { chatwootKnowledgeApi } from '@/services/ChatwootKnowledgeService';
+import type { ChatwootBotKnowledgeEntry } from '@shared/types/chatwootBotKnowledge';
 import { ToastService } from '@/services/ToastService';
 import type { ChatwootBotAnalyticsOverview, ChatwootBotQuestionClusterDto } from '@shared/types/chatwootBot';
 import ReportDateRangeFilter from '@/pages/Reports/shared/filters/ReportDateRangeFilter';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PERMISSIONS } from '@shared/constants/permissions';
 import { QuestionTopicsCard } from './components/QuestionTopicsCard';
-
-/** Телефони в питаннях клієнтів не мають потрапити в базу знань. */
-function stripPhones(text: string): string {
-  return text.replace(/\+?\d[\d\s\-()]{7,}\d/g, '…').replace(/\s+/g, ' ').trim();
-}
+import { clusterPhrasings, KnowledgeAttachModal, KnowledgeCoverage } from './components/KnowledgeCoverage';
 
 function formatSeconds(seconds: number | null): string {
   if (seconds == null) return '–';
@@ -67,45 +65,37 @@ function defaultDateRange(): DateRange {
   };
 }
 
-type QuestionClustersCardProps = {
-  title: string;
-  icon: 'badge-question-mark' | 'search-x';
+type KnowledgeMissesCardProps = {
   description: string;
   rows: ChatwootBotQuestionClusterDto[];
-  showCoverage?: boolean;
   canManageKnowledge: boolean;
-  onAdd: (row: ChatwootBotQuestionClusterDto) => void;
+  onKnowledgeAction: (row: ChatwootBotQuestionClusterDto) => void;
   onOpenKnowledge: () => void;
 };
 
-function QuestionClustersCard({
-  title,
-  icon,
+/** Запити бота до бази знань без відповіді; якщо стаття вже є — показуємо її. */
+function KnowledgeMissesCard({
   description,
   rows,
-  showCoverage = false,
   canManageKnowledge,
-  onAdd,
+  onKnowledgeAction,
   onOpenKnowledge,
-}: QuestionClustersCardProps) {
+}: KnowledgeMissesCardProps) {
   return (
     <div className="p-4 bg-white rounded-xl shadow-lg">
       <h2 className="flex items-center gap-1 text-md font-semibold text-default-800 mb-1">
-        <DynamicIcon name={icon} size={16} />
-        {title}
+        <DynamicIcon name="search-x" size={16} />
+        Бот шукав у базі знань і не знайшов
       </h2>
       <p className="text-xs text-default-500 mb-3">{description}</p>
       {rows.length === 0 ? (
         <p className="text-default-500 text-sm">За обраний період даних немає.</p>
       ) : (
-        <Table aria-label={title} removeWrapper>
+        <Table aria-label="Бот шукав у базі знань і не знайшов" removeWrapper>
           <TableHeader>
             <TableColumn>Тема</TableColumn>
             <TableColumn width={100}>Кількість</TableColumn>
-            <TableColumn width={showCoverage ? 220 : 0} hideHeader={!showCoverage}>
-              {showCoverage ? 'База знань' : ' '}
-            </TableColumn>
-            <TableColumn width={60}>{' '}</TableColumn>
+            <TableColumn width={260}>Стаття зараз</TableColumn>
           </TableHeader>
           <TableBody>
             {rows.map((row) => {
@@ -120,38 +110,12 @@ function QuestionClustersCard({
                   </TableCell>
                   <TableCell>{row.count}</TableCell>
                   <TableCell>
-                    {showCoverage &&
-                      (row.knowledgeEntry ? (
-                        <Chip
-                          size="sm"
-                          variant="flat"
-                          color="success"
-                          className="cursor-pointer max-w-[200px]"
-                          onClick={onOpenKnowledge}
-                        >
-                          {row.knowledgeEntry.title}
-                        </Chip>
-                      ) : (
-                        <Chip size="sm" variant="flat" color="warning">
-                          Немає
-                        </Chip>
-                      ))}
-                  </TableCell>
-                  <TableCell>
-                    {canManageKnowledge && !row.knowledgeEntry && (
-                      <Tooltip content="Додати в базу знань">
-                        <Button
-                          isIconOnly
-                          size="sm"
-                          variant="light"
-                          className="text-blue-600"
-                          aria-label="Додати тему в базу знань"
-                          onPress={() => onAdd(row)}
-                        >
-                          <DynamicIcon name="book-plus" size={16} />
-                        </Button>
-                      </Tooltip>
-                    )}
+                    <KnowledgeCoverage
+                      row={row}
+                      canManage={canManageKnowledge}
+                      onOpenKnowledge={onOpenKnowledge}
+                      onAction={onKnowledgeAction}
+                    />
                   </TableCell>
                 </TableRow>
               );
@@ -169,9 +133,25 @@ const ChatwootBotStatistics: React.FC = () => {
   const canManageKnowledge = hasPermission(PERMISSIONS.ACTION_CHATWOOT_KNOWLEDGE_MANAGE);
   const canManageTopics = hasPermission(PERMISSIONS.ACTION_CHATWOOT_TOPICS_MANAGE);
   /** Нова стаття з усіма формулюваннями теми як варіантами питання (без телефонів). */
-  const addToKnowledge = (row: ChatwootBotQuestionClusterDto): void => {
-    const questions = [...new Set([row.label, ...row.examples].map(stripPhones).filter(Boolean))];
-    navigate(`/chatwoot-bot/knowledge#new=${encodeURIComponent(questions.join('\n'))}`);
+  const createKnowledgeEntry = (row: ChatwootBotQuestionClusterDto): void => {
+    navigate(`/chatwoot-bot/knowledge#new=${encodeURIComponent(clusterPhrasings(row).join('\n'))}`);
+  };
+  const [knowledgeEntries, setKnowledgeEntries] = useState<ChatwootBotKnowledgeEntry[]>([]);
+  const [attachRow, setAttachRow] = useState<ChatwootBotQuestionClusterDto | null>(null);
+  const [attaching, setAttaching] = useState(false);
+
+  useEffect(() => {
+    if (!canManageKnowledge) return;
+    chatwootKnowledgeApi
+      .list()
+      .then(setKnowledgeEntries)
+      .catch(() => setKnowledgeEntries([]));
+  }, [canManageKnowledge]);
+
+  /** Без статей вибирати нема з чого — одразу нова стаття. */
+  const onKnowledgeAction = (row: ChatwootBotQuestionClusterDto): void => {
+    if (knowledgeEntries.length === 0) createKnowledgeEntry(row);
+    else setAttachRow(row);
   };
   const [dateRange, setDateRange] = useState<DateRange | null>(() => defaultDateRange());
   const [loading, setLoading] = useState(true);
@@ -205,6 +185,28 @@ const ChatwootBotStatistics: React.FC = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const attachToEntry = async (entryId: number, questions: string[]) => {
+    setAttaching(true);
+    try {
+      const { added, entry } = await chatwootKnowledgeApi.addQuestions(entryId, questions);
+      setKnowledgeEntries((prev) => prev.map((e) => (e.id === entry.id ? entry : e)));
+      ToastService.show({
+        title: added > 0 ? `Додано в «${entry.title}»: ${added}` : 'Ці питання вже є в статті',
+        color: added > 0 ? 'success' : 'default',
+      });
+      setAttachRow(null);
+      await load({ silent: true }).catch(() => undefined);
+    } catch (error) {
+      ToastService.show({
+        title: 'Помилка',
+        description: error instanceof Error ? error.message : 'Не вдалося додати питання',
+        color: 'danger',
+      });
+    } finally {
+      setAttaching(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -252,26 +254,42 @@ const ChatwootBotStatistics: React.FC = () => {
             ignoredQuestions={overview.ignoredQuestions ?? []}
             canManageTopics={canManageTopics}
             canManageKnowledge={canManageKnowledge}
-            onAddToKnowledge={addToKnowledge}
+            onKnowledgeAction={onKnowledgeAction}
             onOpenKnowledge={() => navigate('/chatwoot-bot/knowledge')}
             onChanged={() => load({ silent: true })}
           />
 
-          <QuestionClustersCard
-            title="Бот шукав у базі знань і не знайшов"
-            icon="search-x"
-            description={`Звернень до бази знань: ${overview.knowledgeLookups.total}, знайдено відповідь: ${overview.knowledgeLookups.found}.`}
+          <KnowledgeMissesCard
+            description={`Звернень до бази знань: ${overview.knowledgeLookups.total}, знайдено відповідь: ${overview.knowledgeLookups.found}. «Стаття зараз» – що бот знайде тепер (статтю могли додати пізніше).`}
             rows={overview.knowledgeMisses}
             canManageKnowledge={canManageKnowledge}
-            onAdd={addToKnowledge}
+            onKnowledgeAction={onKnowledgeAction}
             onOpenKnowledge={() => navigate('/chatwoot-bot/knowledge')}
           />
 
+          <KnowledgeAttachModal
+            row={attachRow}
+            entries={knowledgeEntries}
+            busy={attaching}
+            onAttach={(entryId, questions) => void attachToEntry(entryId, questions)}
+            onCreate={(row) => {
+              setAttachRow(null);
+              createKnowledgeEntry(row);
+            }}
+            onClose={() => setAttachRow(null)}
+          />
+
           <div className="p-4 bg-white rounded-xl shadow-lg">
-            <h2 className="flex items-center gap-1 text-md font-semibold text-default-800 mb-3">
+            <h2 className="flex items-center gap-1 text-md font-semibold text-default-800 mb-1">
               <DynamicIcon name="clock-check" size={16} />
               SLA агентів
             </h2>
+            <p className="text-xs text-default-500 mb-3">
+              Як швидко оператори (не бот) відповідають клієнтам: кожна відповідь агента рахується від найранішого ще
+              не відповіденого повідомлення клієнта в тій самій розмові; медіана й середнє – за період. «Діалогів» – у
+              скількох розмовах агент відповідав. Reclaim – скільки разів бот забирав розмову в агента, бо той був
+              офлайн або довго мовчав.
+            </p>
             {overview.agentSla.length === 0 ? (
               <p className="text-default-500 text-sm">Немає пар «клієнт → агент» за період.</p>
             ) : (

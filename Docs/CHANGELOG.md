@@ -5,14 +5,16 @@
 
 ---
 
-## 2026-11-02 — Chatwoot Bot: перебудова налаштувань, текст «бот не знайшов відповіді»
+## 2026-11-02 — Chatwoot Bot: перебудова налаштувань, текст «бот не знайшов відповіді», статистика тем
 
-**Files:** `client/components/PageTabs.tsx`, `chatwootBotEmergencyWatch.ts`, `chatwootLastAgentReplyCache.ts`, `client/pages/ChatwootBotSettings/**` (`cards/*`, `tabs/AiTab.tsx`, `OperatorTab.tsx`, `OrdersTab.tsx`, `chatwootBotTabKeys.ts`, `useChatwootBotSettingsPage.ts`, `index.tsx`), `ChatwootBotOrchestrator.ts`, `ChatwootBotReplyRouter.ts`, `chatwootBotLoopGuard.ts`, `ChatwootBotSandboxService.ts`, `ChatwootBotSettingsService.ts`, `shared/types/chatwootBot.ts`
+**Files:** `chatwootBotKnowledgeSearch.ts`, `ChatwootBotKnowledgeService.ts`, `server/routes/chatwoot-knowledge.ts`, `ChatwootBotAnalyticsService.ts`, `client/pages/ChatwootBotStatistics/**` (`QuestionTopicsCard.tsx`, `KnowledgeCoverage.tsx`, `index.tsx`), `client/services/ChatwootKnowledgeService.ts`, `shared/types/chatwootBotKnowledge.ts`, `client/components/PageTabs.tsx`, `chatwootBotEmergencyWatch.ts`, `chatwootLastAgentReplyCache.ts`, `client/pages/ChatwootBotSettings/**` (`cards/*`, `tabs/AiTab.tsx`, `OperatorTab.tsx`, `OrdersTab.tsx`, `chatwootBotTabKeys.ts`, `useChatwootBotSettingsPage.ts`, `index.tsx`), `ChatwootBotOrchestrator.ts`, `ChatwootBotReplyRouter.ts`, `chatwootBotLoopGuard.ts`, `ChatwootBotSandboxService.ts`, `ChatwootBotSettingsService.ts`, `shared/types/chatwootBot.ts`
 
 - **Вкладки:** Підключення · AI · Відповіді · Оператор · Замовлення й клієнти · Теми питань · Пісочниця · Журнал. Ключові слова оператора — разом з призначенням; верифікація, скасування й профіль контакту — на одній вкладці; Telegram — у «Підключенні»; тест AI замінила пісочниця. Старі hash `handover` / `cancel` ведуть на нові вкладки.
 - **Збереження:** одна панель «Є незбережені зміни · Скасувати · Зберегти» замість кнопки в кожній картці.
 - **Поза годинами, бот не знайшов відповіді:** окремий текст (одразу просимо контакти); питання клієнта йде оператору разом з телефоном і імʼям — приватна нотатка і, за налаштуванням, Telegram.
 - Адаптація карток під вузькі екрани (ручні правки UI); `PageTabs` не ширші за контейнер; «Тестовий режим (dry_run)» — перемикач.
+- **Пошук статті:** загальні слова («замовлення», «заказ») більше не дають збігу — раніше більшість тем отримувала «Оплата при отриманні»; українські й російські формулювання зводяться до спільних основ (теми й пошук статей).
+- **Статистика тем:** пошук і фільтри (стаття, теги); вибір кількох тем і об’єднання з вибором заголовка й підсумком; autocomplete для перенесення й об’єднання; формулювання теми можна дописати в існуючу статтю (знайдену або обрану) чи створити нову; у «Бот шукав і не знайшов» — стаття, яку бот знайде зараз; опис «SLA агентів».
 - **Екстрений виклик:** Telegram одразу; таймаут очікування оператора (дефолт 5 хв), під час нього без reclaim; не вдалося призначити або оператор мовчить — fallback-текст, збір контактів, нотатка й повторний Telegram.
 
 **Документація:** [`chatwoot-agent-bot.md`](integrations/chatwoot-agent-bot.md).

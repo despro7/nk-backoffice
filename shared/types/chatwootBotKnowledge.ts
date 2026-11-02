@@ -26,6 +26,7 @@ export type ChatwootBotKnowledgeSearchHit = {
   id: number;
   title: string;
   answer: string;
+  tags: string[];
   score: number;
 };
 

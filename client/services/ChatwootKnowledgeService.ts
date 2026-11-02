@@ -41,6 +41,17 @@ export const chatwootKnowledgeApi = {
     );
   },
 
+  async addQuestions(id: number, questions: string[]): Promise<{ added: number; entry: ChatwootBotKnowledgeEntry }> {
+    return parseJson(
+      await fetch(`${BASE}/${id}/questions`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questions }),
+      }),
+    );
+  },
+
   async remove(id: number): Promise<void> {
     await parseJson(await fetch(`${BASE}/${id}`, { method: 'DELETE', credentials: 'include' }));
   },

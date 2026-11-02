@@ -76,7 +76,7 @@ export class ChatwootBotAnalyticsService {
       return await Promise.all(
         clusters.map(async (cluster) => {
           const [hit] = await chatwootBotKnowledgeService.search(cluster.label, 1);
-          return { ...cluster, knowledgeEntry: hit ? { id: hit.id, title: hit.title } : null };
+          return { ...cluster, knowledgeEntry: hit ? { id: hit.id, title: hit.title, tags: hit.tags } : null };
         }),
       );
     } catch (err) {
@@ -222,7 +222,8 @@ export class ChatwootBotAnalyticsService {
     const toSamples = (counts: Map<string, { count: number; preview: string }>): QuestionSample[] =>
       [...counts.values()].map((v) => ({ text: v.preview, count: v.count }));
     const { questionClusters, topics, ignoredQuestions } = await this.buildQuestionTopics(questionCounts);
-    const knowledgeMisses = clusterQuestions(toSamples(missCounts), { maxClusters: 10 });
+    // Стаття могла зʼявитись пізніше (або пошук покращився): покажемо, що відповідь уже є.
+    const knowledgeMisses = await this.withKnowledgeCoverage(clusterQuestions(toSamples(missCounts), { maxClusters: 10 }));
 
     const pendingByConv = new Map<number, Date[]>();
     const responseSecondsByAgent = new Map<number, number[]>();

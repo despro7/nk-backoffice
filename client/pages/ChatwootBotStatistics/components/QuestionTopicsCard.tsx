@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
+  Autocomplete,
+  AutocompleteItem,
   Button,
   Checkbox,
   Chip,
@@ -8,6 +10,8 @@ import {
   DropdownMenu,
   DropdownTrigger,
   Input,
+  Radio,
+  RadioGroup,
   Select,
   SelectItem,
   Tooltip,
@@ -23,6 +27,7 @@ import type {
   ChatwootBotTopicQuestionDto,
   ChatwootBotTopicRef,
 } from '@shared/types/chatwootBotTopics';
+import { KnowledgeCoverage } from './KnowledgeCoverage';
 
 const VISIBLE_TOPICS = 15;
 
@@ -37,14 +42,26 @@ type Props = {
   ignoredQuestions: ChatwootBotTopicQuestionDto[];
   canManageTopics: boolean;
   canManageKnowledge: boolean;
-  onAddToKnowledge: (row: ChatwootBotQuestionClusterDto) => void;
+  /** Додати питання теми в базу знань (нова або існуюча стаття). */
+  onKnowledgeAction: (row: ChatwootBotQuestionClusterDto) => void;
   onOpenKnowledge: () => void;
   /** Після будь-якої зміни — перезавантажити статистику. */
   onChanged: () => Promise<void>;
 };
 
 type TitleDialog = { kind: 'rename'; topicId: number; title: string } | { kind: 'create'; title: string };
-type MergeDialog = { targetId: number; title: string; sourceIds: string[] };
+/** Теми для обʼєднання; `targetId` — тема, чия назва лишиться заголовком групи. */
+type MergeDialog = { topicIds: number[]; targetId: number };
+
+/** Фільтр за статтею: усі, без статті або конкретна стаття. */
+const ALL = 'all';
+const NO_ARTICLE = 'none';
+
+function rowMatchesSearch(row: ChatwootBotQuestionClusterDto, needle: string): boolean {
+  if (!needle) return true;
+  const texts = [row.label, ...row.examples, ...(row.questions ?? []).map((q) => q.text)];
+  return texts.some((t) => t.toLowerCase().includes(needle));
+}
 type DeleteDialog = {
   topicId: number;
   title: string;
@@ -86,7 +103,7 @@ export function QuestionTopicsCard({
   ignoredQuestions,
   canManageTopics,
   canManageKnowledge,
-  onAddToKnowledge,
+  onKnowledgeAction,
   onOpenKnowledge,
   onChanged,
 }: Props) {
@@ -97,12 +114,42 @@ export function QuestionTopicsCard({
   const [showAll, setShowAll] = useState(false);
   const [showIgnored, setShowIgnored] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectedTopics, setSelectedTopics] = useState<Set<number>>(new Set());
+  const [search, setSearch] = useState('');
+  const [articleFilter, setArticleFilter] = useState<string>(ALL);
+  const [tagFilter, setTagFilter] = useState<string>(ALL);
   const [busy, setBusy] = useState(false);
   const [titleDialog, setTitleDialog] = useState<TitleDialog | null>(null);
   const [mergeDialog, setMergeDialog] = useState<MergeDialog | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialog | null>(null);
 
-  const visibleRows = showAll ? rows : rows.slice(0, VISIBLE_TOPICS);
+  // Опції фільтрів — зі статей, які реально знаходить бот за темами періоду.
+  const articleOptions = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const row of rows) if (row.knowledgeEntry) map.set(row.knowledgeEntry.id, row.knowledgeEntry.title);
+    return [...map].map(([id, title]) => ({ id, title })).sort((a, b) => a.title.localeCompare(b.title, 'uk'));
+  }, [rows]);
+  const tagOptions = useMemo(
+    () => [...new Set(rows.flatMap((row) => row.knowledgeEntry?.tags ?? []))].sort((a, b) => a.localeCompare(b, 'uk')),
+    [rows],
+  );
+
+  const needle = search.trim().toLowerCase();
+  const filtered = needle || articleFilter !== ALL || tagFilter !== ALL;
+  const filteredRows = rows.filter((row) => {
+    if (!rowMatchesSearch(row, needle)) return false;
+    if (articleFilter === NO_ARTICLE && row.knowledgeEntry) return false;
+    if (articleFilter !== ALL && articleFilter !== NO_ARTICLE && String(row.knowledgeEntry?.id) !== articleFilter) return false;
+    if (tagFilter !== ALL && !(row.knowledgeEntry?.tags ?? []).includes(tagFilter)) return false;
+    return true;
+  });
+  const visibleRows = showAll || filtered ? filteredRows : filteredRows.slice(0, VISIBLE_TOPICS);
+  const rowByTopicId = useMemo(() => {
+    const map = new Map<number, ChatwootBotQuestionClusterDto>();
+    for (const row of rows) if (row.topicId != null) map.set(row.topicId, row);
+    return map;
+  }, [rows]);
+  const topicTitle = (id: number) => topics.find((t) => t.id === id)?.title ?? rowByTopicId.get(id)?.label ?? `#${id}`;
   const textByHash = useMemo(() => {
     const map = new Map<string, string>();
     for (const row of rows) for (const q of row.questions ?? []) map.set(q.hash, q.text);
@@ -156,13 +203,20 @@ export function QuestionTopicsCard({
   };
 
   const submitMerge = async () => {
-    if (!mergeDialog || mergeDialog.sourceIds.length === 0) return;
-    const ok = await run(
-      () => chatwootBotApi.mergeTopics(mergeDialog.targetId, mergeDialog.sourceIds.map(Number)),
-      'Теми об’єднано',
-    );
-    if (ok) setMergeDialog(null);
+    if (!mergeDialog) return;
+    const sourceIds = mergeDialog.topicIds.filter((id) => id !== mergeDialog.targetId);
+    if (sourceIds.length === 0) return;
+    const ok = await run(() => chatwootBotApi.mergeTopics(mergeDialog.targetId, sourceIds), 'Теми об’єднано');
+    if (ok) {
+      setMergeDialog(null);
+      setSelectedTopics(new Set());
+    }
   };
+
+  const mergeQuestionCount = (mergeDialog?.topicIds ?? []).reduce(
+    (sum, id) => sum + (rowByTopicId.get(id)?.count ?? 0),
+    0,
+  );
 
   const submitDelete = async () => {
     if (!deleteDialog) return;
@@ -181,12 +235,7 @@ export function QuestionTopicsCard({
         topicId: row.topicId,
         title: row.label,
       });
-    if (key === 'merge')
-      setMergeDialog({
-        targetId: row.topicId,
-        title: row.label,
-        sourceIds: [],
-      });
+    if (key === 'merge') setMergeDialog({ topicIds: [row.topicId], targetId: row.topicId });
     if (key === 'reassign' || key === 'ignore') setDeleteDialog({ topicId: row.topicId, title: row.label, mode: key });
   };
 
@@ -201,21 +250,105 @@ export function QuestionTopicsCard({
         бот; «Немає» – прогалина.
       </p>
 
+      {rows.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <Input
+            size="sm"
+            isClearable
+            aria-label="Пошук по питаннях"
+            placeholder="Пошук по питаннях…"
+            className="flex-1 min-w-56"
+            startContent={<DynamicIcon name="search" size={14} className="text-default-400" />}
+            value={search}
+            onValueChange={setSearch}
+            onClear={() => setSearch('')}
+          />
+          <Select
+            size="sm"
+            aria-label="Стаття бази знань"
+            className="w-56"
+            selectedKeys={[articleFilter]}
+            onSelectionChange={(keys) => setArticleFilter(String(Array.from(keys)[0] ?? ALL))}
+          >
+            {[
+              <SelectItem key={ALL} textValue="Усі статті">
+                Усі статті
+              </SelectItem>,
+              <SelectItem key={NO_ARTICLE} textValue="Без статті">
+                Без статті (прогалини)
+              </SelectItem>,
+              ...articleOptions.map((a) => (
+                <SelectItem key={String(a.id)} textValue={a.title}>
+                  {a.title}
+                </SelectItem>
+              )),
+            ]}
+          </Select>
+          {tagOptions.length > 0 && (
+            <Select
+              size="sm"
+              aria-label="Тег статті"
+              className="w-44"
+              selectedKeys={[tagFilter]}
+              onSelectionChange={(keys) => setTagFilter(String(Array.from(keys)[0] ?? ALL))}
+            >
+              {[
+                <SelectItem key={ALL} textValue="Усі теги">
+                  Усі теги
+                </SelectItem>,
+                ...tagOptions.map((tag) => (
+                  <SelectItem key={tag} textValue={tag}>
+                    {tag}
+                  </SelectItem>
+                )),
+              ]}
+            </Select>
+          )}
+          {filtered && (
+            <span className="text-xs text-default-500">
+              Знайдено: {filteredRows.length} з {rows.length}
+            </span>
+          )}
+        </div>
+      )}
+
+      {canManage && selectedTopics.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-3 p-2 rounded-md bg-default-200/65">
+          <span className="text-sm font-medium px-1">Вибрано тем: {selectedTopics.size}</span>
+          <Button
+            size="sm"
+            color="primary"
+            isDisabled={busy || selectedTopics.size < 2}
+            startContent={<DynamicIcon name="merge" size={14} />}
+            onPress={() => {
+              const ids = [...selectedTopics];
+              // Заголовок за замовчуванням — найчастіша тема.
+              const targetId = [...ids].sort((a, b) => (rowByTopicId.get(b)?.count ?? 0) - (rowByTopicId.get(a)?.count ?? 0))[0];
+              setMergeDialog({ topicIds: ids, targetId });
+            }}
+          >
+            Об’єднати…
+          </Button>
+          <Button size="sm" variant="light" isDisabled={busy} onPress={() => setSelectedTopics(new Set())}>
+            Скасувати
+          </Button>
+        </div>
+      )}
+
       {canManage && selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-3 p-2 rounded-md bg-default-200/65">
           <span className="text-sm font-medium px-1">Вибрано: {selected.size}</span>
-          <Select
+          <Autocomplete
             size="sm"
             aria-label="Перенести в тему"
-            placeholder="Перенести в тему…"
-            classNames={{
-              base: 'min-w-64 flex-1',
-              trigger: 'bg-white data-[hover=true]:bg-default-50',
-            }}
+            placeholder="Перенести в тему… (почніть вводити)"
+            className="min-w-64 flex-1"
+            inputProps={{ classNames: { inputWrapper: 'bg-white data-[hover=true]:bg-default-50' } }}
             isDisabled={busy}
-            selectedKeys={[]}
-            onSelectionChange={(keys) => {
-              const topicId = Number(Array.from(keys)[0]);
+            defaultItems={topics}
+            selectedKey={null}
+            onSelectionChange={(key) => {
+              const topicId = Number(key);
               if (!topicId) return;
               void runOnSelected(
                 () =>
@@ -228,12 +361,12 @@ export function QuestionTopicsCard({
               );
             }}
           >
-            {topics.map((topic) => (
-              <SelectItem key={String(topic.id)} textValue={topic.title}>
+            {(topic) => (
+              <AutocompleteItem key={String(topic.id)} textValue={topic.title}>
                 {topic.title}
-              </SelectItem>
-            ))}
-          </Select>
+              </AutocompleteItem>
+            )}
+          </Autocomplete>
           <Tooltip
             content="Створити окрему тему з вибраних питань"
             showArrow
@@ -312,14 +445,17 @@ export function QuestionTopicsCard({
 
       {rows.length === 0 ? (
         <p className="text-default-500 text-sm">За обраний період даних немає.</p>
+      ) : filteredRows.length === 0 ? (
+        <p className="text-default-500 text-sm">Нічого не знайдено за фільтрами.</p>
       ) : (
         <div className="divide-y divide-default-100">
           <div className="flex items-center gap-2 pb-2 text-xs font-semibold text-default-500 uppercase">
+            {canManage && <span className="w-6" />}
             <span className="w-6" />
             <span className="flex-1">Тема</span>
             <span className="w-20">Кількість</span>
-            <span className="w-[220px]">База знань</span>
-            <span className="w-[72px]" />
+            <span className="w-[250px]">База знань</span>
+            <span className="w-9" />
           </div>
           {visibleRows.map((row) => {
             const questions = row.questions ?? [];
@@ -328,6 +464,18 @@ export function QuestionTopicsCard({
             return (
               <div key={row.topicId ?? row.label} className="py-2">
                 <div className="flex items-center gap-2">
+                  {canManage && (
+                    <span className="w-6">
+                      {row.topicId != null && (
+                        <Checkbox
+                          size="sm"
+                          aria-label={`Вибрати тему «${row.label}»`}
+                          isSelected={selectedTopics.has(row.topicId)}
+                          onValueChange={() => setSelectedTopics((prev) => toggleSet(prev, row.topicId!))}
+                        />
+                      )}
+                    </span>
+                  )}
                   <span className="w-6">
                     {questions.length > 0 && (
                       <Button
@@ -349,38 +497,15 @@ export function QuestionTopicsCard({
                     )}
                   </div>
                   <span className="w-20 text-sm px-1">{row.count}</span>
-                  <span className="w-[220px]">
-                    {row.knowledgeEntry ? (
-                      <Chip
-                        size="sm"
-                        variant="flat"
-                        color="success"
-                        className="cursor-pointer max-w-[200px]"
-                        onClick={onOpenKnowledge}
-                      >
-                        {row.knowledgeEntry.title}
-                      </Chip>
-                    ) : (
-                      <Chip size="sm" variant="flat" color="warning">
-                        Немає
-                      </Chip>
-                    )}
+                  <span className="w-[250px]">
+                    <KnowledgeCoverage
+                      row={row}
+                      canManage={canManageKnowledge}
+                      onOpenKnowledge={onOpenKnowledge}
+                      onAction={onKnowledgeAction}
+                    />
                   </span>
-                  <span className="w-[72px] flex justify-end">
-                    {canManageKnowledge && !row.knowledgeEntry && (
-                      <Tooltip content="Додати в базу знань">
-                        <Button
-                          isIconOnly
-                          size="sm"
-                          variant="light"
-                          className="text-blue-600"
-                          aria-label="Додати тему в базу знань"
-                          onPress={() => onAddToKnowledge(row)}
-                        >
-                          <DynamicIcon name="book-plus" size={16} />
-                        </Button>
-                      </Tooltip>
-                    )}
+                  <span className="w-9 flex justify-end">
                     {canManage && row.topicId != null && (
                       <Dropdown>
                         <DropdownTrigger>
@@ -417,7 +542,7 @@ export function QuestionTopicsCard({
                   </span>
                 </div>
                 {isOpen && (
-                  <div className="ml-8 mr-[72px] mt-1 pl-3 border-l border-default-200">
+                  <div className="ml-8 mr-9 mt-1 pl-3 border-l border-default-200">
                     {questions.map((q) => (
                       <QuestionRow
                         key={q.hash}
@@ -436,7 +561,7 @@ export function QuestionTopicsCard({
       )}
 
       <div className="flex flex-wrap gap-2 mt-2">
-        {rows.length > VISIBLE_TOPICS && (
+        {!filtered && rows.length > VISIBLE_TOPICS && (
           <Button size="sm" variant="light" onPress={() => setShowAll((v) => !v)}>
             {showAll ? 'Згорнути' : `Показати всі (${rows.length})`}
           </Button>
@@ -494,27 +619,73 @@ export function QuestionTopicsCard({
         isOpen={mergeDialog != null}
         title="Об’єднати теми"
         message={
-          <div className="space-y-2">
-            <p className="text-sm text-default-600">
-              Питання вибраних тем перейдуть у «{mergeDialog?.title}», а самі теми буде видалено.
-            </p>
-            <Select
-              label="Теми для об’єднання"
-              selectionMode="multiple"
-              selectedKeys={mergeDialog?.sourceIds ?? []}
-              onSelectionChange={(keys) =>
-                setMergeDialog((prev) => (prev ? { ...prev, sourceIds: Array.from(keys).map(String) } : prev))
-              }
-            >
-              {topics
-                .filter((topic) => topic.id !== mergeDialog?.targetId)
-                .map((topic) => (
-                  <SelectItem key={String(topic.id)} textValue={topic.title}>
+          mergeDialog && (
+            <div className="space-y-3">
+              <Autocomplete
+                size="sm"
+                label="Додати тему"
+                placeholder="Почніть вводити назву"
+                defaultItems={topics.filter((t) => !mergeDialog.topicIds.includes(t.id))}
+                selectedKey={null}
+                onSelectionChange={(key) => {
+                  const id = Number(key);
+                  if (!id) return;
+                  setMergeDialog((prev) => (prev ? { ...prev, topicIds: [...prev.topicIds, id] } : prev));
+                }}
+              >
+                {(topic) => (
+                  <AutocompleteItem key={String(topic.id)} textValue={topic.title}>
                     {topic.title}
-                  </SelectItem>
+                  </AutocompleteItem>
+                )}
+              </Autocomplete>
+              <RadioGroup
+                size="sm"
+                label="Заголовок групи"
+                description="Оберіть, назва якої теми лишиться; решта тем зникне, їхні питання перейдуть сюди."
+                value={String(mergeDialog.targetId)}
+                onValueChange={(v) => setMergeDialog((prev) => (prev ? { ...prev, targetId: Number(v) } : prev))}
+              >
+                {mergeDialog.topicIds.map((id) => (
+                  <div key={id} className="flex items-center gap-2">
+                    <Radio value={String(id)} classNames={{ base: 'flex-1 max-w-none' }}>
+                      <span className="text-sm">{topicTitle(id)}</span>
+                      {rowByTopicId.get(id) ? (
+                        <span className="text-xs text-default-400"> · {rowByTopicId.get(id)!.count}</span>
+                      ) : null}
+                    </Radio>
+                    {mergeDialog.topicIds.length > 1 && (
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="light"
+                        aria-label={`Прибрати «${topicTitle(id)}»`}
+                        onPress={() =>
+                          setMergeDialog((prev) => {
+                            if (!prev) return prev;
+                            const topicIds = prev.topicIds.filter((t) => t !== id);
+                            return { topicIds, targetId: prev.targetId === id ? topicIds[0] : prev.targetId };
+                          })
+                        }
+                      >
+                        <DynamicIcon name="x" size={14} />
+                      </Button>
+                    )}
+                  </div>
                 ))}
-            </Select>
-          </div>
+              </RadioGroup>
+              <div className="rounded-md bg-default-100 p-2 text-sm">
+                {mergeDialog.topicIds.length < 2 ? (
+                  <span className="text-default-500">Додайте ще хоча б одну тему.</span>
+                ) : (
+                  <>
+                    Після об’єднання: <strong>«{topicTitle(mergeDialog.targetId)}»</strong>
+                    {mergeQuestionCount > 0 ? ` · ${mergeQuestionCount} звернень за період` : ''}
+                  </>
+                )}
+              </div>
+            </div>
+          )
         }
         confirmText="Об’єднати"
         cancelText="Скасувати"

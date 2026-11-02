@@ -139,8 +139,34 @@ export class ChatwootBotKnowledgeService {
       id: doc.id,
       title: doc.title,
       answer: doc.answer,
+      tags: doc.tags,
       score,
     }));
+  }
+
+  /**
+   * Дописати формулювання клієнтів у варіанти питань статті (без дублів, до ліміту) —
+   * щоб бот знаходив її за цими питаннями. Повертає скільки додано.
+   */
+  async addQuestions(id: number, questions: string[], userId: number | null): Promise<{ added: number; entry: ChatwootBotKnowledgeEntry }> {
+    const row = await prisma.chatwootBotKnowledgeEntry.findUniqueOrThrow({ where: { id } });
+    const current = toDto(row);
+    const seen = new Set(current.questions.map((q) => q.trim().toLowerCase()));
+    const fresh = cleanList(questions, LIMITS.questionsMax, LIMITS.questionMax).filter((q) => {
+      const key = q.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const next = [...current.questions, ...fresh].slice(0, LIMITS.questionsMax);
+    const added = next.length - current.questions.length;
+    if (added === 0) return { added, entry: current };
+    const updated = await prisma.chatwootBotKnowledgeEntry.update({
+      where: { id },
+      data: { questions: next, updatedBy: userId },
+    });
+    this.invalidate();
+    return { added, entry: toDto(updated) };
   }
 
   /** LLM tool search_knowledge_base: факти без службових полів + лічильник використань. */

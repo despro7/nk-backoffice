@@ -210,7 +210,7 @@ export type ChatwootBotQuestionClusterDto = {
   /** Різні формулювання (до 5). */
   examples: string[];
   /** Стаття, яку бот знайде за цією темою; null — прогалина в базі знань. */
-  knowledgeEntry?: { id: number; title: string } | null;
+  knowledgeEntry?: { id: number; title: string; tags?: string[] } | null;
   /** Збережена тема (ручне керування); немає — тема порахована на льоту. */
   topicId?: number;
   /** Усі питання теми за період, від найчастішого. */

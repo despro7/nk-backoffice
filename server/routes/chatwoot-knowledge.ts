@@ -76,6 +76,22 @@ router.put('/:id', ...authOnly, knowledgeManage, async (req, res) => {
   }
 });
 
+/** POST /:id/questions { questions } — дописати формулювання клієнтів у статтю (зі статистики). */
+router.post('/:id/questions', ...authOnly, knowledgeManage, async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) {
+    res.status(400).json({ success: false, error: 'Невірний id' });
+    return;
+  }
+  try {
+    const questions = Array.isArray(req.body?.questions) ? (req.body.questions as unknown[]).map(String) : [];
+    const data = await chatwootBotKnowledgeService.addQuestions(id, questions, req.user?.userId ?? null);
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'POST questions');
+  }
+});
+
 router.delete('/:id', ...authOnly, knowledgeManage, async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) {
