@@ -2,6 +2,8 @@ import { logServer } from '../../lib/utils.js';
 import {
   CHATWOOT_BOT_ATTR_CALLBACK_PHONE,
   CHATWOOT_BOT_ATTR_CALLBACK_QUESTION,
+  operatorHandoverMessage,
+  type ChatwootBotOperatorRequestKind,
   CHATWOOT_BOT_ATTR_CALLBACK_REQUESTED,
   CHATWOOT_BOT_ATTR_HUMAN_HANDOVER_ACTIVE,
   CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING,
@@ -193,6 +195,13 @@ function getConversationCustomAttributes(
   return attrs && typeof attrs === 'object' ? attrs : {};
 }
 
+
+/** Заголовок приватної нотатки за типом `request_operator`. */
+const OPERATOR_REQUEST_NOTE: Record<ChatwootBotOperatorRequestKind, string> = {
+  no_answer: 'бот не знайшов відповіді',
+  action: 'клієнт просить дію, яку бот не виконує',
+  human: 'клієнт хоче поговорити з людиною',
+};
 
 /** Посилання на розмову в Chatwoot для сповіщень операторам. */
 function conversationUrl(settings: ChatwootBotSettings, conversationId: number): string {
@@ -530,11 +539,11 @@ export class ChatwootBotOrchestrator {
               dryRun,
               contentPreview,
               messageId,
-              detail ? settings.handoverMessageNoAnswerInHours : settings.handoverMessageInHours,
+              detail ? operatorHandoverMessage(settings, detail.kind, true) : settings.handoverMessageInHours,
               'in_hours',
               detail
                 ? [
-                    'Handover: бот не знайшов відповіді.',
+                    `Handover: ${OPERATOR_REQUEST_NOTE[detail.kind]}.`,
                     detail.topic ? `Тема: ${detail.topic}` : null,
                     `Питання клієнта: ${previewContent(detail.question, 500)}`,
                   ]
@@ -1031,11 +1040,11 @@ export class ChatwootBotOrchestrator {
     contentPreview: string,
     messageId: number | null,
     hoursLog?: string,
-    /** Бот сам не знайшов відповіді: інший текст і питання зберігаємо до отримання контактів. */
+    /** Бот сам кличе оператора: текст за типом запиту, питання зберігаємо до отримання контактів. */
     noAnswer?: ChatwootBotEscalationDetail,
   ): Promise<ChatwootBotProcessResult> {
     const publicMessage = noAnswer
-      ? settings.handoverMessageNoAnswerOutOfHours
+      ? operatorHandoverMessage(settings, noAnswer.kind, false)
       : settings.handoverMessageOutOfHours;
     const question = noAnswer
       ? [noAnswer.topic, previewContent(noAnswer.question, 500)].filter(Boolean).join(' · ')
@@ -1081,7 +1090,7 @@ export class ChatwootBotOrchestrator {
           await client.createOutgoingMessage(
             conversationId,
             question
-              ? `Handover OOH: бот не знайшов відповіді поза робочими годинами – просимо контакти.\nПитання: ${question}`
+              ? `Handover OOH: ${OPERATOR_REQUEST_NOTE[noAnswer!.kind]} поза робочими годинами – просимо контакти.\nЗапит: ${question}`
               : 'Handover OOH: клієнт просив оператора поза робочими годинами – очікуємо контакти або допомогу бота.',
             true,
           );
@@ -1193,7 +1202,7 @@ export class ChatwootBotOrchestrator {
         `Телефон: ${phone ?? 'не вказано'}`,
         contactName ? `Контакт: ${contactName}` : null,
         `Повідомлення: ${previewContent(content, 300)}`,
-        question ? `Питання, на яке бот не відповів: ${question}` : null,
+        question ? `Запит клієнта, який передав бот: ${question}` : null,
       ].filter((line): line is string => Boolean(line));
       try {
         await client.createOutgoingMessage(conversationId, noteLines.join('\n'), true);

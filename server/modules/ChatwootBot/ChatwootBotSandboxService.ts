@@ -2,6 +2,8 @@ import { randomUUID } from 'crypto';
 import { prisma } from '../../lib/utils.js';
 import {
   CHATWOOT_BOT_SETTINGS_CATEGORY,
+  operatorHandoverMessage,
+  type ChatwootBotOperatorRequestKind,
   type ChatwootBotSettings,
 } from '../../../shared/types/chatwootBot.js';
 import {
@@ -18,6 +20,12 @@ import { matchAutoReplyFromSettings } from './ChatwootBotPatternMatcher.js';
 import { chatwootBotLlmRunner } from './ChatwootBotLlmRunner.js';
 
 const MAX_MESSAGES = 40;
+
+const OPERATOR_KIND_LABEL: Record<ChatwootBotOperatorRequestKind, string> = {
+  no_answer: 'не знайшов відповіді',
+  action: 'запит на дію',
+  human: 'клієнт хоче людину',
+};
 const MAX_MESSAGE_CHARS = 2000;
 const MAX_SCENARIOS = 100;
 
@@ -92,9 +100,9 @@ export class ChatwootBotSandboxService {
     if (llm.operatorRequested) {
       return {
         outcome: 'operator_tool',
-        text: inHours ? settings.handoverMessageNoAnswerInHours : settings.handoverMessageNoAnswerOutOfHours,
+        text: operatorHandoverMessage(settings, llm.operatorRequested.kind, inHours),
         inBusinessHours: inHours,
-        detail: llm.operatorRequested,
+        detail: `${OPERATOR_KIND_LABEL[llm.operatorRequested.kind]}: ${llm.operatorRequested.reason}`,
         meta: llm.testMeta,
       };
     }

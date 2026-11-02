@@ -49,7 +49,8 @@ export type LlmMessage = {
 
 export type LlmToolParameterSchema = {
   type: 'object';
-  properties: Record<string, { type: string; description?: string }>;
+  /** `enum` — допустимі значення рядка (OpenAI / Gemini передають як є). */
+  properties: Record<string, { type: string; description?: string; enum?: string[] }>;
   required?: string[];
 };
 

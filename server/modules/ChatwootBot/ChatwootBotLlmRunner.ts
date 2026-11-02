@@ -1,5 +1,10 @@
 import type { LlmMessage, LlmProvider, LlmTestModelResponse } from '../../../shared/types/llm.js';
-import type { ChatwootBotSettings, ChatwootWebhookMessageCreated } from '../../../shared/types/chatwootBot.js';
+import {
+  CHATWOOT_BOT_OPERATOR_REQUEST_KINDS,
+  type ChatwootBotOperatorRequestKind,
+  type ChatwootBotSettings,
+  type ChatwootWebhookMessageCreated,
+} from '../../../shared/types/chatwootBot.js';
 import { buildConversationContextNote, CHATWOOT_BOT_REPLY_POLICY } from './chatwootBotConversationContext.js';
 import { extractPageContext } from './chatwootBotContactFields.js';
 import {
@@ -33,7 +38,7 @@ export type ChatwootBotGenerateReplyResult = {
   /** verify_customer відповів rate_limited у цьому ході. */
   toolVerifyRateLimited?: boolean;
   /** Модель викликала request_operator — причина (текст моделі не надсилаємо, працює handover). */
-  operatorRequested?: string;
+  operatorRequested?: { reason: string; kind: ChatwootBotOperatorRequestKind };
   /** Заповнюється після успішного виклику LLM (для адмін-тесту). */
   testMeta?: Omit<LlmTestModelResponse, 'reply'>;
 };
@@ -83,7 +88,7 @@ export class ChatwootBotLlmRunner {
     // Стан змінюється, якщо модель пройде verify_customer у цьому ж ході.
     let state = options?.conversationState;
     let toolVerifyRateLimited = false;
-    let operatorRequested: string | undefined;
+    let operatorRequested: ChatwootBotGenerateReplyResult['operatorRequested'];
     const verifiedIds = state ? activeVerifiedOrderIds(state, now.getTime()) : [];
     const contextNote = buildConversationContextNote({
       now,
@@ -187,7 +192,8 @@ export class ChatwootBotLlmRunner {
               return { ok: false, hint: 'Передача оператору доступна лише в розмові з клієнтом.' };
             }
             const reason = typeof args.reason === 'string' ? args.reason.trim() : '';
-            operatorRequested = reason || 'operator_requested';
+            const kind = CHATWOOT_BOT_OPERATOR_REQUEST_KINDS.find((k) => k === args.kind) ?? 'no_answer';
+            operatorRequested = { reason: reason || 'operator_requested', kind };
             return {
               ok: true,
               hint: 'Оператора буде підключено автоматично, клієнт отримає повідомлення від системи. Свій текст не пиши.',

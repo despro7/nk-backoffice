@@ -49,6 +49,8 @@ export type FormState = {
   handoverMessageInHours: string;
   handoverMessageOutOfHours: string;
   handoverMessageNoAnswerInHours: string;
+  handoverMessageActionInHours: string;
+  handoverMessageActionOutOfHours: string;
   handoverMessageNoAnswerOutOfHours: string;
   handoverCallbackAckMessage: string;
   handoverCallbackTelegramEnabled: boolean;
@@ -145,6 +147,8 @@ export function toFormState(data: ChatwootBotSettingsResponse): FormState {
     handoverMessageInHours: data.handoverMessageInHours,
     handoverMessageOutOfHours: data.handoverMessageOutOfHours,
     handoverMessageNoAnswerInHours: data.handoverMessageNoAnswerInHours,
+    handoverMessageActionInHours: data.handoverMessageActionInHours,
+    handoverMessageActionOutOfHours: data.handoverMessageActionOutOfHours,
     handoverMessageNoAnswerOutOfHours: data.handoverMessageNoAnswerOutOfHours,
     handoverCallbackAckMessage: data.handoverCallbackAckMessage,
     handoverCallbackTelegramEnabled: data.handoverCallbackTelegramEnabled,

@@ -111,6 +111,10 @@ export type ChatwootBotSettings = {
   handoverMessageInHours: string;
   /** Робочі години, бот сам не знайшов відповіді (request_operator): передаємо питання оператору. */
   handoverMessageNoAnswerInHours: string;
+  /** Робочі години, клієнт просить дію, яку бот не виконує (скасувати, змінити замовлення…). */
+  handoverMessageActionInHours: string;
+  /** Поза годинами, запит на дію: передамо оператору, просимо контакти. */
+  handoverMessageActionOutOfHours: string;
   handoverMessageOutOfHours: string;
   /** Поза годинами, коли бот сам не знайшов відповіді (request_operator): одразу просимо контакти. */
   handoverMessageNoAnswerOutOfHours: string;
@@ -409,6 +413,33 @@ export const CHATWOOT_BOT_ATTR_CALLBACK_REQUESTED = 'callback_requested';
 export const CHATWOOT_BOT_ATTR_CALLBACK_PHONE = 'callback_phone';
 /** Питання клієнта, на яке бот не знайшов відповіді поза годинами (для нотатки після контактів). */
 export const CHATWOOT_BOT_ATTR_CALLBACK_QUESTION = 'bot_callback_question';
+
+/**
+ * Навіщо бот кличе оператора (`request_operator.kind`): від цього залежить текст клієнту.
+ * `no_answer` — шукав і не знайшов; `action` — клієнт просить дію, яку бот не виконує
+ * (скасувати / змінити замовлення, повернення…); `human` — клієнт сам хоче поговорити з людиною.
+ */
+export const CHATWOOT_BOT_OPERATOR_REQUEST_KINDS = ['no_answer', 'action', 'human'] as const;
+export type ChatwootBotOperatorRequestKind = (typeof CHATWOOT_BOT_OPERATOR_REQUEST_KINDS)[number];
+
+/** Текст клієнту при передачі оператору за типом запиту і робочими годинами. */
+export function operatorHandoverMessage(
+  settings: Pick<
+    ChatwootBotSettings,
+    | 'handoverMessageInHours'
+    | 'handoverMessageOutOfHours'
+    | 'handoverMessageNoAnswerInHours'
+    | 'handoverMessageNoAnswerOutOfHours'
+    | 'handoverMessageActionInHours'
+    | 'handoverMessageActionOutOfHours'
+  >,
+  kind: ChatwootBotOperatorRequestKind,
+  inHours: boolean,
+): string {
+  if (kind === 'action') return inHours ? settings.handoverMessageActionInHours : settings.handoverMessageActionOutOfHours;
+  if (kind === 'human') return inHours ? settings.handoverMessageInHours : settings.handoverMessageOutOfHours;
+  return inHours ? settings.handoverMessageNoAnswerInHours : settings.handoverMessageNoAnswerOutOfHours;
+}
 /** Лише для відображення в Chatwoot; стан верифікації — у таблиці chatwoot_bot_conversation_states. */
 export const CHATWOOT_BOT_ATTR_VERIFIED = 'bot_verified';
 
@@ -492,6 +523,9 @@ export const DEFAULT_CHATWOOT_BOT_SETTINGS: ChatwootBotSettings = {
     'Зараз неробочий час. Можу спробувати допомогти сам – опишіть питання. Або залиште імʼя та телефон, і оператор передзвонить у робочі години. Якщо ситуація критична – напишіть «терміново».',
   handoverMessageNoAnswerInHours:
     'Не знайшов точної відповіді, тому передаю ваше питання оператору – він відповість тут найближчим часом.',
+  handoverMessageActionInHours: 'Передаю ваш запит оператору – він опрацює його і відповість тут найближчим часом.',
+  handoverMessageActionOutOfHours:
+    'Зараз неробочий час, тож ваш запит опрацює оператор. Залиште, будь ласка, імʼя та телефон – звʼяжемося з вами в робочі години.',
   handoverMessageNoAnswerOutOfHours:
     'Не знайшов точної відповіді. Зараз неробочий час – залиште імʼя та телефон, і оператор передзвонить у робочі години.',
   handoverCallbackTelegramEnabled: true,

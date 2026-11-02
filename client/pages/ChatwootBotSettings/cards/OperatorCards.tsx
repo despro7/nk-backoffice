@@ -202,6 +202,13 @@ export function InHoursMessagesCard({ page }: SettingsCardProps) {
         value={form.handoverMessageNoAnswerInHours}
         onValueChange={(v) => updateField('handoverMessageNoAnswerInHours', v)}
       />
+      <Textarea
+        label="Клієнт просить дію, яку бот не виконує"
+        description="Скасувати чи змінити замовлення, повернення, інша адреса – бот передає запит оператору."
+        minRows={2}
+        value={form.handoverMessageActionInHours}
+        onValueChange={(v) => updateField('handoverMessageActionInHours', v)}
+      />
     </SettingsCard>
   );
 }
@@ -225,6 +232,13 @@ export function OutOfHoursMessagesCard({ page }: SettingsCardProps) {
         minRows={2}
         value={form.handoverMessageNoAnswerOutOfHours}
         onValueChange={(v) => updateField('handoverMessageNoAnswerOutOfHours', v)}
+      />
+      <Textarea
+        label="Клієнт просить дію, яку бот не виконує"
+        description="Скасувати чи змінити замовлення тощо: просимо контакти, запит піде оператору разом з ними."
+        minRows={2}
+        value={form.handoverMessageActionOutOfHours}
+        onValueChange={(v) => updateField('handoverMessageActionOutOfHours', v)}
       />
       <Textarea
         label="Підтвердження після збору контактів"

@@ -171,8 +171,9 @@ export class ChatwootBotReplyRouter {
     const llmText = llm.text;
 
     if (llm.operatorRequested) {
-      logServer(`[ChatwootBot] request_operator conv=${conversationId}: ${previewContent(llm.operatorRequested, 120)}`);
-      const escalated = await escalateWith('operator_requested', { question: content, topic: llm.operatorRequested });
+      const { reason, kind } = llm.operatorRequested;
+      logServer(`[ChatwootBot] request_operator ${kind} conv=${conversationId}: ${previewContent(reason, 120)}`);
+      const escalated = await escalateWith('operator_requested', { question: content, topic: reason, kind });
       if (escalated) return escalated;
     }
 

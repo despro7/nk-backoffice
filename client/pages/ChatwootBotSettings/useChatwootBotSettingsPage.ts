@@ -200,6 +200,8 @@ export function useChatwootBotSettingsPage() {
         handoverMessageInHours: form.handoverMessageInHours,
         handoverMessageOutOfHours: form.handoverMessageOutOfHours,
         handoverMessageNoAnswerInHours: form.handoverMessageNoAnswerInHours,
+        handoverMessageActionInHours: form.handoverMessageActionInHours,
+        handoverMessageActionOutOfHours: form.handoverMessageActionOutOfHours,
         handoverMessageNoAnswerOutOfHours: form.handoverMessageNoAnswerOutOfHours,
         handoverCallbackAckMessage: form.handoverCallbackAckMessage,
         handoverCallbackTelegramEnabled: form.handoverCallbackTelegramEnabled,

@@ -130,7 +130,11 @@ function buildGeminiTools(tools: LlmToolDefinition[]) {
           properties: Object.fromEntries(
             Object.entries(t.parameters.properties).map(([key, val]) => [
               key,
-              { type: val.type === 'number' ? Type.NUMBER : Type.STRING, description: val.description },
+              {
+                type: val.type === 'number' ? Type.NUMBER : Type.STRING,
+                description: val.description,
+                ...(val.enum ? { enum: val.enum, format: 'enum' } : {}),
+              },
             ]),
           ),
           required: t.parameters.required ?? [],
