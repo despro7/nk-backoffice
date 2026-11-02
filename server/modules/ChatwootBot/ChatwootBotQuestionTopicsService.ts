@@ -1,3 +1,4 @@
+import { displayQuestionText } from './chatwootBotContentNorm.js';
 import { createHash } from 'crypto';
 import type { Prisma } from '@prisma/client';
 import { logServer, prisma } from '../../lib/utils.js';
@@ -126,7 +127,8 @@ export class ChatwootBotQuestionTopicsService {
       .filter((g): g is typeof g & { contentNorm: string } => Boolean(g.contentNorm))
       .map((g) => ({
         key: g.contentNorm,
-        text: g._max.contentPreview ?? g.contentNorm,
+        // Без привітання: інакше воно потрапляє в назву нової теми й у приклади для Jev.
+        text: displayQuestionText(g._max.contentPreview ?? g.contentNorm),
         count: g._count._all,
       }));
 

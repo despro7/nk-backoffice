@@ -12,6 +12,7 @@ import { chatwootBotKnowledgeService } from './ChatwootBotKnowledgeService.js';
 import { clusterQuestions, type QuestionCluster, type QuestionSample } from './chatwootBotQuestionClusters.js';
 import {
   normalizeChatwootMessageContent,
+  displayQuestionText,
   previewChatwootContent,
 } from './chatwootBotContentNorm.js';
 
@@ -135,7 +136,7 @@ export class ChatwootBotAnalyticsService {
         const questions = byTopic.get(topic.id)!.sort(byCount);
         return {
           topicId: topic.id,
-          label: topic.title,
+          label: displayQuestionText(topic.title),
           count: questions.reduce((sum, q) => sum + q.count, 0),
           examples: [...new Set(questions.map((q) => q.text))].slice(0, 5),
           questions,
@@ -145,7 +146,7 @@ export class ChatwootBotAnalyticsService {
 
     return {
       questionClusters: await this.withKnowledgeCoverage(clusters),
-      topics: snapshot.topics,
+      topics: snapshot.topics.map((topic) => ({ ...topic, title: displayQuestionText(topic.title) })),
       ignoredQuestions: ignoredQuestions.sort(byCount),
     };
   }
@@ -191,7 +192,7 @@ export class ChatwootBotAnalyticsService {
             } else {
               questionCounts.set(row.contentNorm, {
                 count: 1,
-                preview: row.contentPreview ?? row.contentNorm,
+                preview: displayQuestionText(row.contentPreview ?? row.contentNorm),
               });
             }
           }
@@ -208,7 +209,7 @@ export class ChatwootBotAnalyticsService {
           } else if (row.contentNorm) {
             const prev = missCounts.get(row.contentNorm);
             if (prev) prev.count += 1;
-            else missCounts.set(row.contentNorm, { count: 1, preview: row.contentPreview ?? row.contentNorm });
+            else missCounts.set(row.contentNorm, { count: 1, preview: displayQuestionText(row.contentPreview ?? row.contentNorm) });
           }
           break;
         }
