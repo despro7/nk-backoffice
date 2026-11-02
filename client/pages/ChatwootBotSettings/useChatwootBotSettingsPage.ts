@@ -199,6 +199,7 @@ export function useChatwootBotSettingsPage() {
         inboxApiAccessToken: form.inboxApiAccessToken || undefined,
         handoverMessageInHours: form.handoverMessageInHours,
         handoverMessageOutOfHours: form.handoverMessageOutOfHours,
+        handoverMessageNoAnswerInHours: form.handoverMessageNoAnswerInHours,
         handoverMessageNoAnswerOutOfHours: form.handoverMessageNoAnswerOutOfHours,
         handoverCallbackAckMessage: form.handoverCallbackAckMessage,
         handoverCallbackTelegramEnabled: form.handoverCallbackTelegramEnabled,

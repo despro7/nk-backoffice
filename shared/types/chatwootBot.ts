@@ -109,6 +109,8 @@ export type ChatwootBotSettings = {
   handoverWorkStart: string;
   handoverWorkEnd: string;
   handoverMessageInHours: string;
+  /** Робочі години, бот сам не знайшов відповіді (request_operator): передаємо питання оператору. */
+  handoverMessageNoAnswerInHours: string;
   handoverMessageOutOfHours: string;
   /** Поза годинами, коли бот сам не знайшов відповіді (request_operator): одразу просимо контакти. */
   handoverMessageNoAnswerOutOfHours: string;
@@ -488,6 +490,8 @@ export const DEFAULT_CHATWOOT_BOT_SETTINGS: ChatwootBotSettings = {
     'Зараз підключаю оператора. Зачекайте, будь ласка, кілька хвилин.',
   handoverMessageOutOfHours:
     'Зараз неробочий час. Можу спробувати допомогти сам – опишіть питання. Або залиште імʼя та телефон, і оператор передзвонить у робочі години. Якщо ситуація критична – напишіть «терміново».',
+  handoverMessageNoAnswerInHours:
+    'Не знайшов точної відповіді, тому передаю ваше питання оператору – він відповість тут найближчим часом.',
   handoverMessageNoAnswerOutOfHours:
     'Не знайшов точної відповіді. Зараз неробочий час – залиште імʼя та телефон, і оператор передзвонить у робочі години.',
   handoverCallbackTelegramEnabled: true,

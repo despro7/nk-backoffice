@@ -357,6 +357,10 @@ function mergeWithDefaults(raw: Partial<ChatwootBotSettings>): ChatwootBotSettin
       raw.handoverMessageOutOfHours,
       DEFAULT_CHATWOOT_BOT_SETTINGS.handoverMessageOutOfHours,
     ),
+    handoverMessageNoAnswerInHours: normalizeMessage(
+      raw.handoverMessageNoAnswerInHours,
+      DEFAULT_CHATWOOT_BOT_SETTINGS.handoverMessageNoAnswerInHours,
+    ),
     handoverMessageNoAnswerOutOfHours: normalizeMessage(
       raw.handoverMessageNoAnswerOutOfHours,
       DEFAULT_CHATWOOT_BOT_SETTINGS.handoverMessageNoAnswerOutOfHours,

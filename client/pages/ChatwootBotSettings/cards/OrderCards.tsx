@@ -121,7 +121,7 @@ export function VerifyTestCard({ page }: SettingsCardProps) {
         <I18nProvider locale="uk-UA">
           <DatePicker
             className="flex-1 min-w-[11rem]"
-            label="Дата останнього замовлення"
+            label="Дата останнього зам."
             labelPlacement="inside"
             granularity="day"
             showMonthAndYearPickers

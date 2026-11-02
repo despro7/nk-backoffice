@@ -48,7 +48,45 @@ const SettingsChatwootBot: React.FC = () => {
         Патерни, AI, verify замовлень, handover, reclaim і робочі години.
       </p>
 
-      {webhookProcessorHealth?.mismatch && (
+      {!form.enabled && (
+        <Card className="border-2 border-warning-300 bg-warning-50/50">
+          <CardBody className="p-4 text-sm text-warning-900">
+            <div className="flex gap-3 items-start">
+              <DynamicIcon name="triangle-alert" size={20} className="text-warning shrink-0 mt-0.5" />
+              <div className="text-sm space-y-1">
+                <p className="font-semibold text-base">Бот вимкнено</p>
+                <p>
+                  HTTP webhook може долітати, але обробка йде в{' '}
+                  <span className="font-mono">bot_disabled</span> – echo/handover не виконуються. Увімкніть
+                  перемикач на вкладці «Підключення», режим <span className="font-mono">live</span> і
+                  натисніть «Зберегти».
+                </p>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      <PageTabs
+        selectedKey={activeTab}
+        onSelectionChange={(key) => setActiveTab(String(key) as ChatwootSettingsTabKey)}
+      >
+        {(Object.keys(CHATWOOT_SETTINGS_TAB_LABELS) as ChatwootSettingsTabKey[]).map((key) => (
+          <Tab key={key} title={CHATWOOT_SETTINGS_TAB_LABELS[key]} />
+        ))}
+      </PageTabs>
+
+      {!canManage && (
+        <Card className="border border-default-200 bg-default-50">
+          <CardBody className="p-4 flex flex-row gap-3 items-center text-sm text-default-600">
+            <DynamicIcon name="eye" size={18} className="shrink-0" />
+            Лише перегляд: для зміни налаштувань і тестів потрібне право «Зміна налаштувань і тести чат-бота».
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Діагностика вебхука потрібна лише при налаштуванні підключення. */}
+      {activeTab === 'connection' && webhookProcessorHealth?.mismatch && (
         <Card className="border-2 border-danger-300 bg-danger-50/40">
           <CardBody className="gap-2 p-4">
             <div className="flex gap-3 items-start">
@@ -69,26 +107,8 @@ const SettingsChatwootBot: React.FC = () => {
         </Card>
       )}
 
-      {!form.enabled && (
-        <Card className="border-2 border-warning-300 bg-warning-50/50">
-          <CardBody className="p-4 text-sm text-warning-900">
-            <div className="flex gap-3 items-start">
-              <DynamicIcon name="triangle-alert" size={20} className="text-warning shrink-0 mt-0.5" />
-              <div className="text-sm space-y-1">
-                <p className="font-semibold text-base">Бот вимкнено</p>
-                <p>
-                  HTTP webhook може долітати, але обробка йде в{' '}
-                  <span className="font-mono">bot_disabled</span> – echo/handover не виконуються. Увімкніть
-                  перемикач на вкладці «Підключення», режим <span className="font-mono">live</span> і
-                  натисніть «Зберегти».
-                </p>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-      )}
-
-      {webhookProcessorHealth &&
+      {activeTab === 'connection' &&
+        webhookProcessorHealth &&
         !webhookProcessorHealth.mismatch &&
         webhookProcessorHealth.tunnelPointsHere &&
         webhookProcessorHealth.targetHealthUrl?.includes('chatwoot-dev') && (
@@ -101,24 +121,6 @@ const SettingsChatwootBot: React.FC = () => {
             </CardBody>
           </Card>
         )}
-
-      <PageTabs
-        selectedKey={activeTab}
-        onSelectionChange={(key) => setActiveTab(String(key) as ChatwootSettingsTabKey)}
-      >
-        {(Object.keys(CHATWOOT_SETTINGS_TAB_LABELS) as ChatwootSettingsTabKey[]).map((key) => (
-          <Tab key={key} title={CHATWOOT_SETTINGS_TAB_LABELS[key]} />
-        ))}
-      </PageTabs>
-
-      {!canManage && (
-        <Card className="border border-default-200 bg-default-50">
-          <CardBody className="p-4 flex flex-row gap-3 items-center text-sm text-default-600">
-            <DynamicIcon name="eye" size={18} className="shrink-0" />
-            Лише перегляд: для зміни налаштувань і тестів потрібне право «Зміна налаштувань і тести чат-бота».
-          </CardBody>
-        </Card>
-      )}
 
       <div>
         {/* Без права на зміну — нативний disabled блокує всі поля й кнопки вкладок. */}

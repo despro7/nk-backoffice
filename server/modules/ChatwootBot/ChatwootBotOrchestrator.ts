@@ -530,7 +530,7 @@ export class ChatwootBotOrchestrator {
               dryRun,
               contentPreview,
               messageId,
-              settings.handoverMessageInHours,
+              detail ? settings.handoverMessageNoAnswerInHours : settings.handoverMessageInHours,
               'in_hours',
               detail
                 ? [

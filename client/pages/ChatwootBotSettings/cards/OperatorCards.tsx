@@ -151,27 +151,45 @@ export function WorkingHoursCard({ page }: SettingsCardProps) {
   );
 }
 
-/** Усі тексти, які клієнт отримує при передачі оператору. */
-export function ClientMessagesCard({ page }: SettingsCardProps) {
+/** Тексти клієнту в робочі години: оператор на звʼязку. */
+export function InHoursMessagesCard({ page }: SettingsCardProps) {
   const { form, updateField } = page;
   if (!form) return null;
   return (
-    <SettingsCard icon="message-circle-more" title="Тексти клієнту">
+    <SettingsCard icon="sun" title="Тексти клієнту: робочі години">
       <Textarea
-        label="Робочі години: підключаємо оператора"
+        label="Клієнт просить оператора"
+        description="Бот призначає оператора й більше не відповідає в цій розмові."
         minRows={2}
         value={form.handoverMessageInHours}
         onValueChange={(v) => updateField('handoverMessageInHours', v)}
       />
       <Textarea
-        label="Поза годинами: клієнт просить оператора"
+        label="Бот не знайшов відповіді"
+        description="Бот сам кличе оператора (request_operator); питання й тема – у приватній нотатці для оператора."
+        minRows={2}
+        value={form.handoverMessageNoAnswerInHours}
+        onValueChange={(v) => updateField('handoverMessageNoAnswerInHours', v)}
+      />
+    </SettingsCard>
+  );
+}
+
+/** Тексти клієнту поза робочими годинами: збір контактів і екстрений виклик. */
+export function OutOfHoursMessagesCard({ page }: SettingsCardProps) {
+  const { form, updateField } = page;
+  if (!form) return null;
+  return (
+    <SettingsCard icon="moon" title="Тексти клієнту: поза годинами">
+      <Textarea
+        label="Клієнт просить оператора"
         description="Бот лишається в розмові й пропонує допомогу або дзвінок."
         minRows={3}
         value={form.handoverMessageOutOfHours}
         onValueChange={(v) => updateField('handoverMessageOutOfHours', v)}
       />
       <Textarea
-        label="Поза годинами: бот не знайшов відповіді"
+        label="Бот не знайшов відповіді"
         description="Одразу просимо контакти; питання клієнта піде оператору разом з ними."
         minRows={2}
         value={form.handoverMessageNoAnswerOutOfHours}

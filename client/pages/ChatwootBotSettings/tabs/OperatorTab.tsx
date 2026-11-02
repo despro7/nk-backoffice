@@ -1,5 +1,11 @@
 import React from 'react';
-import { ClientMessagesCard, OperatorCallCard, ReclaimCard, WorkingHoursCard } from '../cards/OperatorCards';
+import {
+  InHoursMessagesCard,
+  OperatorCallCard,
+  OutOfHoursMessagesCard,
+  ReclaimCard,
+  WorkingHoursCard,
+} from '../cards/OperatorCards';
 import { SettingsColumns, type SettingsCardProps } from '../cards/SettingsCard';
 
 export function OperatorTab({ page }: SettingsCardProps) {
@@ -9,10 +15,15 @@ export function OperatorTab({ page }: SettingsCardProps) {
         <>
           <OperatorCallCard page={page} />
           <WorkingHoursCard page={page} />
-          <ClientMessagesCard page={page} />
+          <InHoursMessagesCard page={page} />
         </>
       }
-      right={<ReclaimCard page={page} />}
+      right={
+        <>
+          <OutOfHoursMessagesCard page={page} />
+          <ReclaimCard page={page} />
+        </>
+      }
     />
   );
 }

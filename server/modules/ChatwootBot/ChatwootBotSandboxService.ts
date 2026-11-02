@@ -92,7 +92,7 @@ export class ChatwootBotSandboxService {
     if (llm.operatorRequested) {
       return {
         outcome: 'operator_tool',
-        text: inHours ? settings.handoverMessageInHours : settings.handoverMessageNoAnswerOutOfHours,
+        text: inHours ? settings.handoverMessageNoAnswerInHours : settings.handoverMessageNoAnswerOutOfHours,
         inBusinessHours: inHours,
         detail: llm.operatorRequested,
         meta: llm.testMeta,
