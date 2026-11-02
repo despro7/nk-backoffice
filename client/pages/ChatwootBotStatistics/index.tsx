@@ -266,9 +266,6 @@ const ChatwootBotStatistics: React.FC = () => {
               minValue={minDate ?? undefined}
               maxValue={maxDate}
             />
-            {datePresetKey !== DEFAULT_PRESET_KEY && (
-              <ReportResetFiltersButton onPress={() => applyPreset(DEFAULT_PRESET_KEY)} />
-            )}
             <Button
               variant="flat"
               isDisabled={loading}
@@ -279,6 +276,9 @@ const ChatwootBotStatistics: React.FC = () => {
             >
               Оновити
             </Button>
+            {datePresetKey !== DEFAULT_PRESET_KEY && (
+              <ReportResetFiltersButton onPress={() => applyPreset(DEFAULT_PRESET_KEY)} />
+            )}
           </div>
           {overview && (
             <div className="flex flex-wrap items-center gap-y-1 text-sm font-medium text-gray-700">
