@@ -23,6 +23,7 @@ import type {
   ChatwootBotTopicDeleteMode,
   ChatwootBotTopicQuestionsAction,
   ChatwootBotTopicRef,
+  ChatwootBotQuestionContextDto,
 } from '@shared/types/chatwootBotTopics';
 
 async function parseJson<T>(res: Response): Promise<T> {
@@ -298,6 +299,13 @@ export const chatwootBotApi = {
 
   async createTopic(title: string, hashes: string[]): Promise<ChatwootBotTopicRef> {
     return sendJson('/api/chatwoot-bot/analytics/topics', 'POST', { title, hashes });
+  },
+
+  async getQuestionContext(hash: string): Promise<ChatwootBotQuestionContextDto | null> {
+    const res = await fetch(`/api/chatwoot-bot/analytics/question-context?hash=${encodeURIComponent(hash)}`, {
+      credentials: 'include',
+    });
+    return parseJson(res);
   },
 
   async applyTopicQuestionsAction(input: ChatwootBotTopicQuestionsAction): Promise<void> {

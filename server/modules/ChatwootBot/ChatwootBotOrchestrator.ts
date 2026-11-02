@@ -841,6 +841,7 @@ export class ChatwootBotOrchestrator {
         step = 'public_message';
         trace.ok('public_message:start');
         await botClient.createOutgoingMessage(conversationId, publicMessage, false);
+        chatwootBotAnalyticsService.recordBotReply(conversationId, publicMessage);
         trace.ok('public_message:ok');
         step = 'private_note';
         try {
@@ -993,6 +994,7 @@ export class ChatwootBotOrchestrator {
       }
       const client = createChatwootApiClient(botMessagingCredentials(settings));
       await client.createOutgoingMessage(conversationId, settings.handoverMessageEmergencyFallback, false);
+      chatwootBotAnalyticsService.recordBotReply(conversationId, settings.handoverMessageEmergencyFallback);
       await client.mergeConversationCustomAttributesBestEffort(conversationId, {
         [CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING]: true,
         [CHATWOOT_BOT_ATTR_CALLBACK_QUESTION]: `Екстрений виклик: ${previewContent(call.content, 400)}`,
@@ -1080,6 +1082,7 @@ export class ChatwootBotOrchestrator {
       let step = 'public_message';
       try {
         await client.createOutgoingMessage(conversationId, publicMessage, false);
+        chatwootBotAnalyticsService.recordBotReply(conversationId, publicMessage);
         step = 'custom_attributes';
         await client.mergeConversationCustomAttributesBestEffort(conversationId, {
           [CHATWOOT_BOT_ATTR_OOH_CALLBACK_PENDING]: true,
@@ -1191,6 +1194,7 @@ export class ChatwootBotOrchestrator {
         ...(phone ? { [CHATWOOT_BOT_ATTR_CALLBACK_PHONE]: phone } : {}),
       });
       await client.createOutgoingMessage(conversationId, ack, false);
+      chatwootBotAnalyticsService.recordBotReply(conversationId, ack);
       const attrs = getConversationCustomAttributes(payload);
       const question =
         typeof attrs[CHATWOOT_BOT_ATTR_CALLBACK_QUESTION] === 'string'

@@ -271,6 +271,7 @@ export class ChatwootBotReplyRouter {
     try {
       const client = createChatwootApiClient(botMessagingCredentials(settings));
       await client.createOutgoingMessage(conversationId, text, false);
+      chatwootBotAnalyticsService.recordBotReply(conversationId, text);
       const event = await persistEvent(logCtx, settings, {
         action: 'echo',
         reason,

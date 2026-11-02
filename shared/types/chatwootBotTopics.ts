@@ -10,7 +10,12 @@ export type ChatwootBotTopicQuestionDto = {
   /** Скільки разів питання поставили за обраний період. */
   count: number;
   source: ChatwootBotTopicAssignSource;
+  /** Що було в розмові перед питанням (останнє входження); немає — перше повідомлення або дані старі. */
+  context?: ChatwootBotQuestionContextDto | null;
 };
+
+/** Попереднє повідомлення в розмові: бот, оператор або сам клієнт. */
+export type ChatwootBotQuestionContextDto = { by: 'bot' | 'agent' | 'client'; text: string };
 
 export type ChatwootBotTopicRef = {
   id: number;

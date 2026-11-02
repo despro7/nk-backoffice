@@ -797,6 +797,23 @@ router.post('/analytics/topics', topicsManage, async (req: Request, res: Respons
 });
 
 /**
+ * GET /api/chatwoot-bot/analytics/question-context?hash= — що було в розмові перед питанням (з історії Chatwoot).
+ */
+router.get('/analytics/question-context', statisticsRead, async (req: Request, res: Response) => {
+  try {
+    const hash = String(req.query.hash ?? '').trim();
+    if (!/^[0-9a-f]{64}$/.test(hash)) {
+      res.status(400).json({ success: false, error: 'Невірний hash' });
+      return;
+    }
+    res.json({ success: true, data: await chatwootBotAnalyticsService.questionContextFromChatwoot(hash) });
+  } catch (error) {
+    logServer('[ChatwootBot] question context failed', error);
+    res.status(500).json({ success: false, error: 'Не вдалося отримати контекст із Chatwoot' });
+  }
+});
+
+/**
  * POST /api/chatwoot-bot/analytics/topics/questions  { action: 'move' | 'noise' | 'auto', hashes, topicId? }
  */
 router.post('/analytics/topics/questions', topicsManage, async (req: Request, res: Response) => {

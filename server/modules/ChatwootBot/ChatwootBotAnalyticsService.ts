@@ -1,3 +1,8 @@
+import { createChatwootApiClient } from './ChatwootApiClient.js';
+import { handoverAssignmentCredentials } from './chatwootCredentials.js';
+import { chatwootBotSettingsService } from './ChatwootBotSettingsService.js';
+import { buildQuestionContexts } from './chatwootBotQuestionContext.js';
+import type { ChatwootBotQuestionContextDto } from '../../../shared/types/chatwootBotTopics.js';
 import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { prisma, logServer } from '../../lib/utils.js';
@@ -71,6 +76,47 @@ export class ChatwootBotAnalyticsService {
     void this.record(input);
   }
 
+  /**
+   * Контекст питання з історії Chatwoot — для старих даних, де відповіді бота ще не записувались.
+   * Беремо останнє повідомлення клієнта з цим текстом і публічне повідомлення безпосередньо перед ним.
+   */
+  async questionContextFromChatwoot(questionHash: string): Promise<ChatwootBotQuestionContextDto | null> {
+    const assignment = await prisma.chatwootBotQuestionAssignment.findUnique({
+      where: { questionHash },
+      select: { contentNorm: true },
+    });
+    if (!assignment) return null;
+    const event = await prisma.chatwootBotAnalyticsEvent.findFirst({
+      where: { kind: 'customer_message', contentNorm: assignment.contentNorm, conversationId: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      select: { conversationId: true, messageId: true, createdAt: true },
+    });
+    if (!event?.conversationId) return null;
+    const settings = await chatwootBotSettingsService.getSettings();
+    const client = createChatwootApiClient(handoverAssignmentCredentials(settings));
+    const messages = (await client.listConversationMessages(event.conversationId))
+      .filter((m) => !m.private && (m.content ?? '').trim())
+      .sort((a, b) => a.id - b.id);
+    const index = event.messageId != null
+      ? messages.findIndex((m) => m.id === event.messageId)
+      : messages.findIndex((m) => m.createdAt.getTime() >= event.createdAt.getTime());
+    const prev = index > 0 ? messages[index - 1] : null;
+    if (!prev) return null;
+    const incoming = prev.message_type === 0 || prev.message_type === 'incoming';
+    const senderType = String(prev.sender?.type ?? '').toLowerCase();
+    const text = (prev.content ?? '').replace(/\s+/g, ' ').trim();
+    return {
+      by: incoming ? 'client' : senderType === 'user' ? 'agent' : 'bot',
+      text: text.length > 200 ? `${text.slice(0, 200)}…` : text,
+    };
+  }
+
+  /** Публічна відповідь бота клієнту — контекст для наступного питання в статистиці тем. */
+  recordBotReply(conversationId: number, text: string, messageId: number | null = null): void {
+    if (!text.trim()) return;
+    this.recordBestEffort({ kind: 'bot_action', conversationId, messageId, content: text, meta: { kind: 'reply' } });
+  }
+
   /** Для кожної теми — стаття, яку знайде бот (той самий пошук, що й у tool). */
   private async withKnowledgeCoverage<T extends QuestionCluster>(clusters: T[]): Promise<Array<T & ChatwootBotQuestionClusterDto>> {
     try {
@@ -90,7 +136,10 @@ export class ChatwootBotAnalyticsService {
    * Теми з БД (алгоритм + ручні правки) з підрахунком за період. Якщо таблиці тем недоступні —
    * кластеризація на льоту, як раніше.
    */
-  private async buildQuestionTopics(questionCounts: Map<string, { count: number; preview: string }>): Promise<{
+  private async buildQuestionTopics(
+    questionCounts: Map<string, { count: number; preview: string }>,
+    contexts: Map<string, ChatwootBotQuestionContextDto>,
+  ): Promise<{
     questionClusters: ChatwootBotQuestionClusterDto[];
     topics: ChatwootBotTopicRef[];
     ignoredQuestions: ChatwootBotTopicQuestionDto[];
@@ -118,6 +167,7 @@ export class ChatwootBotAnalyticsService {
         text: preview,
         count,
         source: row.source === 'manual' ? 'manual' : 'auto',
+        context: contexts.get(norm) ?? null,
       };
       if (row.ignored) {
         ignoredQuestions.push(question);
@@ -226,7 +276,10 @@ export class ChatwootBotAnalyticsService {
 
     const toSamples = (counts: Map<string, { count: number; preview: string }>): QuestionSample[] =>
       [...counts.values()].map((v) => ({ text: v.preview, count: v.count }));
-    const { questionClusters, topics, ignoredQuestions } = await this.buildQuestionTopics(questionCounts);
+    const { questionClusters, topics, ignoredQuestions } = await this.buildQuestionTopics(
+      questionCounts,
+      buildQuestionContexts(rows),
+    );
     // Стаття могла зʼявитись пізніше (або пошук покращився): покажемо, що відповідь уже є.
     const knowledgeMisses = await this.withKnowledgeCoverage(clusterQuestions(toSamples(missCounts), { maxClusters: 10 }));
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Autocomplete,
   AutocompleteItem,
@@ -23,6 +23,7 @@ import { chatwootBotApi } from '@/services/ChatwootBotService';
 import { ToastService } from '@/services/ToastService';
 import type { ChatwootBotQuestionClusterDto } from '@shared/types/chatwootBot';
 import type {
+  ChatwootBotQuestionContextDto,
   ChatwootBotTopicDeleteMode,
   ChatwootBotTopicQuestionDto,
   ChatwootBotTopicRef,
@@ -70,25 +71,47 @@ type DeleteDialog = {
   mode: ChatwootBotTopicDeleteMode;
 };
 
+const CONTEXT_LABEL: Record<ChatwootBotQuestionContextDto['by'], string> = {
+  bot: 'у відповідь на бота',
+  agent: 'у відповідь на оператора',
+  client: 'клієнт перед цим',
+};
+
+/** «у відповідь на …» під питанням, яке не перше в розмові. */
+export function QuestionContextLine({ context }: { context: ChatwootBotQuestionContextDto | null | undefined }) {
+  if (!context) return null;
+  return (
+    <p className="text-xs text-default-400 truncate" title={context.text}>
+      <DynamicIcon name="corner-down-right" size={12} className="inline -mt-0.5 mr-1" />
+      {CONTEXT_LABEL[context.by]}: «{context.text}»
+    </p>
+  );
+}
+
 function QuestionRow({
   question,
   selectable,
   selected,
   onToggle,
+  context,
 }: {
   question: ChatwootBotTopicQuestionDto;
   selectable: boolean;
   selected: boolean;
   onToggle: () => void;
+  context?: ChatwootBotQuestionContextDto | null;
 }) {
   return (
-    <div className="flex items-center gap-2 py-1 text-sm">
+    <div className="flex items-start gap-2 py-1 text-sm">
       {selectable && (
         <Checkbox size="sm" isSelected={selected} onValueChange={onToggle} aria-label={`Вибрати «${question.text}»`} />
       )}
-      <span className="flex-1 min-w-0 text-default-700">
-        {question.text} ({question.count})
-      </span>
+      <div className="flex-1 min-w-0">
+        <span className="text-default-700">
+          {question.text} ({question.count})
+        </span>
+        <QuestionContextLine context={context ?? question.context} />
+      </div>
       {question.source === 'manual' && (
         <Chip size="sm" variant="flat" className="h-5 text-[11px]">
           вручну
@@ -121,6 +144,30 @@ export function QuestionTopicsCard({
   const [search, setSearch] = useState('');
   const [articleFilter, setArticleFilter] = useState<string>(ALL);
   const [tagFilter, setTagFilter] = useState<string>(ALL);
+  /** Контекст із Chatwoot для старих питань (до запису відповідей бота): hash → контекст / null. */
+  const [loadedContexts, setLoadedContexts] = useState<Map<string, ChatwootBotQuestionContextDto | null>>(new Map());
+
+  // Розгорнули тему — догружаємо контекст питань, для яких його немає в аналітиці (не більше 15 на тему).
+  useEffect(() => {
+    const missing = rows
+      .filter((row) => row.topicId != null && expanded.has(row.topicId))
+      .flatMap((row) => (row.questions ?? []).slice(0, 15))
+      .filter((q) => !q.context && !loadedContexts.has(q.hash))
+      .map((q) => q.hash);
+    if (missing.length === 0) return;
+    setLoadedContexts((prev) => {
+      const next = new Map(prev);
+      for (const hash of missing) next.set(hash, null);
+      return next;
+    });
+    for (const hash of missing) {
+      chatwootBotApi
+        .getQuestionContext(hash)
+        .then((context) => setLoadedContexts((prev) => new Map(prev).set(hash, context)))
+        .catch(() => undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded, rows]);
   const [busy, setBusy] = useState(false);
   const [titleDialog, setTitleDialog] = useState<TitleDialog | null>(null);
   const [mergeDialog, setMergeDialog] = useState<MergeDialog | null>(null);
@@ -502,6 +549,7 @@ export function QuestionTopicsCard({
                     {!isOpen && otherPhrasings.length > 0 && (
                       <p className="text-xs text-default-500 truncate">{otherPhrasings.join(' · ')}</p>
                     )}
+                    {!isOpen && otherPhrasings.length === 0 && <QuestionContextLine context={questions[0]?.context} />}
                   </div>
                   <span className="w-20 text-sm px-1">{row.count}</span>
                   <span className="w-[250px]">
@@ -566,6 +614,7 @@ export function QuestionTopicsCard({
                       <QuestionRow
                         key={q.hash}
                         question={q}
+                        context={q.context ?? loadedContexts.get(q.hash)}
                         selectable={canManage}
                         selected={selected.has(q.hash)}
                         onToggle={() => setSelected((prev) => toggleSet(prev, q.hash))}
