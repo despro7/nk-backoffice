@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isMeatFree,
+  parseCatalogNutrition,
   parseCatalogQuery,
   plainCatalogDescription,
   searchCatalogDocs,
@@ -68,5 +69,34 @@ describe('catalog helpers', () => {
 
   it('strips html and entities', () => {
     expect(plainCatalogDescription('<p>Суп &#8211; готова страва</p>')).toBe('Суп – готова страва');
+  });
+});
+
+describe('nutrition', () => {
+  const withNutrition = [
+    { name: 'Плов з куркою', sku: '1', category: 'Другі страви', ingredients: ['рис', 'курка'], description: '', nutrition: { kcal: 150, protein: 9, fat: 5, carbs: 18 } },
+    { name: 'Гречка з куркою', sku: '2', category: 'Другі страви', ingredients: ['гречка', 'курка'], description: '', nutrition: { kcal: 120, protein: 12, fat: 3, carbs: 15 } },
+    { name: 'Борщ', sku: '3', category: 'Перші страви', ingredients: ['буряк'], description: '', nutrition: { kcal: 45, protein: 2, fat: 1, carbs: 7 } },
+    { name: 'Суп', sku: '4', category: 'Перші страви', ingredients: ['картопля'], description: '', nutrition: null },
+  ];
+
+  it('sorts high-protein requests by protein and skips dishes without nutrition', () => {
+    expect(searchCatalogDocs(withNutrition, 'білкові страви').map((d) => d.sku)).toEqual(['2', '1', '3']);
+    expect(searchCatalogDocs(withNutrition, 'білкові другі страви').map((d) => d.sku)).toEqual(['2', '1']);
+  });
+
+  it('sorts light requests by calories', () => {
+    expect(searchCatalogDocs(withNutrition, 'щось легке').map((d) => d.sku)).toEqual(['3', '2', '1']);
+  });
+
+  it('parses nutrition JSON with optional salt', () => {
+    expect(parseCatalogNutrition('{"proteins":"3,3","fats":"3.3","carbs":"4.8","energy":"60","salt":"0.9"}')).toEqual({
+      kcal: 60,
+      protein: 3.3,
+      fat: 3.3,
+      carbs: 4.8,
+      salt: 0.9,
+    });
+    expect(parseCatalogNutrition('{"proteins":"","fats":"1","carbs":"1","energy":"1"}')).toBeNull();
   });
 });

@@ -5,6 +5,7 @@ import { computeEffectiveStock } from '../Storefront/WooCommerceStockService.js'
 import type { ChatwootBotCatalogItemDto } from '../../../shared/types/chatwootBotTools.js';
 import {
   isMeatFree,
+  parseCatalogNutrition,
   parseIngredientsJson,
   plainCatalogDescription,
   searchCatalogDocs,
@@ -26,7 +27,7 @@ export class ChatwootBotCatalogToolService {
         wooProductId: { not: null },
         NOT: { sku: null },
       },
-      select: { sku: true, description: true, productIngredientsJson: true },
+      select: { sku: true, description: true, productIngredientsJson: true, productNutritionJson: true },
     });
     const storefrontBySku = new Map(
       storefrontRows
@@ -36,6 +37,7 @@ export class ChatwootBotCatalogToolService {
           {
             description: plainCatalogDescription(r.description),
             ingredients: parseIngredientsJson(r.productIngredientsJson),
+            nutrition: parseCatalogNutrition(r.productNutritionJson),
           },
         ]),
     );
@@ -50,7 +52,7 @@ export class ChatwootBotCatalogToolService {
     const found = searchCatalogDocs(docs, q);
 
     const items: ChatwootBotCatalogItemDto[] = [];
-    for (const { product, category, ingredients, description } of found.slice(0, limit)) {
+    for (const { product, category, ingredients, description, nutrition } of found.slice(0, limit)) {
       const effective = computeEffectiveStock(
         product.stockBalanceByStock,
         portionsMap.get(product.sku.trim()) ?? 0,
@@ -70,6 +72,8 @@ export class ChatwootBotCatalogToolService {
         ingredients: ingredients.length ? ingredients.slice(0, 12) : undefined,
         meatFree: isMeatFree(ingredients),
         description: description || undefined,
+        weightGrams: product.weight ?? undefined,
+        nutritionPer100g: nutrition ?? undefined,
       });
     }
     return items;

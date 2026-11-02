@@ -56,6 +56,10 @@ export type ChatwootBotCatalogItemDto = {
   meatFree?: boolean | null;
   /** Короткий опис вітрини (до 240 символів). */
   description?: string;
+  /** Вага порції, г. */
+  weightGrams?: number;
+  /** КБЖВ на 100 г: kcal, білки, жири, вуглеводи, сіль (г), якщо є. */
+  nutritionPer100g?: { kcal: number; protein: number; fat: number; carbs: number; salt?: number };
 };
 
 export type ChatwootBotSitePageSource = 'wp_rest' | 'html_fallback';

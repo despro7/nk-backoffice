@@ -22,6 +22,15 @@ const MEAT_PATTERN =
 /** «без мʼяса», «вегетаріанське», «пісне» — фільтр замість пошуку слів. */
 const MEAT_FREE_PATTERN = /(вегет|веган|пісн|без\s+мяс|без\s+мʼяс|не\s+їм\s+мяс)/u;
 
+/** «білкові», «протеїн» — сортування за білком; «легкі», «дієтичні», «низькокалорійні» — за калорійністю. */
+const HIGH_PROTEIN_PATTERN = /(білк|белк|протеїн|протеин)\p{L}*/gu;
+const LOW_CALORIE_PATTERN = /(низькокалор|малокалор|низкокалор|калорійн|калорийн|дієт|диет|легк|худн|схуд)\p{L}*/gu;
+
+export type CatalogNutritionSort = 'protein_desc' | 'kcal_asc' | null;
+
+/** КБЖВ на 100 г (числа); null — немає даних. */
+export type CatalogNutrition = { kcal: number; protein: number; fat: number; carbs: number; salt?: number };
+
 /** Різні форми одного інгредієнта → одна основа: «куркою» і «курятиною» — одне. */
 const SYNONYM_PREFIXES: Array<{ canonical: string; prefixes: string[] }> = [
   { canonical: '~кур', prefixes: ['курк', 'куря', 'кура', 'кури', 'курч', 'філе'] },
@@ -49,6 +58,7 @@ export type CatalogSearchDoc = {
   category: string | null;
   ingredients: string[];
   description: string;
+  nutrition?: CatalogNutrition | null;
 };
 
 /** null — склад невідомий, судити не можемо. */
@@ -57,11 +67,28 @@ export function isMeatFree(ingredients: string[]): boolean | null {
   return !ingredients.some((i) => MEAT_PATTERN.test(normalize(i)));
 }
 
-export function parseCatalogQuery(query: string): { stems: string[]; meatFreeOnly: boolean } {
+export function parseCatalogQuery(query: string): {
+  stems: string[];
+  meatFreeOnly: boolean;
+  nutritionSort: CatalogNutritionSort;
+} {
   const q = normalize(query);
   const meatFreeOnly = MEAT_FREE_PATTERN.test(q);
-  const cleaned = meatFreeOnly ? q.replace(MEAT_FREE_PATTERN, ' ').replace(/(вегетаріан|веган|пісн)\p{L}*/gu, ' ') : q;
-  return { stems: catalogStems(cleaned), meatFreeOnly };
+  let cleaned = meatFreeOnly ? q.replace(MEAT_FREE_PATTERN, ' ').replace(/(вегетаріан|веган|пісн)\p{L}*/gu, ' ') : q;
+  let nutritionSort: CatalogNutritionSort = null;
+  if (new RegExp(HIGH_PROTEIN_PATTERN.source, 'u').test(cleaned)) {
+    nutritionSort = 'protein_desc';
+    cleaned = cleaned.replace(HIGH_PROTEIN_PATTERN, ' ');
+  } else if (new RegExp(LOW_CALORIE_PATTERN.source, 'u').test(cleaned)) {
+    nutritionSort = 'kcal_asc';
+    cleaned = cleaned.replace(LOW_CALORIE_PATTERN, ' ');
+  }
+  return { stems: catalogStems(cleaned), meatFreeOnly, nutritionSort };
+}
+
+function nutritionValue(doc: CatalogSearchDoc, sort: Exclude<CatalogNutritionSort, null>): number | null {
+  if (!doc.nutrition) return null;
+  return sort === 'protein_desc' ? doc.nutrition.protein : doc.nutrition.kcal;
 }
 
 function stemsOf(text: string): Set<string> {
@@ -102,15 +129,45 @@ export function scoreCatalogDoc(
  * Лише ті, що покривають найбільше слів запиту: «друга страва з куркою» не повертає плов зі свининою.
  */
 export function searchCatalogDocs<T extends CatalogSearchDoc>(docs: T[], query: string): T[] {
-  const { stems, meatFreeOnly } = parseCatalogQuery(query);
+  const { stems, meatFreeOnly, nutritionSort } = parseCatalogQuery(query);
   const scored = docs
     .map((doc, index) => ({ doc, index, ...scoreCatalogDoc(doc, query, stems) }))
-    .filter(({ doc, score }) => score > 0 && (!meatFreeOnly || isMeatFree(doc.ingredients) === true));
+    .filter(({ doc, score }) => score > 0 && (!meatFreeOnly || isMeatFree(doc.ingredients) === true))
+    // «білкові» / «легкі»: без КБЖВ страву не порадиш — пропускаємо.
+    .filter(({ doc }) => !nutritionSort || nutritionValue(doc, nutritionSort) != null);
   const bestCoverage = Math.max(0, ...scored.map((r) => r.matched));
   return scored
     .filter((r) => r.matched === bestCoverage || r.score >= EXACT_BONUS)
-    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .sort((a, b) => {
+      if (nutritionSort) {
+        const diff = nutritionValue(a.doc, nutritionSort)! - nutritionValue(b.doc, nutritionSort)!;
+        const ordered = nutritionSort === 'protein_desc' ? -diff : diff;
+        if (ordered !== 0) return ordered;
+      }
+      return b.score - a.score || a.index - b.index;
+    })
     .map(({ doc }) => doc);
+}
+
+/** `productNutritionJson` (рядки на 100 г) → числа; без калорійності або білка — null. */
+export function parseCatalogNutrition(raw: string | null | undefined): CatalogNutrition | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Record<string, unknown>;
+    const num = (v: unknown): number | null => {
+      const n = Number.parseFloat(String(v ?? '').replace(',', '.'));
+      return Number.isFinite(n) ? n : null;
+    };
+    const kcal = num(value.energy);
+    const protein = num(value.proteins);
+    const fat = num(value.fats);
+    const carbs = num(value.carbs);
+    if (kcal == null || protein == null || fat == null || carbs == null) return null;
+    const salt = num(value.salt);
+    return { kcal, protein, fat, carbs, ...(salt != null ? { salt } : {}) };
+  } catch {
+    return null;
+  }
 }
 
 /** HTML-опис → короткий текст для моделі. */
