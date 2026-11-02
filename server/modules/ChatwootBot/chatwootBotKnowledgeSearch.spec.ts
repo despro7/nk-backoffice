@@ -30,7 +30,13 @@ describe('knowledgeStems', () => {
   it('drops stop words and short words, stems long words', () => {
     expect([...knowledgeStems('Добрий день, скільки коштує доставка?')]).toEqual(['~ціна', '~доставка']);
     expect([...knowledgeStems('Яка вартість доставки?')]).toEqual(['~ціна', '~доставка']);
-    expect([...knowledgeStems('замовлення 24155')]).toEqual(['замов', '24155']);
+    expect([...knowledgeStems('замовлення 24155')]).toEqual(['~замовлення', '24155']);
+  });
+
+  it('maps Russian and Ukrainian forms to the same stems', () => {
+    expect([...knowledgeStems('Для ЗСУ есть скидка?')]).toEqual(['~військові', '~знижка']);
+    expect([...knowledgeStems('Яка знижка для військових?')]).toEqual(['~знижка', '~військові']);
+    expect([...knowledgeStems('Отменить заказ')]).toEqual(['~скасування', '~замовлення']);
   });
 });
 
@@ -48,6 +54,15 @@ describe('searchKnowledgeIndex', () => {
   it('returns nothing for unrelated or empty queries', () => {
     expect(searchKnowledgeIndex(index, 'хто виграв футбол')).toEqual([]);
     expect(searchKnowledgeIndex(index, 'привіт')).toEqual([]);
+  });
+
+  it('does not match on generic order words alone', () => {
+    expect(searchKnowledgeIndex(index, 'Вітаю, де моє замовлення?')).toEqual([]);
+    expect(searchKnowledgeIndex(index, 'Добрий день. Хочу замовити на пробу')).toEqual([]);
+  });
+
+  it('matches a Russian question to a Ukrainian article', () => {
+    expect(searchKnowledgeIndex(index, 'Сколько стоит доставка?')[0]?.doc.id).toBe(1);
   });
 
   it('does not match on answer words alone', () => {

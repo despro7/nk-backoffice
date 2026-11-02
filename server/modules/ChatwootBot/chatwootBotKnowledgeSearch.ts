@@ -17,18 +17,39 @@ const STOP_WORDS = new Set([
   'доброго', 'дня', 'вечора', 'ранку', 'дізнатися', 'дізнатись', 'якій', 'яким', 'якому', 'точно', 'памʼятаю', "пам'ятаю", 'памятаю',
   // Вступні слова: «мене цікавить щось без мʼяса» і «мене цікавлять білкові страви» — різні теми.
   'мене', 'щось', 'цікавить', 'цікавлять', 'цікавило', 'хотів', 'хотіла', 'хотілося', 'хотілось',
+  // Російські службові слова й ввічливість.
+  'здравствуйте', 'добрый', 'доброе', 'вечер', 'утро', 'пожалуйста', 'подскажите', 'скажите', 'можно', 'мне',
+  'меня', 'хочу', 'хотел', 'хотела', 'где', 'когда', 'какой', 'какая', 'какие', 'какое', 'или', 'нет', 'спасибо',
+  'сколько', 'будет', 'было', 'если', 'тоже', 'еще', 'ещё', 'уже', 'вас', 'ваш', 'ваши',
 ]);
+
+/**
+ * Слова, що є майже в кожному питанні магазину («замовлення», «заказ»): у пошуку статті збіг лише по них
+ * не означає спільної теми. Інакше «де моє замовлення» знаходило статтю про оплату («чи можна замовити
+ * наложкою»). Для групування питань вони лишаються: «Де моє замовлення?» — окрема тема.
+ */
+const GENERIC_STEMS = new Set(['~замовлення', 'зроби', 'сдела', 'товар', 'магаз', 'сайт']);
 
 /**
  * Синоніми предметної області: різні слова однієї теми дають одну «основу»,
  * щоб «вартість доставки» знаходила статтю «скільки коштує доставка».
  */
 const SYNONYM_PREFIXES: Array<{ canonical: string; prefixes: string[] }> = [
-  { canonical: '~ціна', prefixes: ['варті', 'цін', 'кошт', 'прайс', 'вартує'] },
+  { canonical: '~замовлення', prefixes: ['замов', 'заказ'] },
+  { canonical: '~ціна', prefixes: ['варті', 'цін', 'кошт', 'прайс', 'вартує', 'цен', 'стоим', 'стоит'] },
   { canonical: '~доставка', prefixes: ['достав', 'привез', 'привоз'] },
-  { canonical: '~оплата', prefixes: ['оплат', 'оплач', 'платіж', 'платит', 'накладен'] },
-  { canonical: '~скасування', prefixes: ['скасув', 'відмін', 'відмов'] },
-  { canonical: '~статус', prefixes: ['стаді', 'статус', 'відстеж', 'етап'] },
+  { canonical: '~відправка', prefixes: ['відправ', 'надсил', 'отправ', 'отсыл'] },
+  { canonical: '~оплата', prefixes: ['оплат', 'оплач', 'платіж', 'платит', 'накладен', 'наложк', 'післяплат', 'наложен'] },
+  { canonical: '~скасування', prefixes: ['скасув', 'відмін', 'відмов', 'отмен', 'отказ'] },
+  { canonical: '~статус', prefixes: ['стаді', 'статус', 'відстеж', 'етап', 'стади', 'отслеж'] },
+  { canonical: '~знижка', prefixes: ['знижк', 'скидк', 'знижок', 'скидок', 'промокод', 'акці', 'акци'] },
+  { canonical: '~військові', prefixes: ['військ', 'воєн', 'воен', 'зсу', 'всу', 'атошн', 'ветеран'] },
+  { canonical: '~повернення', prefixes: ['поверн', 'возврат', 'вернут'] },
+  { canonical: '~страва', prefixes: ['страв', 'блюд', 'їжа', 'їжу', 'еда', 'еду'] },
+  { canonical: '~мʼясо', prefixes: ['мяс', 'мясн'] },
+  { canonical: '~курка', prefixes: ['курк', 'куря', 'курин', 'куриц', 'курочк'] },
+  { canonical: '~склад', prefixes: ['склад', 'состав', 'інгредієнт', 'ингредиент'] },
+  { canonical: '~зберігання', prefixes: ['зберіг', 'зберег', 'хранен', 'хранит'] },
 ];
 
 function canonicalStem(word: string): string {
@@ -38,12 +59,25 @@ function canonicalStem(word: string): string {
   return word.length > STEM_LENGTH ? word.slice(0, STEM_LENGTH) : word;
 }
 
+/**
+ * Основи значущих слів. Українські й російські форми однієї теми зводяться до спільної канонічної основи
+ * (`SYNONYM_PREFIXES`), тож «скидка военным» і «знижка військовим» — одне питання.
+ */
 export function knowledgeStems(text: string): Set<string> {
   const stems = new Set<string>();
-  for (const raw of text.toLowerCase().split(/[^\p{L}\p{N}ʼ']+/u)) {
-    const word = raw.replace(/[ʼ']/g, '');
+  for (const raw of text.toLowerCase().replace(/ё/g, 'е').split(/[^\p{L}\p{N}ʼ'’]+/u)) {
+    const word = raw.replace(/[ʼ'’]/g, '');
     if (word.length < 3 || STOP_WORDS.has(word)) continue;
     stems.add(canonicalStem(word));
+  }
+  return stems;
+}
+
+/** Основи для пошуку статті: без загальних слів магазину. */
+export function knowledgeQueryStems(text: string): Set<string> {
+  const stems = knowledgeStems(text);
+  for (const stem of stems) {
+    if (GENERIC_STEMS.has(stem)) stems.delete(stem);
   }
   return stems;
 }
@@ -75,7 +109,7 @@ export function searchKnowledgeIndex<T extends KnowledgeSearchDoc>(
   query: string,
   limit = 3,
 ): Array<{ doc: T; score: number }> {
-  const queryStems = knowledgeStems(query);
+  const queryStems = knowledgeQueryStems(query);
   if (queryStems.size === 0) return [];
   return index
     .map((entry) => {
