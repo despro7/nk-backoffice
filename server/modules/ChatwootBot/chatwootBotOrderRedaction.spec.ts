@@ -19,4 +19,15 @@ describe('toVerifiedOrderDto', () => {
     });
     expect(dto).not.toHaveProperty('customerPhone');
   });
+
+  it('reads productName from stored order items', () => {
+    const dto = toVerifiedOrderDto({
+      orderNumber: '26103',
+      status: '4',
+      statusText: 'Відправлено',
+      ttn: '',
+      items: JSON.stringify([{ productName: 'Біла квасоля з куркою', quantity: 2, price: 227, sku: '02032' }]),
+    });
+    expect(dto.items).toEqual([{ name: 'Біла квасоля з куркою', quantity: 2, sku: '02032', price: 227 }]);
+  });
 });

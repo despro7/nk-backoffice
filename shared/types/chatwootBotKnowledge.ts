@@ -32,7 +32,8 @@ export type ChatwootBotKnowledgeSearchHit = {
 
 /** Результат LLM tool search_knowledge_base. */
 export type ChatwootBotKnowledgeToolResult =
-  | { found: true; entries: Array<{ title: string; answer: string }>; hint: string }
+  /** `id` — щоб пісочниця могла відкрити статтю на редагування. */
+  | { found: true; entries: Array<{ id: number; title: string; answer: string }>; hint: string }
   | { found: false; hint: string };
 
 export const CHATWOOT_BOT_KNOWLEDGE_LIMITS = {

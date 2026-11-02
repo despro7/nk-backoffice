@@ -22,7 +22,7 @@ import { chatwootBotCatalogToolService } from './ChatwootBotCatalogToolService.j
 import { chatwootBotOrderToolService } from './ChatwootBotOrderToolService.js';
 import { chatwootBotKnowledgeService } from './ChatwootBotKnowledgeService.js';
 import { chatwootBotAnalyticsService } from './ChatwootBotAnalyticsService.js';
-import { chatwootBotVerifyService } from './ChatwootBotVerifyService.js';
+import { chatwootBotVerifyService, type ChatwootBotVerifyStateStore } from './ChatwootBotVerifyService.js';
 import { isTrustedPhoneChannel } from './chatwootBotOrderLookup.js';
 import { chatwootBotStorefrontSiteToolService } from './ChatwootBotStorefrontSiteToolService.js';
 import { chatwootBotLlmToolDefinitions } from '../../../shared/constants/chatwootBotLlmTools.js';
@@ -31,6 +31,14 @@ import { chatwootBotOrderCancelService } from './ChatwootBotOrderCancelService.j
 const BOT_TOOLS = chatwootBotLlmToolDefinitions();
 /** Без увімкненого скасування tool не показуємо: модель передає такі запити через request_operator. */
 const BOT_TOOLS_WITHOUT_CANCEL = BOT_TOOLS.filter((t) => t.name !== 'request_order_cancellation');
+/** Інструменти, якими бот сам відповідає (без бази знань — вона окрема колонка, і без передачі оператору). */
+const ANSWERING_TOOLS = new Set([
+  'get_storefront_catalog',
+  'get_storefront_site_pages',
+  'verify_customer',
+  'get_verified_order',
+  'request_order_cancellation',
+]);
 
 export type ChatwootBotGenerateReplyResult = {
   text: string | null;
@@ -64,6 +72,8 @@ export class ChatwootBotLlmRunner {
       inBusinessHours?: boolean | null;
       /** Пісочниця: request_operator працює без розмови (лише фіксує причину). */
       sandbox?: boolean;
+      /** Пісочниця: стан верифікації в памʼяті (verify_customer без розмови Chatwoot). */
+      verifyStore?: ChatwootBotVerifyStateStore;
     },
   ): Promise<ChatwootBotGenerateReplyResult> {
     if (!settings.aiEnabled) return { text: null };
@@ -90,6 +100,7 @@ export class ChatwootBotLlmRunner {
     let state = options?.conversationState;
     let toolVerifyRateLimited = false;
     let operatorRequested: ChatwootBotGenerateReplyResult['operatorRequested'];
+    const toolsUsed = new Set<string>();
     const verifiedIds = state ? activeVerifiedOrderIds(state, now.getTime()) : [];
     const contextNote = buildConversationContextNote({
       now,
@@ -124,6 +135,7 @@ export class ChatwootBotLlmRunner {
           })),
         },
         async (name, args) => {
+          toolsUsed.add(name);
           if (name === 'get_storefront_catalog') {
             const query = typeof args.query === 'string' ? args.query : undefined;
             const limit = typeof args.limit === 'number' ? args.limit : undefined;
@@ -143,7 +155,8 @@ export class ChatwootBotLlmRunner {
             );
           }
           if (name === 'verify_customer') {
-            const conversationId = options?.conversationId;
+            const verifyStore = options?.verifyStore;
+            const conversationId = options?.conversationId ?? (verifyStore ? 0 : null);
             if (!state || conversationId == null) {
               return { verified: false, code: 'unavailable', hint: botInstruction(instructions, 'verify.unavailable') };
             }
@@ -155,6 +168,7 @@ export class ChatwootBotLlmRunner {
               { phone: str(args.phone), orderNumber: str(args.orderNumber), dateFrom: str(args.dateFrom), dateTo: str(args.dateTo) },
               channelPhone,
               options?.messageId ?? null,
+              verifyStore,
             );
             state = next;
             if (result.verified === false && result.code === 'rate_limited') toolVerifyRateLimited = true;
@@ -211,6 +225,17 @@ export class ChatwootBotLlmRunner {
       );
       const text = result.text.trim();
       const emptyReply = text.length === 0;
+      // Які інструменти дали відповідь на це повідомлення — для колонки «Відповідь» у статистиці тем.
+      const answering = [...toolsUsed].filter((name) => ANSWERING_TOOLS.has(name));
+      if (options?.conversationId != null && !options.sandbox && answering.length > 0 && !operatorRequested) {
+        chatwootBotAnalyticsService.recordBestEffort({
+          kind: 'bot_action',
+          conversationId: options.conversationId,
+          messageId: options.messageId ?? null,
+          content: userContent,
+          meta: { kind: 'tool_use', tools: answering },
+        });
+      }
       const testMeta: Omit<LlmTestModelResponse, 'reply'> = completionToTestDiagnostics(
         requestedModel,
         result,

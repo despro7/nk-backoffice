@@ -1,13 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Avatar,
   Button,
+  ButtonGroup,
   Card,
   CardBody,
   CardHeader,
   Chip,
   Input,
-  Radio,
-  RadioGroup,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
   Textarea,
   Tooltip,
 } from '@heroui/react';
@@ -17,10 +20,23 @@ import type {
   ChatwootBotSandboxOutcome,
   ChatwootBotSandboxReplyResult,
   ChatwootBotSandboxScenario,
+  ChatwootBotSandboxVerifyState,
 } from '@shared/types/chatwootBotSandbox';
+import {
+  CHATWOOT_BOT_INSTRUCTION_MAX_LENGTH,
+  CHATWOOT_BOT_INSTRUCTIONS,
+  botInstruction,
+} from '@shared/constants/chatwootBotInstructions';
+import type { ChatwootBotKnowledgeEntry } from '@shared/types/chatwootBotKnowledge';
+import { PERMISSIONS } from '@shared/constants/permissions';
 import { chatwootBotApi } from '@/services/ChatwootBotService';
+import { chatwootKnowledgeApi } from '@/services/ChatwootKnowledgeService';
+import { useRoleAccess } from '@/hooks/useRoleAccess';
+import { KnowledgeEntryDrawer } from '@/pages/ChatwootBotKnowledge/KnowledgeEntryDrawer';
 import { ToastService } from '@/services/ToastService';
 import type { ChatwootBotSettingsPageModel } from '../useChatwootBotSettingsPage';
+import { InstructionEditor, InstructionPreview } from '../components/InstructionEditor';
+import { withInstructionText } from '../cards/AiInstructionsCard';
 
 /** `navigate(…, { state })` зі статистики: одразу поставити це питання боту. */
 export type SandboxNavigationState = { sandboxAsk?: string };
@@ -32,6 +48,9 @@ type Turn =
   | { role: 'assistant'; content: string; result: ChatwootBotSandboxReplyResult };
 
 type HoursMode = 'schedule' | 'in' | 'out';
+
+/** Відкрити статтю бази знань на редагування або нову з питанням; `undefined` — немає права керувати базою. */
+type OpenArticle = ((target: { id: number } | { question: string }) => void) | undefined;
 
 type ScenarioRun = { turns: Turn[]; error?: string };
 
@@ -46,6 +65,46 @@ const OUTCOME_META: Record<
   fallback: { label: 'Fallback', color: 'danger' },
 };
 
+const HOURS_MODES: Array<{ key: HoursMode; label: string; icon: 'calendar-clock' | 'sun' | 'moon' }> = [
+  { key: 'schedule', label: 'За розкладом', icon: 'calendar-clock' },
+  { key: 'in', label: 'Робочий час', icon: 'sun' },
+  { key: 'out', label: 'Неробочий', icon: 'moon' },
+];
+
+const VERIFY_ATTEMPT_LABEL: Record<NonNullable<ChatwootBotSandboxVerifyState['attempt']>, string> = {
+  ok: 'пройдено повідомленням',
+  mismatch: 'дані не збіглися',
+  ambiguous: 'кілька замовлень',
+  rate_limited: 'ліміт спроб',
+  invalid_input: 'не розпізнано',
+};
+
+/** Стан верифікації сесії після ходу: скільки замовлень відкрито і чим закінчилась автоперевірка повідомлення. */
+function VerifyChip({ verify }: { verify: ChatwootBotSandboxVerifyState }) {
+  const verified = verify.verifiedOrders > 0;
+  const parts = [
+    verified ? `верифіковано (${verify.verifiedOrders})` : 'не верифіковано',
+    verify.attempt ? VERIFY_ATTEMPT_LABEL[verify.attempt] : null,
+    !verified && verify.failedAttempts > 0 ? `невдач: ${verify.failedAttempts}` : null,
+  ].filter(Boolean);
+  return (
+    <Tooltip
+      content="Перевірка на реальних замовленнях (лише читання). Стан живе до очищення діалогу; у Chatwoot і статистику нічого не пишеться."
+      placement="top"
+      className="max-w-xs"
+    >
+      <Chip
+        size="sm"
+        variant="flat"
+        color={verified ? 'success' : 'default'}
+        startContent={<DynamicIcon name={verified ? 'shield-check' : 'shield'} size={12} />}
+      >
+        {parts.join(' · ')}
+      </Chip>
+    </Tooltip>
+  );
+}
+
 function hoursValue(mode: HoursMode): boolean | null {
   return mode === 'schedule' ? null : mode === 'in';
 }
@@ -54,6 +113,84 @@ function newId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
     : `s-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+type InstructionDef = (typeof CHATWOOT_BOT_INSTRUCTIONS)[number];
+
+function collectStrings(value: unknown, out: string[] = []): string[] {
+  if (typeof value === 'string') out.push(value.trim());
+  else if (Array.isArray(value)) value.forEach((v) => collectStrings(v, out));
+  else if (value && typeof value === 'object') Object.values(value).forEach((v) => collectStrings(v, out));
+  return out;
+}
+
+/** Інструкції, що сформували крок: опис інструмента і підказки, текст яких є у відповіді. */
+function stepInstructions(name: string, result: unknown, overrides: Record<string, string>): InstructionDef[] {
+  const strings = collectStrings(result).filter((t) => t.length > 0);
+  return CHATWOOT_BOT_INSTRUCTIONS.filter((item) => {
+    if (item.group === 'tools') return item.key === `tool.${name}`;
+    const text = botInstruction(overrides, item.key).trim();
+    return text.length > 0 && strings.some((t) => t === text || (text.length >= 20 && t.includes(text)));
+  });
+}
+
+/** Редагування інструкції просто з пісочниці: змінює форму (як на вкладці AI), діє з наступного повідомлення. */
+function InstructionQuickEdit({ item, page }: { item: InstructionDef; page: ChatwootBotSettingsPageModel }) {
+  const overrides = page.form?.aiInstructions ?? {};
+  const isChanged = overrides[item.key] != null;
+  const isTool = item.group === 'tools';
+  return (
+    <Popover placement="bottom-start" shouldBlockScroll={false}>
+      <PopoverTrigger>
+        <Button
+          size="sm"
+          variant="flat"
+          color={isChanged ? 'warning' : 'default'}
+          className="h-6 min-w-0 gap-1 px-2 text-tiny font-normal"
+          startContent={<DynamicIcon name={isTool ? 'wrench' : 'message-square-text'} size={12} />}
+        >
+          {isTool ? 'Опис інструмента' : item.label}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[min(560px,90vw)] items-stretch p-3">
+        <InstructionEditor
+          label={item.label}
+          ariaLabel={item.label}
+          headerExtra={<span className="font-mono text-[11px] text-default-400">{item.key}</span>}
+          context={<InstructionPreview text={item.usage} />}
+          minRows={2}
+          maxLength={CHATWOOT_BOT_INSTRUCTION_MAX_LENGTH}
+          value={overrides[item.key] ?? item.defaultText}
+          onChange={(v) => page.updateField('aiInstructions', withInstructionText(overrides, item.key, item.defaultText, v))}
+          highlighted={isChanged}
+        />
+        <div className="mt-2 flex items-center gap-2 text-xs text-default-500">
+          <span className="flex-1">Діє з наступного повідомлення в пісочниці. Щоб застосувати в live — збережіть налаштування.</span>
+          {isChanged ? (
+            <Button
+              size="sm"
+              variant="light"
+              color="danger"
+              className="h-6 min-w-0 px-2"
+              startContent={<DynamicIcon name="rotate-ccw" size={12} />}
+              onPress={() => page.updateField('aiInstructions', withInstructionText(overrides, item.key, item.defaultText, null))}
+            >
+              Стандартний
+            </Button>
+          ) : null}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Статті з відповіді search_knowledge_base (старі відповіді без `id` пропускаємо). */
+function knowledgeHits(result: unknown): Array<{ id: number; title: string }> {
+  const entries = (result as { entries?: unknown } | null)?.entries;
+  if (!Array.isArray(entries)) return [];
+  return entries.flatMap((e: { id?: unknown; title?: unknown }) =>
+    typeof e?.id === 'number' ? [{ id: e.id, title: String(e.title ?? '') }] : [],
+  );
 }
 
 function prettyJson(value: unknown): string {
@@ -65,10 +202,65 @@ function prettyJson(value: unknown): string {
   }
 }
 
-function TurnMeta({ result }: { result: ChatwootBotSandboxReplyResult }) {
+/** Знайдені статті — відкрити на редагування; нічого не знайдено — створити статтю з запитом моделі. */
+function ArticleButtons({
+  hits,
+  query,
+  openArticle,
+}: {
+  hits: Array<{ id: number; title: string }>;
+  query: string;
+  openArticle: NonNullable<OpenArticle>;
+}) {
+  const className = 'h-6 min-w-0 max-w-64 gap-1 px-2 text-tiny font-normal';
+  if (hits.length === 0) {
+    return query.trim() ? (
+      <Button
+        size="sm"
+        variant="flat"
+        color="primary"
+        className={className}
+        startContent={<DynamicIcon name="book-plus" size={12} />}
+        onPress={() => openArticle({ question: query.trim() })}
+      >
+        Створити статтю
+      </Button>
+    ) : null;
+  }
+  return (
+    <>
+      {hits.map((hit) => (
+        <Button
+          key={hit.id}
+          size="sm"
+          variant="flat"
+          className={`${className} bg-sky-200/60 text-sky-700`}
+          startContent={<DynamicIcon name="book-open" size={12} className="shrink-0" />}
+          onPress={() => openArticle({ id: hit.id })}
+        >
+          <span className="truncate">{hit.title}</span>
+        </Button>
+      ))}
+    </>
+  );
+}
+
+function TurnMeta({
+  result,
+  page,
+  openArticle,
+}: {
+  result: ChatwootBotSandboxReplyResult;
+  page: ChatwootBotSettingsPageModel;
+  openArticle: OpenArticle;
+}) {
   const [open, setOpen] = useState(false);
   const meta = result.meta;
   const trace = meta?.toolTrace ?? [];
+  // Звʼязок крок → інструкції фіксуємо на момент відповіді: після редагування текст у старій відповіді вже не збігатиметься.
+  const [instructions] = useState(() =>
+    trace.map((entry) => stepInstructions(entry.name, entry.result, page.form?.aiInstructions ?? {})),
+  );
   // Скасування замовлення тощо в пісочниці лише моделюються (`simulated: true` у відповіді інструмента).
   const simulated = trace.some(
     (entry) => typeof entry.result === 'object' && entry.result !== null && (entry.result as { simulated?: unknown }).simulated === true,
@@ -82,6 +274,7 @@ function TurnMeta({ result }: { result: ChatwootBotSandboxReplyResult }) {
           {outcome.label}
         </Chip>
         {result.detail ? <span className="truncate max-w-xs">{result.detail}</span> : null}
+        {result.verify ? <VerifyChip verify={result.verify} /> : null}
         {simulated ? (
           <Tooltip content="Інструмент лише змоделював дію: у SalesDrive нічого не змінено, оператора не сповіщено" placement="top">
             <Chip size="sm" variant="flat" color="secondary" startContent={<DynamicIcon name="flask-conical" size={12} />}>
@@ -111,11 +304,21 @@ function TurnMeta({ result }: { result: ChatwootBotSandboxReplyResult }) {
         ) : null}
       </div>
       {open
-        ? trace.map((entry) => (
+        ? trace.map((entry, index) => (
             <div key={entry.step} className="rounded-md border border-default-200 bg-default-50 p-2 space-y-1">
-              <div className="text-xs font-semibold text-default-700">
-                {entry.step}. {entry.name}
-                <span className="font-normal text-default-400"> · раунд {entry.apiRound}</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 text-xs font-semibold text-default-700">
+                  {entry.step}. {entry.name}
+                  <span className="font-normal text-default-400"> · раунд {entry.apiRound}</span>
+                </span>
+                {openArticle && entry.name === 'search_knowledge_base' ? (
+                  <ArticleButtons
+                    hits={knowledgeHits(entry.result)}
+                    query={String((entry.arguments as { query?: unknown } | null)?.query ?? '')}
+                    openArticle={openArticle}
+                  />
+                ) : null}
+                {instructions[index]?.map((item) => <InstructionQuickEdit key={item.key} item={item} page={page} />)}
               </div>
               <pre className="font-mono text-xs text-default-600 whitespace-pre-wrap break-all">
                 {prettyJson(entry.arguments)}
@@ -130,7 +333,15 @@ function TurnMeta({ result }: { result: ChatwootBotSandboxReplyResult }) {
   );
 }
 
-function Transcript({ turns }: { turns: Turn[] }) {
+function Transcript({
+  turns,
+  page,
+  openArticle,
+}: {
+  turns: Turn[];
+  page: ChatwootBotSettingsPageModel;
+  openArticle: OpenArticle;
+}) {
   if (turns.length === 0) {
     return (
       <p className="text-sm text-default-400 py-6 text-center">
@@ -142,17 +353,31 @@ function Transcript({ turns }: { turns: Turn[] }) {
     <div className="space-y-3">
       {turns.map((turn, index) =>
         turn.role === 'user' ? (
-          <div key={index} className="flex justify-end">
+          <div key={index} className="flex items-end justify-end gap-2">
             <div className="max-w-[85%] rounded-lg bg-default-100 px-3 py-2 text-sm whitespace-pre-wrap">
               {turn.content}
             </div>
+            <Avatar
+              size="sm"
+              className="shrink-0 bg-default-200 text-default-600"
+              icon={<DynamicIcon name="user" size={16} />}
+              aria-label="Клієнт"
+            />
           </div>
         ) : (
-          <div key={index} className="max-w-[95%]">
-            <div className="rounded-lg border border-default-200 bg-content1 px-3 py-2 text-sm whitespace-pre-wrap">
-              {turn.content}
+          <div key={index} className="flex items-start gap-2">
+            <Avatar
+              size="sm"
+              className="shrink-0 bg-primary-100 text-primary-600"
+              icon={<DynamicIcon name="bot" size={16} />}
+              aria-label="Бот"
+            />
+            <div className="min-w-0 max-w-[95%]">
+              <div className="rounded-lg border border-default-200 bg-content1 px-3 py-2 text-sm whitespace-pre-wrap">
+                {turn.content}
+              </div>
+              <TurnMeta result={turn.result} page={page} openArticle={openArticle} />
             </div>
-            <TurnMeta result={turn.result} />
           </div>
         ),
       )}
@@ -176,6 +401,34 @@ export function SandboxTab({ page }: Props) {
   const [runningAll, setRunningAll] = useState(false);
   const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
   const stopRef = useRef(false);
+  /** Сесія діалогу на сервері (стан верифікації); нова — після очищення або для кожного прогону сценарію. */
+  const sessionRef = useRef(newId());
+
+  // Статті бази знань: редагуються одразу в БД (як на сторінці бази знань), бот бачить зміни з наступного повідомлення.
+  const { hasPermission } = useRoleAccess();
+  const canManageKnowledge = hasPermission(PERMISSIONS.ACTION_CHATWOOT_KNOWLEDGE_MANAGE);
+  const [articles, setArticles] = useState<ChatwootBotKnowledgeEntry[]>([]);
+  const [articleDrawer, setArticleDrawer] = useState<{ entry: ChatwootBotKnowledgeEntry | null; question?: string } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!canManageKnowledge) return;
+    chatwootKnowledgeApi
+      .list()
+      .then(setArticles)
+      .catch(() => setArticles([]));
+  }, [canManageKnowledge]);
+  const openArticle: OpenArticle = canManageKnowledge
+    ? (target) => {
+        if ('question' in target) {
+          setArticleDrawer({ entry: null, question: target.question });
+          return;
+        }
+        const entry = articles.find((a) => a.id === target.id);
+        if (entry) setArticleDrawer({ entry });
+        else ToastService.show({ title: 'Статтю не знайдено', description: 'Можливо, її видалено.', color: 'warning' });
+      }
+    : undefined;
 
   useEffect(() => {
     chatwootBotApi
@@ -186,9 +439,10 @@ export function SandboxTab({ page }: Props) {
 
   /** Один хід бота на історію `history` (останнє — від клієнта). */
   const askBot = useCallback(
-    async (history: Turn[]): Promise<Turn> => {
+    async (history: Turn[], sessionId: string): Promise<Turn> => {
       const result = await chatwootBotApi.sandboxReply({
         messages: toHistory(history),
+        sessionId,
         inBusinessHours: hoursValue(hoursMode),
         aiProvider: form?.aiProvider,
         aiModel: form?.aiModel,
@@ -205,11 +459,12 @@ export function SandboxTab({ page }: Props) {
   const runScenario = useCallback(
     async (scenario: ChatwootBotSandboxScenario): Promise<ScenarioRun> => {
       const acc: Turn[] = [];
+      const sessionId = newId();
       try {
         for (const message of scenario.messages) {
           if (stopRef.current) break;
           acc.push({ role: 'user', content: message });
-          acc.push(await askBot(acc));
+          acc.push(await askBot(acc, sessionId));
         }
         return { turns: acc };
       } catch (e) {
@@ -228,7 +483,7 @@ export function SandboxTab({ page }: Props) {
     setActiveScenarioId(null);
     setBusy(true);
     try {
-      const reply = await askBot(history);
+      const reply = await askBot(history, sessionRef.current);
       setTurns([...history, reply]);
     } catch (e) {
       ToastService.show({
@@ -280,6 +535,7 @@ export function SandboxTab({ page }: Props) {
     setBusy(true);
     setActiveScenarioId(scenario.id);
     setTurns([]);
+    sessionRef.current = newId();
     const run = await runScenario(scenario);
     setRuns((prev) => ({ ...prev, [scenario.id]: run }));
     setTurns(run.turns);
@@ -318,17 +574,20 @@ export function SandboxTab({ page }: Props) {
           <DynamicIcon name="flask-conical" size={20} className="text-default-600" />
           <h2 className="text-lg font-semibold">Діалог</h2>
           <div className="ml-auto flex items-center gap-2">
-            <RadioGroup
-              orientation="horizontal"
-              size="sm"
-              value={hoursMode}
-              onValueChange={(v) => setHoursMode(v as HoursMode)}
-              aria-label="Робочі години"
-            >
-              <Radio value="schedule">За розкладом</Radio>
-              <Radio value="in">Робочий час</Radio>
-              <Radio value="out">Неробочий</Radio>
-            </RadioGroup>
+            <ButtonGroup size="sm" aria-label="Робочі години">
+              {HOURS_MODES.map((mode) => (
+                <Button
+                  key={mode.key}
+                  variant={hoursMode === mode.key ? 'solid' : 'flat'}
+                  color={hoursMode === mode.key ? 'warning' : 'warning'}
+                  startContent={<DynamicIcon name={mode.icon} size={14} />}
+                  aria-pressed={hoursMode === mode.key}
+                  onPress={() => setHoursMode(mode.key)}
+                >
+                  {mode.label}
+                </Button>
+              ))}
+            </ButtonGroup>
             <Tooltip content="Почати новий діалог" placement="top">
               <Button
                 size="sm"
@@ -339,6 +598,7 @@ export function SandboxTab({ page }: Props) {
                 onPress={() => {
                   setTurns([]);
                   setActiveScenarioId(null);
+                  sessionRef.current = newId();
                 }}
               >
                 <DynamicIcon name="eraser" size={16} />
@@ -349,9 +609,10 @@ export function SandboxTab({ page }: Props) {
         <CardBody className="gap-4 p-4">
           <p className="text-xs text-default-500">
             Той самий шлях, що в live: ключові слова handover → патерни → LLM з інструментами → fallback. Маска й модель
-            — з форми (зокрема незбережені зміни). Верифікація замовлень тут недоступна: немає розмови Chatwoot.
+            — з форми (зокрема незбережені зміни). Верифікація — на реальних замовленнях (лише читання), стан діє до
+            очищення діалогу; скасування замовлень лише моделюється.
           </p>
-          <Transcript turns={turns} />
+          <Transcript turns={turns} page={page} openArticle={openArticle} />
           {busy && !runningAll ? (
             <div className="flex items-center gap-2 text-xs text-default-500">
               <DynamicIcon name="loader-2" size={14} className="animate-spin" /> Бот думає…
@@ -424,6 +685,7 @@ export function SandboxTab({ page }: Props) {
               <Button
                 size="sm"
                 variant="flat"
+                color="success"
                 startContent={<DynamicIcon name="play" size={14} />}
                 isDisabled={busy || scenarios.length === 0}
                 onPress={() => void runAll()}
@@ -449,7 +711,7 @@ export function SandboxTab({ page }: Props) {
                   key={scenario.id}
                   className={`rounded-lg px-3 py-2 ${activeScenarioId === scenario.id ? 'bg-default-100' : 'hover:bg-default-50'}`}
                 >
-                  <div className="flex items-start gap-2">
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
                       className="min-w-0 flex-1 text-left"
@@ -471,6 +733,7 @@ export function SandboxTab({ page }: Props) {
                       <Button
                         size="sm"
                         variant="light"
+                        className="data-[hover=true]:bg-blue-500/15 text-blue-600"
                         isIconOnly
                         aria-label="Прогнати сценарій"
                         isDisabled={busy}
@@ -483,6 +746,7 @@ export function SandboxTab({ page }: Props) {
                       <Button
                         size="sm"
                         variant="light"
+                        color="danger"
                         isIconOnly
                         aria-label="Видалити сценарій"
                         isDisabled={busy}
@@ -503,6 +767,20 @@ export function SandboxTab({ page }: Props) {
           )}
         </CardBody>
       </Card>
+
+      {canManageKnowledge ? (
+        <KnowledgeEntryDrawer
+          isOpen={articleDrawer != null}
+          entry={articleDrawer?.entry ?? null}
+          initialQuestion={articleDrawer?.question}
+          canManage
+          onClose={() => setArticleDrawer(null)}
+          onSaved={(saved) => {
+            setArticles((prev) => [...prev.filter((a) => a.id !== saved.id), saved]);
+            setArticleDrawer(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

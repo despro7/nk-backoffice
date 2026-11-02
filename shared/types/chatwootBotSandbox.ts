@@ -24,6 +24,8 @@ export type ChatwootBotSandboxOutcome =
 export type ChatwootBotSandboxReplyRequest = {
   /** Діалог; останнє повідомлення — від клієнта. */
   messages: ChatwootBotSandboxMessage[];
+  /** Сесія діалогу: стан верифікації живе між повідомленнями, доки діалог не очищено. */
+  sessionId?: string;
   /** null — як зараз за розкладом inbox. */
   inBusinessHours?: boolean | null;
   /** Чернетка маски з форми налаштувань (ще не збережена). */
@@ -45,6 +47,16 @@ export type ChatwootBotSandboxReplyResult = {
   /** Причина з request_operator / id правила автовідповіді. */
   detail?: string;
   meta?: Omit<LlmTestModelResponse, 'reply'>;
+  /** Верифікація після цього повідомлення (лише якщо в сесії вже була спроба або вона пройдена). */
+  verify?: ChatwootBotSandboxVerifyState;
+};
+
+export type ChatwootBotSandboxVerifyState = {
+  /** Скільки замовлень відкрито в сесії. */
+  verifiedOrders: number;
+  /** Автоперевірка цього повідомлення до моделі: `ok` або причина невдачі. */
+  attempt?: 'ok' | 'mismatch' | 'ambiguous' | 'rate_limited' | 'invalid_input';
+  failedAttempts: number;
 };
 
 export type ChatwootBotSandboxScenario = {

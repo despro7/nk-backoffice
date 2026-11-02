@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Button, Chip, Popover, PopoverContent, PopoverTrigger, cn } from '@heroui/react';
+import { Button, Popover, PopoverContent, PopoverTrigger, cn } from '@heroui/react';
 import { DynamicIcon, type IconName } from 'lucide-react/dynamic';
 import {
   BookOpen,
@@ -109,6 +109,32 @@ function ToolInfo({ name }: { name: string }) {
   );
 }
 
+/** Мітка інструмента (кольорова, з іконкою); клік — поповер з описом і, за потреби, приміткою. */
+export function BotToolChip({ name, note }: { name: string; note?: React.ReactNode }) {
+  const meta = BOT_TOOL_META[name];
+  return (
+    <Popover placement="top" showArrow>
+      <PopoverTrigger>
+        <Button
+          size="sm"
+          disableRipple
+          className={cn(
+            'h-5 min-w-0 gap-1 rounded-full px-1.5 mx-0.5 align-middle text-tiny font-normal font-sans data-[hover=true]:opacity-80',
+            meta?.chip ?? FALLBACK_CHIP,
+          )}
+          startContent={<DynamicIcon name={meta?.icon ?? 'wrench'} size={12} className="shrink-0" />}
+        >
+          {meta?.label ?? name}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent>
+        <ToolInfo name={name} />
+        {note ? <p className="max-w-xs px-1 pb-1 text-xs text-default-500">{note}</p> : null}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /** Текст з назвами інструментів як кольоровими мітками (лише перегляд); клік по мітці — опис інструмента. */
 export function InstructionPreview({ text }: { text: string }) {
   const nodes: React.ReactNode[] = [];
@@ -116,27 +142,7 @@ export function InstructionPreview({ text }: { text: string }) {
   for (const match of text.matchAll(TOOL_PATTERN)) {
     const index = match.index ?? 0;
     if (index > last) nodes.push(text.slice(last, index));
-    const meta = BOT_TOOL_META[match[1]];
-    nodes.push(
-      <Popover key={`${index}-${match[1]}`} placement="top" showArrow>
-        <PopoverTrigger>
-          <Chip
-            as="button"
-            size="sm"
-            variant="flat"
-            classNames={{
-              base: cn('h-5 align-middle cursor-pointer', meta?.chip ?? FALLBACK_CHIP),
-            }}
-            startContent={<DynamicIcon name={meta?.icon ?? 'wrench'} size={12} />}
-          >
-            {meta?.label ?? match[1]}
-          </Chip>
-        </PopoverTrigger>
-        <PopoverContent>
-          <ToolInfo name={match[1]} />
-        </PopoverContent>
-      </Popover>,
-    );
+    nodes.push(<BotToolChip key={`${index}-${match[1]}`} name={match[1]} />);
     last = index + match[0].length;
   }
   if (last < text.length) nodes.push(text.slice(last));

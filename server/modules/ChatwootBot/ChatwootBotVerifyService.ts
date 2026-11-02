@@ -37,6 +37,26 @@ import {
   type ChatwootBotConversationStateSnapshot,
   type VerifyRateLimitConfig,
 } from './chatwootBotConversationStateUtils.js';
+import type { ChatwootBotConversationStatePatch } from './ChatwootBotConversationStateService.js';
+
+/**
+ * Де живе стан верифікації: таблиця розмов (live) або памʼять пісочниці.
+ * `live: false` — без аналітики й без атрибута розмови в Chatwoot.
+ */
+export type ChatwootBotVerifyStateStore = {
+  live: boolean;
+  get(conversationId: number): Promise<ChatwootBotConversationStateSnapshot>;
+  update(
+    current: ChatwootBotConversationStateSnapshot,
+    patch: ChatwootBotConversationStatePatch,
+  ): Promise<ChatwootBotConversationStateSnapshot>;
+};
+
+const DB_STATE_STORE: ChatwootBotVerifyStateStore = {
+  live: true,
+  get: (conversationId) => chatwootBotConversationStateService.get(conversationId),
+  update: (current, patch) => chatwootBotConversationStateService.update(current, patch),
+};
 
 export type ChatwootBotVerifyFromMessageResult = {
   /** null — у повідомленні не було спроби верифікації. */
@@ -118,13 +138,14 @@ export class ChatwootBotVerifyService {
     settings: ChatwootBotSettings,
     state: ChatwootBotConversationStateSnapshot,
     phone: string,
+    store: ChatwootBotVerifyStateStore,
   ): Promise<{ state: ChatwootBotConversationStateSnapshot; limited: boolean }> {
     if (phone === state.pendingPhone) return { state, limited: false };
     const now = Date.now();
     const cfg = rateConfig(settings);
     const isReplacement = state.pendingPhone != null;
     if (isReplacement && isVerifyRateLimited(state, cfg, now)) return { state, limited: true };
-    const next = await chatwootBotConversationStateService.update(state, {
+    const next = await store.update(state, {
       ...(isReplacement ? bumpVerifyRate(state, cfg, now) : {}),
       pendingPhone: phone,
       pendingPhoneExpiresAt: new Date(now + settings.verifySessionTtlHours * 3600_000),
@@ -141,19 +162,22 @@ export class ChatwootBotVerifyService {
     attempt: ChatwootBotVerifyAttemptResult,
     method: ChatwootBotVerifyMethod,
     messageId: number | null,
+    store: ChatwootBotVerifyStateStore,
   ): Promise<ChatwootBotConversationStateSnapshot> {
     const now = Date.now();
     const sessionExpiresAt = new Date(now + settings.verifySessionTtlHours * 3600_000);
     const rate = bumpVerifyRate(state, rateConfig(settings), now);
 
     if (attempt.ok === false) {
-      chatwootBotAnalyticsService.recordBestEffort({
-        kind: 'bot_action',
-        conversationId,
-        messageId,
-        meta: { kind: 'verify_fail', method, reason: attempt.reason },
-      });
-      return chatwootBotConversationStateService.update(state, {
+      if (store.live) {
+        chatwootBotAnalyticsService.recordBestEffort({
+          kind: 'bot_action',
+          conversationId,
+          messageId,
+          meta: { kind: 'verify_fail', method, reason: attempt.reason },
+        });
+      }
+      return store.update(state, {
         ...rate,
         failedAttempts: state.failedAttempts + 1,
         pendingPhone: phone,
@@ -161,7 +185,7 @@ export class ChatwootBotVerifyService {
       });
     }
 
-    const next = await chatwootBotConversationStateService.update(state, {
+    const next = await store.update(state, {
       ...rate,
       verifiedOrderIds: [...new Set([...state.verifiedOrderIds, ...(attempt.orderIds ?? [attempt.orderId])])],
       verifiedPhoneHash: hashVerifiedPhone(phone),
@@ -170,6 +194,7 @@ export class ChatwootBotVerifyService {
       pendingPhone: phone,
       pendingPhoneExpiresAt: sessionExpiresAt,
     });
+    if (!store.live) return next;
     const client = createChatwootApiClient(botMessagingCredentials(settings));
     await client.mergeConversationCustomAttributesBestEffort(conversationId, {
       [CHATWOOT_BOT_ATTR_VERIFIED]: true,
@@ -189,8 +214,9 @@ export class ChatwootBotVerifyService {
     conversationId: number,
     content: string,
     messageId: number | null,
+    store: ChatwootBotVerifyStateStore = DB_STATE_STORE,
   ): Promise<ChatwootBotVerifyFromMessageResult> {
-    let state = await chatwootBotConversationStateService.get(conversationId);
+    let state = await store.get(conversationId);
     const now = Date.now();
 
     const phoneFromText = safeNormalizePhone(extractCallbackPhone(content));
@@ -200,7 +226,7 @@ export class ChatwootBotVerifyService {
     if (!orderToken && !dateToken) {
       // Лише телефон — запамʼятовуємо, щоб наступне повідомлення з номером/датою пройшло верифікацію.
       if (phoneFromText) {
-        const remembered = await this.rememberPhone(settings, state, phoneFromText);
+        const remembered = await this.rememberPhone(settings, state, phoneFromText, store);
         state = remembered.state;
         if (remembered.limited) return { attempt: { ok: false, reason: 'rate_limited' }, state };
       }
@@ -224,7 +250,7 @@ export class ChatwootBotVerifyService {
       attempt = await this.verifyWithLastOrderDate(phone, dateToken);
     }
 
-    state = await this.recordAttempt(settings, conversationId, state, phone, attempt, method, messageId);
+    state = await this.recordAttempt(settings, conversationId, state, phone, attempt, method, messageId, store);
     return { attempt, state };
   }
 
@@ -239,6 +265,7 @@ export class ChatwootBotVerifyService {
     args: ChatwootBotVerifyToolArgs,
     channelPhone: string | null,
     messageId: number | null,
+    store: ChatwootBotVerifyStateStore = DB_STATE_STORE,
   ): Promise<{ result: ChatwootBotVerifyToolResult; state: ChatwootBotConversationStateSnapshot }> {
     const now = Date.now();
     const phoneArg = args.phone?.trim();
@@ -257,7 +284,7 @@ export class ChatwootBotVerifyService {
     if (!orderToken && !hasDates) {
       let next = state;
       if (phoneFromArgs) {
-        const remembered = await this.rememberPhone(settings, state, phoneFromArgs);
+        const remembered = await this.rememberPhone(settings, state, phoneFromArgs, store);
         next = remembered.state;
         if (remembered.limited) {
           return { result: { verified: false, code: 'rate_limited', hint: verifyHint(settings, 'rateLimited') }, state: next };
@@ -288,7 +315,7 @@ export class ChatwootBotVerifyService {
       attempt = await this.verifyWithDateRange(phone, range.from, range.to);
     }
 
-    const next = await this.recordAttempt(settings, conversationId, state, phone, attempt, method, messageId);
+    const next = await this.recordAttempt(settings, conversationId, state, phone, attempt, method, messageId, store);
     if (attempt.ok === true) {
       const ordersVerified = (attempt.orderIds ?? [attempt.orderId]).length;
       return { result: { verified: true, ordersVerified, hint: verifyHint(settings, 'success') }, state: next };

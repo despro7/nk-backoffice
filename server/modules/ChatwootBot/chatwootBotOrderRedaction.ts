@@ -1,6 +1,7 @@
 import type { ChatwootBotVerifiedOrderDto, ChatwootBotVerifiedOrderItem } from '../../../shared/types/chatwootBotTools.js';
 
 type RawOrderItem = {
+  productName?: string;
   name?: string;
   title?: string;
   sku?: string;
@@ -22,7 +23,7 @@ function parseItems(raw: unknown): ChatwootBotVerifiedOrderItem[] {
   }
   return list
     .map((item) => {
-      const name = String(item.name ?? item.title ?? '').trim();
+      const name = String(item.productName ?? item.name ?? item.title ?? '').trim();
       const quantity = Number(item.quantity ?? item.amount ?? 1);
       if (!name) return null;
       const row: ChatwootBotVerifiedOrderItem = {

@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-11-02 — Chatwoot Bot: верифікація в пісочниці, інструменти в темах, склад замовлення
+
+**Files:** `ChatwootBotVerifyService.ts`, `ChatwootBotSandboxService.ts`, `ChatwootBotLlmRunner.ts`, `ChatwootBotAnalyticsService.ts`, `ChatwootBotKnowledgeService.ts`, `chatwootBotOrderRedaction.ts` (+ spec), `shared/types/chatwootBot.ts`, `chatwootBotSandbox.ts`, `chatwootBotKnowledge.ts`, `tabs/SandboxTab.tsx`, `cards/AiInstructionsCard.tsx`, `components/InstructionEditor.tsx`, `ChatwootBotStatistics/components/KnowledgeCoverage.tsx`, `QuestionTopicsCard.tsx`
+
+- **Фікс складу замовлення:** `get_verified_order` повертав `items: []` — у БД назва товару в `productName`, а парсер брав лише `name` / `title`. Стосується і live.
+- **Верифікація в пісочниці:** стан у памʼяті сервера на сесію діалогу (`ChatwootBotVerifyStateStore`, `live: false`), реальні замовлення лише на читання; автоперевірка повідомлення й `verifyNote.*` як у live; мітка стану під відповіддю. У Chatwoot і аналітику нічого не пишеться.
+- **Пісочниця:** перемикач годин — ButtonGroup з іконками; аватарки клієнта й бота; біля кроку інструмента — мітки інструкцій (опис інструмента, підказки з відповіді) з редактором на місці; для `search_knowledge_base` — редагування знайденої статті або «Створити статтю» (у відповіді інструмента зʼявився `id` статті).
+- **Теми питань:** колонка «Відповідь» — стаття бази знань плюс інструменти, якими бот відповідав (нові події `bot_action` / `tool_use`, лише нові live-розмови); `BotToolChip` з поповером.
+- **Інструкції для AI:** під час пошуку інструкція, яку редагують, не зникає з видачі; групи зі збігами розкриваються автоматично.
+
+**Документація:** `Docs/integrations/chatwoot-agent-bot.md` — «Пісочниця», «Теми питань (статистика)».
+
+---
+
 ## 2026-11-02 — ШК коробок: окрема серія 225…
 
 **Files:** `server/modules/Products/barcodeUtils.ts`, `CatalogBoxBarcodeService.ts`, `CatalogBoxBarcodeService.spec.ts`

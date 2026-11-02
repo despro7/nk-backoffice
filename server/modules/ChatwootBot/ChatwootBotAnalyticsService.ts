@@ -161,6 +161,7 @@ export class ChatwootBotAnalyticsService {
   private async buildQuestionTopics(
     questionCounts: Map<string, { count: number; preview: string }>,
     contexts: Map<string, ChatwootBotQuestionContextDto>,
+    toolsByNorm: Map<string, Map<string, number>>,
   ): Promise<{
     questionClusters: ChatwootBotQuestionClusterDto[];
     topics: ChatwootBotTopicRef[];
@@ -180,6 +181,7 @@ export class ChatwootBotAnalyticsService {
     }
 
     const byTopic = new Map<number, ChatwootBotTopicQuestionDto[]>();
+    const toolsByTopic = new Map<number, Map<string, number>>();
     const ignoredQuestions: ChatwootBotTopicQuestionDto[] = [];
     const intents = await chatwootBotIntentService.loadIntents(
       [...questionCounts.keys()].flatMap((norm) => snapshot.assignments.get(norm)?.questionHash ?? []),
@@ -204,6 +206,12 @@ export class ChatwootBotAnalyticsService {
         const list = byTopic.get(row.topicId) ?? [];
         list.push(question);
         byTopic.set(row.topicId, list);
+        const used = toolsByNorm.get(norm);
+        if (used) {
+          const acc = toolsByTopic.get(row.topicId) ?? new Map<string, number>();
+          for (const [name, n] of used) acc.set(name, (acc.get(name) ?? 0) + n);
+          toolsByTopic.set(row.topicId, acc);
+        }
       }
     }
 
@@ -219,6 +227,9 @@ export class ChatwootBotAnalyticsService {
           count: questions.reduce((sum, q) => sum + q.count, 0),
           examples: [...new Set(questions.map((q) => q.text))].slice(0, 5),
           questions,
+          tools: [...(toolsByTopic.get(topic.id) ?? [])]
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count),
         };
       })
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
@@ -253,6 +264,8 @@ export class ChatwootBotAnalyticsService {
 
     const questionCounts = new Map<string, { count: number; preview: string }>();
     const missCounts = new Map<string, { count: number; preview: string }>();
+    /** contentNorm повідомлення клієнта → інструмент → скільки разів бот ним відповів. */
+    const toolsByNorm = new Map<string, Map<string, number>>();
     let knowledgeLookups = 0;
     let knowledgeFound = 0;
     let customerMessages = 0;
@@ -280,7 +293,13 @@ export class ChatwootBotAnalyticsService {
           agentMessages += 1;
           break;
         case 'bot_action': {
-          const meta = row.meta as { kind?: string; found?: boolean } | null;
+          const meta = row.meta as { kind?: string; found?: boolean; tools?: unknown } | null;
+          if (meta?.kind === 'tool_use' && row.contentNorm && Array.isArray(meta.tools)) {
+            const used = toolsByNorm.get(row.contentNorm) ?? new Map<string, number>();
+            for (const name of meta.tools) if (typeof name === 'string') used.set(name, (used.get(name) ?? 0) + 1);
+            toolsByNorm.set(row.contentNorm, used);
+            break;
+          }
           if (meta?.kind !== 'kb_lookup') break;
           knowledgeLookups += 1;
           if (meta.found) {
@@ -308,6 +327,7 @@ export class ChatwootBotAnalyticsService {
     const { questionClusters, topics, ignoredQuestions } = await this.buildQuestionTopics(
       questionCounts,
       buildQuestionContexts(rows),
+      toolsByNorm,
     );
     // Стаття могла зʼявитись пізніше (або пошук покращився): покажемо, що відповідь уже є.
     const knowledgeMisses = await this.withKnowledgeCoverage(clusterQuestions(toSamples(missCounts), { maxClusters: 10 }));

@@ -321,8 +321,8 @@ export function QuestionTopicsCard({
         Теми питань
       </h2>
       <p className="text-xs text-default-500 mb-3">
-        Нові питання розкладає алгоритм; ручні правки він не змінює. Колонка «База знань» показує статтю, яку знайде
-        бот; «Немає» – прогалина.
+        Нові питання розкладає алгоритм; ручні правки він не змінює. Колонка «Відповідь» показує статтю, яку знайде
+        бот, та інструменти, якими він уже відповідав на питання теми (каталог, статус замовлення…); «Немає» – прогалина.
       </p>
 
       {rows.length > 0 && (
@@ -529,7 +529,7 @@ export function QuestionTopicsCard({
             <span className="w-6" />
             <span className="flex-1">Тема</span>
             <span className="w-20">Кількість</span>
-            <span className="w-[250px]">База знань</span>
+            <span className="w-[250px]">Відповідь</span>
             <span className="w-9" />
           </div>
           {visibleRows.map((row) => {

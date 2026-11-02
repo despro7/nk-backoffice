@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Accordion, AccordionItem, Button, Chip, Input, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import {
@@ -12,6 +12,19 @@ import { InstructionEditor, InstructionPreview } from '../components/Instruction
 
 const GROUP_ORDER = Object.keys(CHATWOOT_BOT_INSTRUCTION_GROUPS) as ChatwootBotInstructionGroup[];
 
+/** Нові перевизначення: `null` або стандартний текст — прибрати ключ. Порожнє поле тримаємо до збереження (сервер його відкине). */
+export function withInstructionText(
+  overrides: Record<string, string>,
+  key: string,
+  defaultText: string,
+  value: string | null,
+): Record<string, string> {
+  const next = { ...overrides };
+  if (value == null || value.trim() === defaultText) delete next[key];
+  else next[key] = value;
+  return next;
+}
+
 /**
  * Тексти, які бот отримує від коду: правила поверх маски, описи інструментів, підказки в їхніх відповідях.
  * Порожнє / стандартне значення не зберігається — діє текст за замовчуванням з коду.
@@ -21,27 +34,55 @@ export function AiInstructionsCard({ page }: SettingsCardProps) {
   const [search, setSearch] = useState('');
   const needle = search.trim().toLowerCase();
 
+  const overridesRef = useRef(form?.aiInstructions);
+  overridesRef.current = form?.aiInstructions;
+
+  /**
+   * Збіги рахуємо лише при зміні запиту: інструкція, яку редагують, лишається у видачі,
+   * навіть коли її новий текст уже не містить запиту.
+   */
+  const matchedKeys = useMemo(() => {
+    if (!needle) return null;
+    const overrides = overridesRef.current ?? {};
+    return new Set(
+      CHATWOOT_BOT_INSTRUCTIONS.filter((item) =>
+        [item.label, item.key, overrides[item.key] ?? item.defaultText].some((t) => t.toLowerCase().includes(needle)),
+      ).map((item) => item.key),
+    );
+  }, [needle]);
+
   const byGroup = useMemo(() => {
     const map = new Map<ChatwootBotInstructionGroup, typeof CHATWOOT_BOT_INSTRUCTIONS[number][]>();
     for (const item of CHATWOOT_BOT_INSTRUCTIONS) {
-      const text = form?.aiInstructions[item.key] ?? item.defaultText;
-      if (needle && ![item.label, item.key, text].some((t) => t.toLowerCase().includes(needle))) continue;
+      if (matchedKeys && !matchedKeys.has(item.key)) continue;
       map.set(item.group, [...(map.get(item.group) ?? []), item]);
     }
     return map;
-  }, [form?.aiInstructions, needle]);
+  }, [matchedKeys]);
+
+  // Під час пошуку розкриті групи зі збігами; після очищення — ті, що були розкриті до пошуку.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const beforeSearchRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (matchedKeys) {
+      setExpanded((prev) => {
+        beforeSearchRef.current ??= prev;
+        return new Set(byGroup.keys());
+      });
+    } else if (beforeSearchRef.current) {
+      setExpanded(beforeSearchRef.current);
+      beforeSearchRef.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchedKeys]);
 
   if (!form) return null;
   const overrides = form.aiInstructions;
   const changedTotal = Object.keys(overrides).length;
 
-  /** `null` — скинути. Порожнє поле тримаємо до збереження (щоб можна було переписати з нуля); сервер його відкине. */
-  const setText = (key: string, defaultText: string, value: string | null) => {
-    const next = { ...overrides };
-    if (value == null || value.trim() === defaultText) delete next[key];
-    else next[key] = value;
-    updateField('aiInstructions', next);
-  };
+  /** `null` — скинути. */
+  const setText = (key: string, defaultText: string, value: string | null) =>
+    updateField('aiInstructions', withInstructionText(overrides, key, defaultText, value));
 
   return (
     <SettingsCard
@@ -83,6 +124,8 @@ export function AiInstructionsCard({ page }: SettingsCardProps) {
       />
       <Accordion
         selectionMode="multiple"
+        selectedKeys={expanded}
+        onSelectionChange={(keys) => setExpanded(new Set(keys === 'all' ? GROUP_ORDER : (keys as Set<string>)))}
         variant="splitted"
         className="px-0"
         itemClasses={{

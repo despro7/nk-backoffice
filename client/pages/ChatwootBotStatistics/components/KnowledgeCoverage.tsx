@@ -4,6 +4,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { BaseModal } from '@/components/modals/BaseModal';
 import type { ChatwootBotQuestionClusterDto } from '@shared/types/chatwootBot';
 import type { ChatwootBotKnowledgeEntry } from '@shared/types/chatwootBotKnowledge';
+import { BotToolChip } from '../../ChatwootBotSettings/components/InstructionEditor';
 
 /** Телефони в питаннях клієнтів не мають потрапити в базу знань. */
 export function stripPhones(text: string): string {
@@ -15,7 +16,10 @@ export function clusterPhrasings(row: ChatwootBotQuestionClusterDto): string[] {
   return [...new Set([row.label, ...row.examples].map(stripPhones).filter(Boolean))];
 }
 
-/** Чип статті, яку знайде бот (або «Немає»), і кнопка «в базу знань». */
+/**
+ * Чим бот відповідає на тему: стаття, яку знайде пошук, та інструменти, якими він уже відповідав
+ * (каталог, статус замовлення…). «Немає» — ні статті, ні інструмента. Плюс кнопка «в базу знань».
+ */
 export function KnowledgeCoverage({
   row,
   canManage,
@@ -27,17 +31,27 @@ export function KnowledgeCoverage({
   onOpenKnowledge: () => void;
   onAction: (row: ChatwootBotQuestionClusterDto) => void;
 }) {
+  const tools = row.tools ?? [];
   return (
     <div className="flex items-center gap-1 min-w-0">
-      {row.knowledgeEntry ? (
-        <Chip size="sm" variant="flat" color="success" className="cursor-pointer max-w-[200px]" onClick={onOpenKnowledge}>
-          {row.knowledgeEntry.title}
-        </Chip>
-      ) : (
-        <Chip size="sm" variant="flat" color="warning">
-          Немає
-        </Chip>
-      )}
+      <div className="flex flex-wrap items-center gap-y-1 min-w-0">
+        {row.knowledgeEntry ? (
+          <Chip size="sm" variant="flat" color="success" className="cursor-pointer max-w-[200px] mr-0.5" onClick={onOpenKnowledge}>
+            {row.knowledgeEntry.title}
+          </Chip>
+        ) : tools.length === 0 ? (
+          <Chip size="sm" variant="flat" color="warning">
+            Немає
+          </Chip>
+        ) : null}
+        {tools.map((tool) => (
+          <BotToolChip
+            key={tool.name}
+            name={tool.name}
+            note={`Бот відповідав цим інструментом на ${tool.count} з ${row.count} повідомлень теми за період.`}
+          />
+        ))}
+      </div>
       {canManage && (
         <Tooltip
           content={

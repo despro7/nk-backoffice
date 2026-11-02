@@ -194,7 +194,7 @@ export class ChatwootBotKnowledgeService {
       .catch((err: unknown) => logServer('[ChatwootBot] knowledge hits update failed', err));
     return {
       found: true,
-      entries: hits.map((h) => ({ title: h.title, answer: h.answer })),
+      entries: hits.map((h) => ({ id: h.id, title: h.title, answer: h.answer })),
       hint: botInstruction(instructions, 'knowledge.found'),
     };
   }
