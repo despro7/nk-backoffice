@@ -53,6 +53,7 @@ export function AiInstructionsCard({ page }: SettingsCardProps) {
             size="sm"
             variant="light"
             color="danger"
+            className="-my-0.5"
             startContent={<DynamicIcon name="rotate-ccw" size={14} />}
             onPress={() => updateField('aiInstructions', {})}
           >
@@ -112,7 +113,7 @@ export function AiInstructionsCard({ page }: SettingsCardProps) {
               }
               subtitle={CHATWOOT_BOT_INSTRUCTION_GROUPS[group].description}
             >
-              <div className="flex flex-col divide-y divide-default-200 pb-2">
+              <div className="flex flex-col divide-y divide-default-200">
                 {items.map((item) => {
                   const isChanged = overrides[item.key] != null;
                   return (

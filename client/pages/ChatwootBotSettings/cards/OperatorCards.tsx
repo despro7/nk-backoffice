@@ -99,7 +99,7 @@ function ScheduleTable({ schedule }: { schedule: ChatwootInboxSchedule }) {
         return (
           <div
             key={day}
-            className={`rounded-md px-1 py-1.5 ${closed ? 'bg-default-100 text-default-400' : 'bg-success-50 text-success-700'}`}
+            className={`rounded-md px-1 py-1.5 ${closed ? 'bg-default-100 text-default-400' : 'bg-lime-100 text-lime-700'}`}
           >
             <div className="font-semibold">{DAY_LABELS[day]}</div>
             <div className="leading-tight">
@@ -135,6 +135,7 @@ export function WorkingHoursCard({ page }: SettingsCardProps) {
         <Button
           size="sm"
           variant="light"
+          className="h-auto py-2 min-w-0 -my-0.5"
           isDisabled={isLoadingInboxHours}
           startContent={
             <DynamicIcon
@@ -151,12 +152,16 @@ export function WorkingHoursCard({ page }: SettingsCardProps) {
     >
       {inboxHours && state ? (
         <>
-          <div className="flex flex-wrap items-center gap-2">
-            <Chip variant="flat" color={state.inHours ? 'success' : 'warning'} className="rounded-sm h-8">
-              Зараз: {state.inHours ? 'робочі години' : 'поза годинами'}
-            </Chip>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-default-700">
+            <span className="flex items-center gap-1">
+              <span>Зараз:</span>
+              <span className={`${state.inHours ? 'text-lime-700/90' : 'text-warning-700'} font-semibold`}>
+                {state.inHours ? 'робочі години' : 'поза годинами'}
+              </span>
+            </span>
+            <span>・</span>
             {state.minutesToChange != null && (
-              <span className="text-sm text-default-700">
+              <span>
                 {state.inHours ? 'До кінця зміни' : 'До початку зміни'}:{' '}
                 <strong>{formatScheduleDuration(state.minutesToChange)}</strong>
               </span>

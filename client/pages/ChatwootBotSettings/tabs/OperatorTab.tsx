@@ -27,7 +27,7 @@ export function OperatorTab({ page }: SettingsCardProps) {
       <DynamicIcon name={icon} size={16} />
       <span>{label}</span>
       {current && (
-        <Chip size="sm" variant="flat" color="success" className="h-5">
+        <Chip size="sm" variant="flat" color="success" className="h-5 bg-lime-500/40 text-lime-700">
           зараз
         </Chip>
       )}
@@ -40,29 +40,37 @@ export function OperatorTab({ page }: SettingsCardProps) {
 
       <Tabs
         aria-label="Стан робочих годин"
-        variant="underlined"
+        variant="bordered"
         selectedKey={stateTab}
         onSelectionChange={(key) => setStateTab(key as OperatorStateTab)}
-        classNames={{ tabList: 'gap-6 max-w-full overflow-x-auto', panel: 'px-0 pt-4' }}
+        classNames={{
+          tabList: 'gap-6 max-w-full overflow-x-auto bg-content1 rounded-lg p-1.5 shadow-none',
+          panel: 'px-0 pt-0'
+        }}
       >
         <Tab key="in_hours" title={title('sun', 'Робочі години', inHoursNow === true)}>
           <SettingsColumns
             left={<InHoursMessagesCard page={page} />}
             right={
-              <p className="text-sm text-default-500">
+              <p className="text-sm text-default-500 bg-content1/50 rounded-lg p-4 shadow">
                 Оператори на звʼязку: бот одразу призначає людину (ключові слова або сам, коли не знайшов відповіді) і
                 більше не відповідає в розмові. Повернення розмови боту, якщо оператор мовчить, – вкладка «Reclaim».
-              </p>
-            }
+              </p>}
           />
         </Tab>
         <Tab key="out_of_hours" title={title('moon', 'Поза годинами', inHoursNow === false)}>
-          <SettingsColumns left={<OutOfHoursMessagesCard page={page} />} right={<EmergencyCard page={page} />} />
+          <SettingsColumns
+            left={<OutOfHoursMessagesCard page={page} />}
+            right={<EmergencyCard page={page} />}
+          />
         </Tab>
         <Tab key="reclaim" title={title('rotate-ccw', 'Reclaim', false)}>
-          <div className="max-w-3xl">
-            <ReclaimCard page={page} />
-          </div>
+          <SettingsColumns 
+            left={<ReclaimCard page={page} />} 
+            right={<p className="text-sm text-default-500 bg-content1/50 rounded-lg p-4 shadow">
+              Якщо оператор мовчить, бот перехоплює розмову і продовжує розмову за своїм алгоритмом.
+            </p>}
+          />
         </Tab>
       </Tabs>
     </div>

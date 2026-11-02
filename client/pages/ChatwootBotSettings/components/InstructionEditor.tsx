@@ -1,29 +1,115 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Button, cn } from '@heroui/react';
+import { createPortal } from 'react-dom';
+import { Button, Chip, Popover, PopoverContent, PopoverTrigger, cn } from '@heroui/react';
 import { DynamicIcon, type IconName } from 'lucide-react/dynamic';
+import {
+  BookOpen,
+  CircleX,
+  Globe,
+  Headset,
+  Package,
+  ShieldCheck,
+  Utensils,
+  Wrench,
+  createElement as createLucideElement,
+  type IconNode,
+} from 'lucide';
 import { CHATWOOT_BOT_LLM_TOOLS } from '@shared/constants/chatwootBotLlmTools';
 
-/** Людські назви, іконки й кольори інструментів бота для міток у тексті інструкцій. */
-export const BOT_TOOL_META: Record<string, { label: string; icon: IconName; chip: string }> = {
-  get_storefront_catalog: { label: 'Каталог страв', icon: 'utensils', chip: 'bg-orange-100 text-orange-700' },
-  search_knowledge_base: { label: 'База знань', icon: 'book-open', chip: 'bg-sky-100 text-sky-700' },
-  get_storefront_site_pages: { label: 'Сторінки сайту', icon: 'globe', chip: 'bg-teal-100 text-teal-700' },
-  verify_customer: { label: 'Перевірити клієнта', icon: 'shield-check', chip: 'bg-emerald-100 text-emerald-700' },
-  get_verified_order: { label: 'Статус замовлення', icon: 'package', chip: 'bg-violet-100 text-violet-700' },
-  request_order_cancellation: { label: 'Скасування замовлення', icon: 'circle-x', chip: 'bg-rose-100 text-rose-700' },
-  request_operator: { label: 'Передати оператору', icon: 'headset', chip: 'bg-amber-100 text-amber-800' },
+type ToolMeta = {
+  label: string;
+  icon: IconName;
+  /** Та сама іконка для міток у contentEditable (там немає React). */
+  iconNode: IconNode;
+  chip: string;
+  /** Коротко, що робить інструмент (поповер мітки). */
+  summary: string;
+};
+
+/** Людські назви, іконки, кольори й короткі описи інструментів бота для міток у тексті інструкцій. */
+export const BOT_TOOL_META: Record<string, ToolMeta> = {
+  get_storefront_catalog: {
+    label: 'Каталог страв',
+    icon: 'utensils',
+    iconNode: Utensils,
+    chip: 'bg-orange-200/60 text-orange-700',
+    summary: 'Страви вітрини: категорія, склад, КБЖВ, ціна, наявність. Шукає за назвою, категорією, складом.',
+  },
+  search_knowledge_base: {
+    label: 'База знань',
+    icon: 'book-open',
+    iconNode: BookOpen,
+    chip: 'bg-sky-200/60 text-sky-700',
+    summary: 'Статті бази знань магазину: доставка, оплата, знижки, умови. Бот відповідає лише за їхніми фактами.',
+  },
+  get_storefront_site_pages: {
+    label: 'Сторінки сайту',
+    icon: 'globe',
+    iconNode: Globe,
+    chip: 'bg-teal-200/60 text-teal-700',
+    summary: 'Текст публічних сторінок сайту (доставка, акції, FAQ), якщо в базі знань немає відповіді.',
+  },
+  verify_customer: {
+    label: 'Перевірити клієнта',
+    icon: 'shield-check',
+    iconNode: ShieldCheck,
+    chip: 'bg-emerald-200/60 text-emerald-700',
+    summary: 'Перевірка клієнта: телефон + номер або дата замовлення. Після неї доступні склад і ТТН.',
+  },
+  get_verified_order: {
+    label: 'Статус замовлення',
+    icon: 'package',
+    iconNode: Package,
+    chip: 'bg-violet-200/60 text-violet-700',
+    summary: 'Статус замовлення: повні дані після перевірки, лише за телефоном – короткий статус останнього.',
+  },
+  request_order_cancellation: {
+    label: 'Скасування замовлення',
+    icon: 'circle-x',
+    iconNode: CircleX,
+    chip: 'bg-rose-200/60 text-rose-700',
+    summary: 'Скасування: телефон + прізвище й імʼя, вибір замовлення, причина; автоскасування або передача оператору.',
+  },
+  request_operator: {
+    label: 'Передати оператору',
+    icon: 'headset',
+    iconNode: Headset,
+    chip: 'bg-amber-200/60 text-amber-800',
+    summary: 'Передача розмови людині (kind: no_answer / action / human); текст клієнту – з налаштувань «Оператор».',
+  },
 };
 
 const FALLBACK_CHIP = 'bg-default-100 text-default-700';
 const TOOL_NAMES = CHATWOOT_BOT_LLM_TOOLS.map((t) => t.name);
 const TOOL_PATTERN = new RegExp(`\\b(${TOOL_NAMES.join('|')})\\b`, 'g');
 
-/** Мітка інструмента всередині тексту: однаковий вигляд у редакторі (DOM) і в перегляді (React). */
-const CHIP_CLASS =
-  'inline-flex items-center gap-1 rounded-full px-2 mx-0.5 text-[13px] leading-6 font-medium align-baseline select-none ' +
-  "before:content-[''] before:size-1.5 before:rounded-full before:bg-current before:opacity-70";
+/**
+ * Мітка інструмента в тексті — як HeroUI Chip (sm, flat) з іконкою: `h-5 mx-0.5 align-middle`, лише колір свій.
+ * У contentEditable React немає, тому DOM-версія повторює ці класи вручну.
+ */
+const CHIP_BASE =
+  'relative inline-flex max-w-fit min-w-min items-center box-border whitespace-nowrap rounded-full h-5 px-1 mx-0.5 ' +
+  'align-middle text-tiny cursor-pointer select-none';
+const CHIP_CONTENT = 'flex-1 px-1 font-normal';
 
-/** Текст з назвами інструментів як кольоровими мітками (лише перегляд). */
+/** Поповер мітки: що робить інструмент. */
+function ToolInfo({ name }: { name: string }) {
+  const meta = BOT_TOOL_META[name];
+  return (
+    <div className="flex max-w-xs flex-col gap-1 p-1">
+      <div className="flex items-center gap-2">
+        <span className={cn('inline-flex size-6 items-center justify-center rounded-full', meta?.chip ?? FALLBACK_CHIP)}>
+          <DynamicIcon name={meta?.icon ?? 'wrench'} size={13} />
+        </span>
+        <span className="text-sm font-semibold">{meta?.label ?? name}</span>
+      </div>
+      <span className="font-mono text-[11px] text-default-400">{name}</span>
+      {meta?.summary ? <p className="text-xs text-default-600">{meta.summary}</p> : null}
+    </div>
+  );
+}
+
+/** Текст з назвами інструментів як кольоровими мітками (лише перегляд); клік по мітці — опис інструмента. */
 export function InstructionPreview({ text }: { text: string }) {
   const nodes: React.ReactNode[] = [];
   let last = 0;
@@ -32,9 +118,25 @@ export function InstructionPreview({ text }: { text: string }) {
     if (index > last) nodes.push(text.slice(last, index));
     const meta = BOT_TOOL_META[match[1]];
     nodes.push(
-      <span key={`${index}-${match[1]}`} title={match[1]} className={cn(CHIP_CLASS, meta?.chip ?? FALLBACK_CHIP)}>
-        {meta?.label ?? match[1]}
-      </span>,
+      <Popover key={`${index}-${match[1]}`} placement="top" showArrow>
+        <PopoverTrigger>
+          <Chip
+            as="button"
+            size="sm"
+            variant="flat"
+            classNames={{
+              base: cn('h-5 mx-0.5 align-middle cursor-pointer', meta?.chip ?? FALLBACK_CHIP),
+              content: 'px-5',
+            }}
+            startContent={<DynamicIcon name={meta?.icon ?? 'wrench'} size={12} />}
+          >
+            {meta?.label ?? match[1]}
+          </Chip>
+        </PopoverTrigger>
+        <PopoverContent>
+          <ToolInfo name={match[1]} />
+        </PopoverContent>
+      </Popover>,
     );
     last = index + match[0].length;
   }
@@ -47,9 +149,15 @@ function chipElement(name: string): HTMLSpanElement {
   const span = document.createElement('span');
   span.contentEditable = 'false';
   span.dataset.tool = name;
-  span.title = name;
-  span.className = cn(CHIP_CLASS, meta?.chip ?? FALLBACK_CHIP);
-  span.textContent = meta?.label ?? name;
+  span.className = cn(CHIP_BASE, meta?.chip ?? FALLBACK_CHIP);
+  const icon = createLucideElement(meta?.iconNode ?? Wrench);
+  icon.setAttribute('width', '12');
+  icon.setAttribute('height', '12');
+  icon.classList.add('shrink-0', 'ms-0.5');
+  const label = document.createElement('span');
+  label.className = CHIP_CONTENT;
+  label.textContent = meta?.label ?? name;
+  span.append(icon, label);
   return span;
 }
 
@@ -139,6 +247,8 @@ export function InstructionEditor({
   const savedRange = useRef<Range | null>(null);
   const [menu, setMenu] = useState<ToolMenu | null>(null);
   const [focused, setFocused] = useState(false);
+  /** Клік по мітці в полі — поповер з описом інструмента. */
+  const [chipInfo, setChipInfo] = useState<{ name: string; x: number; y: number } | null>(null);
 
   // Зовнішня зміна значення (завантаження, скидання) — перебудувати вміст; власний ввід не чіпаємо.
   useLayoutEffect(() => {
@@ -242,35 +352,25 @@ export function InstructionEditor({
     }
   };
 
-  // Клік поза меню закриває його.
+  // Клік поза меню / поповером закриває їх.
   useEffect(() => {
-    if (!menu) return;
+    if (!menu && !chipInfo) return;
     const close = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest('[data-tool-menu]')) setMenu(null);
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-tool-menu]')) setMenu(null);
+      if (!target.closest('[data-tool-info]') && !target.closest('[data-tool]')) setChipInfo(null);
     };
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
-  }, [menu]);
+  }, [menu, chipInfo]);
 
-  const minHeight = `${minRows * 1.75 + 1}rem`;
+  const minHeight = `${minRows * 1.625 + 1}rem`;
 
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2 min-h-8">
-        {label ? <span className="text-sm font-medium">{label}</span> : null}
+        {label ? <span className="text-sm font-semibold">{label}</span> : null}
         {headerExtra}
-        <Button
-          size="sm"
-          variant="light"
-          className="ml-auto shrink-0"
-          startContent={<DynamicIcon name="wrench" size={14} />}
-          onPress={(e) => {
-            const rect = (e.target as HTMLElement).getBoundingClientRect();
-            setMenu({ x: rect.left, y: rect.bottom + 4, query: '', active: 0, range: null });
-          }}
-        >
-          Інструмент
-        </Button>
       </div>
       <div
         ref={editorRef}
@@ -282,10 +382,10 @@ export function InstructionEditor({
         data-placeholder={placeholder}
         style={{ minHeight }}
         className={cn(
-          'rounded-medium bg-default-100 px-3 py-2 text-sm leading-7 text-foreground whitespace-pre-wrap break-words outline-none transition-colors',
-          'hover:bg-default-200 focus:bg-default-100 focus:ring-2 focus:ring-focus',
+          'rounded-medium bg-default-100 px-3 py-2 text-sm leading-relaxed text-foreground whitespace-pre-wrap break-words outline-none transition-colors',
+          'border border-transparent hover:bg-default-50 hover:border-primary-500/30 focus:bg-default-50 focus:border-primary-500/30',
           'empty:before:content-[attr(data-placeholder)] empty:before:text-default-400',
-          highlighted && 'ring-1 ring-warning-300',
+          highlighted && 'border-warning-300 bg-warning-50/50',
         )}
         onInput={() => {
           emit();
@@ -294,6 +394,12 @@ export function InstructionEditor({
         onKeyDown={onKeyDown}
         onKeyUp={rememberSelection}
         onMouseUp={rememberSelection}
+        onClick={(e) => {
+          const chip = (e.target as HTMLElement).closest<HTMLElement>('[data-tool]');
+          if (!chip?.dataset.tool) return setChipInfo(null);
+          const rect = chip.getBoundingClientRect();
+          setChipInfo({ name: chip.dataset.tool, x: rect.left, y: rect.bottom + 6 });
+        }}
         onFocus={() => setFocused(true)}
         onBlur={() => {
           rememberSelection();
@@ -311,13 +417,25 @@ export function InstructionEditor({
           setMenu({ x: e.clientX, y: e.clientY, query: '', active: 0, range });
         }}
       />
-      {description || focused ? (
-        <p className="text-xs text-default-400">
-          {description ? `${description} ` : ''}
-          {focused ? 'Інструмент: «@» + назва або правий клік.' : ''}
-        </p>
-      ) : null}
-      {menu && options.length > 0 && (
+      
+      <p className="text-xs text-default-400">
+        &nbsp;
+        {description ? `${description} ` : ''}
+        {focused ? 'Інструмент: «@» + назва або правий клік.' : ''}
+      </p>
+    
+      {chipInfo &&
+        createPortal(
+          <div
+            data-tool-info
+            className="fixed z-50 rounded-medium border border-default-200 bg-content1 p-2 shadow-lg"
+            style={{ left: Math.min(chipInfo.x, window.innerWidth - 340), top: Math.min(chipInfo.y, window.innerHeight - 160) }}
+          >
+            <ToolInfo name={chipInfo.name} />
+          </div>,
+          document.body,
+        )}
+      {menu && options.length > 0 && createPortal(
         <div
           data-tool-menu
           role="listbox"
@@ -352,7 +470,8 @@ export function InstructionEditor({
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
