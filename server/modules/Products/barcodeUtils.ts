@@ -10,6 +10,15 @@ export const EAN13_SERIES_PREFIX = '22';
 /** Body першого коду серії, якщо в Dilovod ще немає жодного 22… */
 export const EAN13_SEED_BODY = '220000000000';
 
+/**
+ * Окрема серія для ШК коробок (лише локально, в Dilovod не потрапляє).
+ * Порції її не враховують як max, щоб коди коробок і порцій не перетиналися.
+ */
+export const EAN13_BOX_SERIES_PREFIX = '225';
+
+/** Body першого коду серії коробок. */
+export const EAN13_BOX_SEED_BODY = '225000000000';
+
 type BarcodeChecker = (code: string) => Promise<boolean>;
 
 let barcodeQueue: Promise<void> = Promise.resolve();
@@ -32,6 +41,17 @@ export function isEan13Format(code: string): boolean {
 export function isInternalEan13(code: string): boolean {
   const trimmed = String(code || '').trim();
   return isEan13Format(trimmed) && trimmed.startsWith(EAN13_SERIES_PREFIX);
+}
+
+/** Чи належить код серії коробок 225… */
+export function isBoxEan13(code: string): boolean {
+  const trimmed = String(code || '').trim();
+  return isEan13Format(trimmed) && trimmed.startsWith(EAN13_BOX_SERIES_PREFIX);
+}
+
+/** Порційна серія: внутрішні 22…, крім діапазону коробок 225… */
+export function isPortionEan13(code: string): boolean {
+  return isInternalEan13(code) && !isBoxEan13(code);
 }
 
 /**
@@ -80,16 +100,19 @@ export function nextEan13(code: string): string {
 }
 
 /**
- * Найбільший внутрішній EAN-13 (серія 22…) за body (перші 12 цифр).
+ * Найбільший EAN-13 серії `inSeries` (типово — порційна 22…, без 225…) за body (перші 12 цифр).
  * Зовнішні / не-13-цифрові коди ігноруються.
  */
-export function pickLatestEan13(codes: string[]): string | null {
+export function pickLatestEan13(
+  codes: string[],
+  inSeries: (code: string) => boolean = isPortionEan13
+): string | null {
   let best: string | null = null;
   let bestBody = -1n;
 
   for (const raw of codes) {
     const code = String(raw || '').trim();
-    if (!isInternalEan13(code)) continue;
+    if (!inSeries(code)) continue;
     const body = BigInt(code.slice(0, 12));
     if (body > bestBody) {
       bestBody = body;
@@ -101,19 +124,23 @@ export function pickLatestEan13(codes: string[]): string | null {
 }
 
 /**
- * Виділити наступний вільний EAN-13 серії 22…:
- * — якщо є latest — next(latest);
+ * Виділити наступний вільний EAN-13 серії (типово — порційна 22…):
+ * — якщо є latest у серії — next(latest);
  * — інакше — buildEan13(seedBody).
  * Mutex + isTaken retry.
  */
 export async function allocateNextEan13(
   existingCodes: string[],
   isTaken: BarcodeChecker,
-  seedBody: string = EAN13_SEED_BODY,
-  maxAttempts = 20
+  options: {
+    seedBody?: string;
+    inSeries?: (code: string) => boolean;
+    maxAttempts?: number;
+  } = {}
 ): Promise<string> {
+  const { seedBody = EAN13_SEED_BODY, inSeries = isPortionEan13, maxAttempts = 20 } = options;
   return enqueueBarcode(async () => {
-    const latest = pickLatestEan13(existingCodes);
+    const latest = pickLatestEan13(existingCodes, inSeries);
     let candidate = latest ? nextEan13(latest) : buildEan13(seedBody);
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {

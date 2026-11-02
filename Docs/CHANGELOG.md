@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-11-02 — ШК коробок: окрема серія 225…
+
+**Files:** `server/modules/Products/barcodeUtils.ts`, `CatalogBoxBarcodeService.ts`, `CatalogBoxBarcodeService.spec.ts`
+
+- **Фікс дублів ШК коробки і порції:** обидва генератори брали коди з серії `220…`, але коробка бачила лише локальну базу, а порція — лише Dilovod; наступна порція могла отримати код уже виданої коробки.
+- **Коробки:** нова серія `225…` (старт `225000000000` + контрольна цифра); наступний код — від max серед локальних `225…`, зайнятість перевіряється по всій `catalog_good_barcodes`.
+- **Порції:** `allocateNextBarcode` ігнорує `225…` при пошуку max серії (`isPortionEan13`), тож код коробки в Dilovod не зсуне лічильник порцій.
+- Уже видані ШК коробок не перевидаються: для тієї ж страви й партії повертається старий код (наявний дубль лишається до окремого перевидання).
+
+**Документація:** —
+
+---
+
 ## 2026-11-02 — Chatwoot Bot: перебудова налаштувань, текст «бот не знайшов відповіді», статистика тем
 
 **Files:** `shared/utils/chatwootInboxScheduleNext.ts`, `tabs/OperatorTab.tsx`, `tabs/SandboxTab.tsx`, `chatwootBotCatalogSearch.ts`, `ChatwootBotCatalogToolService.ts`, `shared/types/chatwootBotTools.ts`, `shared/constants/chatwootBotLlmTools.ts`, `chatwootBotKnowledgeSearch.ts`, `ChatwootBotKnowledgeService.ts`, `server/routes/chatwoot-knowledge.ts`, `ChatwootBotAnalyticsService.ts`, `client/pages/ChatwootBotStatistics/**` (`QuestionTopicsCard.tsx`, `KnowledgeCoverage.tsx`, `index.tsx`), `client/services/ChatwootKnowledgeService.ts`, `shared/types/chatwootBotKnowledge.ts`, `client/components/PageTabs.tsx`, `chatwootBotEmergencyWatch.ts`, `chatwootLastAgentReplyCache.ts`, `client/pages/ChatwootBotSettings/**` (`cards/*`, `tabs/AiTab.tsx`, `OperatorTab.tsx`, `OrdersTab.tsx`, `chatwootBotTabKeys.ts`, `useChatwootBotSettingsPage.ts`, `index.tsx`), `ChatwootBotOrchestrator.ts`, `ChatwootBotReplyRouter.ts`, `chatwootBotLoopGuard.ts`, `ChatwootBotSandboxService.ts`, `ChatwootBotSettingsService.ts`, `shared/types/chatwootBot.ts`
