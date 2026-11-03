@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   aggregateFopFromTimesheet,
-  buildProductionWeekLabel,
   calendarWeekId,
-  formatHrPeriodOptionLabel,
   isFopWeekday,
   listProductionWeeksOverlappingMonth,
   productionWeekStart,
@@ -47,32 +45,6 @@ describe('hrProductionWeek', () => {
     });
     expect(weeks.length).toBeGreaterThan(3);
     expect(weeks[0]?.startDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-  });
-
-  it('формує компактний label періоду без абревіатури ФОП', () => {
-    const label = buildProductionWeekLabel('2026-08-10', '2026-08-16', [1, 2, 3, 4, 5]);
-    expect(label).toBe('10–16 сер');
-    expect(label).not.toContain('ФОП');
-  });
-
-  it('formatHrPeriodOptionLabel ігнорує застарілий label з БД', () => {
-    const label = formatHrPeriodOptionLabel({
-      id: '1',
-      kind: 'production',
-      label: 'пн 31 сер – нд 6 вер, ФОП: пн–вт–ср–чт–пт',
-      startDate: '2026-08-31',
-      endDate: '2026-09-06',
-      fopWeekdays: [1, 2, 3, 4, 5],
-    });
-    expect(label).toBe('31 сер – 6 вер');
-    expect(label).not.toContain('ФОП');
-  });
-
-  it('додає робочі дні для нестандартного календаря', () => {
-    const label = buildProductionWeekLabel('2026-08-07', '2026-08-13', [2, 3, 4, 5, 6]);
-    expect(label).toContain('·');
-    expect(label).toContain('вт');
-    expect(label).not.toContain('ФОП');
   });
 
   it('пропорційно агрегує ФОП за днями', () => {

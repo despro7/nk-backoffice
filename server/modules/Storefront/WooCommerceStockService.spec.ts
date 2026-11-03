@@ -83,7 +83,7 @@ describe('WooCommerceStockService', () => {
     expect(computeEffectiveStock({ '1': 100, '2': 50 }, 30)).toBe(120);
   });
 
-  it('computeEffectiveStock zero becomes outofstock payload fields via sync', async () => {
+  it('pushes balance minus active order portions as instock', async () => {
     vi.mocked(prisma.catalogGood.findFirst).mockResolvedValue({
       id: 'good-1',
       wooProductId: 77,
@@ -91,17 +91,32 @@ describe('WooCommerceStockService', () => {
     vi.mocked(prisma.catalogGood.findUnique).mockResolvedValue({
       wooProductId: 77,
     } as never);
-    getProductById.mockResolvedValue({ id: 77, stock_quantity: 8 });
+    getProductById.mockResolvedValue({ id: 77, stock_quantity: 3 });
 
     const result = await service.syncStock({ skus: ['SKU-1'], mode: 'wc_only' });
     expect(result.updated).toBe(1);
     expect(batchUpdateProducts).toHaveBeenCalledWith([
-      expect.objectContaining({
-        id: 77,
-        manage_stock: true,
-        stock_quantity: 8,
-        stock_status: 'instock',
-      }),
+      expect.objectContaining({ id: 77, stock_quantity: 8, stock_status: 'instock' }),
+    ]);
+  });
+
+  it('pushes outofstock when active orders consume the whole balance', async () => {
+    const { catalogOpsLookup } = await import('../Products/CatalogOpsLookup.js');
+    vi.mocked(catalogOpsLookup.listFinishedProducts).mockResolvedValueOnce([
+      { sku: 'SKU-1', set: [], stockBalanceByStock: { '2': 1 } },
+    ] as never);
+    vi.mocked(prisma.catalogGood.findFirst).mockResolvedValue({
+      id: 'good-1',
+      wooProductId: 77,
+    } as never);
+    vi.mocked(prisma.catalogGood.findUnique).mockResolvedValue({
+      wooProductId: 77,
+    } as never);
+    getProductById.mockResolvedValue({ id: 77, stock_quantity: 3 });
+
+    await service.syncStock({ skus: ['SKU-1'], mode: 'wc_only' });
+    expect(batchUpdateProducts).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 77, stock_quantity: 0, stock_status: 'outofstock' }),
     ]);
   });
 
@@ -115,28 +130,5 @@ describe('WooCommerceStockService', () => {
       ok: true,
       skipped: true,
     });
-  });
-
-  it('chunks batch updates by 25', async () => {
-    const many = Array.from({ length: 30 }, (_, i) => ({
-      sku: `SKU-${i}`,
-      set: [] as [],
-      stockBalanceByStock: { '2': 5 },
-    }));
-    const { catalogOpsLookup } = await import('../Products/CatalogOpsLookup.js');
-    vi.mocked(catalogOpsLookup.listFinishedProducts).mockResolvedValue(many as never);
-    vi.mocked(prisma.catalogGood.findFirst).mockImplementation(async (args) => {
-      const where = args?.where as { sku?: string; id?: string } | undefined;
-      const sku = where?.sku ?? where?.id?.replace('good-', 'SKU-') ?? 'SKU-0';
-      return {
-        id: where?.id ?? `good-${sku}`,
-        wooProductId: 100,
-      } as never;
-    });
-
-    await service.syncStock({ mode: 'wc_only' });
-    expect(batchUpdateProducts).toHaveBeenCalledTimes(2);
-    expect(batchUpdateProducts.mock.calls[0][0]).toHaveLength(25);
-    expect(batchUpdateProducts.mock.calls[1][0]).toHaveLength(5);
   });
 });

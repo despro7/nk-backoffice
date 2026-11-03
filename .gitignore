@@ -28,7 +28,6 @@ dist-ssr
 *.sln
 *.sw?
 .roo/*
-__tests__/
 *.api-cookies.txt
 
 .config/

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
+import { BANK_STATEMENT_DEFAULTS } from '../../../shared/types/bankStatement';
 import {
   BankStatementImportService,
   classifyBankStatementDirection,
@@ -121,12 +122,12 @@ describe('BankStatementImportService.parseAndValidate', () => {
     expect(result.rows[0].direction).toBe('expense');
     expect(result.rows[0].amount).toBeCloseTo(1000.5);
     expect(result.rows[0].correspondentName).toBe('ТОВ Витрата');
-    expect(result.rows[0].corAccount).toBe('1119000000001089');
-    expect(result.rows[0].settlementsKind).toBe('1103300000001009');
-    expect(result.rows[0].cashItem).toBe('1104300000001016');
+    expect(result.rows[0].corAccount).toBe(BANK_STATEMENT_DEFAULTS.corAccount);
+    expect(result.rows[0].settlementsKind).toBe(BANK_STATEMENT_DEFAULTS.settlementsKindExpense);
+    expect(result.rows[0].cashItem).toBe(BANK_STATEMENT_DEFAULTS.cashItemExpense);
     expect(result.rows[1].direction).toBe('income');
-    expect(result.rows[1].settlementsKind).toBe('1103300000000001');
-    expect(result.rows[1].cashItem).toBe('1104300000001022');
+    expect(result.rows[1].settlementsKind).toBe(BANK_STATEMENT_DEFAULTS.settlementsKindIncome);
+    expect(result.rows[1].cashItem).toBe(BANK_STATEMENT_DEFAULTS.cashItemIncome);
     expect(result.rows[1].amount).toBe(250);
   });
 

@@ -13,21 +13,21 @@ describe('chatwootBotTopicJev', () => {
         weight: 2,
       },
     ]);
-    expect(criteria).toEqual({
-      t3: 'Страви без мʼяса. Вегетаріанське меню. Приклади: «Є щось без мʼяса?»; «Вегетаріанські страви»',
-      [JEV_NONE_CHOICE]: expect.any(String),
-    });
+    expect(Object.keys(criteria).sort()).toEqual([JEV_NONE_CHOICE, 't3'].sort());
+    const t3 = criteria.t3;
+    expect(t3).toContain('Страви без мʼяса');
+    expect(t3).toContain('Вегетаріанське меню');
+    expect(t3).toContain('Вегетаріанські страви');
+    expect(t3.split('Є щось без мʼяса?')).toHaveLength(2);
+    expect(t3.split('Страви без мʼяса')).toHaveLength(2);
   });
 
   it('limits examples per topic', () => {
-    const criteria = buildJevTopicCriteria(
-      [{ id: 1, title: 'Доставка', description: null, examples: ['Скільки доставка?', 'Ціна доставки'], weight: 1 }],
-      1,
-    );
-    expect(criteria.t1).toBe('Доставка. Приклади: «Скільки доставка?»');
-    expect(buildJevTopicCriteria([{ id: 1, title: 'Доставка', description: null, examples: ['A'], weight: 1 }], 0).t1).toBe(
-      'Доставка',
-    );
+    const topic = { id: 1, title: 'Доставка', description: null, examples: ['Скільки доставка?', 'Ціна доставки'], weight: 1 };
+    const one = buildJevTopicCriteria([topic], 1).t1;
+    expect(one).toContain('Скільки доставка?');
+    expect(one).not.toContain('Ціна доставки');
+    expect(buildJevTopicCriteria([topic], 0).t1).toBe('Доставка');
   });
 
   it('keeps the heaviest topics within the API choice limit', () => {

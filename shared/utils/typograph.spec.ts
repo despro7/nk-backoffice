@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { typographProductLabelPayload, typographUk } from './typograph.js';
-import { PORTION_LABEL_STATIC } from '../constants/productLabelPortionStatic.js';
 
 const NBSP = '\u00A0';
 
 describe('typographUk', () => {
   it('додає неразривні пробіли в умовах зберігання', () => {
-    const input = PORTION_LABEL_STATIC.storageText;
+    const input =
+      'Зберігати за температури від 0ºС до 25ºС за відносної вологості повітря не більше 75%. У разі відкриття упаковки зберігати в холодильнику не більше 24 годин.';
     const result = typographUk(input);
 
     expect(result).toContain(`більше${NBSP}75%`);
@@ -49,7 +49,7 @@ describe('typographProductLabelPayload', () => {
       ingredientsText: 'вода, сіль',
       nutritionText: 'Білки 4,4г',
       nutritionEnergyManual: false,
-      storageText: PORTION_LABEL_STATIC.storageText,
+      storageText: 'вологості не більше 75%.',
       expiresAt: '12.2026',
       netWeightLabel: '300г',
     };

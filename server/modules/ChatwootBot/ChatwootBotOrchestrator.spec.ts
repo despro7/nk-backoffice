@@ -16,7 +16,6 @@ import { chatwootBotVerifyService } from './ChatwootBotVerifyService.js';
 import { emptyConversationState } from './chatwootBotConversationStateUtils.js';
 import { chatwootBotLlmRunner } from './ChatwootBotLlmRunner.js';
 import { ChatwootApiClient } from './ChatwootApiClient.js';
-import { shouldPersistEvent } from './ChatwootBotHandoverUtils.js';
 import { clearHumanAgentActivePersistGateForTests } from './humanAgentActivePersistGate.js';
 vi.mock('./chatwootAgentsAvailabilityCache.js', () => ({
   isAssigneeOffline: vi.fn(async () => false),
@@ -43,6 +42,15 @@ vi.mock('./ChatwootBotConversationStateService.js', async () => {
       update: vi.fn(async (current: object, patch: object) => ({ ...current, ...patch })),
     },
   };
+});
+
+// Журнал ходів пише в БД після обробки вебхука — у тестах без БД.
+vi.mock('./ChatwootBotTurnLogService.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./ChatwootBotTurnLogService.js')>();
+  Object.defineProperty(actual.ChatwootBotTurnLogService.prototype, 'persist', {
+    value: async () => undefined,
+  });
+  return actual;
 });
 
 vi.mock('./chatwootHandoverReset.js', () => ({
@@ -117,39 +125,6 @@ describe('isIncomingContactMessage', () => {
   });
 });
 
-describe('shouldPersistEvent', () => {
-  it('skips noisy ignored reasons by default', () => {
-    expect(shouldPersistEvent('ignored', 'unsupported_event:conversation_updated')).toBe(false);
-    expect(shouldPersistEvent('ignored', 'private_message')).toBe(false);
-    expect(shouldPersistEvent('ignored', 'not_incoming')).toBe(false);
-    expect(shouldPersistEvent('ignored', 'sender_not_contact:agent_bot')).toBe(false);
-    expect(shouldPersistEvent('ignored', 'duplicate_message')).toBe(false);
-  });
-
-  it('persists noise when debug options enabled', () => {
-    expect(
-      shouldPersistEvent('ignored', 'private_message', { persistPrivate: true }),
-    ).toBe(true);
-    expect(
-      shouldPersistEvent('ignored', 'not_incoming', { persistOtherNoise: true }),
-    ).toBe(true);
-    expect(
-      shouldPersistEvent('ignored', 'unsupported_event:conversation_updated', {
-        persistOtherNoise: true,
-      }),
-    ).toBe(true);
-    expect(
-      shouldPersistEvent('ignored', 'duplicate_message', { persistOtherNoise: true }),
-    ).toBe(false);
-  });
-
-  it('persists bot_disabled, human_agent_active and handover', () => {
-    expect(shouldPersistEvent('ignored', 'bot_disabled')).toBe(true);
-    expect(shouldPersistEvent('ignored', 'human_agent_active')).toBe(true);
-    expect(shouldPersistEvent('handover', 'ooh_offer')).toBe(true);
-  });
-});
-
 describe('ChatwootBotOrchestrator dry_run', () => {
   beforeEach(() => {
     clearHumanAgentActivePersistGateForTests();
@@ -167,14 +142,14 @@ describe('ChatwootBotOrchestrator dry_run', () => {
     vi.restoreAllMocks();
   });
 
-  it('echo fixture → dry_run echo', async () => {
+  it('echo fixture without AI or pattern → dry_run fallback reply', async () => {
     const result = await chatwootBotOrchestrator.processWebhook(getChatwootBotFixture('echo'), {
       source: 'simulate',
     });
     expect(result.action).toBe('echo');
     expect(result.dryRun).toBe(true);
     expect(result.success).toBe(true);
-    expect(result.reason).toBe('dry_run_echo');
+    expect(result.reason).toBe('dry_run_fallback');
   });
 
   it('handover fixture in hours → dry_run handover', async () => {
@@ -377,7 +352,7 @@ describe('ChatwootBotOrchestrator dry_run', () => {
     expect(vi.mocked(chatwootBotEventLogService.append)).toHaveBeenCalledTimes(1);
   });
 
-  it('OOH reclaim when agent silent >10m → dry_run reclaim then echo', async () => {
+  it('OOH reclaim when agent silent >10m → dry_run reclaim then fallback reply', async () => {
     vi.mocked(minutesSinceLastAgentPublicReply).mockResolvedValue(15);
     vi.spyOn(chatwootBotInboxHoursService, 'isWithinBusinessHours').mockResolvedValue({
       inHours: false,
@@ -393,7 +368,7 @@ describe('ChatwootBotOrchestrator dry_run', () => {
     };
     const result = await chatwootBotOrchestrator.processWebhook(payload, { source: 'simulate' });
     expect(result.action).toBe('echo');
-    expect(result.reason).toBe('dry_run_echo');
+    expect(result.reason).toBe('dry_run_fallback');
     const appendCalls = vi.mocked(chatwootBotEventLogService.append).mock.calls;
     const reclaimCall = appendCalls.find((c) => c[0].reason === 'dry_run_reclaim_ooh');
     expect(reclaimCall).toBeTruthy();

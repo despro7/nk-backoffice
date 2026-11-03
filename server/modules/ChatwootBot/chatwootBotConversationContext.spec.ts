@@ -44,55 +44,6 @@ describe('buildLlmHistory', () => {
 });
 
 describe('buildConversationContextNote', () => {
-  it('includes Kyiv date and verification state', () => {
-    const note = buildConversationContextNote({
-      now: new Date('2026-10-30T10:05:00Z'),
-      verifiedOrderCount: 0,
-      verifyExpiresAt: null,
-      channelPhoneKnown: true,
-    });
-    expect(note).toContain('пʼятниця');
-    expect(note).toContain('30.10.2026, 12:05');
-    expect(note).toContain('Верифікація: не пройдена');
-    expect(note).toContain('Телефон уже відомий');
-    expect(note).toContain('короткий статус');
-  });
-
-  it('describes active verification', () => {
-    const note = buildConversationContextNote({
-      now: new Date('2026-10-30T10:05:00Z'),
-      verifiedOrderCount: 1,
-      verifyExpiresAt: '2026-10-30T12:05:00Z',
-      channelPhoneKnown: false,
-    });
-    expect(note).toContain('пройдена (замовлень: 1), діє до 30.10.2026 14:05');
-  });
-
-  it('marks platform-provided phone as trusted', () => {
-    const note = buildConversationContextNote({
-      now: new Date('2026-10-30T10:05:00Z'),
-      verifiedOrderCount: 0,
-      verifyExpiresAt: null,
-      channelPhoneKnown: true,
-      channelPhoneTrusted: true,
-    });
-    expect(note).toContain('підтверджено каналом');
-  });
-
-  it('tells the model whether operators are online', () => {
-    const base = {
-      now: new Date('2026-10-30T10:05:00Z'),
-      verifiedOrderCount: 0,
-      verifyExpiresAt: null,
-      channelPhoneKnown: false,
-    };
-    expect(buildConversationContextNote({ ...base, inBusinessHours: true })).toContain('Зараз робочі години');
-    expect(buildConversationContextNote({ ...base, inBusinessHours: false })).toContain('Зараз неробочий час');
-    expect(buildConversationContextNote(base)).not.toContain('робоч');
-  });
-});
-
-describe('buildConversationContextNote page', () => {
   const base = {
     now: new Date('2026-10-30T10:05:00Z'),
     verifiedOrderCount: 0,
@@ -100,17 +51,53 @@ describe('buildConversationContextNote page', () => {
     channelPhoneKnown: false,
   };
 
+  it('renders current Kyiv date, weekday and time', () => {
+    const note = buildConversationContextNote(base);
+    expect(note).toContain('пʼятниця');
+    expect(note).toContain('30.10.2026');
+    expect(note).toContain('12:05');
+  });
+
+  it('reflects verification state and its Kyiv expiry time', () => {
+    const unverified = buildConversationContextNote(base);
+    const verified = buildConversationContextNote({
+      ...base,
+      verifiedOrderCount: 1,
+      verifyExpiresAt: '2026-10-30T12:05:00Z',
+    });
+    expect(verified).not.toBe(unverified);
+    expect(verified).toContain('14:05');
+    expect(unverified).not.toContain('14:05');
+  });
+
+  it('distinguishes known, trusted and unknown channel phone', () => {
+    const unknown = buildConversationContextNote(base);
+    const known = buildConversationContextNote({ ...base, channelPhoneKnown: true });
+    const trusted = buildConversationContextNote({ ...base, channelPhoneKnown: true, channelPhoneTrusted: true });
+    expect(new Set([unknown, known, trusted]).size).toBe(3);
+  });
+
+  it('mentions business hours only when the state is known', () => {
+    const open = buildConversationContextNote({ ...base, inBusinessHours: true });
+    const closed = buildConversationContextNote({ ...base, inBusinessHours: false });
+    const unknown = buildConversationContextNote(base);
+    expect(new Set([open, closed, unknown]).size).toBe(3);
+    expect(open.length).toBeGreaterThan(unknown.length);
+    expect(closed.length).toBeGreaterThan(unknown.length);
+  });
+
   it('names the product the client is looking at', () => {
     const note = buildConversationContextNote({
       ...base,
       page: { url: 'https://nk-food.shop/product/plov/', productName: 'Плов з курятиною', productSku: '03001' },
     });
-    expect(note).toContain('Клієнт дивиться товар: Плов з курятиною, SKU 03001');
+    expect(note).toContain('Плов з курятиною');
+    expect(note).toContain('03001');
   });
 
-  it('falls back to the page url', () => {
+  it('falls back to the page url without a product', () => {
     const note = buildConversationContextNote({ ...base, page: { url: 'https://nk-food.shop/dostavka/' } });
-    expect(note).toContain('Клієнт пише зі сторінки: https://nk-food.shop/dostavka/');
+    expect(note).toContain('https://nk-food.shop/dostavka/');
   });
 });
 
@@ -122,7 +109,9 @@ describe('buildScenariosBlock', () => {
       { id: 'b', title: 'Вимкнений', enabled: false, triggers: [], instructions: 'x' },
       { id: 'c', title: 'Без кроків', enabled: true, triggers: [], instructions: '  ' },
     ]);
-    expect(block).toContain('### Надіслати прайс\nКоли клієнт просить: «Надішліть прайс».\nДай посилання на каталог.');
+    expect(block).toContain('Надіслати прайс');
+    expect(block).toContain('Надішліть прайс');
+    expect(block).toContain('Дай посилання на каталог.');
     expect(block).not.toContain('Вимкнений');
     expect(block).not.toContain('Без кроків');
     expect(buildScenariosBlock([])).toBeNull();

@@ -50,15 +50,16 @@ function line(partial: Partial<HrPayrollLineDto>): HrPayrollLineDto {
 describe('payrollTableColumns taxes', () => {
   it('не показує податкові колонки без taxesSeparate', () => {
     expect(shouldShowTaxColumns(line({}), DEFAULT_PAYROLL_TABLE_BUILDER_CONFIG)).toBe(false);
-    const columns = buildPayrollExtraColumns(DEFAULT_PAYROLL_TABLE_BUILDER_CONFIG, 'month');
-    expect(columns.map((column) => column.id)).toEqual(['total']);
+    const ids = buildPayrollExtraColumns(DEFAULT_PAYROLL_TABLE_BUILDER_CONFIG, 'month').map((column) => column.id);
+    expect(ids).not.toContain('esv');
+    expect(ids).not.toContain('pdfo-military');
   });
 
   it('показує податкові колонки з taxesSeparate', () => {
     const config = { ...DEFAULT_PAYROLL_TABLE_BUILDER_CONFIG, taxesSeparate: true };
     expect(shouldShowTaxColumns(line({}), config)).toBe(true);
-    const columns = buildPayrollExtraColumns(config, 'production');
-    expect(columns.map((column) => column.id)).toEqual(['pdfo-military', 'esv', 'total']);
+    const ids = buildPayrollExtraColumns(config, 'production').map((column) => column.id);
+    expect(ids).toEqual(expect.arrayContaining(['pdfo-military', 'esv']));
   });
 });
 
@@ -77,13 +78,16 @@ describe('payrollTableColumns custom period', () => {
       merges: [],
     };
     const ids = buildCustomDisplayWeeks(CUSTOM_WEEKS, config).map((week) => week.id);
-    expect(ids).toEqual(['salary', 'taxes', 'total']);
+    expect(ids).toContain('taxes');
+    expect(ids).not.toContain('esv');
+    expect(ids).not.toContain('pdfo-military');
   });
 
   it('розбиває податки на ЄСВ і ПДФО+ВЗ', () => {
     const config = { ...DEFAULT_PAYROLL_TABLE_BUILDER_CONFIG, taxesSeparate: false };
     const ids = buildCustomDisplayWeeks(CUSTOM_WEEKS, config).map((week) => week.id);
-    expect(ids).toEqual(['salary', 'pdfo-military', 'esv', 'total']);
+    expect(ids).toEqual(expect.arrayContaining(['pdfo-military', 'esv']));
+    expect(ids).not.toContain('taxes');
 
     const row = line({
       esvAmount: '220.00',

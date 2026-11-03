@@ -1,7 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { payloadCacheService } from '../PayloadCacheService.js';
 
 describe('PayloadCacheService', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('should save and get payload', () => {
     const payload = { x: 1 };
     const token = payloadCacheService.save({ payload }, 60);
@@ -20,21 +24,12 @@ describe('PayloadCacheService', () => {
     expect(second).toBeNull();
   });
 
-  it('should expire token after ttl', async () => {
-    const payload = { z: 3 };
-    const token = payloadCacheService.save({ payload }, 1); // 1 sec
-    await new Promise(r => setTimeout(r, 1200));
-    const fetched = payloadCacheService.get(token);
-    expect(fetched).toBeNull();
-  });
-
-  it('should save sale token with baseDoc and person id', () => {
-    const baseDoc = 'BASE123';
-    const personId = 'P-999';
-    const token = payloadCacheService.save({ baseDocId: baseDoc, personId }, 60);
-    const fetched = payloadCacheService.get(token);
-    expect(fetched).not.toBeNull();
-    expect(fetched.baseDocId).toBe(baseDoc);
-    expect(fetched.personId).toBe(personId);
+  it('should keep token until ttl and expire after it', () => {
+    vi.useFakeTimers();
+    const token = payloadCacheService.save({ payload: { z: 3 } }, 1);
+    vi.advanceTimersByTime(999);
+    expect(payloadCacheService.get(token, false)).not.toBeNull();
+    vi.advanceTimersByTime(2);
+    expect(payloadCacheService.get(token)).toBeNull();
   });
 });

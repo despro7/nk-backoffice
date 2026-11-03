@@ -19,7 +19,10 @@ describe('payrollCalc taxes', () => {
   it('додає премію з ЄСВ для official_salary', () => {
     const tax = applyTaxRules('official_salary', 5238.1, DEFAULT_TAX_RULES, 1000);
     expect(Number(tax.bonusAmount)).toBe(1000);
-    expect(Number(tax.employerTotalCost)).toBeGreaterThan(9299);
+    // ЄСВ 22% нараховується і на премію: 1496.60 + 220 = 1716.60
+    expect(Number(tax.esvAmount)).toBeCloseTo(1716.6, 1);
+    expect(Number(tax.employerTotalCost)).toBeCloseTo(6802.73 + 1000 + 1716.6, 1);
+    expect(Number(tax.netToPay)).toBeCloseTo(5238.1, 1);
   });
 
   it('для hourly — accrued + bonus без податків', () => {
@@ -87,8 +90,10 @@ describe('payrollCalc taxes', () => {
       taxRules: DEFAULT_TAX_RULES,
       bonusAmount: 500,
     });
-    expect(Number(result.employerTotalCost)).toBeGreaterThan(Number(result.grossAccrued));
-    expect(result.taxBreakdown.length).toBeGreaterThan(0);
-    expect(result.breakdown.some((step) => step.id === 'employer-cost')).toBe(true);
+    expect(Number(result.accruedAmount)).toBeCloseTo(5238.1, 1);
+    expect(Number(result.grossAccrued)).toBeCloseTo(6802.73, 1);
+    expect(Number(result.esvAmount)).toBeCloseTo(1496.6 + 500 * 0.22, 1);
+    expect(Number(result.employerTotalCost)).toBeCloseTo(6802.73 + 500 + 1606.6, 1);
+    expect(Number(result.netToPay)).toBeCloseTo(5238.1, 1);
   });
 });

@@ -27,16 +27,24 @@ const docs = [
 const index = docs.map(indexKnowledgeDoc);
 
 describe('knowledgeStems', () => {
-  it('drops stop words and short words, stems long words', () => {
-    expect([...knowledgeStems('Добрий день, скільки коштує доставка?')]).toEqual(['~ціна', '~доставка']);
-    expect([...knowledgeStems('Яка вартість доставки?')]).toEqual(['~ціна', '~доставка']);
-    expect([...knowledgeStems('замовлення 24155')]).toEqual(['~замовлення', '24155']);
+  const stems = (text: string) => [...knowledgeStems(text)].sort();
+
+  it('ignores greetings and stop words', () => {
+    expect(stems('Добрий день, скільки коштує доставка?')).toEqual(stems('коштує доставка'));
+    expect(stems('Добрий день')).toEqual([]);
+  });
+
+  it('maps synonyms and word forms to the same stems', () => {
+    expect(stems('Скільки коштує доставка?')).toEqual(stems('Яка вартість доставки?'));
+  });
+
+  it('keeps numbers such as order ids', () => {
+    expect(stems('замовлення 24155')).toContain('24155');
   });
 
   it('maps Russian and Ukrainian forms to the same stems', () => {
-    expect([...knowledgeStems('Для ЗСУ есть скидка?')]).toEqual(['~військові', '~знижка']);
-    expect([...knowledgeStems('Яка знижка для військових?')]).toEqual(['~знижка', '~військові']);
-    expect([...knowledgeStems('Отменить заказ')]).toEqual(['~скасування', '~замовлення']);
+    expect(stems('Для ЗСУ есть скидка?')).toEqual(stems('Яка знижка для військових?'));
+    expect(stems('Отменить заказ')).toEqual(stems('Скасувати замовлення'));
   });
 });
 

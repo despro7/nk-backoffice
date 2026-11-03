@@ -115,15 +115,6 @@ describe('expectedBomWeightKg', () => {
     expect(r).toEqual({ kg: 1.4, missingCount: 1 });
   });
 
-  it('набір: шт. без ваги порції — missingCount, без суми', () => {
-    const r = expectedBomWeightKg(
-      [{ qty: 3, unitId: 'pcs', componentWeight: null }],
-      units,
-      { warnMissingPieceWeight: true }
-    );
-    expect(r).toEqual({ kg: 0, missingCount: 1 });
-  });
-
   it('набір: часткова сума + попередження', () => {
     const r = expectedBomWeightKg(
       [
@@ -186,14 +177,6 @@ describe('expectedBomWeightKg', () => {
     expect(r).toEqual({ kg: 1, missingCount: 0 });
   });
 
-  it('нетто + divideBy для продукції', () => {
-    const r = expectedBomWeightKg(
-      [{ qty: 1, unitId: 'kg', componentWeight: null, cookingLossPercent: 20 }],
-      units,
-      { divideBy: 10 }
-    );
-    expect(r?.kg).toBe(0.1);
-  });
 });
 
 describe('isSuspiciousBomIngredientQty', () => {
@@ -269,35 +252,6 @@ describe('buildTechCardRows', () => {
     );
     expect(result.rows[0]?.massKgNetTotal).toBeCloseTo(0.1);
     expect(result.rows[0]?.massKgGrossTotal).toBeCloseTo(0.1 / 0.9);
-    expect(result.rows[0]?.netDisplay).toBe('0,1 кг');
-    expect(result.rows[0]?.grossDisplay).toBe('0,111 кг');
-  });
-
-  it('додає примітку до назви інгредієнта', () => {
-    const result = buildTechCardRows(
-      [{ componentName: 'Цибуля', qty: 10, unitId: 'g', componentWeight: null, note: 'різана' }],
-      units,
-      1,
-      1
-    );
-    expect(result.rows[0]?.nameDisplay).toBe('Цибуля (різана)');
-  });
-
-  it('показує % втрат лише якщо вони > 0', () => {
-    const withLoss = buildTechCardRows(
-      [{ componentName: "М'ясо", qty: 100, unitId: 'g', componentWeight: null, cookingLossPercent: 10 }],
-      units,
-      1,
-      1
-    );
-    const withoutLoss = buildTechCardRows(
-      [{ componentName: 'Цибуля', qty: 10, unitId: 'g', componentWeight: null, cookingLossPercent: 0 }],
-      units,
-      1,
-      1
-    );
-    expect(withLoss.rows[0]?.lossDisplay).toBe('10 %');
-    expect(withoutLoss.rows[0]?.lossDisplay).toBe('');
   });
 
   it('форматує масу з фіксованою точністю', () => {

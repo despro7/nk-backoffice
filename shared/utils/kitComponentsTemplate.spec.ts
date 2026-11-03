@@ -9,6 +9,18 @@ import {
 
 const LOOP_TEMPLATE = STOREFRONT_BUILTIN_DEFAULTS.kitComponents.template;
 
+/** Weight label without spacing, so «400 г» / «400\u00A0г» / «400г» compare equal. */
+const weight = (label: string) => label.replace(/[\s\u00A0]+/g, '');
+
+/** Visible text of rendered HTML: tags dropped, whitespace collapsed, «400 г» → «400г». */
+const text = (html: string) =>
+  html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[\s\u00A0]+/g, ' ')
+    .replace(/(\d) г/g, '$1г')
+    .replace(/ ([:)])/g, '$1')
+    .trim();
+
 const SAMPLE_COMPONENTS = [
   { componentName: 'Борщ зі свининою', qty: 3, componentCategoryName: 'Перші страви', componentWeight: 0.4 },
   { componentName: 'Гороховий суп зі свининою', qty: 3, componentCategoryName: 'Перші страви', componentWeight: 0.4 },
@@ -28,7 +40,7 @@ describe('groupKitComponents', () => {
     expect(groups[0].groupLabelGenitive).toBe('перших страв');
     expect(groups[0].groupTotalQty).toBe(6);
     expect(groups[0].groupItemCount).toBe(2);
-    expect(groups[0].groupWeight).toBe('400\u00A0г');
+    expect(weight(groups[0].groupWeight)).toBe('400г');
     expect(groups[1].groupLabel).toBe('Другі страви');
     expect(groups[1].groupTotalQty).toBe(4);
     expect(groups[1].groupItemCount).toBe(1);
@@ -40,7 +52,7 @@ describe('groupKitComponents', () => {
       { componentName: 'Суп', qty: 6, componentCategoryName: 'Перші страви', componentWeight: 0.45 },
     ]);
 
-    expect(groups[0].groupWeight).toBe('400-450\u00A0г');
+    expect(weight(groups[0].groupWeight)).toBe('400-450г');
   });
 
   it('merges unmapped categories into a single fallback group without header weight', () => {
@@ -67,13 +79,13 @@ describe('groupKitComponents', () => {
     expect(groups).toHaveLength(2);
     expect(groups[0].groupLabel).toBe("М'ясні страви");
     expect(groups[0].hasGroupWeight).toBe(true);
-    expect(groups[0].groupWeight).toBe('240\u00A0г');
+    expect(weight(groups[0].groupWeight)).toBe('240г');
     expect(groups[1].groupLabel).toBe('Інші категорії');
     expect(groups[1].groupLabelGenitive).toBe('з інших категорій');
     expect(groups[1].groupTotalQty).toBe(2);
     expect(groups[1].groupItemCount).toBe(2);
     expect(groups[1].hasGroupWeight).toBe(false);
-    expect(groups[1].groupWeight).toBe('');
+    expect(weight(groups[1].groupWeight)).toBe('');
   });
 
   it('shows configured weight range when items have no individual weight', () => {
@@ -99,7 +111,7 @@ describe('groupKitComponents', () => {
       },
     );
 
-    expect(groups[0].groupWeight).toBe('400-450\u00A0г');
+    expect(weight(groups[0].groupWeight)).toBe('400-450г');
   });
 });
 
@@ -133,19 +145,19 @@ describe('renderKitComponentsTemplate', () => {
       fallbackOrder: 100,
     });
 
-    expect(html).toContain('2 порції з інших категорій:');
-    expect(html).not.toContain('(по ');
-    expect(html).toContain('Узвар з сухофруктів – 1 порція 400\u00A0г');
-    expect(html).toContain('Салат Шахтар – 1 порція 450\u00A0г');
+    expect(text(html)).toContain('2 порції з інших категорій:');
+    expect(text(html)).not.toContain('(по');
+    expect(text(html)).toContain('Узвар з сухофруктів – 1 порція 400г');
+    expect(text(html)).toContain('Салат Шахтар – 1 порція 450г');
   });
 
   it('renders grouped template with declension and pluralization', () => {
     const html = renderKitComponentsTemplate(LOOP_TEMPLATE, SAMPLE_COMPONENTS);
 
-    expect(html).toContain('6 порцій перших страв (по 400\u00A0г):');
-    expect(html).toContain('Борщ зі свининою – 3 порції по 400\u00A0г');
-    expect(html).toContain('4 порції других страв (по 300\u00A0г)');
-    expect(html).toContain('Плов зі свининою – 4 порції по 300\u00A0г');
+    expect(text(html)).toContain('6 порцій перших страв (по 400г):');
+    expect(text(html)).toContain('Борщ зі свининою – 3 порції по 400г');
+    expect(text(html)).toContain('4 порції других страв (по 300г)');
+    expect(text(html)).toContain('Плов зі свининою – 4 порції по 300г');
   });
 
   it('hides group header for single portion degustation item', () => {
@@ -164,8 +176,8 @@ describe('renderKitComponentsTemplate', () => {
       { componentName: 'Борщ', qty: 1, componentCategoryName: 'Перші страви', componentWeight: 0.4 },
     ]);
 
-    expect(html).not.toContain('порцій перших страв');
-    expect(html).toContain('<li>Борщ</li>');
+    expect(text(html)).not.toContain('порцій перших страв');
+    expect(text(html)).toContain('Борщ');
   });
 
   it('renders flat kitItemsAll list without grouping', () => {
@@ -175,9 +187,9 @@ describe('renderKitComponentsTemplate', () => {
 
     const html = renderKitComponentsTemplate(template, SAMPLE_COMPONENTS);
 
-    expect(html).toContain('<li>Борщ зі свининою – 400\u00A0г</li>');
-    expect(html).toContain('<li>Плов зі свининою – 300\u00A0г</li>');
-    expect(html).not.toContain('порцій перших страв');
+    expect(text(html)).toContain('Борщ зі свининою – 400г');
+    expect(text(html)).toContain('Плов зі свининою – 300г');
+    expect(text(html)).not.toContain('порцій перших страв');
   });
 
   it('upgrades legacy {{kitComponents}} template to grouped output', () => {
@@ -185,9 +197,8 @@ describe('renderKitComponentsTemplate', () => {
       { componentName: 'Борщ', qty: 2, componentCategoryName: 'Перші страви' },
       { componentName: 'Плов', qty: 1, componentCategoryName: 'Другі страви' },
     ]);
-    expect(html).toContain('перших страв');
-    expect(html).toContain('Плов');
-    expect(html).toContain('<h3>');
+    expect(text(html)).toContain('перших страв');
+    expect(text(html)).toContain('Плов');
     expect(html).not.toBe(buildKitComponentsLegacyHtml([{ componentName: 'Борщ', qty: 2 }]));
   });
 
@@ -207,13 +218,13 @@ describe('renderKitComponentsTemplate', () => {
     const single = renderKitComponentsTemplate(template, [
       { componentName: 'Борщ', qty: 1, componentCategoryName: 'Перші страви', componentWeight: 0.4 },
     ]);
-    expect(single).toContain('Борщ – 1 порція 400\u00A0г');
-    expect(single).not.toContain('{{#if');
-    expect(single).not.toContain(' по ');
+    expect(text(single)).toContain('Борщ – 1 порція 400г');
+    expect(text(single)).not.toContain('{{#if');
+    expect(text(single)).not.toContain(' по ');
 
     const multiple = renderKitComponentsTemplate(template, [
       { componentName: 'Борщ', qty: 3, componentCategoryName: 'Перші страви', componentWeight: 0.4 },
     ]);
-    expect(multiple).toContain('Борщ – 3 порції по 400\u00A0г');
+    expect(text(multiple)).toContain('Борщ – 3 порції по 400г');
   });
 });

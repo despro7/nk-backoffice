@@ -23,17 +23,10 @@ const row: MetaLogRow = {
 } as any;
 
 describe('metaLogsParser', () => {
-  it('parses shipment message into items', () => {
-    const parsed = parseShipmentMessage(row);
-    expect(parsed.names.length).toBeGreaterThanOrEqual(2);
-    expect(parsed.skus).toContain('03018');
-    expect(parsed.skus).toContain('03021');
-    expect(parsed.needed[0]).toContain('2');
-  });
-
-  it('dedupes and normalizes items', () => {
+  it('parses shipment message into deduped sku/needed/missing lists', () => {
     const parsed = parseShipmentMessage(row);
     const dedup = dedupeAndNormalize(parsed);
+    expect(parsed.skus).toEqual(expect.arrayContaining(['03018', '03021']));
     expect(dedup.skus).toEqual(['03018', '03021']);
     expect(dedup.needed).toEqual(['2', '1']);
     expect(dedup.missing).toEqual(['1', '1']);

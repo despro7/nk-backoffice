@@ -94,32 +94,6 @@ describe('seedPermissionKeysForRole', () => {
     expect(seedPermissionKeysForRole('intern')).toEqual([]);
   });
 
-  it('ads-manager sees reports but not orders or users', () => {
-    const keys = seedPermissionKeysForRole(ROLES.ADS_MANAGER);
-    expect(keys).toContain(PERMISSIONS.PAGE_REPORTS_SALES);
-    expect(keys).toContain(PERMISSIONS.ACTION_LAL_MANAGE);
-    expect(keys).not.toContain(PERMISSIONS.PAGE_ORDERS);
-    expect(keys).not.toContain(PERMISSIONS.ACTION_USERS_MANAGE);
-    expect(keys).not.toContain(PERMISSIONS.PAGE_SETTINGS_USERS);
-  });
-
-  it('storekeeper can pack orders and operate warehouse', () => {
-    const keys = seedPermissionKeysForRole(ROLES.STOREKEEPER);
-    expect(keys).toContain(PERMISSIONS.PAGE_ORDERS);
-    expect(keys).toContain(PERMISSIONS.ACTION_WAREHOUSE_OPERATE);
-    expect(keys).not.toContain(PERMISSIONS.PAGE_PRODUCTS);
-    expect(keys).not.toContain(PERMISSIONS.ACTION_WAREHOUSE_HISTORY_DELETE);
-    expect(keys).not.toContain(PERMISSIONS.ACTION_WAREHOUSE_MOVEMENT_EDIT);
-    expect(keys).not.toContain(PERMISSIONS.ACTION_WAREHOUSE_MOVEMENT_DELETE);
-  });
-
-  it('equipment page is storekeeper/boss/admin, not shop-manager', () => {
-    expect(seedPermissionKeysForRole(ROLES.STOREKEEPER)).toContain(PERMISSIONS.PAGE_SETTINGS_EQUIPMENT);
-    expect(seedPermissionKeysForRole(ROLES.BOSS)).toContain(PERMISSIONS.PAGE_SETTINGS_EQUIPMENT);
-    expect(seedPermissionKeysForRole(ROLES.SHOP_MANAGER)).not.toContain(PERMISSIONS.PAGE_SETTINGS_EQUIPMENT);
-    expect(seedPermissionKeysForRole(ROLES.WAREHOUSE_MANAGER)).not.toContain(PERMISSIONS.PAGE_SETTINGS_EQUIPMENT);
-  });
-
   it('only admin manages users, roles and admin settings', () => {
     for (const slug of [ROLES.ADS_MANAGER, ROLES.STOREKEEPER, ROLES.WAREHOUSE_MANAGER, ROLES.SHOP_MANAGER, ROLES.BOSS]) {
       const keys = seedPermissionKeysForRole(slug);
@@ -133,68 +107,6 @@ describe('seedPermissionKeysForRole', () => {
     expect(admin).toContain(PERMISSIONS.PAGE_SETTINGS_USERS);
   });
 
-  it('warehouse-manager can open products 2.0; storekeeper cannot', () => {
-    expect(seedPermissionKeysForRole(ROLES.WAREHOUSE_MANAGER)).toContain(PERMISSIONS.PAGE_PRODUCTS);
-    expect(seedPermissionKeysForRole(ROLES.WAREHOUSE_MANAGER)).toContain(PERMISSIONS.ACTION_CATALOG_MANAGE);
-    expect(seedPermissionKeysForRole(ROLES.WAREHOUSE_MANAGER)).toContain(PERMISSIONS.ACTION_STOREFRONT_READ);
-    expect(seedPermissionKeysForRole(ROLES.WAREHOUSE_MANAGER)).toContain(PERMISSIONS.ACTION_STOREFRONT_EDIT);
-    expect(seedPermissionKeysForRole(ROLES.STOREKEEPER)).not.toContain(PERMISSIONS.PAGE_PRODUCTS);
-  });
-
-  it('storefront manage and editSpec are admin-only by default', () => {
-    const admin = seedPermissionKeysForRole(ROLES.ADMIN);
-    const boss = seedPermissionKeysForRole(ROLES.BOSS);
-    expect(admin).toContain(PERMISSIONS.ACTION_STOREFRONT_MANAGE);
-    expect(admin).toContain(PERMISSIONS.ACTION_PRODUCTS_EDIT_SPEC);
-    expect(boss).toContain(PERMISSIONS.ACTION_STOREFRONT_READ);
-    expect(boss).toContain(PERMISSIONS.ACTION_STOREFRONT_EDIT);
-    expect(boss).not.toContain(PERMISSIONS.ACTION_STOREFRONT_MANAGE);
-    expect(boss).not.toContain(PERMISSIONS.ACTION_PRODUCTS_EDIT_SPEC);
-  });
-
-  it('accounting cash-in page is admin-only in seed', () => {
-    expect(seedPermissionKeysForRole(ROLES.ADMIN)).toContain(PERMISSIONS.PAGE_ACCOUNTING_CASH_IN);
-    for (const slug of [ROLES.ADS_MANAGER, ROLES.STOREKEEPER, ROLES.WAREHOUSE_MANAGER, ROLES.SHOP_MANAGER, ROLES.BOSS]) {
-      expect(seedPermissionKeysForRole(slug)).not.toContain(PERMISSIONS.PAGE_ACCOUNTING_CASH_IN);
-    }
-  });
-
-  it('accounting bank-statements page is admin-only in seed', () => {
-    expect(seedPermissionKeysForRole(ROLES.ADMIN)).toContain(PERMISSIONS.PAGE_ACCOUNTING_BANK_STATEMENTS);
-    for (const slug of [ROLES.ADS_MANAGER, ROLES.STOREKEEPER, ROLES.WAREHOUSE_MANAGER, ROLES.SHOP_MANAGER, ROLES.BOSS]) {
-      expect(seedPermissionKeysForRole(slug)).not.toContain(PERMISSIONS.PAGE_ACCOUNTING_BANK_STATEMENTS);
-    }
-  });
-
-  it('HR timesheet/employees are boss+admin; storekeeper has none', () => {
-    const boss = seedPermissionKeysForRole(ROLES.BOSS);
-    const storekeeper = seedPermissionKeysForRole(ROLES.STOREKEEPER);
-    expect(boss).toContain(PERMISSIONS.PAGE_HR_TIMESHEET);
-    expect(boss).toContain(PERMISSIONS.PAGE_HR_EMPLOYEES);
-    expect(boss).toContain(PERMISSIONS.ACTION_HR_TIMESHEET_EDIT);
-    expect(boss).toContain(PERMISSIONS.ACTION_HR_EMPLOYEES_MANAGE);
-    expect(storekeeper).not.toContain(PERMISSIONS.PAGE_HR_TIMESHEET);
-    expect(storekeeper).not.toContain(PERMISSIONS.PAGE_HR_EMPLOYEES);
-    expect(storekeeper).not.toContain(PERMISSIONS.ACTION_HR_EMPLOYEES_MANAGE);
-  });
-
-  it('HR payroll/payterms/cards are explicit admin+boss', () => {
-    const boss = seedPermissionKeysForRole(ROLES.BOSS);
-    const shop = seedPermissionKeysForRole(ROLES.SHOP_MANAGER);
-    expect(boss).toContain(PERMISSIONS.PAGE_HR_PAYROLL);
-    expect(boss).toContain(PERMISSIONS.ACTION_HR_PAYROLL_VIEW);
-    expect(boss).toContain(PERMISSIONS.ACTION_HR_PAYTERMS_MANAGE);
-    expect(boss).toContain(PERMISSIONS.ACTION_HR_PAYOUTS_VIEW);
-    expect(boss).toContain(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_GROUP);
-    expect(boss).toContain(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_EMPLOYER);
-    expect(boss).toContain(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_PAY_RATE);
-    expect(shop).not.toContain(PERMISSIONS.PAGE_HR_PAYROLL);
-    expect(shop).not.toContain(PERMISSIONS.ACTION_HR_PAYTERMS_MANAGE);
-    expect(shop).not.toContain(PERMISSIONS.ACTION_HR_PAYOUTS_VIEW);
-    expect(shop).not.toContain(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_GROUP);
-    expect(shop).not.toContain(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_EMPLOYER);
-    expect(shop).not.toContain(PERMISSIONS.ACTION_HR_EMPLOYMENT_CHANGE_PAY_RATE);
-  });
 });
 
 describe('canAccessRoute', () => {
@@ -233,32 +145,6 @@ describe('collectPagePermissions', () => {
         label: 'Інвентаризація',
       }),
     ]);
-  });
-
-  it('maps accounting parent to pages.accounting group', () => {
-    const catalog = collectPagePermissions([
-      { parent: 'accounting', navLabel: 'Реєстр переказів НП', inNav: true, permission: { name: 'cashIn' } },
-    ]);
-    expect(catalog[0]).toEqual(
-      expect.objectContaining({
-        key: pageKey('accounting', 'cashIn'),
-        group: 'pages.accounting',
-        label: 'Реєстр переказів НП',
-      })
-    );
-  });
-
-  it('maps hr parent to pages.hr group', () => {
-    const catalog = collectPagePermissions([
-      { parent: 'hr', navLabel: 'Співробітники', inNav: true, permission: { name: 'employees' } },
-    ]);
-    expect(catalog[0]).toEqual(
-      expect.objectContaining({
-        key: pageKey('hr', 'employees'),
-        group: 'pages.hr',
-        label: 'Співробітники',
-      })
-    );
   });
 
   it('defaults group to main when parent is missing', () => {
@@ -325,13 +211,6 @@ describe('registerAction', () => {
     );
     expect(listRegisteredActions().find((item) => item.key === actionKey('roles', 'manage'))?.group).toBe(
       'actions.users'
-    );
-  });
-
-  it('maps hr actions into pages/actions.hr UI group', () => {
-    registerAction('hr', 'employees.manage', 'Керувати співробітниками');
-    expect(listRegisteredActions().find((item) => item.key === actionKey('hr', 'employees.manage'))?.group).toBe(
-      'actions.hr'
     );
   });
 

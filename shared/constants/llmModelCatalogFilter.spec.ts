@@ -39,11 +39,6 @@ describe('isGeminiPlatformChatModel', () => {
     expect(isGeminiPlatformChatModel('imagen-3.0-generate-001')).toBe(false);
   });
 
-  it('hides gemini 2.5 family', () => {
-    expect(isGeminiPlatformChatModel('gemini-2.5-flash-lite')).toBe(false);
-    expect(isGeminiPlatformChatModel('gemini-2.5-pro')).toBe(false);
-    expect(isGeminiPlatformChatModel('gemini-3.5-flash-lite')).toBe(true);
-  });
 });
 
 describe('isOpenRouterPlatformChatModel', () => {

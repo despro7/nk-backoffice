@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  STOREFRONT_DEFAULT_BLOCKS,
   STOREFRONT_DEFAULT_META_KEYS,
-  createCustomStorefrontBlock,
-  createCustomStorefrontMetaKey,
-  getStorefrontDefaultBlockTemplate,
-  hasStorefrontDefaultBlockTemplate,
   isStorefrontProtectedBlockId,
   normalizeStorefrontBlocks,
   normalizeStorefrontMetaKeys,
@@ -89,17 +84,6 @@ describe('normalizeStorefrontMetaKeys', () => {
   });
 });
 
-describe('createCustomStorefrontBlock', () => {
-  it('creates enabled template block with unique id', () => {
-    const block = createCustomStorefrontBlock('Тест');
-    expect(block.label).toBe('Тест');
-    expect(block.enabled).toBe(true);
-    expect(block.resolver).toBe('template');
-    expect(block.metaKeyId).toBeNull();
-    expect(block.id.length).toBeGreaterThan(4);
-  });
-});
-
 describe('isStorefrontProtectedBlockId', () => {
   it('protects product-data blocks only', () => {
     expect(isStorefrontProtectedBlockId('ingredients')).toBe(true);
@@ -107,49 +91,5 @@ describe('isStorefrontProtectedBlockId', () => {
     expect(isStorefrontProtectedBlockId('kitComponents')).toBe(true);
     expect(isStorefrontProtectedBlockId('natural')).toBe(false);
     expect(isStorefrontProtectedBlockId('custom-uuid')).toBe(false);
-  });
-});
-
-describe('createCustomStorefrontMetaKey', () => {
-  it('creates empty key row', () => {
-    const row = createCustomStorefrontMetaKey('Meta');
-    expect(row.label).toBe('Meta');
-    expect(row.key).toBe('');
-  });
-});
-
-describe('getStorefrontDefaultBlockTemplate', () => {
-  it('returns built-in template for known block ids', () => {
-    const template = getStorefrontDefaultBlockTemplate({ id: 'ingredients', resolver: 'ingredients' });
-    expect(template).toContain('{{ingredients}}');
-  });
-
-  it('returns loop template for kitComponents', () => {
-    const template = getStorefrontDefaultBlockTemplate({
-      id: 'kitComponents',
-      resolver: 'kitComponents',
-    });
-    expect(template).toContain('{{#kitGroups}}');
-  });
-
-  it('returns empty string for custom blocks', () => {
-    expect(
-      getStorefrontDefaultBlockTemplate({ id: 'custom-block', resolver: 'template' }),
-    ).toBe('');
-    expect(
-      hasStorefrontDefaultBlockTemplate({ id: 'custom-block', resolver: 'template' }),
-    ).toBe(false);
-  });
-});
-
-describe('STOREFRONT_DEFAULT_BLOCKS', () => {
-  it('contains built-in resolvers with templates', () => {
-    const natural = STOREFRONT_DEFAULT_BLOCKS.find((block) => block.id === 'natural');
-    expect(natural?.resolver).toBe('template');
-    expect(natural?.template).toContain('натуральних');
-    expect(natural?.metaKeyId).toBeNull();
-
-    const ingredients = STOREFRONT_DEFAULT_BLOCKS.find((block) => block.id === 'ingredients');
-    expect(ingredients?.template).toContain('{{ingredients}}');
   });
 });

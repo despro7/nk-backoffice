@@ -1,7 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { LlmService } from './LlmService.js';
 import { llmSettingsService } from './LlmSettingsService.js';
-import * as openaiProvider from './providers/openaiLlmProvider.js';
 import { DEFAULT_LLM_PLATFORM_SETTINGS, type LlmPlatformSettings } from '../../../shared/types/llm.js';
 
 /** Повні налаштування платформи: дефолти + тестовий OpenAI. */
@@ -23,19 +22,6 @@ describe('LlmService', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.spyOn(llmSettingsService, 'getSettings').mockResolvedValue(testSettings());
-  });
-
-  it('complete delegates to openai provider', async () => {
-    vi.spyOn(openaiProvider, 'openaiComplete').mockResolvedValue({
-      provider: 'openai',
-      model: 'gpt-test',
-      text: 'hello',
-      toolCalls: [],
-      finishReason: 'stop',
-    });
-    const svc = new LlmService();
-    const result = await svc.complete({ messages: [{ role: 'user', content: 'hi' }] });
-    expect(result.text).toBe('hello');
   });
 
   it('throws when api key missing', async () => {

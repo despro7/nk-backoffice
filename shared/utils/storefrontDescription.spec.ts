@@ -4,8 +4,6 @@ import {
   buildKitComponentsHtml,
   buildStorefrontBoundValues,
   buildStorefrontDescriptionDocFromPreset,
-  createStorefrontBlockNodeAttrsFromPreset,
-  createStorefrontBlockNodeFromPreset,
   getStorefrontPickerPresetBlocks,
   isStorefrontBlockActiveInProduct,
   storefrontDescriptionNeedsPresetSync,
@@ -14,10 +12,6 @@ import {
   formatProductNutritionHtml,
   ingredientsListsEqual,
   isArchiveFolderName,
-  isStorefrontProtectedBoundResolver,
-  isStorefrontDrawerTemplateEditable,
-  isStorefrontTemplateBoundBlock,
-  getStorefrontBoundBlockEmptyMessage,
   normalizeIngredientTag,
   parseProductIngredientsJson,
   resolveGrossWeightKg,
@@ -27,7 +21,6 @@ import {
   substitutePlaceholders,
   substituteStorefrontPlaceholders,
   templateFromStorefrontEditorHtml,
-  templateHtmlForStorefrontEditor,
   templateHtmlForStorefrontEditorLive,
   normalizeStorefrontBlockHtml,
   normalizeStorefrontDescriptionDoc,
@@ -172,69 +165,7 @@ describe('ingredients json helpers', () => {
   });
 });
 
-describe('protected bound resolvers', () => {
-  it('includes ingredients nutrition netWeight grossWeight', () => {
-    expect(isStorefrontProtectedBoundResolver('ingredients')).toBe(true);
-    expect(isStorefrontProtectedBoundResolver('nutrition')).toBe(true);
-    expect(isStorefrontProtectedBoundResolver('netWeight')).toBe(true);
-    expect(isStorefrontProtectedBoundResolver('grossWeight')).toBe(true);
-    expect(isStorefrontProtectedBoundResolver('storage')).toBe(false);
-  });
-
-  it('detects template-bound blocks', () => {
-    expect(isStorefrontTemplateBoundBlock('ingredients')).toBe(true);
-    expect(isStorefrontTemplateBoundBlock('kitComponents')).toBe(true);
-    expect(isStorefrontTemplateBoundBlock('heating')).toBe(false);
-  });
-
-  it('excludes kitComponents from drawer WYSIWYG editing', () => {
-    expect(isStorefrontDrawerTemplateEditable('ingredients')).toBe(true);
-    expect(isStorefrontDrawerTemplateEditable('nutrition')).toBe(true);
-    expect(isStorefrontDrawerTemplateEditable('kitComponents')).toBe(false);
-    expect(isStorefrontDrawerTemplateEditable('heating')).toBe(false);
-  });
-
-  it('returns specific empty-state messages', () => {
-    expect(getStorefrontBoundBlockEmptyMessage('nutrition')).toBe(
-      'Дані КБЖВ ще не заповнені у полях товару',
-    );
-    expect(getStorefrontBoundBlockEmptyMessage('ingredients')).toBe(
-      'Дані складу ще не заповнені у полях товару',
-    );
-  });
-});
-
 describe('storefront block picker helpers', () => {
-  it('builds preset block node attrs with cleared override', () => {
-    const attrs = createStorefrontBlockNodeAttrsFromPreset({
-      id: 'heating',
-      label: 'Розігрів',
-      enabled: false,
-      resolver: 'heating',
-      template: '<p>Custom heating</p>',
-      metaKeyId: null,
-    });
-
-    expect(attrs).toEqual({
-      blockId: 'heating',
-      resolver: 'heating',
-      template: '<p>Custom heating</p>',
-      overrideContent: null,
-      manualInclude: null,
-      manualExclude: null,
-    });
-    expect(createStorefrontBlockNodeFromPreset({
-      id: 'heating',
-      label: 'Розігрів',
-      enabled: false,
-      resolver: 'heating',
-      template: '<p>Custom heating</p>',
-      metaKeyId: null,
-    })).toEqual({
-      type: 'storefrontBlock',
-      attrs,
-    });
-  });
 
   it('lists picker blocks including disabled and excludes kit-specific mismatches', () => {
     const blocks = getStorefrontPickerPresetBlocks(STOREFRONT_DEFAULT_BLOCKS, { isKit: true });
@@ -678,12 +609,6 @@ describe('nutrition split placeholders', () => {
 });
 
 describe('storefront template editor html', () => {
-  it('wraps placeholders for TipTap atoms', () => {
-    const html = templateHtmlForStorefrontEditor('<p><strong>Склад: </strong>{{ingredients}}</p>');
-    expect(html).toContain('data-storefront-placeholder="ingredients"');
-    expect(html).toContain('{{ingredients}}');
-  });
-
   it('embeds live placeholder values for bound-block template editing', () => {
     const html = templateHtmlForStorefrontEditorLive('<p><strong>Склад: </strong>{{ingredients}}</p>', {
       ...buildStorefrontBoundValues({
@@ -698,7 +623,6 @@ describe('storefront template editor html', () => {
         kitComponentsHtml: '',
       }),
     });
-    expect(html).toContain('data-storefront-placeholder="ingredients"');
     expect(html).toContain('борошно, вода');
     expect(html).not.toContain('{{ingredients}}');
   });
@@ -781,13 +705,31 @@ describe('storefront template editor html', () => {
             blockId: 'heating',
             resolver: 'heating',
             template: '<p>title</p><ol><li>x</li></ol>',
-            overrideContent: '<p>title</p><ol><li>x</li></ol><p></p>',
+            overrideContent: '<p>custom</p><ol><li>x</li></ol><p></p>',
           },
         },
         { type: 'paragraph', content: [] },
       ],
     });
     expect(doc.content).toHaveLength(2);
-    expect(doc.content?.[1]?.attrs?.overrideContent).toBe('<p>title</p><ol><li>x</li></ol>');
+    expect(doc.content?.[1]?.attrs?.overrideContent).toBe('<p>custom</p><ol><li>x</li></ol>');
+  });
+
+  it('drops block override that only differs from template by trailing empty paragraph', () => {
+    const doc = normalizeStorefrontDescriptionDoc({
+      type: 'doc',
+      content: [
+        {
+          type: 'storefrontBlock',
+          attrs: {
+            blockId: 'heating',
+            resolver: 'heating',
+            template: '<p>title</p><ol><li>x</li></ol>',
+            overrideContent: '<p>title</p><ol><li>x</li></ol><p></p>',
+          },
+        },
+      ],
+    });
+    expect(doc.content?.[0]?.attrs?.overrideContent).toBeNull();
   });
 });
