@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-11-03 — Часовий пояс процесу: Europe/Kyiv
+
+**Files:** `ecosystem.config.cjs`, `docker-compose.yml`, `server/routes/orders.ts`
+
+- **Фікс зсуву часу на проді:** у звіті продажів «Дата оформлення» показувалась на годину раніше, ніж історія статусів: сервер форматував `orderDate` у TZ процесу Node, а TZ на проді не був заданий (сервер не в Києві).
+- `TZ=Europe/Kyiv` для процесу (pm2 `env` / `env_production`, docker-compose). Це також виправляє решту коду, що залежить від TZ процесу (`getReportingDate` / `getReportingDateRange` — до якого звітного дня потрапляє замовлення, підписи графіків, логи).
+- `orderDate` у деталях дня звіту продажів форматується з явним `timeZone: 'Europe/Kyiv'`.
+- Застосування на проді: `pm2 restart ecosystem.config.cjs --env production --update-env` (звичайний `restart` не перечитує env) або перестворення контейнера.
+
+**Документація:** —
+
+---
+
 ## 2026-11-02 — Chatwoot Bot: журнал «Діалоги бота»
 
 **Files:** `prisma/schema.prisma`, `prisma/migrations/20261102200000_chatwoot_bot_turns`, `shared/types/chatwootBotDialogs.ts`, `ChatwootBotTurnLogService.ts` (+ spec), `ChatwootBotOrchestrator.ts`, `ChatwootBotReplyRouter.ts`, `ChatwootBotLlmRunner.ts`, `ChatwootBotAnalyticsService.ts`, `ChatwootBotSandboxService.ts`, `server/routes/chatwoot-bot.ts`, `server/services/cronService.ts`, `client/pages/ChatwootBotDialogs/**`, `components/BotTurnView.tsx`, `tabs/SandboxTab.tsx`, `cards/AiInstructionsCard.tsx`, `ChatwootBotStatistics/dateRange.ts`, `ChatwootBotStatistics/index.tsx`, `client/services/ChatwootBotService.ts`, `client/routes.config.tsx`

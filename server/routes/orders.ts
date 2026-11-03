@@ -3042,6 +3042,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
             portionsCount: orderPortions,
             orderDate: order.orderDate
               ? new Date(order.orderDate).toLocaleString('uk-UA', {
+                timeZone: 'Europe/Kyiv',
                 day: '2-digit',
                 month: '2-digit',
                 year: 'numeric',
