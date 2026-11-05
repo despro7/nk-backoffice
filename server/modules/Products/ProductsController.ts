@@ -11,6 +11,11 @@ import { authenticateToken, requirePermission } from '../../middleware/auth.js';
 import { roleService } from '../../services/RoleService.js';
 import { prisma, logServer } from '../../lib/utils.js';
 import { productsCatalogService } from './ProductsCatalogService.js';
+import { trackCatalogAction } from './catalogAuditHttp.js';
+import { catalogGoodAuditService } from './CatalogGoodAuditService.js';
+import { CATALOG_AUDIT_ACTIONS } from '../../../shared/types/catalogAudit.js';
+import { AUDIT_SOURCES, type AuditSource } from '../../../shared/constants/auditEntities.js';
+import { PERMISSIONS, hasPermission } from '../../../shared/constants/permissions.js';
 import {
   assertCanUseCatalogApi,
   assertFolderEdit,
@@ -48,6 +53,7 @@ requirePermission('catalog', 'manage', 'Повний доступ до ката�
 requirePermission('products', 'editSpec', 'Редагувати специфікацію (BOM)');
 requirePermission('storefront', 'edit', 'Редагувати контент вітрини товару');
 requirePermission('products', 'viewDilovod', 'Переглядати дані Dilovod у картці товару');
+requirePermission('products', 'viewAudit', 'Переглядати журнал змін товарів');
 const catalogFullRefresh = requirePermission('catalog', 'fullRefresh', 'Повне оновлення каталогу з Dilovod');
 const authOnly = [authenticateToken] as const;
 
@@ -321,13 +327,108 @@ router.post('/goods/:id/dilovod-apply', ...authOnly, async (req, res) => {
     if (!assertFolderEdit(res, perms, folderId, index.parentById)) return;
 
     const body = req.body || {};
-    const data = await productsCatalogService.applyDilovodPull(goodId, {
-      applyAll: body.applyAll === true,
-      fields: Array.isArray(body.fields) ? body.fields : undefined,
-    });
+    const data = await trackCatalogAction(
+      req,
+      CATALOG_AUDIT_ACTIONS.DILOVOD_PULL,
+      [goodId],
+      () =>
+        productsCatalogService.applyDilovodPull(goodId, {
+          applyAll: body.applyAll === true,
+          fields: Array.isArray(body.fields) ? body.fields : undefined,
+        }),
+      { source: 'dilovod' },
+    );
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'POST /goods/:id/dilovod-apply');
+  }
+});
+
+function parseAuditListQuery(query: Record<string, unknown>) {
+  const str = (v: unknown) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined);
+  const num = (v: unknown) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  };
+  const source = str(query.source);
+  const action = str(query.action);
+  return {
+    cursor: num(query.cursor),
+    limit: num(query.limit),
+    userId: num(query.userId),
+    from: str(query.from),
+    to: str(query.to),
+    action: action ? action.split(',') : undefined,
+    source: source && (AUDIT_SOURCES as readonly string[]).includes(source) ? (source as AuditSource) : undefined,
+  };
+}
+
+// GET /api/catalog/goods/:id/audit — журнал змін одного товару
+router.get('/goods/:id/audit', ...authOnly, async (req, res) => {
+  try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    if (!hasPermission(perms, PERMISSIONS.ACTION_PRODUCTS_VIEW_AUDIT)) {
+      res.status(403).json({ success: false, error: 'Немає права переглядати журнал змін' });
+      return;
+    }
+    const data = await catalogGoodAuditService.list({
+      ...parseAuditListQuery(req.query as Record<string, unknown>),
+      entityId: req.params.id,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'GET /goods/:id/audit');
+  }
+});
+
+// GET /api/catalog/audit — загальний журнал змін каталогу (фільтри: goodId, userId, from, to, action, source)
+router.get('/audit', ...authOnly, async (req, res) => {
+  try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    if (!hasPermission(perms, PERMISSIONS.ACTION_PRODUCTS_VIEW_AUDIT)) {
+      res.status(403).json({ success: false, error: 'Немає права переглядати журнал змін' });
+      return;
+    }
+    const goodId = typeof req.query.goodId === 'string' && req.query.goodId ? req.query.goodId : undefined;
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    let entityId: string | string[] | undefined = goodId;
+    if (!goodId && q) {
+      const goods = await prisma.catalogGood.findMany({
+        where: { OR: [{ name: { contains: q } }, { sku: { contains: q } }] },
+        select: { id: true },
+        take: 500,
+      });
+      if (goods.length === 0) {
+        res.json({ success: true, data: { items: [], nextCursor: null } });
+        return;
+      }
+      entityId = goods.map((g) => g.id);
+    }
+    const data = await catalogGoodAuditService.list({
+      ...parseAuditListQuery(req.query as Record<string, unknown>),
+      ...(entityId ? { entityId } : {}),
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'GET /audit');
+  }
+});
+
+// GET /api/catalog/audit/users — користувачі, що мають записи в журналі каталогу (для фільтра)
+router.get('/audit/users', ...authOnly, async (req, res) => {
+  try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    if (!hasPermission(perms, PERMISSIONS.ACTION_PRODUCTS_VIEW_AUDIT)) {
+      res.status(403).json({ success: false, error: 'Немає права переглядати журнал змін' });
+      return;
+    }
+    const data = await catalogGoodAuditService.listUsers();
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'GET /audit/users');
   }
 });
 
@@ -361,7 +462,9 @@ router.post('/goods', ...authOnly, async (req, res) => {
     if (!assertFolderEdit(res, perms, parentId, index.parentById)) return;
     const body = req.body || {};
     if (!assertCatalogProductFieldPermissions(res, perms, body)) return;
-    const data = await productsCatalogService.createGood(body);
+    const data = await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.CREATED, [], () => productsCatalogService.createGood(body), {
+      resultIds: (created) => [created.id],
+    });
     invalidateCatalogAclIndex();
     res.status(201).json({ success: true, data });
   } catch (error) {
@@ -398,7 +501,9 @@ router.put('/goods/:id', ...authOnly, async (req, res) => {
     ) {
       return;
     }
-    const data = await productsCatalogService.updateGood(req.params.id, body);
+    const data = await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.UPDATED, [req.params.id], () =>
+      productsCatalogService.updateGood(req.params.id, body),
+    );
     invalidateCatalogAclIndex();
     res.json({ success: true, data });
   } catch (error) {
@@ -424,7 +529,9 @@ router.post('/goods/move', ...authOnly, async (req, res) => {
     } else if (!assertFolderEdit(res, perms, target, index.parentById)) {
       return;
     }
-    const data = await productsCatalogService.moveGoods(ids.map(String), String(targetParentId));
+    const data = await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.MOVED, ids.map(String), () =>
+      productsCatalogService.moveGoods(ids.map(String), String(targetParentId)),
+    );
     invalidateCatalogAclIndex();
     res.json({ success: true, data });
   } catch (error) {
@@ -444,7 +551,9 @@ router.post('/goods/change-type', ...authOnly, async (req, res) => {
     if (!perms) return;
     const index = await loadCatalogAclIndex();
     if (!assertItemsEdit(res, perms, ids.map(String), index)) return;
-    const data = await productsCatalogService.changeGoodsType(ids.map(String), String(accPolicyId));
+    const data = await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.TYPE_CHANGED, ids.map(String), () =>
+      productsCatalogService.changeGoodsType(ids.map(String), String(accPolicyId)),
+    );
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'POST /goods/change-type');
@@ -478,7 +587,9 @@ router.post('/goods/archive', ...authOnly, async (req, res) => {
     if (!perms) return;
     const index = await loadCatalogAclIndex();
     if (!assertItemsEdit(res, perms, ids.map(String), index)) return;
-    const data = await productsCatalogService.archiveGoods(ids.map(String));
+    const data = await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.ARCHIVED, ids.map(String), () =>
+      productsCatalogService.archiveGoods(ids.map(String)),
+    );
     invalidateCatalogAclIndex();
     res.json({ success: true, data });
   } catch (error) {
@@ -498,7 +609,9 @@ router.post('/goods/restore', ...authOnly, async (req, res) => {
     if (!perms) return;
     const index = await loadCatalogAclIndex();
     if (!assertItemsEdit(res, perms, ids.map(String), index)) return;
-    const data = await productsCatalogService.restoreGoods(ids.map(String));
+    const data = await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.RESTORED, ids.map(String), () =>
+      productsCatalogService.restoreGoods(ids.map(String)),
+    );
     invalidateCatalogAclIndex();
     res.json({ success: true, data });
   } catch (error) {
@@ -519,7 +632,9 @@ router.post('/goods/trash', ...authOnly, async (req, res) => {
     const index = await loadCatalogAclIndex();
     if (!assertItemsEdit(res, perms, ids.map(String), index)) return;
     if (!assertFolderEdit(res, perms, CATALOG_TRASH_ID, index.parentById)) return;
-    const data = await productsCatalogService.trashGoods(ids.map(String));
+    const data = await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.TRASHED, ids.map(String), () =>
+      productsCatalogService.trashGoods(ids.map(String)),
+    );
     invalidateCatalogAclIndex();
     res.json({ success: true, data });
   } catch (error) {
@@ -534,7 +649,10 @@ router.post('/goods/:id/duplicate', ...authOnly, async (req, res) => {
     if (!perms) return;
     const index = await loadCatalogAclIndex();
     if (!assertItemsEdit(res, perms, [req.params.id], index)) return;
-    const data = await productsCatalogService.duplicateGood(req.params.id);
+    const data = await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.DUPLICATED, [], () => productsCatalogService.duplicateGood(req.params.id), {
+      resultIds: (created) => [created.id],
+      meta: { sourceGoodId: req.params.id },
+    });
     invalidateCatalogAclIndex();
     res.status(201).json({ success: true, data });
   } catch (error) {
@@ -624,7 +742,9 @@ router.post('/refresh', ...authOnly, async (req, res) => {
 
     if (ids && ids.length > 0) {
       if (!assertItemsEdit(res, perms, ids, index)) return;
-      const data = await productsCatalogService.refreshFromDilovod(ids);
+      const data = await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.DILOVOD_PULL, ids, () =>
+        productsCatalogService.refreshFromDilovod(ids),
+      { source: 'dilovod' });
       res.json({ success: true, data });
       return;
     }
@@ -671,7 +791,7 @@ router.post('/goods/:id/images', ...authOnly, (req, res) => {
       if (!perms) return;
       const index = await loadCatalogAclIndex();
       if (!assertItemsEdit(res, perms, [req.params.id], index)) return;
-      const data = await catalogMediaService.saveForGood(req.params.id, mapMulterFiles(req.files as Express.Multer.File[]));
+      const data = await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.IMAGES_CHANGED, [req.params.id], () => catalogMediaService.saveForGood(req.params.id, mapMulterFiles(req.files as Express.Multer.File[])));
       res.status(201).json({ success: true, data });
     } catch (error) {
       handleError(res, error, 'POST /goods/:id/images');
@@ -772,7 +892,7 @@ router.post('/images/staging/:sessionId/commit', ...authOnly, async (req, res) =
     if (!perms) return;
     const index = await loadCatalogAclIndex();
     if (!assertItemsEdit(res, perms, [goodId], index)) return;
-    const data = await catalogMediaService.commitStaging(req.params.sessionId, goodId);
+    const data = await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.IMAGES_CHANGED, [goodId], () => catalogMediaService.commitStaging(req.params.sessionId, goodId));
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'POST /images/staging/:sessionId/commit');
@@ -799,7 +919,7 @@ router.delete('/images/:imageId', ...authOnly, async (req, res) => {
     }
     const index = await loadCatalogAclIndex();
     if (!assertItemsEdit(res, perms, [row.goodId], index)) return;
-    await catalogMediaService.deleteImage(imageId);
+    await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.IMAGES_CHANGED, [row.goodId], () => catalogMediaService.deleteImage(imageId));
     res.json({ success: true, data: { deleted: true } });
   } catch (error) {
     handleError(res, error, 'DELETE /images/:imageId');
@@ -827,12 +947,12 @@ router.patch('/images/:imageId', ...authOnly, async (req, res) => {
     const index = await loadCatalogAclIndex();
     if (!assertItemsEdit(res, perms, [row.goodId], index)) return;
     if (req.body?.isPrimary === true) {
-      const data = await catalogMediaService.setPrimary(imageId);
+      const data = await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.IMAGES_CHANGED, [row.goodId], () => catalogMediaService.setPrimary(imageId));
       res.json({ success: true, data });
       return;
     }
     if (typeof req.body?.originalName === 'string') {
-      const data = await catalogMediaService.renameImage(imageId, req.body.originalName);
+      const data = await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.IMAGES_CHANGED, [row.goodId], () => catalogMediaService.renameImage(imageId, req.body.originalName));
       res.json({ success: true, data });
       return;
     }
@@ -856,7 +976,7 @@ router.put('/goods/:id/images/order', ...authOnly, async (req, res) => {
     if (!perms) return;
     const index = await loadCatalogAclIndex();
     if (!assertItemsEdit(res, perms, [req.params.id], index)) return;
-    const data = await catalogMediaService.reorder(req.params.id, orderedIds);
+    const data = await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.IMAGES_CHANGED, [req.params.id], () => catalogMediaService.reorder(req.params.id, orderedIds));
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'PUT /goods/:id/images/order');

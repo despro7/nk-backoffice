@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Accordion, AccordionItem, Spinner } from '@heroui/react';
-import { pluralize } from '@/lib/formatUtils';
 import {
   formatWarehouseReleaseAuditAction,
   formatWarehouseReleaseAuditDetails,
   formatWarehouseReleaseAuditHeader,
 } from '@shared/utils/warehouseReleaseAuditFormat';
 import type { WarehouseReleaseAuditLogDto } from '../warehouseReleaseAuditTypes';
-import { hrAccordionClassNames } from '@/components/hr/HrAuditAccordion';
+import { AuditAccordion } from '@/components/audit/AuditAccordion';
+import { AuditLogRow } from '@/components/audit/AuditLogRow';
 import { formatReleaseAuditAccordionTitle } from '@shared/utils/releaseHistoryDisplayTitle';
 
 interface Props {
@@ -56,46 +55,21 @@ export function WarehouseReleaseAuditAccordion({
   if (!releaseId) return null;
 
   return (
-    <div className={className}>
-      <Accordion
-        variant="bordered"
-        className="border-1 px-0 overflow-hidden"
-        onSelectionChange={() => onLayoutChange?.()}
-      >
-        <AccordionItem
-          key="release-audit"
-          title={formatReleaseAuditAccordionTitle(titleHint)}
-          subtitle={`${logs.length} ${pluralize(logs.length, 'запис', 'записи', 'записів')}`}
-          classNames={hrAccordionClassNames}
-        >
-          {loading ? (
-            <div className="flex justify-center py-4"><Spinner size="sm" /></div>
-          ) : logs.length === 0 ? (
-            <p className="text-sm text-default-500/75">Змін ще немає...</p>
-          ) : (
-            <div className="divide-y divide-border-subtle">
-              {logs.map((item) => {
-                const details = formatWarehouseReleaseAuditDetails(item.action, item.payload);
-                return (
-                  <div key={item.id} className="py-2 first:pt-0 last:pb-0">
-                    <div className="text-[11px] text-secondary">
-                      {formatWarehouseReleaseAuditHeader(item.createdAt, item.userName)}
-                    </div>
-                    <div className="mt-0.5 text-xs text-gray-700">
-                      <span className="font-medium text-default-800">
-                        {formatWarehouseReleaseAuditAction(item.action)}
-                      </span>
-                      {details ? (
-                        <div className="mt-1 whitespace-pre-line text-default-600">{details}</div>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </AccordionItem>
-      </Accordion>
-    </div>
+    <AuditAccordion
+      title={formatReleaseAuditAccordionTitle(titleHint)}
+      count={logs.length}
+      loading={loading}
+      className={className}
+      onSelectionChange={onLayoutChange}
+    >
+      {logs.map((item) => (
+        <AuditLogRow
+          key={item.id}
+          header={formatWarehouseReleaseAuditHeader(item.createdAt, item.userName)}
+          action={formatWarehouseReleaseAuditAction(item.action)}
+          details={formatWarehouseReleaseAuditDetails(item.action, item.payload)}
+        />
+      ))}
+    </AuditAccordion>
   );
 }

@@ -8,6 +8,8 @@ import { buildExportPayload } from '../services/productExportHelper.js';
 import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
 import { productOpsCache } from '../modules/Products/ProductOpsCache.js';
 import { productsCatalogService } from '../modules/Products/ProductsCatalogService.js';
+import { CATALOG_AUDIT_ACTIONS } from '../../shared/types/catalogAudit.js';
+import { trackCatalogAction } from '../modules/Products/catalogAuditHttp.js';
 import { cronService } from '../services/cronService.js';
 import productLabelsRouter from '../modules/Products/ProductLabelsController.js';
 
@@ -379,10 +381,12 @@ router.put('/:id/weight', authenticateToken, productsEdit, async (req, res) => {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    await prisma.catalogGood.update({
-      where: { id: goodId },
-      data: { weight: weight / 1000 },
-    });
+    await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.LEGACY_FIELD_CHANGED, [goodId], () =>
+      prisma.catalogGood.update({
+        where: { id: goodId },
+        data: { weight: weight / 1000 },
+      }),
+    );
     await catalogOpsLookup.projectGood(goodId);
     const product = await catalogOpsLookup.getByDilovodIds([goodId]);
     res.json({
@@ -438,10 +442,12 @@ router.put('/:id/unit-ratio', authenticateToken, productsEdit, async (req, res) 
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    await prisma.catalogGood.update({
-      where: { id: goodId },
-      data: { unitRatio },
-    });
+    await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.LEGACY_FIELD_CHANGED, [goodId], () =>
+      prisma.catalogGood.update({
+        where: { id: goodId },
+        data: { unitRatio },
+      }),
+    );
     await catalogOpsLookup.projectGood(goodId);
     const product = [...(await catalogOpsLookup.getByDilovodIds([goodId])).values()][0];
     res.json({ success: true, product: product ? catalogOpsLookup.toApiShape(product) : null });

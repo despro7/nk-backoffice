@@ -138,6 +138,7 @@ import { PricesSection } from './PricesSection';
 import { RequisitesSection } from './RequisitesSection';
 import { UsedInSection } from './UsedInSection';
 import MetaLogJsonView from '@/components/MetaLogJsonView';
+import { ProductHistoryTab } from './ProductHistoryTab';
 
 const TechCardModal = lazy(() =>
   import('./TechCardModal').then((module) => ({ default: module.TechCardModal }))
@@ -224,6 +225,7 @@ export function ProductDrawer({
   const canPullStorefront = hasPermission(PERMISSIONS.ACTION_STOREFRONT_PULL);
   const canPushStorefront = hasPermission(PERMISSIONS.ACTION_STOREFRONT_PUSH);
   const canEditSpec = hasPermission(PERMISSIONS.ACTION_PRODUCTS_EDIT_SPEC);
+  const canViewAudit = hasPermission(PERMISSIONS.ACTION_PRODUCTS_VIEW_AUDIT);
   const isTrashed = isEdit && detail?.parentId === CATALOG_TRASH_ID;
   const { isDebugMode } = useDebug();
   const { isAdminView: isAdmin } = useRolePreview();
@@ -1205,9 +1207,11 @@ export function ProductDrawer({
     }
   };
 
-  const visibleCardTabs = !hasObjectKind || isFolder
-    ? CARD_TABS.filter((t) => t.key === 'main')
-    : CARD_TABS;
+  const visibleCardTabs = (
+    !hasObjectKind || isFolder
+      ? CARD_TABS.filter((t) => t.key === 'main' || t.key === 'history')
+      : CARD_TABS
+  ).filter((t) => t.key !== 'history' || (isEdit && canViewAudit && Boolean(detail?.id)));
 
   const applyGeneratedSku = async () => {
     setSkuGenerating(true);
@@ -1725,6 +1729,13 @@ export function ProductDrawer({
                   />
                 )}
 
+                {cardTab === 'history' && isEdit && canViewAudit && detail?.id && (
+                  <ProductHistoryTab
+                    goodId={detail.id}
+                    dictionaries={dictionaries}
+                    refreshKey={detail.updatedAt}
+                  />
+                )}
                 {cardTab === 'stickers' && hasObjectKind && !isFolder && detail && (
                   <ProductLabelsTab
                     detail={detail}

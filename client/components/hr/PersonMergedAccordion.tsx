@@ -3,7 +3,7 @@ import { Accordion, AccordionItem, Spinner } from '@heroui/react';
 import { FormattedPhone } from '@/components/FormattedPhone';
 import { formatDateTime } from '@/lib/formatUtils';
 import type { HrPersonSummaryDto } from '@shared/types/hr';
-import { hrAccordionClassNames } from './HrAuditAccordion';
+import { auditAccordionClassNames } from '@/components/audit/AuditAccordion';
 
 interface PersonMergedAccordionProps {
   personId: number;
@@ -51,7 +51,7 @@ export function PersonMergedAccordion({
         key="merged"
         title="Обʼєднані записи"
         subtitle={`(${mergedCount} записів)`}
-        classNames={hrAccordionClassNames}
+        classNames={auditAccordionClassNames}
       >
         {loading ? (
           <div className="flex justify-center py-4"><Spinner size="sm" /></div>

@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/utils.js';
+import { auditLogService } from '../../services/AuditLogService.js';
 import type { HrAuditLogDto, HrAuditEntityType } from '../../../shared/types/hr.js';
 
 export interface HrAuditLogInput {
@@ -12,19 +13,7 @@ export interface HrAuditLogInput {
 
 export class HrAuditService {
   async log(input: HrAuditLogInput): Promise<void> {
-    try {
-      await prisma.hrAuditLog.create({
-        data: {
-          entityType: input.entityType,
-          entityId: input.entityId,
-          action: input.action,
-          userId: input.userId ?? null,
-          payload: input.payload ?? undefined,
-        },
-      });
-    } catch (error) {
-      console.error('[hr-audit] failed to write log', error);
-    }
+    await auditLogService.log(input);
   }
 
   async list(params: {
@@ -35,13 +24,13 @@ export class HrAuditService {
     limit?: number;
   }): Promise<HrAuditLogDto[]> {
     const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
-    const rows = await prisma.hrAuditLog.findMany({
+    const rows = await prisma.auditLog.findMany({
       where: {
         ...(params.entityType ? { entityType: params.entityType } : {}),
-        ...(params.entityId != null ? { entityId: params.entityId } : {}),
+        ...(params.entityId != null ? { entityId: String(params.entityId) } : {}),
       },
       include: { user: { select: { id: true, name: true, email: true } } },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { id: 'desc' },
       take: params.employmentId != null || params.date ? 500 : limit,
     });
 
@@ -57,7 +46,7 @@ export class HrAuditService {
     return filtered.slice(0, limit).map((row) => ({
       id: row.id,
       entityType: row.entityType as HrAuditEntityType,
-      entityId: row.entityId,
+      entityId: Number(row.entityId),
       action: row.action,
       userId: row.userId,
       userName: row.user?.name || row.user?.email || null,

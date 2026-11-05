@@ -28,6 +28,7 @@ const SettingsTestAuth = lazyPage(() => import('./pages/SettingsTestAuth'));
 const SettingsProfile = lazyPage(() => import('./pages/SettingsProfile'));
 const SettingsProductSets = lazyPage(() => import('./pages/SettingsProductSets'));
 const ProductsPage = lazyPage(() => import('./pages/Products'));
+const ProductsAuditPage = lazyPage(() => import('./pages/Products/ProductsAuditPage'));
 const SettingsOrderAssembly = lazyPage(() => import('./pages/SettingsOrderAssembly'));
 const SettingsEquipment = lazyPage(() => import('./pages/SettingsEquipment'));
 const SettingsOrders = lazyPage(() => import('./pages/SettingsOrders'));
@@ -771,6 +772,17 @@ export const appRoutes: AppRoute[] = [
       color: 'danger',
       until: '2026-09-09',
     },
+  },
+  {
+    path: '/products/audit',
+    component: ProductsAuditPage,
+    title: 'Журнал змін каталогу',
+    pageTitle: 'Журнал змін каталогу | NK Backoffice',
+    navLabel: 'Журнал змін каталогу',
+    icon: <DynamicIcon name="history" size={20} className="max-w-full max-h-full" />,
+    inNav: false,
+    order: 8,
+    permission: { name: 'productsAudit', label: 'Журнал змін каталогу' },
   },
   {
     path: '/product-sets',

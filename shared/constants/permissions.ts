@@ -231,6 +231,7 @@ export const PERMISSION_SEEDS: Array<{ key: PermissionKey; seed: SeedGrant }> = 
   { key: pageKey(DEFAULT_PAGE_GROUP, 'salesdriveOrders'), seed: min(ROLES.SHOP_MANAGER) },
   { key: pageKey(DEFAULT_PAGE_GROUP, 'products'), seed: min(ROLES.WAREHOUSE_MANAGER) },
   { key: pageKey(DEFAULT_PAGE_GROUP, 'productSets'), seed: min(ROLES.STOREKEEPER) },
+  { key: pageKey(DEFAULT_PAGE_GROUP, 'productsAudit'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
   { key: pageKey(DEFAULT_PAGE_GROUP, 'testSerialCom'), seed: min(ROLES.STOREKEEPER) },
 
   { key: pageKey('warehouse', 'movement'), seed: min(ROLES.STOREKEEPER) },
@@ -312,6 +313,7 @@ export const PERMISSION_SEEDS: Array<{ key: PermissionKey; seed: SeedGrant }> = 
 
   { key: actionKey('products', 'edit'), seed: min(ROLES.STOREKEEPER) },
   { key: actionKey('products', 'editSpec'), seed: only(ROLES.ADMIN) },
+  { key: actionKey('products', 'viewAudit'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
   { key: actionKey('products', 'sync'), seed: min(ROLES.STOREKEEPER) },
   { key: actionKey('products', 'syncExport'), seed: only(ROLES.ADMIN) },
   { key: actionKey('products', 'viewDilovod'), seed: min(ROLES.SHOP_MANAGER) },
@@ -340,6 +342,7 @@ export const PERMISSIONS = {
   PAGE_SALESDRIVE_ORDERS: pageKey(DEFAULT_PAGE_GROUP, 'salesdriveOrders'),
   PAGE_PRODUCTS: pageKey(DEFAULT_PAGE_GROUP, 'products'),
   PAGE_PRODUCT_SETS: pageKey(DEFAULT_PAGE_GROUP, 'productSets'),
+  PAGE_PRODUCTS_AUDIT: pageKey(DEFAULT_PAGE_GROUP, 'productsAudit'),
   PAGE_TEST_SERIAL_COM: pageKey(DEFAULT_PAGE_GROUP, 'testSerialCom'),
   PAGE_WAREHOUSE_MOVEMENT: pageKey('warehouse', 'movement'),
   PAGE_WAREHOUSE_MOVEMENT_V2: pageKey('warehouse', 'movementV2'),
@@ -412,6 +415,7 @@ export const PERMISSIONS = {
   ACTION_WAREHOUSE_MOVEMENT_DELETE: actionKey('warehouse', 'movement.delete'),
   ACTION_PRODUCTS_EDIT: actionKey('products', 'edit'),
   ACTION_PRODUCTS_EDIT_SPEC: actionKey('products', 'editSpec'),
+  ACTION_PRODUCTS_VIEW_AUDIT: actionKey('products', 'viewAudit'),
   ACTION_PRODUCTS_SYNC: actionKey('products', 'sync'),
   ACTION_PRODUCTS_SYNC_EXPORT: actionKey('products', 'syncExport'),
   ACTION_PRODUCTS_VIEW_DILOVOD: actionKey('products', 'viewDilovod'),

@@ -7,6 +7,8 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import { prisma, logServer } from '../../lib/utils.js';
 import { LocalSyncGoodPayload } from './ProductsTypes.js';
 import { nextSiblingSortOrder } from '../../../shared/utils/catalogSortOrder.js';
+import { CATALOG_AUDIT_ACTIONS } from '../../../shared/types/catalogAudit.js';
+import { catalogGoodAuditService } from './CatalogGoodAuditService.js';
 
 type Tx = Prisma.TransactionClient | PrismaClient;
 
@@ -15,6 +17,14 @@ export class ProductsLocalSync {
    * Upsert catalog good + replace BOM/prices/barcodes in one transaction.
    */
   async syncGood(payload: LocalSyncGoodPayload): Promise<void> {
+    // Зміни з Dilovod пишемо в журнал; всередині дії користувача — поглинаються зовнішнім track().
+    return catalogGoodAuditService.track(
+      { action: CATALOG_AUDIT_ACTIONS.DILOVOD_SYNC, ids: [payload.id], userId: null, source: 'dilovod' },
+      () => this.syncGoodRaw(payload),
+    );
+  }
+
+  private async syncGoodRaw(payload: LocalSyncGoodPayload): Promise<void> {
     try {
       await prisma.$transaction(
         async (tx) => {
@@ -47,6 +57,18 @@ export class ProductsLocalSync {
    * дефолтні 5s Prisma interactive tx не вистачає.
    */
   async syncGoodsBatch(rows: LocalSyncGoodPayload[]): Promise<{ upserted: number }> {
+    return catalogGoodAuditService.track(
+      {
+        action: CATALOG_AUDIT_ACTIONS.DILOVOD_SYNC,
+        ids: rows.map((row) => row.id),
+        userId: null,
+        source: 'dilovod',
+      },
+      () => this.syncGoodsBatchRaw(rows),
+    );
+  }
+
+  private async syncGoodsBatchRaw(rows: LocalSyncGoodPayload[]): Promise<{ upserted: number }> {
     let upserted = 0;
     const chunkSize = 10;
     const txOptions = { maxWait: 15_000, timeout: 60_000 } as const;

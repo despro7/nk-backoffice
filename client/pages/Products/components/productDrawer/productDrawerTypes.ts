@@ -121,7 +121,7 @@ export interface DrawerForm {
 /** 4 основні типи обʼєкта в drawer */
 export type DrawerObjectKind = 'good' | 'kit' | 'group' | 'other';
 
-export type CardTabKey = 'main' | 'content' | 'stickers';
+export type CardTabKey = 'main' | 'content' | 'stickers' | 'history';
 
 export type RowDeleteKind = 'component' | 'price' | 'barcode';
 
@@ -141,4 +141,5 @@ export const CARD_TABS: Array<{
   { key: 'main', title: 'Основні дані', titleMobile: 'Основні', icon: 'clipboard-list' },
   { key: 'content', title: 'Опис і зображення', titleMobile: 'Опис', icon: 'images' },
   { key: 'stickers', title: 'Наліпки', titleMobile: 'Наліпки', icon: 'tag' },
+  { key: 'history', title: 'Історія', titleMobile: 'Історія', icon: 'history' },
 ];

@@ -27,7 +27,7 @@ model User {
   hrTimesheetLocks                 HrTimesheetMonth[]
   hrTimesheetEntriesCreated        HrTimesheetEntry[]         @relation("HrTimesheetEntryCreatedBy")
   hrPayrollLocks                   HrPayrollPeriod[]          @relation("HrPayrollLockedBy")
-  hrAuditLogs                      HrAuditLog[]
+  auditLogs                        AuditLog[]
   catalogProductLabels             CatalogProductLabel[]
   catalogProductLabelDraftsUpdated CatalogProductLabelDraft[]
   catalogLabelTemplatesUpdated     CatalogLabelTemplate[]
@@ -750,20 +750,25 @@ model CatalogLabelTemplateDefault {
   @@map("catalog_label_template_defaults")
 }
 
-/// Журнал дій HR (audit trail користувача)
-model HrAuditLog {
+/// Загальний журнал дій (audit trail) для всіх доменів: HR, Warehouse, Catalog…
+/// entityType — див. shared/constants/auditEntities.ts; entityId — рядок (Int-id домену як String).
+model AuditLog {
   id         Int      @id @default(autoincrement())
   entityType String   @db.VarChar(32)
-  entityId   Int
+  entityId   String   @db.VarChar(64)
   action     String   @db.VarChar(64)
   userId     Int?
+  /// ui | dilovod | system | bulk
+  source     String   @default("ui") @db.VarChar(16)
   payload    Json?
   createdAt  DateTime @default(now())
   user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  @@index([entityType, entityId])
+  @@index([entityType, entityId, createdAt])
+  @@index([entityType, createdAt])
+  @@index([userId, createdAt])
   @@index([createdAt])
-  @@map("hr_audit_log")
+  @@map("audit_log")
 }
 
 /// Група оплати (офіційна / погодинні / неофіційна)

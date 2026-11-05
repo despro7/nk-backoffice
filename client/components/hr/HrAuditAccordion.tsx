@@ -1,19 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Accordion, AccordionItem, Spinner } from '@heroui/react';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PERMISSIONS } from '@shared/constants/permissions';
 import { HrAuditLogList } from '@/pages/Hr/components/HrAuditLogEntry';
-import { pluralize } from '@/lib/formatUtils';
+import { AuditAccordion } from '@/components/audit/AuditAccordion';
 import type { HrAuditEntityType, HrAuditLogDto } from '@shared/types/hr';
-
-const ACCORDION_CLASS_NAMES = {
-  base: 'px-1',
-  trigger: 'my-1 py-2 px-2 rounded-sm [&>div]:flex-row [&>div]:items-baseline [&>div]:gap-2 data-[open=true]:bg-default-100/75 transition-colors duration-200',
-  indicator: '-rotate-180',
-  title: 'text-sm font-medium text-default-500 data-[open=true]:text-default-900 transition-colors duration-200',
-  subtitle: 'text-xs text-default-500',
-  content: 'pb-3 px-2',
-};
 
 interface HrAuditAccordionProps {
   entityType: HrAuditEntityType;
@@ -67,27 +57,9 @@ export function HrAuditAccordion({
   if (!canView || !entityId) return null;
 
   return (
-    <div className={className}>
-      <Accordion variant="bordered" className="border-1 px-0 overflow-hidden">
-        <AccordionItem
-          key="audit"
-          title={title}
-          subtitle={`${logs.length} ${pluralize(logs.length, 'запис', 'записи', 'записів')}`}
-          classNames={ACCORDION_CLASS_NAMES}
-        >
-          {loading ? (
-            <div className="flex justify-center py-4"><Spinner size="sm" /></div>
-          ) : logs.length === 0 ? (
-            <p className="text-sm text-default-500/75">Змін ще немає...</p>
-          ) : (
-            <div className="divide-y divide-border-subtle">
-              <HrAuditLogList logs={logs} />
-            </div>
-          )}
-        </AccordionItem>
-      </Accordion>
-    </div>
+    <AuditAccordion title={title} count={logs.length} loading={loading} className={className}>
+      <HrAuditLogList logs={logs} />
+    </AuditAccordion>
   );
 }
 
-export { ACCORDION_CLASS_NAMES as hrAccordionClassNames };

@@ -10,6 +10,9 @@ import { catalogLabelService } from './CatalogLabelService.js';
 import { labelTemplateService } from './LabelTemplateService.js';
 import type { ProductLabelPayloadV2 } from '../../../shared/types/labelTemplate.js';
 import { LABEL_INPUTS_SCHEMA_VERSION } from '../../../shared/constants/labelInputKeys.js';
+import { CATALOG_AUDIT_ACTIONS } from '../../../shared/types/catalogAudit.js';
+import { catalogAuditUserId, trackCatalogAction } from './catalogAuditHttp.js';
+import { catalogGoodAuditService } from './CatalogGoodAuditService.js';
 
 const router = Router();
 const authOnly = [authenticateToken] as const;
@@ -109,7 +112,9 @@ router.patch('/:goodId/labels/template', ...authOnly, catalogManage, async (req,
       ? null
       : String(req.body.templateId);
     await assertGoodExists(goodId);
-    await labelTemplateService.setGoodOverride(goodId, labelKind, templateId);
+    await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.LABEL_TEMPLATE_CHANGED, [goodId], () =>
+      labelTemplateService.setGoodOverride(goodId, labelKind, templateId),
+    );
     const data = await labelTemplateService.resolveForGood(goodId, labelKind);
     res.json({ success: true, data });
   } catch (error) {
@@ -269,6 +274,12 @@ router.post('/:goodId/labels/published/generate', ...authOnly, catalogManage, as
       batchId,
       batchNumber,
       labelKind,
+    });
+    await catalogGoodAuditService.logEvent({
+      goodId,
+      action: CATALOG_AUDIT_ACTIONS.LABEL_PUBLISHED,
+      userId: catalogAuditUserId(req),
+      meta: { labelKind, batchNumber, version: data.version },
     });
     res.json({ success: true, data });
   } catch (error) {

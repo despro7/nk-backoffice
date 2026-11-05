@@ -1,7 +1,8 @@
 import type { Prisma } from '@prisma/client';
-import { prisma } from '../../lib/utils.js';
+import { AUDIT_ENTITY } from '../../../shared/constants/auditEntities.js';
+import { auditLogService } from '../../services/AuditLogService.js';
 
-export const WAREHOUSE_SURPLUS_AUDIT_ENTITY = 'warehouse_surplus';
+export const WAREHOUSE_SURPLUS_AUDIT_ENTITY = AUDIT_ENTITY.WAREHOUSE_SURPLUS;
 
 export type WarehouseSurplusAuditLogDto = {
   id: number;
@@ -13,6 +14,7 @@ export type WarehouseSurplusAuditLogDto = {
   createdAt: string;
 };
 
+/** Тонка обгортка над загальним `auditLogService` (entityType = WAREHOUSE_SURPLUS). */
 export class WarehouseSurplusAuditService {
   async log(input: {
     surplusId: number;
@@ -20,41 +22,29 @@ export class WarehouseSurplusAuditService {
     userId?: number | null;
     payload?: Prisma.InputJsonValue;
   }): Promise<void> {
-    try {
-      await prisma.hrAuditLog.create({
-        data: {
-          entityType: WAREHOUSE_SURPLUS_AUDIT_ENTITY,
-          entityId: input.surplusId,
-          action: input.action,
-          userId: input.userId ?? null,
-          payload: input.payload ?? undefined,
-        },
-      });
-    } catch (error) {
-      console.error('[warehouse-surplus-audit] failed to write log', error);
-    }
+    await auditLogService.log({
+      entityType: WAREHOUSE_SURPLUS_AUDIT_ENTITY,
+      entityId: input.surplusId,
+      action: input.action,
+      userId: input.userId,
+      payload: input.payload,
+    });
   }
 
   async list(surplusId: number, limit = 50): Promise<WarehouseSurplusAuditLogDto[]> {
-    const take = Math.min(Math.max(limit, 1), 200);
-    const rows = await prisma.hrAuditLog.findMany({
-      where: {
-        entityType: WAREHOUSE_SURPLUS_AUDIT_ENTITY,
-        entityId: surplusId,
-      },
-      include: { user: { select: { id: true, name: true, email: true } } },
-      orderBy: { createdAt: 'desc' },
-      take,
+    const rows = await auditLogService.list({
+      entityType: WAREHOUSE_SURPLUS_AUDIT_ENTITY,
+      entityId: surplusId,
+      limit,
     });
-
     return rows.map((row) => ({
       id: row.id,
-      entityId: row.entityId,
+      entityId: Number(row.entityId),
       action: row.action,
       userId: row.userId,
-      userName: row.user?.name || row.user?.email || null,
+      userName: row.userName,
       payload: row.payload,
-      createdAt: row.createdAt.toISOString(),
+      createdAt: row.createdAt,
     }));
   }
 }

@@ -1,7 +1,8 @@
 import type { Prisma } from '@prisma/client';
-import { prisma } from '../../lib/utils.js';
+import { AUDIT_ENTITY } from '../../../shared/constants/auditEntities.js';
+import { auditLogService } from '../../services/AuditLogService.js';
 
-export const WAREHOUSE_WRITE_OFF_AUDIT_ENTITY = 'warehouse_write_off';
+export const WAREHOUSE_WRITE_OFF_AUDIT_ENTITY = AUDIT_ENTITY.WAREHOUSE_WRITE_OFF;
 
 export type WarehouseWriteOffAuditLogDto = {
   id: number;
@@ -13,6 +14,7 @@ export type WarehouseWriteOffAuditLogDto = {
   createdAt: string;
 };
 
+/** Тонка обгортка над загальним `auditLogService` (entityType = WAREHOUSE_WRITE_OFF). */
 export class WarehouseWriteOffAuditService {
   async log(input: {
     writeOffId: number;
@@ -20,41 +22,29 @@ export class WarehouseWriteOffAuditService {
     userId?: number | null;
     payload?: Prisma.InputJsonValue;
   }): Promise<void> {
-    try {
-      await prisma.hrAuditLog.create({
-        data: {
-          entityType: WAREHOUSE_WRITE_OFF_AUDIT_ENTITY,
-          entityId: input.writeOffId,
-          action: input.action,
-          userId: input.userId ?? null,
-          payload: input.payload ?? undefined,
-        },
-      });
-    } catch (error) {
-      console.error('[warehouse-writeoff-audit] failed to write log', error);
-    }
+    await auditLogService.log({
+      entityType: WAREHOUSE_WRITE_OFF_AUDIT_ENTITY,
+      entityId: input.writeOffId,
+      action: input.action,
+      userId: input.userId,
+      payload: input.payload,
+    });
   }
 
   async list(writeOffId: number, limit = 50): Promise<WarehouseWriteOffAuditLogDto[]> {
-    const take = Math.min(Math.max(limit, 1), 200);
-    const rows = await prisma.hrAuditLog.findMany({
-      where: {
-        entityType: WAREHOUSE_WRITE_OFF_AUDIT_ENTITY,
-        entityId: writeOffId,
-      },
-      include: { user: { select: { id: true, name: true, email: true } } },
-      orderBy: { createdAt: 'desc' },
-      take,
+    const rows = await auditLogService.list({
+      entityType: WAREHOUSE_WRITE_OFF_AUDIT_ENTITY,
+      entityId: writeOffId,
+      limit,
     });
-
     return rows.map((row) => ({
       id: row.id,
-      entityId: row.entityId,
+      entityId: Number(row.entityId),
       action: row.action,
       userId: row.userId,
-      userName: row.user?.name || row.user?.email || null,
+      userName: row.userName,
       payload: row.payload,
-      createdAt: row.createdAt.toISOString(),
+      createdAt: row.createdAt,
     }));
   }
 }

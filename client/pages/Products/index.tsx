@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Select, SelectItem, Spinner, Tooltip, type SortDescriptor } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
@@ -59,6 +60,10 @@ export default function ProductsPage() {
   const { isAdminView: isAdmin, effectivePermissions } = useRolePreview();
   const canPushStorefront = hasPermission(effectivePermissions, PERMISSIONS.ACTION_STOREFRONT_PUSH);
   const canPullStorefront = hasPermission(effectivePermissions, PERMISSIONS.ACTION_STOREFRONT_PULL);
+  const canViewCatalogAudit =
+    hasPermission(effectivePermissions, PERMISSIONS.ACTION_PRODUCTS_VIEW_AUDIT) &&
+    hasPermission(effectivePermissions, PERMISSIONS.PAGE_PRODUCTS_AUDIT);
+  const navigate = useNavigate();
   const catalog = useProductsCatalog();
   const visualRootId =
     resolveCatalogVisualRootFolderId(catalog.treeNodes, effectivePermissions) ?? CATALOG_ROOT_ID;
@@ -891,6 +896,7 @@ export default function ProductsPage() {
         onCreateGood={() => catalog.openCreate(false)}
         busy={busy}
         readOnly={!canEditFolder}
+        onOpenAudit={canViewCatalogAudit ? () => navigate('/products/audit') : undefined}
         actions={
           <CatalogActionsDropdown
             ids={catalog.selectedIds}

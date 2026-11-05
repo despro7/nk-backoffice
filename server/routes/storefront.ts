@@ -4,6 +4,8 @@ import { logServer } from '../lib/utils.js';
 import { storefrontService } from '../modules/Storefront/StorefrontService.js';
 import { storefrontDescriptionBuilder } from '../modules/Storefront/StorefrontDescriptionBuilder.js';
 import { wooCommerceSyncService } from '../modules/Storefront/WooCommerceSyncService.js';
+import { CATALOG_AUDIT_ACTIONS } from '../../shared/types/catalogAudit.js';
+import { trackCatalogAction } from '../modules/Products/catalogAuditHttp.js';
 import { wooCommerceMediaService } from '../modules/Storefront/WooCommerceMediaService.js';
 import { wooCommerceStockService } from '../modules/Storefront/WooCommerceStockService.js';
 import type {
@@ -169,7 +171,9 @@ router.post('/woo/pull-apply', ...authOnly, storefrontPull, async (req, res) => 
     if (!input?.goodId) {
       return res.status(400).json({ success: false, error: 'goodId обовʼязковий' });
     }
-    const data = await wooCommerceSyncService.pullApply(input);
+    const data = await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.STOREFRONT_PULL, [input.goodId], () =>
+      wooCommerceSyncService.pullApply(input),
+    );
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'wooPullApply');
@@ -223,7 +227,13 @@ router.post('/woo/pull-bulk-apply', ...authOnly, storefrontPull, async (req, res
     if (items.length === 0) {
       return res.status(400).json({ success: false, error: 'items обовʼязковий' });
     }
-    const data = await wooCommerceSyncService.pullBulkApply(items);
+    const data = await trackCatalogAction(
+      req,
+      CATALOG_AUDIT_ACTIONS.STOREFRONT_PULL,
+      items.map((item) => String(item.goodId)),
+      () => wooCommerceSyncService.pullBulkApply(items),
+      { source: 'bulk' },
+    );
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'wooPullBulkApply');

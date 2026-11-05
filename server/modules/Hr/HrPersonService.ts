@@ -554,10 +554,10 @@ export class HrPersonService {
     });
     if (rows.length === 0) return [];
 
-    const auditLogs = await prisma.hrAuditLog.findMany({
+    const auditLogs = await prisma.auditLog.findMany({
       where: {
         entityType: 'person',
-        entityId: id,
+        entityId: String(id),
         action: 'merged',
       },
       orderBy: { createdAt: 'desc' },

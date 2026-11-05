@@ -1,7 +1,7 @@
 import { Accordion, AccordionItem, Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { FormattedPhone } from '@/components/FormattedPhone';
-import { hrAccordionClassNames } from './HrAuditAccordion';
+import { auditAccordionClassNames } from '@/components/audit/AuditAccordion';
 import { pluralize } from '@/lib/formatUtils';
 import type { HrPersonDto } from '@shared/types/hr';
 
@@ -30,7 +30,7 @@ export function PersonDuplicatesAccordion({
         title={<span className="text-amber-600"><DynamicIcon name="alert-triangle" size={14} className="inline-block mb-0.5" /> Можливі дублікати</span>}
         subtitle={`${duplicates.length} ${pluralize(duplicates.length, 'запис', 'записи', 'записів')}`}
         classNames={{
-          ...hrAccordionClassNames,
+          ...auditAccordionClassNames,
           subtitle: 'text-xs text-orange-700 bg-amber-200/75 rounded px-1.5 py-0.5 min-w-5 text-center',
         }}
       >

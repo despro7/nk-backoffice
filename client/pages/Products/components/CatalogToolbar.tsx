@@ -17,6 +17,8 @@ interface CatalogToolbarProps {
   busy?: boolean;
   actions?: ReactNode;
   readOnly?: boolean;
+  /** Відкрити журнал змін каталогу (лише з правом перегляду). */
+  onOpenAudit?: () => void;
 }
 
 export function CatalogToolbar({
@@ -33,6 +35,7 @@ export function CatalogToolbar({
   busy,
   actions,
   readOnly,
+  onOpenAudit,
 }: CatalogToolbarProps) {
   const anyRefreshing = Boolean(branchRefreshing || stockRefreshing || fullRefreshing);
   const { isDebugMode } = useDebug();
@@ -145,7 +148,19 @@ export function CatalogToolbar({
         </div>
       )}
 
-      {actions ? <div className="ml-auto">{actions}</div> : null}
+      {onOpenAudit ? (
+        <Button
+          size="sm"
+          variant="flat"
+          className="ml-auto"
+          startContent={<DynamicIcon name="history" size={14} />}
+          onPress={onOpenAudit}
+        >
+          <span className="hidden md:inline">Журнал змін</span>
+        </Button>
+      ) : null}
+
+      {actions ? <div className={onOpenAudit ? undefined : 'ml-auto'}>{actions}</div> : null}
     </div>
   );
 }
