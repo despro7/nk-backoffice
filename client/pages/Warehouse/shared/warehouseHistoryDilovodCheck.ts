@@ -23,6 +23,7 @@ export function resolveWarehouseHistoryDilovodDocId(record: {
   write_off_number?: unknown;
   surplusNumber?: unknown;
   surplus_number?: unknown;
+  [key: string]: unknown;
 }): string {
   const candidates = [
     record.dilovodDocId,
@@ -63,7 +64,7 @@ export function collectHistoryDilovodCheckItems(
 
   const layers = Array.isArray(record.correctionLayers) ? record.correctionLayers : [];
   const fromLayers = layers
-    .map((layer) => {
+    .map((layer): HistoryDilovodCheckItem | null => {
       const dilovodDocId = resolveWarehouseHistoryDilovodDocId(layer);
       if (!dilovodDocId) return null;
       const internal = String(

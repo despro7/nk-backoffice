@@ -7,7 +7,7 @@ import { useWarehouseReturns } from '@/pages/Warehouse/WarehouseReturns/useWareh
 import WarehouseDetails from '@/pages/Warehouse/shared/WarehouseDetails';
 import useWarehouseParams from '@/pages/Warehouse/shared/useWarehouseParams';
 import DilovodDocumentViewSections from './DilovodDocumentViewSections';
-import type { ReturnHistoryRecord } from '@/pages/Warehouse/WarehouseReturns/WarehouseReturnsTypes';
+import type { ReturnHistoryItem, ReturnHistoryRecord } from '@/pages/Warehouse/WarehouseReturns/WarehouseReturnsTypes';
 import { ReturnsItemRow } from '@/pages/Warehouse/WarehouseReturns/components/ReturnsItemRow';
 
 const DRAWER_WIDTH_KEY = 'warehouse-document-edit-drawer-width-v1';
@@ -15,6 +15,11 @@ const STACK_LEVEL = 1;
 
 const noopQuantity = () => {};
 const noopBatch = () => {};
+
+/** `localRecord` is the raw sale-return history row returned by the edit-context API. */
+function toReturnHistoryRecord(localRecord: Record<string, unknown>): ReturnHistoryRecord {
+  return localRecord as unknown as ReturnHistoryRecord;
+}
 
 async function hydrateReturnSession(
   returns: ReturnType<typeof useWarehouseReturns>,
@@ -33,7 +38,7 @@ async function hydrateReturnSession(
   returns.setReceiveFirmName?.(record.receiveFirmName ?? '');
   await returns.handleSearch();
   returns.setItems([]);
-  const newItems = parsedItems.map((item: Record<string, unknown>) => ({
+  const newItems = parsedItems.map((item: ReturnHistoryItem) => ({
     id: crypto.randomUUID?.() ?? `${item.sku}-${Date.now()}`,
     sku: String(item.sku ?? ''),
     name: String(item.name ?? ''),
@@ -81,7 +86,7 @@ export default function SaleReturnDilovodEditDrawer({
 
     let cancelled = false;
     setHydrating(true);
-    void hydrateReturnSession(returns, context.localRecord as ReturnHistoryRecord)
+    void hydrateReturnSession(returns, toReturnHistoryRecord(context.localRecord))
       .catch(() => {})
       .finally(() => {
         if (!cancelled) {
@@ -110,7 +115,7 @@ export default function SaleReturnDilovodEditDrawer({
       </div>
     );
   } else {
-    const record = context.localRecord as ReturnHistoryRecord;
+    const record = toReturnHistoryRecord(context.localRecord);
     body = (
       <div className="space-y-4">
         <Card className="rounded-xl border border-gray-200 bg-white shadow-small">

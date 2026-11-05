@@ -69,8 +69,9 @@ describe('toGeminiContents (tool loop)', () => {
         content: '[{"sku":"A1","name":"Test"}]',
       },
     ]);
-    const fr = contents.at(-1)?.parts[0] as { functionResponse: { response: { items: unknown[] } } };
-    expect(fr.functionResponse.response).toEqual({
+    const part = contents.at(-1)?.parts[0];
+    const response = part && 'functionResponse' in part ? part.functionResponse.response : undefined;
+    expect(response).toEqual({
       items: [{ sku: 'A1', name: 'Test' }],
     });
   });

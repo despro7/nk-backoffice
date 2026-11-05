@@ -22,14 +22,12 @@ describe('resolveReleaseHistoryListGroupKey', () => {
       id: 1,
       comment: 'Коригування парт. обліку – REBATCH: Суп (589 шт.)',
       setSku: '01006_rebatch',
-      operDate: '2026-10-23T10:00:00Z',
       items: [],
     });
     const keyB = resolveReleaseHistoryListGroupKey({
       id: 2,
       comment: 'Коригування парт. обліку – REBATCH: Суп (589 шт.)',
       setSku: '01006_rebatch',
-      operDate: '2026-10-23T11:00:00Z',
       items: [],
     });
     expect(keyA).toBe('single:1');

@@ -27,6 +27,7 @@ describe('resolvePersonEmploymentDisplayStatus', () => {
         status: 'active',
         currentLegalEntityId: 2,
         currentLegalEntityName: 'ТОВ Тест',
+        currentLegalEntityDilovodPersonGroupId: null,
       },
     })).toBe('active');
   });
@@ -39,6 +40,7 @@ describe('resolvePersonEmploymentDisplayStatus', () => {
         status: 'active',
         currentLegalEntityId: null,
         currentLegalEntityName: null,
+        currentLegalEntityDilovodPersonGroupId: null,
       },
     })).toBe('no_active_employment');
   });
@@ -69,6 +71,7 @@ describe('resolvePersonEmploymentDisplayStatus', () => {
         status: 'active',
         currentLegalEntityId: 2,
         currentLegalEntityName: 'ТОВ Тест',
+        currentLegalEntityDilovodPersonGroupId: null,
       },
     })).toBe('dismissed');
 
@@ -80,6 +83,7 @@ describe('resolvePersonEmploymentDisplayStatus', () => {
         status: 'inactive',
         currentLegalEntityId: null,
         currentLegalEntityName: null,
+        currentLegalEntityDilovodPersonGroupId: null,
       },
     })).toBe('dismissed');
   });
@@ -98,6 +102,7 @@ describe('resolvePersonEmploymentDisplayStatus', () => {
         status: 'inactive',
         currentLegalEntityId: null,
         currentLegalEntityName: null,
+        currentLegalEntityDilovodPersonGroupId: null,
       },
     })).toBe(true);
   });
@@ -110,6 +115,7 @@ describe('resolvePersonEmploymentDisplayStatus', () => {
         status: 'inactive',
         currentLegalEntityId: 2,
         currentLegalEntityName: 'ТОВ',
+        currentLegalEntityDilovodPersonGroupId: null,
       },
     })).toBe('inactive');
   });

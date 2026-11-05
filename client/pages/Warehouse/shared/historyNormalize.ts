@@ -122,7 +122,7 @@ export function resolveHistoryItemQuantity(it: any): number {
 
 export function sumHistoryItemsQuantity(items: unknown[]): number {
   if (!Array.isArray(items)) return 0;
-  return items.reduce((sum, item) => {
+  return items.reduce<number>((sum, item) => {
     if (item && typeof item === 'object' && 'qty' in item && item.qty != null) {
       return sum + (Number(item.qty) || 0);
     }

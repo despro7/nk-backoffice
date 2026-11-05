@@ -10,6 +10,7 @@ export interface GoodMovingItem {
   rowNum: string;
   good: string; // ID товару
   good__pr: string; // Назва товару
+  goodPart?: string; // ID партії
 	goodPart__pr: string;
   sku: string; // Артикул
   qty: string; // Кількість

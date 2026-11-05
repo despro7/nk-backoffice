@@ -12,6 +12,11 @@ export type UnkitPrefillBatch = {
   barcode?: string;
 };
 
+/** Already allocated batch; `batchNumber` may be missing and falls back to `batchId`. */
+export type UnkitExistingBatch = Omit<UnkitPrefillBatch, 'batchNumber'> & {
+  batchNumber?: string | null;
+};
+
 function roundPortions(value: number): number {
   return Math.max(0, Math.round(value));
 }
@@ -22,7 +27,7 @@ function roundPortions(value: number): number {
  */
 export function mergeNegativeBatchesForUnkit(input: {
   requiredQuantity: number;
-  existingBatches: UnkitPrefillBatch[];
+  existingBatches: UnkitExistingBatch[];
   warehouseBatches: UnkitWarehouseBatchStock[];
 }): UnkitPrefillBatch[] {
   const required = Number(input.requiredQuantity ?? 0);

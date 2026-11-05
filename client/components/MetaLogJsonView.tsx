@@ -520,7 +520,7 @@ export default function MetaLogJsonView({
     >
       <JsonView.Row render={diffRowRenderer} />
       <JsonView.KeyName
-        render={(props, context) => {
+        render={(props: JsonRenderProps, context: JsonRenderContext) => {
           const anchored = diffAnchorKeyRenderer(props, context);
           if (anchored) return anchored;
           return highlightedKeyRenderer(props, context);

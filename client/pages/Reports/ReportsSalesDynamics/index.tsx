@@ -20,9 +20,7 @@ export default function ReportsSalesDynamicsPage() {
 		setGroupBy,
 		setSelectedFirmId,
 		setSelectedMonth,
-		setSortDescriptor,
 		showFirmInfoAlert,
-		sortDescriptor,
 	} = useReportsSalesDynamics();
 
 	return (
@@ -60,8 +58,6 @@ export default function ReportsSalesDynamicsPage() {
 				isLoading={isSalesLoading}
 				renderCell={renderCell}
 				salesError={salesError}
-				setSortDescriptor={setSortDescriptor}
-				sortDescriptor={sortDescriptor}
 			/>
 
 			<ReportsSalesDynamicsSummary

@@ -90,9 +90,9 @@ export function pdfmeClientPrebundle(): Plugin {
   };
 }
 
-export function suppressClientBuildNoise(
-  warning: { code?: string; message?: string },
-  warn: (warning: { code?: string; message?: string }) => void,
+export function suppressClientBuildNoise<W extends { code?: string }>(
+  warning: W,
+  warn: (warning: NoInfer<W>) => void,
 ): void {
   if (warning.code === 'INVALID_ANNOTATION') return;
   warn(warning);

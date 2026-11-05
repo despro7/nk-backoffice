@@ -72,7 +72,7 @@ export async function enrichInventorySessionsWithCatalogFlags(
   return sessions.map((session) => ({
     ...session,
     items: (session.items ?? []).map((item) =>
-      enrichInventoryItemWithCatalogFlags(item as { sku: string; isOutdated?: boolean; doNotPublish?: boolean }, flagsBySku),
+      enrichInventoryItemWithCatalogFlags(item, flagsBySku),
     ),
   }));
 }

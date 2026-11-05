@@ -92,6 +92,8 @@ export interface UseMovementDraftStateReturn {
       prods: MovementProduct[],
       selectedIds: Set<string>,
       asOfDate?: Date,
+      sourceStorageId?: string,
+      firmId?: string,
     ) => Promise<void>,
   ) => Promise<void>;
 }
@@ -328,6 +330,8 @@ export const useMovementDraftState = (
         prods: MovementProduct[],
         selectedIds: Set<string>,
         asOfDate?: Date,
+        sourceStorageId?: string,
+        firmId?: string,
       ) => Promise<void>,
     ): Promise<void> => {
       try {

@@ -7,7 +7,7 @@ export function mergeLabelTemplateGeometry(
 ): LabelPdfmeTemplate {
   const geomByName = new Map<
     string,
-    { position: { x: number; y: number }; width: number; height: number; rotate?: number }
+    { position: unknown; width: unknown; height: unknown; rotate: unknown }
   >();
 
   for (const page of source.schemas) {

@@ -9,7 +9,7 @@ import useWarehouseParams from '@/pages/Warehouse/shared/useWarehouseParams';
 import WarehouseDetails from '@/pages/Warehouse/shared/WarehouseDetails';
 import WriteOffItemsPanel from '@/pages/Warehouse/WarehouseWriteOff/components/WriteOffItemsPanel';
 import ReasonSelector from '@/pages/Warehouse/WarehouseWriteOff/components/ReasonSelector';
-import ActionsBar from '@/pages/Warehouse/WarehouseWriteOff/components/ActionsBar';
+import ActionsBar from '@/pages/Warehouse/WarehouseReleaseSets/components/ActionsBar';
 import { ToastService } from '@/services/ToastService';
 import { formatKyivDateTime } from '@shared/utils/kyivDateTime';
 import DilovodDocumentViewSections from './DilovodDocumentViewSections';

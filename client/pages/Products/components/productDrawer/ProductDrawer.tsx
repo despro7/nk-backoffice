@@ -672,7 +672,7 @@ export function ProductDrawer({
         price: p.price,
         currency: p.currency || CATALOG_DEFAULT_CURRENCY_ID,
       }));
-      const nextBarcodes = detail.barcodes.map((b) => ({
+      const nextBarcodes = detail.barcodes.map((b): BarcodeRow => ({
         code: b.code,
         activity: b.activity,
         goodPart: b.goodPart || '',

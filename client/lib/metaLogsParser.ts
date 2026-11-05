@@ -47,7 +47,7 @@ export function parseDilovodErrorText(errorText: string): ParsedItems {
   if (!normalized) {
     return { names: [], skus: [], needed: [], stock: [], missing: [] };
   }
-  return parseShipmentMessage({ message: normalized, rawMessage: normalized } as MetaLogRow);
+  return parseShipmentMessage({ id: '', createdAt: '', rawMessage: normalized });
 }
 
 export function parseShipmentMessage(row: MetaLogRow): ParsedItems {

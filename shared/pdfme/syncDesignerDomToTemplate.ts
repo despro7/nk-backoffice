@@ -71,7 +71,7 @@ export function syncLabelTemplateFromDesignerDom(
   for (const page of next.schemas) {
     for (const field of page) {
       const name = field.name;
-      if (!name) continue;
+      if (typeof name !== 'string' || !name) continue;
 
       const el = host.querySelector<HTMLElement>(
         `div.selectable[title="${escapeCssAttrValue(name)}"]`,
@@ -79,7 +79,8 @@ export function syncLabelTemplateFromDesignerDom(
       if (!el) continue;
 
       const geom = readDesignerFieldGeometryFromElement(el);
-      field.position = { ...field.position, x: geom.x, y: geom.y };
+      const prevPosition = typeof field.position === 'object' && field.position !== null ? field.position : {};
+      field.position = { ...prevPosition, x: geom.x, y: geom.y };
       field.width = geom.width;
       field.height = geom.height;
       field.rotate = geom.rotate;

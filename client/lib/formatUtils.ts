@@ -190,7 +190,7 @@ export const formatRelativeDate = (
  * formatDate('2024-01-15T10:30:00Z') // "15.01.2024, 10:30"
  * formatDate(null) // "-"
  */
-export const formatDate = (dateString: string): string => {
+export const formatDate = (dateString: string | null | Date): string => {
   if (!dateString) return "-";
   const date = parseDisplayDate(dateString);
   if (!date) return "-";

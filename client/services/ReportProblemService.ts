@@ -302,7 +302,7 @@ export class ReportProblemService {
       if (native.ok) {
         return { dataUrl: native.dataUrl, mode: 'native' };
       }
-      if (native.reason === 'cancelled') {
+      if ('reason' in native && native.reason === 'cancelled') {
         const viewport = await captureDomScreenshot('viewport');
         return { dataUrl: viewport, mode: 'viewport', nativeCancelled: true };
       }
