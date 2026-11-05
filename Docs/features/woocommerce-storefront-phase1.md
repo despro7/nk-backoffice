@@ -193,6 +193,7 @@ Seed preset «Стандарт»: `00000000-0000-4000-8000-000000000001`.
 | `action.storefront.pull` | Pull опису з WooCommerce | лише `admin` | `pull-preview` / `pull-apply`, inspect WC |
 | `action.storefront.push` | Push опису на WooCommerce | від `warehouse-manager` | `push-preview` / `push-apply`, bulk push, upload media |
 | `action.products.editSpec` | Редагування специфікації товару (BOM) | лише `admin` | BOM + `specQty` на «Основні дані»; **не** входить у ACL папки каталогу |
+| `action.products.approveSpec` | Затвердження специфікації | `admin`, `boss` | без нього зміни BOM з `editSpec` стають чернеткою на затвердження ([модерація](./products-catalog-2.0.md#модерація-специфікації)) |
 
 **Storefront-поля для перевірки `edit`** (порівняння зі збереженим товаром, `catalogProductFieldAccess.ts`):
 

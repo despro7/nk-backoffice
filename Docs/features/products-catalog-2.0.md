@@ -276,6 +276,50 @@ UI у `ProductDrawer` (секція «Штрихкоди»):
 Тексти наліпки типографуються через **`typograf`** (`shared/utils/typograph.ts`) — неразривні пробіли, лапки, одиниці виміру.  
 Повний опис: **`Docs/features/product-labels.md`**.
 
+### Модерація специфікації
+
+Специфікація = BOM (`catalog_good_components`) + `specQty`. Зміни затверджує роль із правом `action.products.approveSpec` (seed `admin`, `boss`). Код: `server/modules/Products/CatalogSpecService.ts`, типи `shared/types/catalogSpec.ts`, порівняння `shared/utils/catalogSpecContent.ts`.
+
+**Таблиці:**
+
+| Таблиця | Що |
+| --- | --- |
+| `catalog_spec_drafts` | чернетка, одна на товар (`goodId` unique): `baseVersion`, `specQty`, `componentsJson`, `comment`, `status` (`pending` / `rejected`), `restoredFromVersion`, автор, хто редагував, хто відхилив і причина |
+| `catalog_spec_versions` | затверджені версії (`goodId` + `version` unique): вміст, `source` (`initial` / `ui` / `dilovod` / `rollback`), коментар, автор, хто затвердив, `contentReviewPending` |
+
+**Збереження картки (`PUT /goods/:id`)** – `CatalogSpecService.prepareUpdate()` до запису:
+
+- специфікація не змінилась – звичайне збереження без spec-полів;
+- **є право затвердження** – запис у Dilovod як раніше + нова версія `ui`; лінива v1 фіксується перед записом;
+- **немає права** – `components` / `specQty` прибираються з запиту, решта полів зберігається, специфікація йде в чернетку. Потрібен `specComment` (інакше 400 `SPEC_COMMENT_REQUIRED`);
+- є чернетка, а редактор змінив чинну специфікацію, не відкривши чернетку – 409 `SPEC_DRAFT_EXISTS`. Редагування відкритої чернетки позначається `specDraftEdit: true`.
+
+**Затвердження:** вміст чернетки записується через `updateGood` (Dilovod + локально), нова версія, чернетка видаляється. Якщо чинна версія ≠ `baseVersion` чернетки – 409 `SPEC_DRAFT_STALE`, повтор із `force: true`. Відхилення – статус `rejected` + причина; автор виправляє чернетку, і вона знову `pending`.
+
+**Версії й відкат:** v1 створюється ліниво (перша зміна, перше відкриття історії). Відкат: затверджувач – одразу нова версія `rollback`; інші – чернетка з `restoredFromVersion`. Поки є чернетка, відкат недоступний.
+
+**Зміни з Dilovod:** якщо sync / pull (`source = dilovod`) змінив специфікацію, `CatalogGoodAuditService` викликає `onExternalSpecChange` → версія `dilovod` (приймається автоматично). Новий товар з Dilovod версії не отримує до першої зміни.
+
+**Склад / КБЖВ:** нова версія ставить `contentReviewPending`. У вкладці «Опис і зображення» банер «Склад / КБЖВ у описі можуть не відповідати новій специфікації» з «Перегенерувати» (склад зі специфікації) і «Перевірено». Позначка знімається, коли зберігають змінені склад або КБЖВ, або вручну.
+
+**Сповіщення** (`meta_logs`, категорія `catalog_spec`): нова / оновлена чернетка – усім активним затверджувачам (крім автора); затвердження й відхилення – автору. `data.recipients` обмежує, кому видно сповіщення; `data.link` – перехід у картку.
+
+**API:**
+
+| Метод | Шлях | Право | Опис |
+| --- | --- | --- | --- |
+| GET | `/api/catalog/spec-drafts` | доступ до каталогу | усі чернетки (позначки, «На затвердженні») |
+| GET | `/api/catalog/goods/:id/spec` | перегляд товару | чинна версія, чернетка, `contentReviewPending` |
+| PUT | `/api/catalog/goods/:id/spec-draft` | `editSpec` | створити / оновити чернетку (`components`, `specQty`, `comment`) |
+| DELETE | `/api/catalog/goods/:id/spec-draft` | автор або `approveSpec` | видалити чернетку |
+| POST | `/api/catalog/goods/:id/spec-draft/approve` | `approveSpec` | затвердити (`force`) |
+| POST | `/api/catalog/goods/:id/spec-draft/reject` | `approveSpec` | відхилити (`reason`) |
+| GET | `/api/catalog/goods/:id/spec-versions` | перегляд товару | історія версій |
+| POST | `/api/catalog/goods/:id/spec-versions/:version/restore` | `editSpec` або `approveSpec` | відкат (`comment`) |
+| POST | `/api/catalog/goods/:id/spec/content-reviewed` | `storefront.edit` | зняти позначку «Склад / КБЖВ» |
+
+**UI:** віджет версії в заголовку «Специфікація товару» (`productDrawer/SpecModerationPanel.tsx`): чип `vN` (сірий; жовтий – на затвердженні; червоний – відхилено), поповер з деталями чернетки і діями (порівняти, редагувати, затвердити, відхилити, видалити), «Історія версій» – модалка з відмінностями від чинної та відновленням. Поки є чернетка, BOM у картці заблоковано, доки її не відкрито для редагування. Без права затвердження «Зберегти» зі зміненим BOM просить коментар. У таблиці каталогу – позначка біля назви, у тулбарі – «На затвердженні (N)» (`components/SpecDraftsMenu.tsx`).
+
 ### Журнал змін товарів
 
 Хто, що і коли змінив у товарі. Пишеться в загальну таблицю `audit_log` (`entityType: catalog_good`, `entityId` = Dilovod id товару).
@@ -289,7 +333,7 @@ UI у `ProductDrawer` (секція «Штрихкоди»):
 
 **Джерело (`source`):** `ui` – дія користувача; `bulk` – масова дія (> 1 товару, імпорт з вітрини пакетом); `dilovod` – pull/sync з Dilovod (`ProductsLocalSync.syncGood` / `syncGoodsBatch`, у т.ч. live-pull при відкритті картки – без користувача, якщо зміни прийшли «ззовні»).
 
-**Дії** (`CATALOG_AUDIT_ACTIONS`, `shared/types/catalogAudit.ts`): `created`, `updated`, `duplicated`, `moved`, `type_changed`, `archived`, `restored`, `trashed`, `images_changed`, `label_template_changed`, `label_published` (з версією й партією), `storefront_pull`, `dilovod_pull`, `dilovod_sync`, `legacy_field_changed` (`/api/products/:id/weight|unit-ratio`).
+**Дії** (`CATALOG_AUDIT_ACTIONS`, `shared/types/catalogAudit.ts`): `created`, `updated`, `duplicated`, `moved`, `type_changed`, `archived`, `restored`, `trashed`, `images_changed`, `label_template_changed`, `label_published` (з версією й партією), `storefront_pull`, `dilovod_pull`, `dilovod_sync`, `legacy_field_changed` (`/api/products/:id/weight|unit-ratio`); модерація специфікації: `spec_draft_saved`, `spec_draft_discarded`, `spec_approved`, `spec_rejected`, `spec_version_recorded` (див. «Модерація специфікації»).
 
 **Не логуються:** автоматичні ШК коробок/партій зі складських операцій (`CatalogBoxBarcodeService`, `WarehouseBatchesService`), залишки (`stockBalanceByStock`), `sortOrder`, `wooLastSyncedAt`.
 
@@ -303,7 +347,7 @@ UI у `ProductDrawer` (секція «Штрихкоди»):
 
 Пагінація курсором по `id` (новіші зверху), відповідь `{ items, nextCursor }`. Право – `action.products.viewAudit`.
 
-**UI:** вкладка **«Історія»** в `ProductDrawer` (`ProductHistoryTab.tsx`, лише в режимі редагування); сторінка **`/products/audit`** (`ProductsAuditPage.tsx`, право `page.main.productsAudit`) – період, пошук товару, користувач, дія, джерело; клік по назві відкриває картку (`#good=<id>`). Кнопка «Журнал змін» у `CatalogToolbar`. Рядок запису – `components/audit/CatalogAuditEntry.tsx`, людські підписи – `shared/utils/catalogGoodAuditFormat.ts` (одиниці, типи цін і обʼєктів – з довідників Dilovod).
+**UI:** вкладка **«Історія»** в `ProductDrawer` (`ProductHistoryTab.tsx`, лише в режимі редагування); сторінка **`/products/audit`** (`ProductsAuditPage.tsx`, право `page.main.productsAudit`) – період, пошук товару, користувач, дія, джерело; клік по назві відкриває картку (`#good=<id>`). Кнопка «Журнал змін» у `CatalogToolbar`. Рядок запису – `components/audit/CatalogAuditEntry.tsx` (іконка дії за кольором: редагування синє, видалення червоне, чернетка жовта; праворуч дата й автор; зміни сіткою «поле | значення»), людські підписи – `shared/utils/catalogGoodAuditFormat.ts` (одиниці, типи цін і обʼєктів – з довідників Dilovod).
 
 ---
 
@@ -323,7 +367,8 @@ client/pages/Products/
     BarcodeKindIcon.tsx         # іконка коробки для box-ШК (картка + popover узгодження)
     PullFieldBarcodesComparePopover.tsx
     CatalogBreadcrumbs.tsx      # у пошуку: лише Каталог > Пошук
-    CatalogToolbar.tsx          # Синхронізувати гілку (+ TEMP Legacy), вибірковий Legacy, archive/trash
+    CatalogToolbar.tsx          # пошук, «Додати обʼєкт», «Оновити залишки», «На затвердженні», «Журнал змін»
+    CatalogActionsMenu.tsx      # «Дії»: Синхронізувати гілку (+ TEMP Legacy), вибірковий Legacy, archive/trash
     CatalogContextMenu.tsx      # Legacy Update, fromTrash / fromArchive (і в пошуку)
     MoveToFolderModal.tsx
     ProductDrawer.tsx           # футер: Оновити Legacy; Tabs kind, BOM, UsedIn, техкарта, unitRatio Admin, Наліпки, …
@@ -370,7 +415,7 @@ client/pages/Products/
 
 - Тип обʼєкта: Tabs **Продукція / Товарні набори / Група / Інший** (`DrawerObjectKind` ↔ `accPolicyId` / `isGroup`).
 - BOM (`BomSection`):
-  - **Права:** редагування BOM / `specQty` — окремий ключ `action.products.editSpec` (seed лише admin; не залежить від ACL папки). Упаковка (вага, порції в коробці) — за ACL папки. Деталі: [`woocommerce-storefront-phase1.md`](./woocommerce-storefront-phase1.md#права-доступу-rbac).
+  - **Права:** редагування BOM / `specQty` – окремий ключ `action.products.editSpec` (seed лише admin; не залежить від ACL папки). Без `action.products.approveSpec` зміни йдуть у чернетку на затвердження (див. «Модерація специфікації»). Упаковка (вага, порції в коробці) – за ACL папки. Деталі: [`woocommerce-storefront-phase1.md`](./woocommerce-storefront-phase1.md#права-доступу-rbac).
   - **Продукція** — «Специфікація товару»; qty через `NumberInputFromNumber` (див. `Docs/architecture/number-input.md`); **примітка** (Chip + Popover, Dilovod remark); мікро-конфірм видалення примітки (іконка → «Видалити?» → clear).
   - **Продукція** — колонка **% втрат** (`cookingLossPercent`, локально); підсвітка підозрілої qty (`isSuspiciousBomIngredientQty`); кнопка переносу тексту з дужок назви в примітку (`extractParenthesizedTextFromName`).
   - **Продукція** — сортування колонок (назва, втрати, qty, од. вим.) + опційне **ручне сортування** перетягуванням (`bomSectionSort.ts`, `@hello-pangea/dnd`); адаптивний layout рядків BOM на вузьких екранах.

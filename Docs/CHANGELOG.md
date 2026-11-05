@@ -5,6 +5,24 @@
 
 ---
 
+## 2026-11-05 – Модерація специфікації товару: чернетки, затвердження, версії
+
+**Files:** `prisma/schema.prisma`, `prisma/migrations/20261105140000_catalog_spec_moderation`, `shared/types/catalogSpec.ts`, `shared/utils/catalogSpecContent.ts` (+ spec), `shared/types/{catalog,catalogAudit,notifications}.ts`, `shared/utils/catalogGoodAuditFormat.ts`, `shared/constants/{permissions,permissionRoleEditor}.ts`, `server/modules/Products/CatalogSpecService.ts` (+ spec), `CatalogGoodAuditService.ts`, `ProductsCatalogService.ts`, `ProductsController.ts`, `server/routes/notifications.ts`, `client/pages/Products/{catalogApi.ts,index.tsx}`, `components/{SpecDraftsMenu,CatalogTable,CatalogToolbar,CatalogActionsMenu}.tsx`, `components/audit/{CatalogAuditEntry,CatalogAuditFeed}.tsx`, `productDrawer/{SpecModerationPanel,ProductDrawer,BomSection,ProductContentTab}.tsx`, `client/components/NotificationBell.tsx`, `client/hooks/useNotifications.ts`, `CLAUDE.md`
+
+- **Модерація BOM / `specQty`:** зміни специфікації від користувача без права `action.products.approveSpec` не йдуть у Dilovod, а зберігаються як чернетка з обовʼязковим коментарем (`catalog_spec_drafts`, одна на товар). Решта полів картки зберігається як звичайно. Чинна специфікація лишається чинною всюди в системі до затвердження.
+- **Затверджувачі** (`admin`, `boss`) зберігають специфікацію одразу, з новою версією. Чернетку можна порівняти, затвердити (з перевіркою, чи не змінилась чинна версія), відхилити з причиною або видалити (автор чи затверджувач).
+- **Версії** (`catalog_spec_versions`): лінива v1 (знімок до першої зміни), джерела `initial` / `ui` / `dilovod` / `rollback`; відкат до будь-якої версії (затверджувач – одразу, інші – через чернетку). Зміни специфікації напряму в Dilovod приймаються автоматично як версія з джерелом `dilovod`.
+- **Сповіщення:** нова чернетка – затверджувачам, затвердження / відхилення – автору. Адресні (`meta_logs.data.recipients`), з переходом у картку (`data.link`).
+- **UI:** віджет версії в заголовку «Специфікація товару» з поповером (деталі чернетки, дії, «Історія версій»); модалка історії версій; позначка біля товару в таблиці каталогу (жовта – на затвердженні, червона – відхилено); кнопка «На затвердженні (N)» у тулбарі; банер «Склад / КБЖВ у описі можуть не відповідати новій специфікації» з «Перегенерувати» у вкладці «Опис і зображення».
+- **Журнал змін:** події `spec_draft_saved` (з різницею від чинної), `spec_draft_discarded`, `spec_approved`, `spec_rejected`, `spec_version_recorded`. Новий вигляд запису: іконка дії, дата й автор праворуч, зміни сіткою «поле | значення».
+- **Тулбар каталогу:** «Синхронізувати гілку» перенесено в меню «Дії», кнопки без градієнтів.
+- **Право** `action.products.approveSpec` (seed `admin`, `boss`), для наявної ролі `boss` видано міграцією.
+- Прибрано довге тире з останніх змін; правило «без `—`» додано в `CLAUDE.md`.
+
+**Документація:** `Docs/features/products-catalog-2.0.md` – «Модерація специфікації», UI; `Docs/features/users-and-roles.md` – нове право; `Docs/features/woocommerce-storefront-phase1.md` – RBAC `editSpec` / `approveSpec`.
+
+---
+
 ## 2026-11-05 – Загальний журнал змін (`audit_log`) + журнал змін товарів
 
 **Files:** `prisma/schema.prisma`, `prisma/migrations/20261105120000_shared_audit_log`, `prisma/migrations/20261105130000_grant_products_audit_permissions`, `shared/constants/auditEntities.ts`, `shared/types/audit.ts`, `shared/types/catalogAudit.ts`, `shared/utils/catalogGoodAuditDiff.ts` (+ spec), `shared/utils/catalogGoodAuditFormat.ts`, `shared/constants/permissions.ts`, `shared/constants/permissionRoleEditor.ts`, `server/services/AuditLogService.ts`, `server/modules/Hr/HrAuditService.ts`, `HrPersonService.ts`, `server/modules/Warehouse/Warehouse{Release,Surplus,WriteOff}AuditService.ts`, `server/modules/Products/CatalogGoodAuditService.ts`, `catalogAuditHttp.ts`, `ProductsController.ts`, `ProductsLocalSync.ts`, `ProductLabelsController.ts`, `server/routes/storefront.ts`, `server/routes/products.ts`, `client/components/audit/**`, `client/components/hr/{HrAuditAccordion,PersonDuplicatesAccordion,PersonMergedAccordion}.tsx`, `WarehouseReleaseAuditAccordion.tsx`, `client/pages/Products/{ProductsAuditPage.tsx,catalogApi.ts,index.tsx}`, `components/audit/**`, `components/CatalogToolbar.tsx`, `productDrawer/{ProductDrawer,ProductHistoryTab}.tsx`, `productDrawerTypes.ts`, `client/routes.config.tsx`

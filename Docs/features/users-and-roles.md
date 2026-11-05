@@ -145,6 +145,8 @@ npx prisma migrate deploy
 
 **Storefront / spec (Products 2.0):** `action.storefront.read|edit|manage`, `action.products.editSpec` — деталі seed і перевірки на save у [`woocommerce-storefront-phase1.md`](./woocommerce-storefront-phase1.md#права-доступу-rbac).
 
+**Модерація специфікації:** `action.products.approveSpec` – затвердження, відхилення й відкат чернеток BOM / `specQty`; збереження специфікації без чернетки. Seed `admin`, `boss`; для наявної ролі `boss` видано міграцією `20261105140000_catalog_spec_moderation`. Без цього права користувач з `action.products.editSpec` створює чернетку на затвердження. Див. [`products-catalog-2.0.md`](./products-catalog-2.0.md#модерація-специфікації).
+
 **Журнал змін каталогу:** `action.products.viewAudit` (вкладка «Історія» в картці товару + API `/api/catalog/goods/:id/audit`, `/api/catalog/audit`) і `page.main.productsAudit` (сторінка `/products/audit`). Seed – `admin`, `boss`; для наявних ролей видано міграцією `20261105130000_grant_products_audit_permissions`. Див. [`products-catalog-2.0.md`](./products-catalog-2.0.md#журнал-змін-товарів).
 
 Тести: `npm test` (vitest). Юніти: `shared/constants/permissions.spec.ts`, `permissionRoleEditor.spec.ts`, `RoleService.spec.ts`, `requirePermission.spec.ts`.
