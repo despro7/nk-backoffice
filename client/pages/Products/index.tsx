@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Select, SelectItem, Spinner, Tooltip, type SortDescriptor } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
@@ -11,6 +12,8 @@ import { CatalogTree } from './components/CatalogTree';
 import { ActionBubble, ActionBubbleDock } from '@/components/action-bubble';
 import { CatalogTable } from './components/CatalogTable';
 import { CatalogToolbar } from './components/CatalogToolbar';
+import { SpecDraftsMenu } from './components/SpecDraftsMenu';
+import { catalogApi } from './catalogApi';
 import { CatalogActionsDropdown } from './components/CatalogActionsMenu';
 import { CatalogSyncOverlay, type CatalogSyncOp } from './components/CatalogSyncOverlay';
 import { CatalogSyncReportModal, type CatalogSyncReport } from './components/CatalogSyncReportModal';
@@ -65,6 +68,17 @@ export default function ProductsPage() {
     hasPermission(effectivePermissions, PERMISSIONS.PAGE_PRODUCTS_AUDIT);
   const navigate = useNavigate();
   const catalog = useProductsCatalog();
+  const specDraftsQuery = useQuery({
+    queryKey: ['catalog', 'spec-drafts'],
+    queryFn: () => catalogApi.fetchSpecDrafts(),
+    refetchInterval: 60_000,
+    staleTime: 15_000,
+  });
+  const specDrafts = specDraftsQuery.data ?? [];
+  const specDraftStatusById = useMemo(
+    () => new Map(specDrafts.map((d) => [d.goodId, d.status] as const)),
+    [specDrafts],
+  );
   const visualRootId =
     resolveCatalogVisualRootFolderId(catalog.treeNodes, effectivePermissions) ?? CATALOG_ROOT_ID;
 
@@ -889,7 +903,6 @@ export default function ProductsPage() {
         branchRefreshing={catalog.refreshBranchMutation.isPending}
         stockRefreshing={catalog.stockSyncMutation.isPending}
         fullRefreshing={catalog.refreshFullMutation.isPending}
-        onRefreshBranch={openBranchRefreshConfirm}
         onRefreshStock={() => setStockRefreshConfirmOpen(true)}
         showFullRefresh={isAdmin}
         onFullRefresh={() => setFullRefreshConfirmOpen(true)}
@@ -897,6 +910,7 @@ export default function ProductsPage() {
         busy={busy}
         readOnly={!canEditFolder}
         onOpenAudit={canViewCatalogAudit ? () => navigate('/products/audit') : undefined}
+        specDrafts={<SpecDraftsMenu drafts={specDrafts} onOpenGood={catalog.openEdit} />}
         actions={
           <CatalogActionsDropdown
             ids={catalog.selectedIds}
@@ -1031,6 +1045,7 @@ export default function ProductsPage() {
               }
               onMove={!canEditFolder || catalog.isSearchMode ? undefined : catalog.requestMove}
               treeItems={catalog.treeItemsFull}
+              specDraftStatusById={specDraftStatusById}
               onUpdateWeight={
                 canEditFolder
                   ? (id, weight) =>

@@ -139,7 +139,7 @@ export default function ProductsAuditPage() {
           <DynamicIcon name="history" size={16} />
           Журнал змін каталогу
         </h2>
-        <p className="text-xs text-default-500 mb-3">Нові записи зверху. Пошук — за назвою або артикулом товару.</p>
+        <p className="text-xs text-default-500 mb-3">Нові записи зверху. Пошук – за назвою або артикулом товару.</p>
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <Input
             size="sm"

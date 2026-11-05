@@ -17,7 +17,7 @@ export class ProductsLocalSync {
    * Upsert catalog good + replace BOM/prices/barcodes in one transaction.
    */
   async syncGood(payload: LocalSyncGoodPayload): Promise<void> {
-    // Зміни з Dilovod пишемо в журнал; всередині дії користувача — поглинаються зовнішнім track().
+    // Зміни з Dilovod пишемо в журнал; всередині дії користувача – поглинаються зовнішнім track().
     return catalogGoodAuditService.track(
       { action: CATALOG_AUDIT_ACTIONS.DILOVOD_SYNC, ids: [payload.id], userId: null, source: 'dilovod' },
       () => this.syncGoodRaw(payload),

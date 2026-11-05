@@ -4,11 +4,29 @@ import type {
 } from '@shared/types/catalog';
 import type { AuditLogPageDto } from '@shared/types/audit';
 import type { CatalogGoodAuditLogDto } from '@shared/types/catalogAudit';
+import type {
+  CatalogSpecDraftInput,
+  CatalogSpecDraftListItem,
+  CatalogSpecStateDto,
+  CatalogSpecVersionDto,
+} from '@shared/types/catalogSpec';
+
+/** Помилка API з кодом (напр. SPEC_DRAFT_STALE). */
+export class CatalogApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+  ) {
+    super(message);
+    this.name = 'CatalogApiError';
+  }
+}
 
 async function parseJson<T>(res: Response): Promise<T> {
   const data = await res.json();
   if (!res.ok || data.success === false) {
-    throw new Error(data.error || `HTTP ${res.status}`);
+    throw new CatalogApiError(data.error || `HTTP ${res.status}`, res.status, data.code);
   }
   return data.data as T;
 }
@@ -60,7 +78,58 @@ export const catalogApi = {
     const res = await fetch('/api/catalog/audit/users', { credentials: 'include' });
     return parseJson(res);
   },
+
+  async fetchSpecState(goodId: string): Promise<CatalogSpecStateDto> {
+    const res = await fetch(`/api/catalog/goods/${encodeURIComponent(goodId)}/spec`, { credentials: 'include' });
+    return parseJson(res);
+  },
+
+  async fetchSpecDrafts(): Promise<CatalogSpecDraftListItem[]> {
+    const res = await fetch('/api/catalog/spec-drafts', { credentials: 'include' });
+    return parseJson(res);
+  },
+
+  async fetchSpecVersions(goodId: string): Promise<CatalogSpecVersionDto[]> {
+    const res = await fetch(`/api/catalog/goods/${encodeURIComponent(goodId)}/spec-versions`, {
+      credentials: 'include',
+    });
+    return parseJson(res);
+  },
+
+  async saveSpecDraft(goodId: string, input: CatalogSpecDraftInput): Promise<CatalogSpecStateDto> {
+    return specPost(goodId, 'spec-draft', input, 'PUT');
+  },
+
+  async discardSpecDraft(goodId: string): Promise<CatalogSpecStateDto> {
+    return specPost(goodId, 'spec-draft', undefined, 'DELETE');
+  },
+
+  async approveSpecDraft(goodId: string, force = false): Promise<CatalogSpecStateDto> {
+    return specPost(goodId, 'spec-draft/approve', { force });
+  },
+
+  async rejectSpecDraft(goodId: string, reason: string): Promise<CatalogSpecStateDto> {
+    return specPost(goodId, 'spec-draft/reject', { reason });
+  },
+
+  async restoreSpecVersion(goodId: string, version: number, comment: string): Promise<CatalogSpecStateDto> {
+    return specPost(goodId, `spec-versions/${version}/restore`, { comment });
+  },
+
+  async ackSpecContentReview(goodId: string): Promise<CatalogSpecStateDto> {
+    return specPost(goodId, 'spec/content-reviewed', {});
+  },
 };
+
+async function specPost<T>(goodId: string, path: string, body: unknown, method = 'POST'): Promise<T> {
+  const res = await fetch(`/api/catalog/goods/${encodeURIComponent(goodId)}/${path}`, {
+    method,
+    credentials: 'include',
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  return parseJson(res);
+}
 
 export interface CatalogAuditFilters {
   goodId?: string;

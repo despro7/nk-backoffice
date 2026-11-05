@@ -27,6 +27,8 @@ export interface AppNotification {
   tag?: string;
   /** meta_logs.category */
   category: string;
+  /** Внутрішнє посилання (meta_logs.data.link), напр. картка товару */
+  link?: string | null;
 }
 
 /** Response shape for GET /api/notifications */

@@ -32,6 +32,7 @@ import {
   Spinner,
   Tab,
   Tabs,
+  Textarea,
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { parseNumberInput } from '@/lib/numberInput';
@@ -139,6 +140,11 @@ import { RequisitesSection } from './RequisitesSection';
 import { UsedInSection } from './UsedInSection';
 import MetaLogJsonView from '@/components/MetaLogJsonView';
 import { ProductHistoryTab } from './ProductHistoryTab';
+import { SpecModerationPanel } from './SpecModerationPanel';
+import { BaseModal } from '@/components/modals/BaseModal';
+import { useAuth } from '@/contexts/auth-context';
+import { hasSpecFieldsChanged } from '@shared/utils/catalogProductFieldAccess';
+import type { CatalogSpecDraftDto, CatalogSpecStateDto } from '@shared/types/catalogSpec';
 
 const TechCardModal = lazy(() =>
   import('./TechCardModal').then((module) => ({ default: module.TechCardModal }))
@@ -226,6 +232,9 @@ export function ProductDrawer({
   const canPushStorefront = hasPermission(PERMISSIONS.ACTION_STOREFRONT_PUSH);
   const canEditSpec = hasPermission(PERMISSIONS.ACTION_PRODUCTS_EDIT_SPEC);
   const canViewAudit = hasPermission(PERMISSIONS.ACTION_PRODUCTS_VIEW_AUDIT);
+  const canApproveSpec = hasPermission(PERMISSIONS.ACTION_PRODUCTS_APPROVE_SPEC);
+  const { user: authUser } = useAuth();
+  const currentUserId = authUser?.id != null ? Number(authUser.id) : null;
   const isTrashed = isEdit && detail?.parentId === CATALOG_TRASH_ID;
   const { isDebugMode } = useDebug();
   const { isAdminView: isAdmin } = useRolePreview();
@@ -285,6 +294,13 @@ export function ProductDrawer({
   const [pushRetryOpen, setPushRetryOpen] = useState(false);
   const [pushRetryError, setPushRetryError] = useState<string | null>(null);
   const [pushRetryGoodId, setPushRetryGoodId] = useState<string | null>(null);
+  /** Модерація специфікації: стан (версія, чернетка) і чи завантажено чернетку в редактор BOM */
+  const [specState, setSpecState] = useState<CatalogSpecStateDto | null>(null);
+  const [specDraftLoaded, setSpecDraftLoaded] = useState(false);
+  /** Запит коментаря до змін специфікації перед збереженням чернетки */
+  const [specCommentPrompt, setSpecCommentPrompt] = useState<
+    null | { comment: string; opts?: { closeAfter?: boolean; pushStorefrontAfter?: boolean } }
+  >(null);
 
   const baselineRef = useRef<string>('');
   const storefrontBaselineRef = useRef<string>('');
@@ -684,6 +700,7 @@ export function ProductDrawer({
       setComponents(nextComponents);
       setPrices(nextPrices);
       setBarcodes(nextBarcodes);
+      setSpecDraftLoaded(false);
       commitBaseline(nextForm, nextComponents, nextPrices, nextBarcodes, detail.images || [], resolvedKind, detail.parentId);
     } else {
       setImages([]);
@@ -787,7 +804,7 @@ export function ProductDrawer({
   }, [open, isEdit, detail?.id, detail?.isGroup, detail?.sku, refreshCatalogSyncBanner]);
 
   const handleSaveRef = useRef<
-    ((opts?: { closeAfter?: boolean; pushStorefrontAfter?: boolean }) => Promise<void>) | null
+    ((opts?: { closeAfter?: boolean; pushStorefrontAfter?: boolean; specComment?: string }) => Promise<void>) | null
   >(null);
 
   const handleStorefrontPullApplied = useCallback((): Promise<void> => {
@@ -1032,7 +1049,7 @@ export function ProductDrawer({
   }, []);
 
   const handleSave = useCallback(
-    async (opts?: { closeAfter?: boolean; pushStorefrontAfter?: boolean }) => {
+    async (opts?: { closeAfter?: boolean; pushStorefrontAfter?: boolean; specComment?: string }) => {
       const payload = buildPayload();
       if (!payload) return;
 
@@ -1070,7 +1087,36 @@ export function ProductDrawer({
           parentName: detail.parentName,
           isGroup: isFolder,
         };
+        // Модерація: зміни BOM без права затвердження йдуть у чернетку – потрібен коментар.
+        const specChanged = !isFolder && hasSpecFieldsChanged(input, detail);
+        const specToDraft = specChanged && !canApproveSpec;
+        if (specToDraft && !opts?.specComment?.trim()) {
+          setSpecCommentPrompt({
+            comment: specDraftLoaded ? specState?.draft?.comment ?? '' : '',
+            opts: { closeAfter: opts?.closeAfter, pushStorefrontAfter: opts?.pushStorefrontAfter },
+          });
+          return;
+        }
+        if (specChanged) {
+          if (opts?.specComment?.trim()) input.specComment = opts.specComment.trim();
+          if (specDraftLoaded) input.specDraftEdit = true;
+        }
         await onUpdate(detail.id, input, { keepOpen: !opts?.closeAfter });
+        if (specChanged) {
+          void catalogApi
+            .fetchSpecState(detail.id)
+            .then((next) => {
+              setSpecState(next);
+              if (specToDraft && next.draft) {
+                ToastService.show({
+                  title: 'Зміни специфікації надіслано на затвердження',
+                  description: 'Чинна специфікація не зміниться, доки зміни не затвердять.',
+                  color: 'warning',
+                });
+              }
+            })
+            .catch(() => undefined);
+        }
         if (shouldPushStorefront) {
           await pushGoodToStorefront(detail.id);
         } else if (shouldAutoPush) {
@@ -1111,10 +1157,87 @@ export function ProductDrawer({
       autoPushOnSave,
       isStorefrontDirty,
       wooIntegrationEnabled,
+      canApproveSpec,
+      specDraftLoaded,
+      specState?.draft?.comment,
     ],
   );
 
   handleSaveRef.current = handleSave;
+
+  // Стан модерації специфікації (версія, чернетка) для відкритого товару.
+  const specGoodId = open && isEdit && detail && !detail.isGroup ? detail.id : null;
+  useEffect(() => {
+    if (!specGoodId) {
+      setSpecState(null);
+      return;
+    }
+    let cancelled = false;
+    void catalogApi
+      .fetchSpecState(specGoodId)
+      .then((next) => {
+        if (!cancelled) setSpecState(next);
+      })
+      .catch(() => {
+        if (!cancelled) setSpecState(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [specGoodId, detail?.updatedAt]);
+
+  // Позначки в таблиці каталогу / лічильник «На затвердженні» – оновити після змін чернетки.
+  const specDraftSignature = `${specState?.goodId ?? ''}:${specState?.draft?.status ?? ''}:${specState?.draft?.updatedAt ?? ''}:${specState?.currentVersion ?? ''}`;
+  useEffect(() => {
+    if (!specState) return;
+    void queryClient.invalidateQueries({ queryKey: ['catalog', 'spec-drafts'] });
+  }, [specDraftSignature]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleLoadSpecDraft = useCallback((draft: CatalogSpecDraftDto) => {
+    setComponents(
+      draft.components.map((c) => {
+        const nested = Number(c.componentNestedPortionCount);
+        return {
+          componentGoodId: c.componentGoodId,
+          componentName: c.componentName || c.componentGoodId,
+          componentSku: c.componentSku ?? null,
+          qty: c.qty,
+          unitId: c.unitId ?? '',
+          note: c.note || '',
+          componentWeight: c.componentWeight ?? null,
+          componentAccPolicyId: c.componentAccPolicyId ?? null,
+          componentNestedPortionCount: Number.isFinite(nested) && nested > 0 ? nested : 1,
+          componentCategoryName: c.componentCategoryName ?? null,
+          cookingLossPercent: c.cookingLossPercent ?? 0,
+        };
+      }),
+    );
+    if (draft.specQty != null) setForm((f) => ({ ...f, specQty: String(draft.specQty) }));
+    setSpecDraftLoaded(true);
+    setCardTab('main');
+  }, []);
+
+  const handleSpecApplied = useCallback(() => {
+    if (!detail?.id) return;
+    const id = detail.id;
+    void fetchCatalogGoodDetail(id, { livePull: false })
+      .then((fresh) => queryClient.setQueryData(['catalog', 'good', id], fresh))
+      .catch(() => undefined);
+  }, [detail?.id, queryClient]);
+
+  const handleSpecContentReviewed = useCallback(() => {
+    if (!detail?.id) return;
+    void catalogApi
+      .ackSpecContentReview(detail.id)
+      .then(setSpecState)
+      .catch((error) =>
+        ToastService.show({
+          title: 'Помилка',
+          description: error instanceof Error ? error.message : String(error),
+          color: 'danger',
+        }),
+      );
+  }, [detail?.id]);
 
   /** Debug: показати payload, який піде на create/update */
   const handleShowPayload = useCallback(() => {
@@ -1650,7 +1773,29 @@ export function ProductDrawer({
                             renamingComponentGoodId={renamingComponentGoodId}
                             onMoveParenthesesToNote={handleMoveParenthesesToNote}
                             isReadOnly={readOnly}
-                            canEditSpec={canEditSpec}
+                            canEditSpec={canEditSpec && (!specState?.draft || specDraftLoaded)}
+                            moderationSlot={
+                              isEdit && detail && specState ? (
+                                <SpecModerationPanel
+                                  goodId={detail.id}
+                                  state={specState}
+                                  approved={{
+                                    specQty: isGood ? (detail.specQty != null && Number(detail.specQty) > 0 ? Number(detail.specQty) : 1) : null,
+                                    components: detail.components,
+                                  }}
+                                  canEditSpec={canEditSpec && !readOnly}
+                                  canApprove={canApproveSpec && !readOnly}
+                                  currentUserId={currentUserId}
+                                  draftLoaded={specDraftLoaded}
+                                  isDirty={isDirty}
+                                  dictionaries={dictionaries}
+                                  overlayZ={overlayZ}
+                                  onStateChange={setSpecState}
+                                  onLoadDraft={handleLoadSpecDraft}
+                                  onSpecApplied={handleSpecApplied}
+                                />
+                              ) : null
+                            }
                           />
                         )}
                         <Divider className="bg-default-200/60" />
@@ -1726,6 +1871,8 @@ export function ProductDrawer({
                     lightboxAppendToRef={drawerOverlayHostRef}
                     dirtyFields={drawerDirtyFields}
                     onHydrationComplete={handleContentHydrationComplete}
+                    specContentReviewPending={Boolean(specState?.contentReviewPending)}
+                    onSpecContentReviewed={handleSpecContentReviewed}
                   />
                 )}
 
@@ -2123,6 +2270,39 @@ export function ProductDrawer({
           </ModalFooter>
         </ModalContent>
       </Modal>
+      <BaseModal
+        isOpen={specCommentPrompt != null}
+        title="Коментар до змін специфікації"
+        overlayZClassName={overlayZ}
+        message={
+          <div className="space-y-2">
+            <p className="text-sm text-default-600">
+              Зміни специфікації буде збережено як чернетку. Вони наберуть чинності після затвердження.
+            </p>
+            <Textarea
+              autoFocus
+              label="Що змінено і чому"
+              minRows={3}
+              value={specCommentPrompt?.comment ?? ''}
+              onValueChange={(comment) => setSpecCommentPrompt((p) => (p ? { ...p, comment } : p))}
+            />
+          </div>
+        }
+        confirmText="Надіслати на затвердження"
+        confirmColor="warning"
+        onConfirm={() => {
+          const prompt = specCommentPrompt;
+          if (!prompt) return;
+          if (!prompt.comment.trim()) {
+            ToastService.show({ title: 'Опишіть зміни специфікації', color: 'warning' });
+            return;
+          }
+          setSpecCommentPrompt(null);
+          void handleSave({ ...prompt.opts, specComment: prompt.comment });
+        }}
+        cancelText="Скасувати"
+        onCancel={() => setSpecCommentPrompt(null)}
+      />
       <ConfirmModal
         isOpen={pushConfirmOpen}
         title="Синхронізувати з сайтом?"

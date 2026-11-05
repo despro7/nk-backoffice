@@ -1,3 +1,4 @@
+import type { CatalogSpecDraftStatus } from '@shared/types/catalogSpec';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Checkbox,
@@ -108,7 +109,22 @@ interface CatalogTableProps {
   listSortEnabled?: boolean;
   /** Швидке оновлення ваги з таблиці (Dilovod save). */
   onUpdateWeight?: (id: string, weight: number) => void | Promise<unknown>;
+  /** Чернетки специфікації: goodId → статус (позначка біля назви). */
+  specDraftStatusById?: Map<string, CatalogSpecDraftStatus>;
 }
+
+const SPEC_DRAFT_MARK: Record<CatalogSpecDraftStatus, { icon: 'file-clock' | 'file-x'; className: string; tooltip: string }> = {
+  pending: {
+    icon: 'file-clock',
+    className: 'text-amber-500',
+    tooltip: 'Специфікацію змінено – чекає на затвердження',
+  },
+  rejected: {
+    icon: 'file-x',
+    className: 'text-rose-500',
+    tooltip: 'Зміни специфікації відхилено – потрібне виправлення',
+  },
+};
 
 type PaintMode = 'replace' | 'add' | 'remove';
 
@@ -659,6 +675,7 @@ export function CatalogTable({
   onSortChange,
   onUpdateWeight,
   listSortEnabled = false,
+  specDraftStatusById,
 }: CatalogTableProps) {
   const visibleRows = rows.filter(
     (r) => !(r.isGroup && isArchiveFolderName(r.name))
@@ -1488,6 +1505,18 @@ export function CatalogTable({
               )}
               <CatalogRowNameBadges row={row} treeItems={treeItems} />
             </button>
+            {(() => {
+              const status = specDraftStatusById?.get(row.id);
+              if (!status) return null;
+              const mark = SPEC_DRAFT_MARK[status];
+              return (
+                <Tooltip content={mark.tooltip} placement="top" color="secondary" delay={200}>
+                  <span className={`inline-flex shrink-0 ${mark.className}`} aria-label={mark.tooltip}>
+                    <DynamicIcon name={mark.icon} size={15} />
+                  </span>
+                </Tooltip>
+              );
+            })()}
             <MissingRequiredHint
               labels={resolveCatalogAttentionLabels(row).filter((label) => label !== 'Вага')}
             />

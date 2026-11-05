@@ -11,8 +11,9 @@ import { authenticateToken, requirePermission } from '../../middleware/auth.js';
 import { roleService } from '../../services/RoleService.js';
 import { prisma, logServer } from '../../lib/utils.js';
 import { productsCatalogService } from './ProductsCatalogService.js';
-import { trackCatalogAction } from './catalogAuditHttp.js';
+import { catalogAuditUserId, trackCatalogAction } from './catalogAuditHttp.js';
 import { catalogGoodAuditService } from './CatalogGoodAuditService.js';
+import { CatalogSpecError, catalogSpecService } from './CatalogSpecService.js';
 import { CATALOG_AUDIT_ACTIONS } from '../../../shared/types/catalogAudit.js';
 import { AUDIT_SOURCES, type AuditSource } from '../../../shared/constants/auditEntities.js';
 import { PERMISSIONS, hasPermission } from '../../../shared/constants/permissions.js';
@@ -54,6 +55,7 @@ requirePermission('products', 'editSpec', 'Редагувати специфік
 requirePermission('storefront', 'edit', 'Редагувати контент вітрини товару');
 requirePermission('products', 'viewDilovod', 'Переглядати дані Dilovod у картці товару');
 requirePermission('products', 'viewAudit', 'Переглядати журнал змін товарів');
+requirePermission('products', 'approveSpec', 'Затверджувати специфікацію (BOM)');
 const catalogFullRefresh = requirePermission('catalog', 'fullRefresh', 'Повне оновлення каталогу з Dilovod');
 const authOnly = [authenticateToken] as const;
 
@@ -79,6 +81,10 @@ const imageUpload = multer({
 });
 
 function handleError(res: Response, error: unknown, context: string) {
+  if (error instanceof CatalogSpecError) {
+    res.status(error.status).json({ success: false, error: error.message, ...(error.code ? { code: error.code } : {}) });
+    return;
+  }
   const message = error instanceof Error ? error.message : String(error);
   logServer(`[ProductsCatalog] ${context}: ${message}`, error);
   const status = message.includes('не знайдено') || message.includes('не знайден') ? 404 : 500;
@@ -363,7 +369,166 @@ function parseAuditListQuery(query: Record<string, unknown>) {
   };
 }
 
-// GET /api/catalog/goods/:id/audit — журнал змін одного товару
+// GET /api/catalog/goods/:id/audit – журнал змін одного товару
+// ─── Модерація специфікації ─────────────────────────────────────────────────
+
+/** Перегляд товару (ACL папки) → права користувача або null (відповідь уже надіслано). */
+async function specViewPerms(req: import('express').Request, res: Response): Promise<Iterable<string> | null> {
+  const perms = await assertCanUseCatalogApi(req, res);
+  if (!perms) return null;
+  const good = await prisma.catalogGood.findUnique({
+    where: { id: req.params.id },
+    select: { parentId: true, isGroup: true, id: true },
+  });
+  if (!good) {
+    res.status(404).json({ success: false, error: 'Товар не знайдено' });
+    return null;
+  }
+  const index = await loadCatalogAclIndex();
+  if (!assertFolderView(res, perms, good.isGroup ? good.id : good.parentId, index.parentById)) return null;
+  return perms;
+}
+
+function specActor(req: import('express').Request, perms: Iterable<string>) {
+  return {
+    userId: catalogAuditUserId(req),
+    canApprove: hasPermission(perms, PERMISSIONS.ACTION_PRODUCTS_APPROVE_SPEC),
+  };
+}
+
+function requireSpecPermission(res: Response, perms: Iterable<string>, key: string, message: string): boolean {
+  if (hasPermission(perms, key)) return true;
+  res.status(403).json({ success: false, error: message, code: 'INSUFFICIENT_ROLE' });
+  return false;
+}
+
+// GET /api/catalog/spec-drafts – усі чернетки (позначки в таблиці каталогу, лічильник)
+router.get('/spec-drafts', ...authOnly, async (req, res) => {
+  try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    res.json({ success: true, data: await catalogSpecService.listDrafts() });
+  } catch (error) {
+    handleError(res, error, 'GET /spec-drafts');
+  }
+});
+
+// GET /api/catalog/goods/:id/spec – версія, чернетка, позначка «перевірити склад / КБЖВ»
+router.get('/goods/:id/spec', ...authOnly, async (req, res) => {
+  try {
+    if (!(await specViewPerms(req, res))) return;
+    res.json({ success: true, data: await catalogSpecService.getState(req.params.id) });
+  } catch (error) {
+    handleError(res, error, 'GET /goods/:id/spec');
+  }
+});
+
+// PUT /api/catalog/goods/:id/spec-draft – створити / оновити чернетку (body: components, specQty, comment)
+router.put('/goods/:id/spec-draft', ...authOnly, async (req, res) => {
+  try {
+    const perms = await specViewPerms(req, res);
+    if (!perms) return;
+    const index = await loadCatalogAclIndex();
+    if (!assertItemsEdit(res, perms, [req.params.id], index)) return;
+    if (!requireSpecPermission(res, perms, PERMISSIONS.ACTION_PRODUCTS_EDIT_SPEC, 'Немає права редагувати специфікацію товару')) return;
+    const body = req.body || {};
+    if (!Array.isArray(body.components)) {
+      res.status(400).json({ success: false, error: 'components[] обовʼязковий' });
+      return;
+    }
+    const good = await prisma.catalogGood.findUnique({ where: { id: req.params.id }, select: { accPolicyId: true } });
+    const content = await catalogSpecService.contentFromInput(body.components, body.specQty, good?.accPolicyId ?? null);
+    const data = await catalogSpecService.saveDraft(req.params.id, content, String(body.comment ?? ''), catalogAuditUserId(req));
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'PUT /goods/:id/spec-draft');
+  }
+});
+
+// DELETE /api/catalog/goods/:id/spec-draft – видалити чернетку (автор або затверджувач)
+router.delete('/goods/:id/spec-draft', ...authOnly, async (req, res) => {
+  try {
+    const perms = await specViewPerms(req, res);
+    if (!perms) return;
+    const actor = specActor(req, perms);
+    if (!actor.canApprove && !requireSpecPermission(res, perms, PERMISSIONS.ACTION_PRODUCTS_EDIT_SPEC, 'Немає права редагувати специфікацію товару')) return;
+    res.json({ success: true, data: await catalogSpecService.discardDraft(req.params.id, actor) });
+  } catch (error) {
+    handleError(res, error, 'DELETE /goods/:id/spec-draft');
+  }
+});
+
+// POST /api/catalog/goods/:id/spec-draft/approve – затвердити (body.force – попри зміну чинної версії)
+router.post('/goods/:id/spec-draft/approve', ...authOnly, async (req, res) => {
+  try {
+    const perms = await specViewPerms(req, res);
+    if (!perms) return;
+    if (!requireSpecPermission(res, perms, PERMISSIONS.ACTION_PRODUCTS_APPROVE_SPEC, 'Немає права затверджувати специфікацію')) return;
+    const data = await catalogSpecService.approve(req.params.id, catalogAuditUserId(req), { force: req.body?.force === true });
+    invalidateCatalogAclIndex();
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'POST /goods/:id/spec-draft/approve');
+  }
+});
+
+// POST /api/catalog/goods/:id/spec-draft/reject – відхилити (body.reason обовʼязковий)
+router.post('/goods/:id/spec-draft/reject', ...authOnly, async (req, res) => {
+  try {
+    const perms = await specViewPerms(req, res);
+    if (!perms) return;
+    if (!requireSpecPermission(res, perms, PERMISSIONS.ACTION_PRODUCTS_APPROVE_SPEC, 'Немає права затверджувати специфікацію')) return;
+    const data = await catalogSpecService.reject(req.params.id, catalogAuditUserId(req), String(req.body?.reason ?? ''));
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'POST /goods/:id/spec-draft/reject');
+  }
+});
+
+// GET /api/catalog/goods/:id/spec-versions – історія затверджених версій
+router.get('/goods/:id/spec-versions', ...authOnly, async (req, res) => {
+  try {
+    if (!(await specViewPerms(req, res))) return;
+    res.json({ success: true, data: await catalogSpecService.listVersions(req.params.id) });
+  } catch (error) {
+    handleError(res, error, 'GET /goods/:id/spec-versions');
+  }
+});
+
+// POST /api/catalog/goods/:id/spec-versions/:version/restore – відкат (затверджувач – одразу, інші – чернетка)
+router.post('/goods/:id/spec-versions/:version/restore', ...authOnly, async (req, res) => {
+  try {
+    const perms = await specViewPerms(req, res);
+    if (!perms) return;
+    const index = await loadCatalogAclIndex();
+    if (!assertItemsEdit(res, perms, [req.params.id], index)) return;
+    const actor = specActor(req, perms);
+    if (!actor.canApprove && !requireSpecPermission(res, perms, PERMISSIONS.ACTION_PRODUCTS_EDIT_SPEC, 'Немає права редагувати специфікацію товару')) return;
+    const version = Number(req.params.version);
+    if (!Number.isInteger(version) || version < 1) {
+      res.status(400).json({ success: false, error: 'Некоректна версія' });
+      return;
+    }
+    const data = await catalogSpecService.restore(req.params.id, version, actor, String(req.body?.comment ?? ''));
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'POST /goods/:id/spec-versions/:version/restore');
+  }
+});
+
+// POST /api/catalog/goods/:id/spec/content-reviewed – прибрати позначку «перевірити склад / КБЖВ»
+router.post('/goods/:id/spec/content-reviewed', ...authOnly, async (req, res) => {
+  try {
+    const perms = await specViewPerms(req, res);
+    if (!perms) return;
+    if (!requireSpecPermission(res, perms, PERMISSIONS.ACTION_STOREFRONT_EDIT, 'Немає права редагувати контент сайту')) return;
+    await catalogSpecService.ackContentReview(req.params.id);
+    res.json({ success: true, data: await catalogSpecService.getState(req.params.id) });
+  } catch (error) {
+    handleError(res, error, 'POST /goods/:id/spec/content-reviewed');
+  }
+});
+
 router.get('/goods/:id/audit', ...authOnly, async (req, res) => {
   try {
     const perms = await assertCanUseCatalogApi(req, res);
@@ -382,7 +547,7 @@ router.get('/goods/:id/audit', ...authOnly, async (req, res) => {
   }
 });
 
-// GET /api/catalog/audit — загальний журнал змін каталогу (фільтри: goodId, userId, from, to, action, source)
+// GET /api/catalog/audit – загальний журнал змін каталогу (фільтри: goodId, userId, from, to, action, source)
 router.get('/audit', ...authOnly, async (req, res) => {
   try {
     const perms = await assertCanUseCatalogApi(req, res);
@@ -416,7 +581,7 @@ router.get('/audit', ...authOnly, async (req, res) => {
   }
 });
 
-// GET /api/catalog/audit/users — користувачі, що мають записи в журналі каталогу (для фільтра)
+// GET /api/catalog/audit/users – користувачі, що мають записи в журналі каталогу (для фільтра)
 router.get('/audit/users', ...authOnly, async (req, res) => {
   try {
     const perms = await assertCanUseCatalogApi(req, res);
@@ -501,10 +666,15 @@ router.put('/goods/:id', ...authOnly, async (req, res) => {
     ) {
       return;
     }
+    const spec = await catalogSpecService.prepareUpdate(req.params.id, body, {
+      userId: catalogAuditUserId(req),
+      canApprove: hasPermission(perms, PERMISSIONS.ACTION_PRODUCTS_APPROVE_SPEC),
+    });
     const data = await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.UPDATED, [req.params.id], () =>
-      productsCatalogService.updateGood(req.params.id, body),
+      productsCatalogService.updateGood(req.params.id, spec.input),
     );
     invalidateCatalogAclIndex();
+    await spec.afterSave();
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'PUT /goods/:id');

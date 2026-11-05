@@ -52,7 +52,7 @@ const COMPONENT_COMPARE_KEYS = ['qty', 'unitId', 'note', 'cookingLossPercent'] a
 
 /**
  * Склад порівнюємо за componentGoodId (а не rowNum), щоб перестановка рядків не давала шуму.
- * Один інгредієнт може бути в кількох рядках — пари утворюємо за порядком.
+ * Один інгредієнт може бути в кількох рядках – пари утворюємо за порядком.
  */
 function diffComponents(
   before: CatalogAuditComponentRow[],
@@ -147,7 +147,7 @@ function diffImages(
   };
 }
 
-/** Різниця двох знімків. null — змін немає. */
+/** Різниця двох знімків. null – змін немає. */
 export function diffCatalogGoodSnapshots(
   before: CatalogGoodAuditSnapshot | null,
   after: CatalogGoodAuditSnapshot | null,

@@ -16,7 +16,7 @@ export interface AuditLogDto {
 
 export interface AuditLogPageDto<T = AuditLogDto> {
   items: T[];
-  /** id останнього запису; передай як `cursor`, щоб отримати наступну сторінку. null — кінець. */
+  /** id останнього запису; передай як `cursor`, щоб отримати наступну сторінку. null – кінець. */
   nextCursor: number | null;
 }
 
@@ -25,6 +25,6 @@ export interface AuditFieldChange {
   field: string;
   from: unknown;
   to: unknown;
-  /** Значення завеликі для журналу — збережено лише факт зміни. */
+  /** Значення завеликі для журналу – збережено лише факт зміни. */
   truncated?: boolean;
 }

@@ -20,6 +20,7 @@ import {
   CatalogDictionariesDto,
   CatalogDilovodPreviewResult,
   CatalogDilovodPullApplyField,
+  CatalogGoodComponentDto,
   CatalogGoodDetailDto,
   CatalogGoodDto,
   CatalogGoodImageDto,
@@ -1362,6 +1363,66 @@ export class ProductsCatalogService {
     return computeKitPortionCountsByGoodId(goodIds);
   }
 
+  /**
+   * Рядки специфікації → DTO картки (назва, вага, політика, категорія компонента).
+   * Використовується для затвердженої специфікації, чернетки і версій.
+   */
+  async enrichComponents(
+    rows: Array<{
+      id?: number;
+      parentGoodId: string;
+      componentGoodId: string;
+      qty: number;
+      rowNum: number;
+      dilovodRowId?: string | null;
+      unitId?: string | null;
+      note?: string | null;
+      cookingLossPercent?: number | null;
+    }>,
+  ): Promise<CatalogGoodComponentDto[]> {
+    const componentIds = [...new Set(rows.map((c) => c.componentGoodId))];
+    if (componentIds.length === 0) return [];
+    const componentGoods = await prisma.catalogGood.findMany({
+      where: { id: { in: componentIds } },
+      select: { id: true, name: true, sku: true, weight: true, accPolicyId: true, parentId: true },
+    });
+    const componentMap = new Map(componentGoods.map((g) => [g.id, g]));
+    const componentParentIds = [
+      ...new Set(componentGoods.map((g) => g.parentId).filter((parentId): parentId is string => Boolean(parentId))),
+    ];
+    const componentParents =
+      componentParentIds.length > 0
+        ? await prisma.catalogGood.findMany({
+            where: { id: { in: componentParentIds } },
+            select: { id: true, name: true },
+          })
+        : [];
+    const componentParentNameById = new Map(componentParents.map((p) => [p.id, p.name]));
+    const nestedPortionById = await this.computeKitPortionCountsByGoodId(componentIds);
+
+    return rows.map((c) => {
+      const componentGood = componentMap.get(c.componentGoodId);
+      const componentParentId = componentGood?.parentId;
+      return {
+        ...(c.id != null ? { id: c.id } : {}),
+        parentGoodId: c.parentGoodId,
+        componentGoodId: c.componentGoodId,
+        componentName: componentGood?.name,
+        componentSku: componentGood?.sku ?? null,
+        componentWeight: componentGood?.weight ?? null,
+        componentAccPolicyId: componentGood?.accPolicyId ?? null,
+        componentNestedPortionCount: nestedPortionById.get(c.componentGoodId) ?? 1,
+        componentCategoryName: componentParentId ? componentParentNameById.get(componentParentId) ?? null : null,
+        qty: c.qty,
+        rowNum: c.rowNum,
+        dilovodRowId: c.dilovodRowId ?? null,
+        unitId: c.unitId ?? null,
+        note: c.note ?? null,
+        cookingLossPercent: c.cookingLossPercent ?? 0,
+      };
+    });
+  }
+
   private async readGoodDetailFromLocal(id: string): Promise<CatalogGoodDetailDto | null> {
     const row = await prisma.catalogGood.findUnique({
       where: { id },
@@ -1375,38 +1436,7 @@ export class ProductsCatalogService {
     });
     if (!row) return null;
 
-    const componentIds = row.components.map((c) => c.componentGoodId);
-    const componentGoods =
-      componentIds.length > 0
-        ? await prisma.catalogGood.findMany({
-            where: { id: { in: componentIds } },
-            select: {
-              id: true,
-              name: true,
-              sku: true,
-              weight: true,
-              accPolicyId: true,
-              parentId: true,
-            },
-          })
-        : [];
-    const componentMap = new Map(componentGoods.map((g) => [g.id, g]));
-    const componentParentIds = [
-      ...new Set(
-        componentGoods
-          .map((g) => g.parentId)
-          .filter((parentId): parentId is string => Boolean(parentId)),
-      ),
-    ];
-    const componentParents =
-      componentParentIds.length > 0
-        ? await prisma.catalogGood.findMany({
-            where: { id: { in: componentParentIds } },
-            select: { id: true, name: true },
-          })
-        : [];
-    const componentParentNameById = new Map(componentParents.map((p) => [p.id, p.name]));
-    const nestedPortionById = await this.computeKitPortionCountsByGoodId(componentIds);
+    const components = await this.enrichComponents(row.components);
 
     let parentName: string | null = null;
     const parentId = row.parentId?.trim();
@@ -1448,29 +1478,7 @@ export class ProductsCatalogService {
 
     return {
       ...mapGoodDto(row, parentName),
-      components: row.components.map((c) => {
-        const componentGood = componentMap.get(c.componentGoodId);
-        const componentParentId = componentGood?.parentId;
-        const componentCategoryName =
-          componentParentId ? componentParentNameById.get(componentParentId) ?? null : null;
-        return {
-          id: c.id,
-          parentGoodId: c.parentGoodId,
-          componentGoodId: c.componentGoodId,
-          componentName: componentGood?.name,
-          componentSku: componentGood?.sku ?? null,
-          componentWeight: componentGood?.weight ?? null,
-          componentAccPolicyId: componentGood?.accPolicyId ?? null,
-          componentNestedPortionCount: nestedPortionById.get(c.componentGoodId) ?? 1,
-          componentCategoryName,
-          qty: c.qty,
-          rowNum: c.rowNum,
-          dilovodRowId: c.dilovodRowId ?? null,
-          unitId: c.unitId ?? null,
-          note: c.note ?? null,
-          cookingLossPercent: c.cookingLossPercent ?? 0,
-        };
-      }),
+      components,
       prices: row.prices.map((p) => ({
         id: p.id,
         goodId: p.goodId,

@@ -282,12 +282,12 @@ UI у `ProductDrawer` (секція «Штрихкоди»):
 
 **Як пишеться.** `CatalogGoodAuditService.track()` (`server/modules/Products/CatalogGoodAuditService.ts`) знімає знімок товару до дії, виконує її, знімає знімок після і пише різницю (`shared/utils/catalogGoodAuditDiff.ts`). Знімок: скалярні поля (назва, SKU, папка, одиниця, вага, `specQty`, тип, описи, склад/КБЖВ, брутто, коеф. порцій, шаблони наліпок, дата архівації…), склад (BOM), ціни, штрихкоди, зображення.
 
-- Склад порівнюється за `componentGoodId`, а не за `rowNum` — перестановка рядків не дає шуму.
-- Довгі тексти (> 300 символів) і `storefrontDescriptionDoc` — лише позначка «змінено», без значень.
+- Склад порівнюється за `componentGoodId`, а не за `rowNum` – перестановка рядків не дає шуму.
+- Довгі тексти (> 300 символів) і `storefrontDescriptionDoc` – лише позначка «змінено», без значень.
 - Порожнє збереження (без різниці) не пишеться.
 - Вкладені `track()` поглинаються зовнішнім (`AsyncLocalStorage`): Dilovod-sync всередині «Зберегти» не дає окремого запису.
 
-**Джерело (`source`):** `ui` — дія користувача; `bulk` — масова дія (> 1 товару, імпорт з вітрини пакетом); `dilovod` — pull/sync з Dilovod (`ProductsLocalSync.syncGood` / `syncGoodsBatch`, у т.ч. live-pull при відкритті картки — без користувача, якщо зміни прийшли «ззовні»).
+**Джерело (`source`):** `ui` – дія користувача; `bulk` – масова дія (> 1 товару, імпорт з вітрини пакетом); `dilovod` – pull/sync з Dilovod (`ProductsLocalSync.syncGood` / `syncGoodsBatch`, у т.ч. live-pull при відкритті картки – без користувача, якщо зміни прийшли «ззовні»).
 
 **Дії** (`CATALOG_AUDIT_ACTIONS`, `shared/types/catalogAudit.ts`): `created`, `updated`, `duplicated`, `moved`, `type_changed`, `archived`, `restored`, `trashed`, `images_changed`, `label_template_changed`, `label_published` (з версією й партією), `storefront_pull`, `dilovod_pull`, `dilovod_sync`, `legacy_field_changed` (`/api/products/:id/weight|unit-ratio`).
 
@@ -298,12 +298,12 @@ UI у `ProductDrawer` (секція «Штрихкоди»):
 | Метод | Шлях | Опис |
 | --- | --- | --- |
 | GET | `/api/catalog/goods/:id/audit?cursor&limit` | журнал одного товару |
-| GET | `/api/catalog/audit?from&to&q&goodId&userId&action&source&cursor&limit` | загальний журнал; `q` — пошук товару за назвою/SKU |
+| GET | `/api/catalog/audit?from&to&q&goodId&userId&action&source&cursor&limit` | загальний журнал; `q` – пошук товару за назвою/SKU |
 | GET | `/api/catalog/audit/users` | користувачі з записами (для фільтра) |
 
-Пагінація курсором по `id` (новіші зверху), відповідь `{ items, nextCursor }`. Право — `action.products.viewAudit`.
+Пагінація курсором по `id` (новіші зверху), відповідь `{ items, nextCursor }`. Право – `action.products.viewAudit`.
 
-**UI:** вкладка **«Історія»** в `ProductDrawer` (`ProductHistoryTab.tsx`, лише в режимі редагування); сторінка **`/products/audit`** (`ProductsAuditPage.tsx`, право `page.main.productsAudit`) — період, пошук товару, користувач, дія, джерело; клік по назві відкриває картку (`#good=<id>`). Кнопка «Журнал змін» у `CatalogToolbar`. Рядок запису — `components/audit/CatalogAuditEntry.tsx`, людські підписи — `shared/utils/catalogGoodAuditFormat.ts` (одиниці, типи цін і обʼєктів — з довідників Dilovod).
+**UI:** вкладка **«Історія»** в `ProductDrawer` (`ProductHistoryTab.tsx`, лише в режимі редагування); сторінка **`/products/audit`** (`ProductsAuditPage.tsx`, право `page.main.productsAudit`) – період, пошук товару, користувач, дія, джерело; клік по назві відкриває картку (`#good=<id>`). Кнопка «Журнал змін» у `CatalogToolbar`. Рядок запису – `components/audit/CatalogAuditEntry.tsx`, людські підписи – `shared/utils/catalogGoodAuditFormat.ts` (одиниці, типи цін і обʼєктів – з довідників Dilovod).
 
 ---
 

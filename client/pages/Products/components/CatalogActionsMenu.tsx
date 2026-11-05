@@ -409,12 +409,12 @@ export function CatalogActionsDropdown({
           title="Каталог"
           showDivider
           dividerProps={sectionDivider}
-          className="md:hidden"
+          className={readOnly ? 'hidden' : undefined}
         >
           <DropdownItem
             key="create"
             isDisabled={busy || readOnly}
-            className={readOnly ? 'hidden' : undefined}
+            className={readOnly ? 'hidden' : 'md:hidden'}
             startContent={<DynamicIcon name="circle-plus" size={16} className="shrink-0" />}
           >
             Додати обʼєкт
@@ -436,7 +436,7 @@ export function CatalogActionsDropdown({
           <DropdownItem
             key="refreshStock"
             isDisabled={catalogBusy || readOnly}
-            className={readOnly ? 'hidden text-amber-600' : 'text-amber-600'}
+            className={readOnly ? 'hidden' : 'text-amber-600 md:hidden'}
             startContent={
               <DynamicIcon
                 name={stockRefreshing ? 'refresh-cw' : 'boxes'}
@@ -449,7 +449,7 @@ export function CatalogActionsDropdown({
           </DropdownItem>
           <DropdownItem
             key="fullRefresh"
-            className={showDebugRefresh ? 'text-danger' : 'hidden'}
+            className={showDebugRefresh ? 'text-danger md:hidden' : 'hidden'}
             isDisabled={catalogBusy}
             startContent={<DynamicIcon name="refresh-cw" size={16} className="shrink-0" />}
           >

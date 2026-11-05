@@ -329,6 +329,13 @@ export interface CatalogUpdateGoodInput {
     goodPart?: string | null;
     goodPartName?: string | null;
   }>;
+  /**
+   * Модерація специфікації: коментар до змін BOM (обовʼязковий для чернетки,
+   * опційний для прямого збереження затверджувачем).
+   */
+  specComment?: string | null;
+  /** Редактор BOM завантажив чинну чернетку і зберігає її оновлення. */
+  specDraftEdit?: boolean;
 }
 
 export interface CatalogMoveInput {

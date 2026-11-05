@@ -7,7 +7,7 @@ import { useCatalogAuditFeed } from '../audit/useCatalogAuditFeed';
 interface Props {
   goodId: string;
   dictionaries: CatalogDictionariesDto;
-  /** Змінюється після збереження картки — перезавантажує журнал. */
+  /** Змінюється після збереження картки – перезавантажує журнал. */
   refreshKey?: number | string;
 }
 

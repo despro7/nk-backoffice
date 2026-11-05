@@ -4,8 +4,8 @@ import { useApi } from './useApi';
 
 const POLL_INTERVAL_MS = 30_000;
 // Базові severity: помилки та попередження
-// + success лише для категорії warehouse_movement (автофіналізація переміщень)
-const BASE_SEVERITY = 'severity=error,warning&successCategories=warehouse_movement';
+// + success для warehouse_movement (автофіналізація переміщень) і catalog_spec (затверджено специфікацію)
+const BASE_SEVERITY = 'severity=error,warning&successCategories=warehouse_movement,catalog_spec';
 
 export interface UseNotificationsReturn {
   notifications: AppNotification[];

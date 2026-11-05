@@ -39,7 +39,7 @@ export function CatalogAuditFeed({
 
   return (
     <div>
-      <div className="divide-y divide-border-subtle [&>*]:py-3 [&>*:first-child]:pt-0">
+      <div className="divide-y divide-default-100 [&>*]:py-4 [&>*:first-child]:pt-1">
         {items.map((item) => (
           <CatalogAuditEntry
             key={item.id}
@@ -51,7 +51,7 @@ export function CatalogAuditFeed({
         ))}
       </div>
       {hasMore ? (
-        <div className="flex justify-center pt-3">
+        <div className="flex justify-center pt-4">
           <Button size="sm" variant="flat" isDisabled={loading} onPress={onLoadMore}>
             {loading ? 'Завантаження…' : 'Показати ще'}
           </Button>

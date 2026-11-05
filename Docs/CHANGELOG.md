@@ -5,18 +5,18 @@
 
 ---
 
-## 2026-11-05 — Загальний журнал змін (`audit_log`) + журнал змін товарів
+## 2026-11-05 – Загальний журнал змін (`audit_log`) + журнал змін товарів
 
 **Files:** `prisma/schema.prisma`, `prisma/migrations/20261105120000_shared_audit_log`, `prisma/migrations/20261105130000_grant_products_audit_permissions`, `shared/constants/auditEntities.ts`, `shared/types/audit.ts`, `shared/types/catalogAudit.ts`, `shared/utils/catalogGoodAuditDiff.ts` (+ spec), `shared/utils/catalogGoodAuditFormat.ts`, `shared/constants/permissions.ts`, `shared/constants/permissionRoleEditor.ts`, `server/services/AuditLogService.ts`, `server/modules/Hr/HrAuditService.ts`, `HrPersonService.ts`, `server/modules/Warehouse/Warehouse{Release,Surplus,WriteOff}AuditService.ts`, `server/modules/Products/CatalogGoodAuditService.ts`, `catalogAuditHttp.ts`, `ProductsController.ts`, `ProductsLocalSync.ts`, `ProductLabelsController.ts`, `server/routes/storefront.ts`, `server/routes/products.ts`, `client/components/audit/**`, `client/components/hr/{HrAuditAccordion,PersonDuplicatesAccordion,PersonMergedAccordion}.tsx`, `WarehouseReleaseAuditAccordion.tsx`, `client/pages/Products/{ProductsAuditPage.tsx,catalogApi.ts,index.tsx}`, `components/audit/**`, `components/CatalogToolbar.tsx`, `productDrawer/{ProductDrawer,ProductHistoryTab}.tsx`, `productDrawerTypes.ts`, `client/routes.config.tsx`
 
-- **Загальний журнал дій:** `hr_audit_log` → `audit_log` (модель `AuditLog`): `entityId` тепер `VARCHAR(64)` (наявні Int-id перетворено на рядки, дані збережено), нове поле `source` (`ui` | `dilovod` | `system` | `bulk`), індекси під фільтри за сутністю, користувачем і датою. Реєстр `entityType` — `shared/constants/auditEntities.ts`.
-- `AuditLogService` (`log` / `query` з курсорною пагінацією). HR- і Warehouse-сервіси аудиту стали обгортками — їхнє API і DTO не змінились.
+- **Загальний журнал дій:** `hr_audit_log` → `audit_log` (модель `AuditLog`): `entityId` тепер `VARCHAR(64)` (наявні Int-id перетворено на рядки, дані збережено), нове поле `source` (`ui` | `dilovod` | `system` | `bulk`), індекси під фільтри за сутністю, користувачем і датою. Реєстр `entityType` – `shared/constants/auditEntities.ts`.
+- `AuditLogService` (`log` / `query` з курсорною пагінацією). HR- і Warehouse-сервіси аудиту стали обгортками – їхнє API і DTO не змінились.
 - Спільний UI `client/components/audit/` (`AuditAccordion`, `AuditLogRow`); HR і Warehouse переведено на нього, `hrAccordionClassNames` прибрано.
 - **Журнал змін товарів:** знімок товару до/після дії → різниця полів, складу (BOM), цін, штрихкодів, зображень і шаблонів наліпок. Пишуться дії користувачів (збереження, створення, копія, переміщення, тип, архів/відновлення/кошик, зображення, шаблон і публікація наліпки, імпорт з вітрини, legacy вага/коеф. порцій) і зміни з Dilovod (позначка джерела). Вкладений sync усередині дії користувача не дублює запис.
 - **UI:** вкладка «Історія» в картці товару; сторінка «Журнал змін каталогу» (`/products/audit`) з фільтрами за періодом, товаром, користувачем, дією і джерелом; кнопка «Журнал змін» у тулбарі каталогу.
-- **Права:** `action.products.viewAudit`, `page.main.productsAudit` — seed `admin`, `boss`; для наявної ролі `boss` видано міграцією.
+- **Права:** `action.products.viewAudit`, `page.main.productsAudit` – seed `admin`, `boss`; для наявної ролі `boss` видано міграцією.
 
-**Документація:** `Docs/features/products-catalog-2.0.md` — «Журнал змін товарів»; `Docs/features/hr-module.md` — «Журнал змін HR (`AuditLog`)»; `Docs/features/warehouse-release-sets.md` — аудит; `Docs/features/users-and-roles.md` — нові права.
+**Документація:** `Docs/features/products-catalog-2.0.md` – «Журнал змін товарів»; `Docs/features/hr-module.md` – «Журнал змін HR (`AuditLog`)»; `Docs/features/warehouse-release-sets.md` – аудит; `Docs/features/users-and-roles.md` – нові права.
 
 ---
 

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Button, Input, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useDebug } from '@/contexts/debug-context';
+import { BTN_PRIMARY_BLUE, BTN_VIVID_WARNING } from '@/lib/buttonStyles';
 
 interface CatalogToolbarProps {
   searchQuery: string;
@@ -9,7 +10,6 @@ interface CatalogToolbarProps {
   branchRefreshing?: boolean;
   stockRefreshing?: boolean;
   fullRefreshing?: boolean;
-  onRefreshBranch: () => void;
   onRefreshStock: () => void;
   onFullRefresh?: () => void;
   showFullRefresh?: boolean;
@@ -19,6 +19,8 @@ interface CatalogToolbarProps {
   readOnly?: boolean;
   /** Відкрити журнал змін каталогу (лише з правом перегляду). */
   onOpenAudit?: () => void;
+  /** Список чернеток специфікації (кнопка «На затвердженні»). */
+  specDrafts?: ReactNode;
 }
 
 export function CatalogToolbar({
@@ -27,7 +29,6 @@ export function CatalogToolbar({
   branchRefreshing,
   stockRefreshing,
   fullRefreshing,
-  onRefreshBranch,
   onRefreshStock,
   onFullRefresh,
   showFullRefresh,
@@ -36,6 +37,7 @@ export function CatalogToolbar({
   actions,
   readOnly,
   onOpenAudit,
+  specDrafts,
 }: CatalogToolbarProps) {
   const anyRefreshing = Boolean(branchRefreshing || stockRefreshing || fullRefreshing);
   const { isDebugMode } = useDebug();
@@ -62,42 +64,12 @@ export function CatalogToolbar({
         variant="flat"
         color="primary"
         startContent={<DynamicIcon name="circle-plus" size={14} />}
-        className="hidden bg-sky-500 bg-gradient-to-b from-sky-500 to-blue-600/75 text-white hover:bg-blue-600 font-medium md:inline-flex"
+        className={`hidden md:inline-flex ${BTN_PRIMARY_BLUE} hover:bg-blue-600`}
         onPress={onCreateGood}
         isDisabled={busy || Boolean(readOnly)}
       >
         Додати обʼєкт
       </Button>
-
-      <div className="hidden md:inline-flex">
-        <Tooltip
-          content="Синхронізувати поточну папку; глибину вкладеності можна обрати в підтвердженні"
-          placement="top-start"
-          delay={500}
-          showArrow
-          classNames={{
-            base: 'before:rounded-[2px] before:bottom-[calc(calc(1.25rem/4-2px)*-0.5)]!',
-            content: 'border-0 text-xs',
-          }}
-        >
-          <Button
-            size="sm"
-            color="primary"
-            className="bg-lime-600 bg-gradient-to-b from-lime-500 to-green-600 text-white hover:bg-green-600 font-medium"
-            startContent={
-              <DynamicIcon
-                name={branchRefreshing ? 'refresh-cw' : 'folder-sync'}
-                size={14}
-                className={branchRefreshing ? 'animate-spin' : ''}
-              />
-            }
-            onPress={onRefreshBranch}
-            isDisabled={busy || anyRefreshing || Boolean(readOnly)}
-          >
-            Синхронізувати гілку
-          </Button>
-        </Tooltip>
-      </div>
 
       <div className="hidden md:inline-flex">
         <Tooltip
@@ -113,7 +85,7 @@ export function CatalogToolbar({
           <Button
             size="sm"
             color="warning"
-            className="bg-yellow-500 bg-gradient-to-b from-amber-400 to-orange-600 text-white hover:bg-orange-600 font-medium"
+            className={BTN_VIVID_WARNING}
             startContent={
               <DynamicIcon
                 name={stockRefreshing ? 'refresh-cw' : 'boxes'}
@@ -148,19 +120,23 @@ export function CatalogToolbar({
         </div>
       )}
 
-      {onOpenAudit ? (
-        <Button
-          size="sm"
-          variant="flat"
-          className="ml-auto"
-          startContent={<DynamicIcon name="history" size={14} />}
-          onPress={onOpenAudit}
-        >
-          <span className="hidden md:inline">Журнал змін</span>
-        </Button>
+      {specDrafts || onOpenAudit ? (
+        <div className="ml-auto flex items-center gap-2">
+          {specDrafts}
+          {onOpenAudit ? (
+            <Button
+              size="sm"
+              variant="flat"
+              startContent={<DynamicIcon name="history" size={14} />}
+              onPress={onOpenAudit}
+            >
+              <span className="hidden md:inline">Журнал змін</span>
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
-      {actions ? <div className={onOpenAudit ? undefined : 'ml-auto'}>{actions}</div> : null}
+      {actions ? <div className={specDrafts || onOpenAudit ? undefined : 'ml-auto'}>{actions}</div> : null}
     </div>
   );
 }

@@ -552,6 +552,8 @@ model CatalogGood {
   boxLabelTemplateId     String?                @db.VarChar(36)
 
   labelDrafts          CatalogProductLabelDraft[]
+  specDraft            CatalogSpecDraft?
+  specVersions         CatalogSpecVersion[]
   labels               CatalogProductLabel[]
   portionLabelTemplate CatalogLabelTemplate?      @relation("PortionLabelTemplate", fields: [portionLabelTemplateId], references: [id], onDelete: SetNull)
   boxLabelTemplate     CatalogLabelTemplate?      @relation("BoxLabelTemplate", fields: [boxLabelTemplateId], references: [id], onDelete: SetNull)
@@ -673,6 +675,54 @@ model CatalogGoodBarcode {
   @@map("catalog_good_barcodes")
 }
 
+/// Чернетка специфікації (BOM + specQty), що очікує затвердження. Одна на товар.
+model CatalogSpecDraft {
+  id                  Int       @id @default(autoincrement())
+  goodId              String    @unique @db.VarChar(32)
+  /// Версія затвердженої специфікації, від якої почали чернетку
+  baseVersion         Int
+  specQty             Float?
+  componentsJson      Json
+  comment             String    @db.Text
+  status              String    @default("pending") @db.VarChar(16) // pending | rejected
+  /// Відкат: з якої версії відновлено
+  restoredFromVersion Int?
+  authorId            Int?
+  lastEditedById      Int?
+  reviewedById        Int?
+  reviewedAt          DateTime?
+  rejectReason        String?   @db.Text
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  good CatalogGood @relation(fields: [goodId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("catalog_spec_drafts")
+}
+
+/// Затверджені версії специфікації товару (історія + відкат).
+model CatalogSpecVersion {
+  id                   Int       @id @default(autoincrement())
+  goodId               String    @db.VarChar(32)
+  version              Int
+  specQty              Float?
+  componentsJson       Json
+  source               String    @db.VarChar(16) // initial | ui | dilovod | rollback
+  comment              String?   @db.Text
+  authorId             Int?
+  approvedById         Int?
+  approvedAt           DateTime?
+  /// Після затвердження склад / КБЖВ в описі можуть не відповідати новій специфікації
+  contentReviewPending Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+
+  good CatalogGood @relation(fields: [goodId], references: [id], onDelete: Cascade)
+
+  @@unique([goodId, version])
+  @@map("catalog_spec_versions")
+}
+
 model CatalogProductLabelDraft {
   id          Int      @id @default(autoincrement())
   goodId      String   @db.VarChar(32)
@@ -751,7 +801,7 @@ model CatalogLabelTemplateDefault {
 }
 
 /// Загальний журнал дій (audit trail) для всіх доменів: HR, Warehouse, Catalog…
-/// entityType — див. shared/constants/auditEntities.ts; entityId — рядок (Int-id домену як String).
+/// entityType – див. shared/constants/auditEntities.ts; entityId – рядок (Int-id домену як String).
 model AuditLog {
   id         Int      @id @default(autoincrement())
   entityType String   @db.VarChar(32)

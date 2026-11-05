@@ -74,6 +74,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   'user_report': 		'Звіт користувача',
   'support_report': 	'Налаштування звітів',
   'default':     		'Загальне',
+  'catalog_spec':		'Специфікація товару',
 };
 
 function translateTitle(notification: AppNotification): string {
@@ -93,11 +94,13 @@ interface NotificationRowProps {
   notification: AppNotification;
   onMarkRead: (id: number) => void;
   onOpenLog: (n: AppNotification) => void;
+  /** Перехід за внутрішнім посиланням сповіщення (напр. картка товару). */
+  onOpenLink?: (n: AppNotification) => void;
   isAdmin?: boolean;
   onResolve?: (id: number) => void;
 }
 
-function NotificationRow({ notification, onMarkRead, onOpenLog, isAdmin, onResolve }: NotificationRowProps) {
+function NotificationRow({ notification, onMarkRead, onOpenLog, onOpenLink, isAdmin, onResolve }: NotificationRowProps) {
   const cfg = SEVERITY_CONFIG[notification.severity];
 
   return (
@@ -155,13 +158,23 @@ function NotificationRow({ notification, onMarkRead, onOpenLog, isAdmin, onResol
 
       {/* Footer: кнопки по краях */}
       <div className="flex items-center justify-between pl-10 pr-3 py-2 border-t border-black/5">
-        <button
-          onClick={() => { onOpenLog(notification); if (!notification.read) onMarkRead(notification.id); }}
-          className="flex items-center gap-1 text-[11px] text-primary hover:text-primary-600 transition-colors"
-        >
-          <DynamicIcon name="external-link" size={11} />
-          Показати лог
-        </button>
+        {notification.link && onOpenLink ? (
+          <button
+            onClick={() => { onOpenLink(notification); if (!notification.read) onMarkRead(notification.id); }}
+            className="flex items-center gap-1 text-[11px] text-primary hover:text-primary-600 transition-colors"
+          >
+            <DynamicIcon name="arrow-up-right" size={11} />
+            Відкрити
+          </button>
+        ) : (
+          <button
+            onClick={() => { onOpenLog(notification); if (!notification.read) onMarkRead(notification.id); }}
+            className="flex items-center gap-1 text-[11px] text-primary hover:text-primary-600 transition-colors"
+          >
+            <DynamicIcon name="external-link" size={11} />
+            Показати лог
+          </button>
+        )}
         {!notification.read && (
           <button
             onClick={(e) => { e.stopPropagation(); onMarkRead(notification.id); }}
@@ -370,6 +383,11 @@ export function NotificationBell({ onNavigate: _onNavigate, size = 'default' }: 
                   notification={n}
                   onMarkRead={handleMarkRead}
                   onOpenLog={handleOpenLog}
+                  onOpenLink={(item) => {
+                    if (!item.link) return;
+                    setIsOpen(false);
+                    _onNavigate?.(item.link);
+                  }}
                   isAdmin={isAdmin}
                   onResolve={handleResolve}
                 />

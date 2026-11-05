@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState, type RefObject } from 'rea
 import {
   Accordion,
   AccordionItem,
+  Alert,
+  Button,
   Chip,
   Select,
   SelectItem,
@@ -60,6 +62,10 @@ interface ProductContentTabProps {
   lightboxAppendToRef?: RefObject<HTMLElement | null>;
   dirtyFields?: Set<DrawerDirtyFieldKey>;
   onHydrationComplete?: () => void;
+  /** Після нової версії специфікації склад / КБЖВ можуть не відповідати їй. */
+  specContentReviewPending?: boolean;
+  /** Прибрати позначку без змін (контент перевірено вручну). */
+  onSpecContentReviewed?: () => void;
 }
 
 export function ProductContentTab({
@@ -81,6 +87,8 @@ export function ProductContentTab({
   lightboxAppendToRef,
   dirtyFields,
   onHydrationComplete,
+  specContentReviewPending = false,
+  onSpecContentReviewed,
 }: ProductContentTabProps) {
   const [presets, setPresets] = useState<StorefrontPresetDto[]>([]);
   const [defaultPresetId, setDefaultPresetId] = useState<string | null>(null);
@@ -293,8 +301,58 @@ export function ProductContentTab({
 
   const storefrontDocValue = form.storefrontDescriptionDoc;
 
+  const regenerateIngredientsFromSpec = () => {
+    const next = buildIngredientsJsonFromBom(
+      components.map((c) => ({ componentName: c.componentName, qty: c.qty })),
+    );
+    if (next.length) setForm((f) => ({ ...f, productIngredientsJson: next }));
+  };
+
   return (
     <section className="space-y-6">
+      {specContentReviewPending && isEdit && canEditStorefront ? (
+        <Alert
+          color="warning"
+          variant="flat"
+          classNames={{ base: 'py-2 border-1 border-warning-500/30 rounded-md p-2' }}
+        >
+          <div className="flex w-full flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">
+                Склад / КБЖВ у описі можуть не відповідати новій специфікації
+              </p>
+              <p className="text-xs font-normal">
+                Специфікацію змінено. Оновіть склад зі специфікації та перевірте КБЖВ, потім збережіть картку.
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {!isKit ? (
+                <Button
+                  size="sm"
+                  color="warning"
+                  variant="solid"
+                  isDisabled={storefrontFieldsLocked || components.length === 0}
+                  startContent={<DynamicIcon name="refresh-cw" size={14} />}
+                  onPress={regenerateIngredientsFromSpec}
+                >
+                  Перегенерувати
+                </Button>
+              ) : null}
+              {onSpecContentReviewed ? (
+                <Button
+                  size="sm"
+                  variant="light"
+                  isDisabled={storefrontFieldsLocked}
+                  startContent={<DynamicIcon name="check" size={14} />}
+                  onPress={onSpecContentReviewed}
+                >
+                  Перевірено
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </Alert>
+      ) : null}
       {!isKit && (
         <ProductIngredientsTags
           value={form.productIngredientsJson}

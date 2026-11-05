@@ -92,6 +92,11 @@ export const CATALOG_AUDIT_ACTIONS = {
   DILOVOD_PULL: 'dilovod_pull',
   DILOVOD_SYNC: 'dilovod_sync',
   LEGACY_FIELD_CHANGED: 'legacy_field_changed',
+  SPEC_DRAFT_SAVED: 'spec_draft_saved',
+  SPEC_DRAFT_DISCARDED: 'spec_draft_discarded',
+  SPEC_APPROVED: 'spec_approved',
+  SPEC_REJECTED: 'spec_rejected',
+  SPEC_VERSION_RECORDED: 'spec_version_recorded',
 } as const;
 
 export type CatalogAuditAction = (typeof CATALOG_AUDIT_ACTIONS)[keyof typeof CATALOG_AUDIT_ACTIONS];

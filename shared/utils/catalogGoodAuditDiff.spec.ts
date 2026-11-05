@@ -105,8 +105,8 @@ describe('buildCatalogAuditLines', () => {
     expect(lines).toEqual([
       { kind: 'changed', label: 'Розрахунок на N шт.', text: '1 → 2' },
       { kind: 'changed', label: 'Ціна «Роздріб»', text: '100 → 120' },
-      { kind: 'removed', label: 'Склад', text: 'Капуста (2) — 0,1 кг' },
-      { kind: 'changed', label: 'Склад', text: 'Буряк (1) — к-сть: 0,2 → 0,25' },
+      { kind: 'removed', label: 'Склад', text: 'Капуста (2) – 0,1 кг' },
+      { kind: 'changed', label: 'Склад', text: 'Буряк (1) – к-сть: 0,2 → 0,25' },
     ]);
   });
 });

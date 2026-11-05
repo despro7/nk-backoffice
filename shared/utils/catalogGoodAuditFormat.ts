@@ -23,6 +23,11 @@ export const CATALOG_AUDIT_ACTION_LABELS: Record<string, string> = {
   [CATALOG_AUDIT_ACTIONS.DILOVOD_PULL]: 'Оновлено з Dilovod',
   [CATALOG_AUDIT_ACTIONS.DILOVOD_SYNC]: 'Синхронізація з Dilovod',
   [CATALOG_AUDIT_ACTIONS.LEGACY_FIELD_CHANGED]: 'Змінено (кеш товарів)',
+  [CATALOG_AUDIT_ACTIONS.SPEC_DRAFT_SAVED]: 'Чернетка специфікації',
+  [CATALOG_AUDIT_ACTIONS.SPEC_DRAFT_DISCARDED]: 'Чернетку специфікації видалено',
+  [CATALOG_AUDIT_ACTIONS.SPEC_APPROVED]: 'Специфікацію затверджено',
+  [CATALOG_AUDIT_ACTIONS.SPEC_REJECTED]: 'Специфікацію відхилено',
+  [CATALOG_AUDIT_ACTIONS.SPEC_VERSION_RECORDED]: 'Нова версія специфікації',
 };
 
 export const CATALOG_AUDIT_FIELD_LABELS: Record<string, string> = {
@@ -76,7 +81,7 @@ export interface CatalogAuditLine {
   text: string;
 }
 
-const EMPTY = '—';
+const EMPTY = '–';
 
 function dictName(list: Array<{ id: string; name: string }> | undefined, id: unknown): string {
   if (id == null || id === '') return EMPTY;
@@ -130,7 +135,7 @@ function fieldLine(change: AuditFieldChange, dicts: CatalogAuditDictionaries): C
 function componentText(row: CatalogAuditComponentRow, dicts: CatalogAuditDictionaries): string {
   const unit = row.unitId ? ` ${dictName(dicts.units, row.unitId)}` : '';
   const loss = row.cookingLossPercent ? `, втрати ${formatNumber(row.cookingLossPercent)}%` : '';
-  return `${row.name}${row.sku ? ` (${row.sku})` : ''} — ${formatNumber(row.qty)}${unit}${loss}`;
+  return `${row.name}${row.sku ? ` (${row.sku})` : ''} – ${formatNumber(row.qty)}${unit}${loss}`;
 }
 
 function barcodeText(row: CatalogAuditBarcodeRow): string {
@@ -165,7 +170,7 @@ export function buildCatalogAuditLines(
         const to = componentValue(key, (row.to as Record<string, unknown>)[key], dicts);
         return `${COMPONENT_FIELD_LABELS[key] ?? key}: ${from} → ${to}`;
       });
-      lines.push({ kind: 'changed', label: 'Склад', text: `${row.name}${row.sku ? ` (${row.sku})` : ''} — ${parts.join('; ')}` });
+      lines.push({ kind: 'changed', label: 'Склад', text: `${row.name}${row.sku ? ` (${row.sku})` : ''} – ${parts.join('; ')}` });
     }
   }
 
@@ -177,7 +182,7 @@ export function buildCatalogAuditLines(
       const parts: string[] = [];
       if ('activity' in row.to) parts.push(row.to.activity ? 'активовано' : 'деактивовано');
       if ('kind' in row.to) parts.push(`тип: ${row.from.kind ?? EMPTY} → ${row.to.kind ?? EMPTY}`);
-      lines.push({ kind: 'changed', label: 'Штрихкод', text: `${row.code} — ${parts.join(', ')}` });
+      lines.push({ kind: 'changed', label: 'Штрихкод', text: `${row.code} – ${parts.join(', ')}` });
     }
   }
 
@@ -196,6 +201,18 @@ export function buildCatalogAuditLines(
     if ('version' in meta && 'labelKind' in meta) {
       const kind = meta.labelKind === 'box' ? 'Коробка' : 'Порція';
       lines.push({ kind: 'info', label: 'Наліпка', text: `«${kind}», партія ${String(meta.batchNumber ?? EMPTY)}, версія ${String(meta.version)}` });
+    }
+    if (meta.specVersion != null) {
+      lines.push({ kind: 'info', label: 'Специфікація', text: `версія ${String(meta.specVersion)}` });
+    }
+    if (meta.restoredFromVersion != null) {
+      lines.push({ kind: 'info', label: 'Відкат', text: `з версії ${String(meta.restoredFromVersion)}` });
+    }
+    if (typeof meta.comment === 'string' && meta.comment.trim()) {
+      lines.push({ kind: 'info', label: 'Коментар', text: meta.comment.trim() });
+    }
+    if (typeof meta.rejectReason === 'string' && meta.rejectReason.trim()) {
+      lines.push({ kind: 'info', label: 'Причина відхилення', text: meta.rejectReason.trim() });
     }
   }
   return lines;

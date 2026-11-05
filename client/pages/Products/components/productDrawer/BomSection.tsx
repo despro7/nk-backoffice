@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import {
   Button,
   Chip,
@@ -93,6 +94,8 @@ interface BomSectionProps {
   isReadOnly?: boolean;
   /** Окреме право на BOM / specQty (не входить до ACL папки). */
   canEditSpec?: boolean;
+  /** Віджет версії специфікації (версія, чернетка) у заголовку специфікації. */
+  moderationSlot?: ReactNode;
 }
 
 function BomRowWeightHint({
@@ -185,6 +188,7 @@ export function BomSection({
   onMoveParenthesesToNote,
   isReadOnly = false,
   canEditSpec = false,
+  moderationSlot,
 }: BomSectionProps) {
   const packCols = isAdmin ? (isKit ? '3' : '4') : isKit ? '2' : '3';
   const isSpecReadOnly = isReadOnly || !canEditSpec;
@@ -658,6 +662,7 @@ export function BomSection({
                   : `(${components.length} поз.)`}
               </span>
             )}
+            {moderationSlot ? <span className="ml-1.5 inline-flex font-normal">{moderationSlot}</span> : null}
           </h3>
           {isGood && (
             <div className="flex flex-wrap items-center gap-2 ml-4.5 md:ml-auto">

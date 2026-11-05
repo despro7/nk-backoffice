@@ -10,7 +10,7 @@ import type {
   CatalogGoodAuditPayload,
   CatalogGoodAuditSnapshot,
 } from '../../../shared/types/catalogAudit.js';
-import { diffCatalogGoodSnapshots } from '../../../shared/utils/catalogGoodAuditDiff.js';
+import { catalogAuditTouchesSpec, diffCatalogGoodSnapshots } from '../../../shared/utils/catalogGoodAuditDiff.js';
 
 export interface CatalogAuditActor {
   userId: number | null;
@@ -29,6 +29,12 @@ export interface CatalogAuditTrackOptions<T> extends CatalogAuditActor {
 }
 
 const SNAPSHOT_CHUNK = 500;
+
+export type ExternalSpecChangeListener = (
+  goodId: string,
+  before: CatalogGoodAuditSnapshot | null,
+  after: CatalogGoodAuditSnapshot | null,
+) => Promise<void>;
 
 /** Поля CatalogGood, що відстежуються як є. */
 const TRACKED_FIELDS = [
@@ -75,11 +81,17 @@ function toScalar(value: unknown): CatalogAuditScalar {
 /**
  * Журнал змін товарів каталогу (entityType = catalog_good) поверх загального `audit_log`.
  * `track()` знімає знімок «до», виконує дію, знімає «після» і пише різницю.
- * Вкладені `track()` (напр. Dilovod-sync всередині збереження) не дублюють запис —
+ * Вкладені `track()` (напр. Dilovod-sync всередині збереження) не дублюють запис –
  * зміни потрапляють у зовнішню дію.
  */
 export class CatalogGoodAuditService {
   private readonly context = new AsyncLocalStorage<CatalogAuditActor & { action: string }>();
+  private externalSpecListener: ExternalSpecChangeListener | null = null;
+
+  /** Специфікацію змінено в Dilovod (дія з source = dilovod) – модерація фіксує версію. */
+  onExternalSpecChange(listener: ExternalSpecChangeListener): void {
+    this.externalSpecListener = listener;
+  }
 
   async loadSnapshots(ids: string[]): Promise<Map<string, CatalogGoodAuditSnapshot>> {
     const out = new Map<string, CatalogGoodAuditSnapshot>();
@@ -197,6 +209,13 @@ export class CatalogGoodAuditService {
           source: options.source,
           payload: payload as Prisma.InputJsonValue,
         });
+        if (options.source === 'dilovod' && this.externalSpecListener && catalogAuditTouchesSpec(diff)) {
+          try {
+            await this.externalSpecListener(id, prev, next);
+          } catch (error) {
+            logServer('[catalog-audit] external spec listener failed', { goodId: id, error });
+          }
+        }
       }
     } catch (error) {
       logServer('[catalog-audit] diff/log failed', { action: options.action, error });
@@ -210,6 +229,8 @@ export class CatalogGoodAuditService {
     action: string;
     userId: number | null;
     source?: AuditSource;
+    /** Готовий diff (напр. чернетка специфікації vs чинна). */
+    payload?: Partial<CatalogGoodAuditPayload>;
     meta?: Record<string, unknown>;
   }): Promise<void> {
     const good = await prisma.catalogGood
@@ -218,6 +239,7 @@ export class CatalogGoodAuditService {
     const payload: CatalogGoodAuditPayload = {
       goodName: good?.name ?? '',
       goodSku: good?.sku ?? null,
+      ...(input.payload ?? {}),
       ...(input.meta ? { meta: input.meta } : {}),
     };
     await auditLogService.log({

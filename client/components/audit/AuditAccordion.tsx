@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Accordion, AccordionItem, Spinner } from '@heroui/react';
 import { pluralize } from '@/lib/formatUtils';
 
-/** Стилі accordion журналу змін — спільні для HR, Warehouse, Catalog. */
+/** Стилі accordion журналу змін – спільні для HR, Warehouse, Catalog. */
 export const auditAccordionClassNames = {
   base: 'px-1',
   trigger: 'my-1 py-2 px-2 rounded-sm [&>div]:flex-row [&>div]:items-baseline [&>div]:gap-2 data-[open=true]:bg-default-100/75 transition-colors duration-200',

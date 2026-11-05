@@ -64,7 +64,7 @@ HrPerson ◄── HrEmployee ──► HrEmployment ◄── HrLegalEntity
                 │                └── HrStaffOrder (read-only cache)
                 └── User? (опційно)
 
-AuditLog — журнал дій користувача (загальна таблиця `audit_log`, окремо від meta_logs)
+AuditLog – журнал дій користувача (загальна таблиця `audit_log`, окремо від meta_logs)
 ```
 
 - **`HrPerson`** — фіз. особа (`catalogs.persons`): ПІБ, ІПН, телефон, `dilovodPersonId`, `dilovodParentId` (група в Dilovod), `localStatus`.
@@ -307,9 +307,9 @@ catalogs.persons (HrPerson)     catalogs.employees (Dilovod)
 
 ## Журнал змін HR (`AuditLog`)
 
-Загальна таблиця `audit_log` (до 2026-11-05 — `hr_audit_log`; аналог `orders_history`), **не** `meta_logs`.
-Спільна з Warehouse і Catalog: `entityType` — HR-ключі (`person`, `employee`, `employment`, …), реєстр — `shared/constants/auditEntities.ts`.
-`entityId` у БД — рядок; `HrAuditService` (обгортка над `server/services/AuditLogService.ts`) віддає його в `HrAuditLogDto` як число.
+Загальна таблиця `audit_log` (до 2026-11-05 – `hr_audit_log`; аналог `orders_history`), **не** `meta_logs`.
+Спільна з Warehouse і Catalog: `entityType` – HR-ключі (`person`, `employee`, `employment`, …), реєстр – `shared/constants/auditEntities.ts`.
+`entityId` у БД – рядок; `HrAuditService` (обгортка над `server/services/AuditLogService.ts`) віддає його в `HrAuditLogDto` як число.
 
 | Де в UI | Що показує |
 | --- | --- |
@@ -319,7 +319,7 @@ catalogs.persons (HrPerson)     catalogs.employees (Dilovod)
 
 Форматування: `shared/utils/hrAuditFormat.ts`.  
 Рендер списку: `client/pages/Hr/components/HrAuditLogEntry.tsx`.  
-Accordion у картках: `client/components/hr/HrAuditAccordion.tsx` (оболонка — спільний `client/components/audit/AuditAccordion.tsx`).  
+Accordion у картках: `client/components/hr/HrAuditAccordion.tsx` (оболонка – спільний `client/components/audit/AuditAccordion.tsx`).  
 Логи сортуються хронологічно (нові знизу). Permission: `action.hr.audit.view`.
 
 ---

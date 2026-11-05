@@ -37,6 +37,20 @@ function isReadBy(readBy: ReadByMap, userId: number): boolean {
   return `${userId}` in readBy || '_all' in readBy;
 }
 
+/** data.recipients – адресні сповіщення (напр. модерація специфікації). Без поля – для всіх. */
+function isRecipient(data: unknown, userId: number): boolean {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return true;
+  const recipients = (data as { recipients?: unknown }).recipients;
+  if (!Array.isArray(recipients)) return true;
+  return recipients.map(Number).includes(userId);
+}
+
+function resolveLink(data: unknown): string | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const link = (data as { link?: unknown }).link;
+  return typeof link === 'string' && link.startsWith('/') ? link : null;
+}
+
 function resolveTag(initiatedBy: string | null | undefined): string {
   if (!initiatedBy) return 'system';
   if (initiatedBy.startsWith('webhook:'))  return 'webhook';
@@ -103,12 +117,14 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
         initiatedBy: true,
         readBy: true,
         hiddenBy: true,
+        data: true,
       },
     });
 
     // Фільтруємо приховані поточним юзером (або _all); user_report — лише для admin
     const visibleLogs = logs.filter((log) => {
       if (!isAdmin && log.category === 'user_report') return false;
+      if (!isRecipient(log.data, userId)) return false;
       return !isReadBy(parseReadBy(log.hiddenBy), userId);
     });
 
@@ -124,6 +140,7 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
         orderNumber: log.orderNumber ?? null,
         tag:         resolveTag(log.initiatedBy),
         category:    log.category,
+        link:        resolveLink(log.data),
       };
     });
 
@@ -153,11 +170,11 @@ router.get('/unread-count', authenticateToken, async (req: Request, res: Respons
 
     const logs = await prisma.meta_logs.findMany({
       where: { status: { in: ['error', 'warning'] } },
-      select: { readBy: true, hiddenBy: true },
+      select: { readBy: true, hiddenBy: true, data: true },
     });
 
     const unreadCount = logs.filter(
-      (l) => !isReadBy(parseReadBy(l.hiddenBy), userId) && !isReadBy(parseReadBy(l.readBy), userId)
+      (l) => isRecipient(l.data, userId) && !isReadBy(parseReadBy(l.hiddenBy), userId) && !isReadBy(parseReadBy(l.readBy), userId)
     ).length;
     res.json({ success: true, unreadCount });
   } catch (err) {
