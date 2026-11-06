@@ -13,6 +13,13 @@ import { PrismaClient } from '@prisma/client';
 import { dilovodService } from './index.js';
 import { cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull } from './DilovodUtils.js';
 import { acquireSaleShipmentLock, completeSaleShipmentLock, releaseSaleShipmentLock } from './DilovodShipmentLockService.js';
+import {
+  getLastPickedAt,
+  isRepeatPicking,
+  latestDocDate,
+  needsNewSaleDoc,
+  resolveShipmentCycle,
+} from './dilovodShipmentCycle.js';
 import type { DilovodSettings } from '../../../shared/types/dilovod.js';
 
 const prisma = new PrismaClient();
@@ -409,6 +416,7 @@ export class DilovodAutoExportService {
           orderNumber: true,
           dilovodDocId: true,
           dilovodSaleExportDate: true,
+          dilovodReturnDate: true,
           readyToShipAt: true,
         }
       });
@@ -420,12 +428,26 @@ export class DilovodAutoExportService {
 
       const orderNum = order.orderNumber || orderId;
 
-      // Early-exit 1: відвантаження вже є
-      if (order.dilovodSaleExportDate) {
-        console.log(
-          `ℹ️ [AutoExport/sale] Замовлення ${orderNum} вже відвантажено (${new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA')}), пропускаємо`
-        );
-        return { triggered: false, success: true };
+      let cycle = resolveShipmentCycle({
+        saleExportDate: order.dilovodSaleExportDate,
+        returnDate: order.dilovodReturnDate,
+      });
+
+      // Дата останньої комплектації: потрібна для виявлення повторного циклу і дати нового sale
+      const lastPickedAt = cycle === 'first' ? null : await getLastPickedAt(order.id, order.readyToShipAt);
+      const repeatPicking = isRepeatPicking(lastPickedAt, order.readyToShipAt ?? order.dilovodSaleExportDate);
+
+      // Early-exit 1: відвантаження вже є, локально повернення немає
+      if (cycle === 'already_shipped') {
+        if (!repeatPicking) {
+          console.log(
+            `ℹ️ [AutoExport/sale] Замовлення ${orderNum} вже відвантажено (${new Date(order.dilovodSaleExportDate!).toLocaleString('uk-UA')}), пропускаємо`
+          );
+          return { triggered: false, success: true };
+        }
+        // Повторна комплектація: повернення могло не потрапити в локальну БД
+        // (перевірка документів шукає saleReturn лише для статусів 6/7). Рішення за Dilovod.
+        cycle = 'repeat_candidate';
       }
 
       // Early-exit 2: базовий документ відсутній
@@ -436,7 +458,10 @@ export class DilovodAutoExportService {
         return { triggered: false, success: false, error: 'No baseDoc' };
       }
 
-      const lockResult = await acquireSaleShipmentLock(internalOrderId);
+      const lockResult = await acquireSaleShipmentLock(
+        internalOrderId,
+        cycle === 'repeat_candidate' ? { repeatOf: order.dilovodSaleExportDate } : undefined
+      );
       if (lockResult.status !== 'acquired' || !lockResult.lockToken) {
         console.log(
           `⏭️ [AutoExport/sale] Shipment lock для ${orderNum} не отримано (${lockResult.status}), пропускаємо`
@@ -447,33 +472,89 @@ export class DilovodAutoExportService {
       shipmentLockToken = lockResult.lockToken;
 
       // Early-exit 3: перевірка в Dilovod API (захист від дублів)
-      try {
-        const { dilovodService } = await import('./DilovodService.js');
-        const existingSaleDocs = await dilovodService.getDocuments([order.dilovodDocId], 'sale');
-        if (existingSaleDocs.length > 0) {
-          const saleDoc = existingSaleDocs[0];
-          const saleCount = existingSaleDocs.length;
-          console.log(
-            `⚠️ [AutoExport/sale] В Dilovod вже існує ${saleCount} документ(ів) відвантаження для ${orderNum}, синхронізуємо БД`
-          );
-          
-          console.log(
-            `📝 [AutoExport/sale] EARLY-EXIT 3: ПЕРЕД записом дати від Dilovod API: orderId=${internalOrderId}, orderNum=${orderNum}, saleDoc.date=${saleDoc.date}, saleCount=${saleCount}`
-          );
+      let isRepeatShipment = false;
+      let existingSaleCount = 0;
+      if (cycle === 'repeat_candidate') {
+        // Після повернення: рішення за кількістю документів у Dilovod.
+        // Без відповіді Dilovod не створюємо (ризик дубля).
+        const [saleDocs, returnDocs] = await Promise.all([
+          dilovodService.getDocuments([order.dilovodDocId], 'sale'),
+          dilovodService.getDocuments([order.dilovodDocId], 'saleReturn'),
+        ]);
+        existingSaleCount = saleDocs.length;
 
-          await completeSaleShipmentLock(internalOrderId, shipmentLockToken, new Date(saleDoc.date || new Date()).toISOString(), saleCount);
+        const latestReturn = latestDocDate(returnDocs);
+        await prisma.order.update({
+          where: { id: internalOrderId },
+          data: {
+            dilovodReturnDocsCount: returnDocs.length,
+            ...(latestReturn ? { dilovodReturnDate: latestReturn.toISOString() } : {}),
+          },
+        });
 
-          console.log(
-            `✅ [AutoExport/sale] EARLY-EXIT 3: ПІСЛЯ запису дати від Dilovod API: orderId=${internalOrderId}, orderNum=${orderNum}, dilovodSaleExportDate=${new Date(saleDoc.date || new Date()).toISOString()}`
-          );
+        if (!needsNewSaleDoc(saleDocs.length, returnDocs.length)) {
+          const latestSale = latestDocDate(saleDocs) ?? new Date(order.dilovodSaleExportDate!);
+          await completeSaleShipmentLock(internalOrderId, shipmentLockToken, latestSale.toISOString(), saleDocs.length);
 
+          if (returnDocs.length === 0 && repeatPicking) {
+            // Повторна комплектація без повернення в Dilovod: другий sale не створюємо
+            // (подвійне списання), показуємо проблему в UI (фільтр «Не відвантажені»).
+            console.warn(
+              `⚠️ [AutoExport/sale] ${orderNum}: повторна комплектація, але повернення в Dilovod немає. Повторне відвантаження не створено`
+            );
+            await dilovodService.logMetaDilovodExport({
+              title: 'Auto repeat shipment blocked (sale)',
+              status: 'error',
+              message: `[Авто] Повторне відвантаження замовлення ${orderNum} не створено: у Dilovod немає повернення після попереднього відвантаження`,
+              initiatedBy,
+              data: {
+                orderId,
+                orderNumber: orderNum,
+                triggerStatus: newStatus,
+                baseDoc: order.dilovodDocId,
+                lastSaleExportDate: order.dilovodSaleExportDate,
+                lastPickedAt: lastPickedAt?.toISOString(),
+              },
+            });
+          } else {
+            console.log(
+              `ℹ️ [AutoExport/sale] ${orderNum}: у Dilovod ${saleDocs.length} sale / ${returnDocs.length} saleReturn, повторне відвантаження не потрібне`
+            );
+          }
           return { triggered: false, success: true };
         }
-      } catch (checkErr) {
+
+        isRepeatShipment = true;
         console.log(
-          `⚠️ [AutoExport/sale] Не вдалося перевірити documents.sale в Dilovod API: ${checkErr instanceof Error ? checkErr.message : checkErr}. Продовжуємо.`
+          `🔁 [AutoExport/sale] ${orderNum}: повторне відвантаження (у Dilovod ${saleDocs.length} sale / ${returnDocs.length} saleReturn)`
         );
+      } else {
+        try {
+          const existingSaleDocs = await dilovodService.getDocuments([order.dilovodDocId], 'sale');
+          if (existingSaleDocs.length > 0) {
+            const saleDoc = existingSaleDocs[0];
+            const saleCount = existingSaleDocs.length;
+            console.log(
+              `⚠️ [AutoExport/sale] В Dilovod вже існує ${saleCount} документ(ів) відвантаження для ${orderNum}, синхронізуємо БД`
+            );
+
+            await completeSaleShipmentLock(internalOrderId, shipmentLockToken, new Date(saleDoc.date || new Date()).toISOString(), saleCount);
+
+            console.log(
+              `✅ [AutoExport/sale] EARLY-EXIT 3: записано дату від Dilovod API: orderId=${internalOrderId}, orderNum=${orderNum}, saleDoc.date=${saleDoc.date}, saleCount=${saleCount}`
+            );
+
+            return { triggered: false, success: true };
+          }
+        } catch (checkErr) {
+          console.log(
+            `⚠️ [AutoExport/sale] Не вдалося перевірити documents.sale в Dilovod API: ${checkErr instanceof Error ? checkErr.message : checkErr}. Продовжуємо.`
+          );
+        }
       }
+
+      // Дата відвантаження: для повторного циклу – остання комплектація, інакше readyToShipAt
+      const repeatShipmentDate = isRepeatShipment ? lastPickedAt ?? new Date() : null;
 
       console.log(
         `🤖 [AutoExport/sale] Автоматичне відвантаження замовлення ${orderNum} (статус: ${newStatus}, baseDoc: ${order.dilovodDocId}, ініціатор: ${initiatedBy})`
@@ -483,29 +564,44 @@ export class DilovodAutoExportService {
       const { dilovodExportBuilder } = await import('./DilovodExportBuilder.js');
       const { payload: salePayload, warnings } = await dilovodExportBuilder.buildSalePayload(
         orderId,
-        order.dilovodDocId
+        order.dilovodDocId,
+        repeatShipmentDate ? { saleDateOverride: repeatShipmentDate } : undefined
       );
 
       console.log(`✅ [AutoExport/sale] Payload відвантаження для ${orderNum} сформовано`);
 
       // Крок 3: Відправляємо в Dilovod
       const { dilovodExportFlowService } = await import('./index.js');
-      const exportResult = await dilovodExportFlowService.send({ payload: salePayload, dryRun: false, label: '[AutoExport/sale]' });
+      const exportResult = await dilovodExportFlowService.sendSale({
+        payload: salePayload,
+        dryRun: false,
+        label: '[AutoExport/sale]',
+        initiatedBy,
+        saleOrderId: order.dilovodDocId,
+        orderNumber: orderNum,
+      });
 
       const isError = !exportResult.success;
       const errorMessage = isError ? (exportResult.error || exportResult.translatedError?.message || 'Невідома помилка від Dilovod') : '';
 
       // Крок 4: Зберігаємо в БД при успіху — ТІЛЬКИ якщо немає жодної помилки
       if (!isError && exportResult?.dilovodDocId) {
-        const shipmentDate = order.readyToShipAt
-          ? new Date(order.readyToShipAt).toISOString()
-          : new Date().toISOString();
+        const shipmentDate = repeatShipmentDate
+          ? repeatShipmentDate.toISOString()
+          : order.readyToShipAt
+            ? new Date(order.readyToShipAt).toISOString()
+            : new Date().toISOString();
 
         console.log(
           `📝 [AutoExport/sale] ПЕРЕД записом дати: orderId=${internalOrderId}, orderNum=${orderNum}, isError=${isError}, exportResult.id=${exportResult?.dilovodDocId}, dateToWrite=${shipmentDate}`
         );
 
-        const completed = await completeSaleShipmentLock(internalOrderId, shipmentLockToken, shipmentDate);
+        const completed = await completeSaleShipmentLock(
+          internalOrderId,
+          shipmentLockToken,
+          shipmentDate,
+          isRepeatShipment ? existingSaleCount + 1 : undefined
+        );
         if (!completed) {
           console.warn(`⚠️ [AutoExport/sale] Не вдалося зафіксувати shipment lock для orderId=${internalOrderId} після успішного export`);
         }
@@ -514,7 +610,7 @@ export class DilovodAutoExportService {
           `✅ [AutoExport/sale] ПІСЛЯ запису дати успішно: orderId=${internalOrderId}, orderNum=${orderNum}, dilovodSaleExportDate=${shipmentDate}`
         );
 
-        const dateSource = order.readyToShipAt ? 'readyToShipAt' : 'поточна дата';
+        const dateSource = isRepeatShipment ? 'остання комплектація (повторний цикл)' : order.readyToShipAt ? 'readyToShipAt' : 'поточна дата';
         console.log(
           `✅ [AutoExport/sale] Відвантаження для замовлення ${orderNum} успішно створено (дата: ${dateSource})`
         );
@@ -536,13 +632,16 @@ export class DilovodAutoExportService {
               ? cleanDilovodErrorMessageShort(String(exportResult.error)) || errorMessage
               : errorMessage
           }`
-        : `[Авто] Документ відвантаження для замовлення ${orderNum} успішно створено`;
+        : isRepeatShipment
+          ? `[Авто] Повторний документ відвантаження для замовлення ${orderNum} успішно створено`
+          : `[Авто] Документ відвантаження для замовлення ${orderNum} успішно створено`;
 
       const metaLogData: any = {
         orderId,
         orderNumber: orderNum,
         triggerStatus: newStatus,
         baseDoc: order.dilovodDocId,
+        repeatShipment: isRepeatShipment || undefined,
         payload: salePayload,
         exportResult,
         warnings: warnings.length > 0 ? warnings : undefined,

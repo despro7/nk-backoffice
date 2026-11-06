@@ -21,7 +21,7 @@ PDF-етикетки **100×100 мм** для партій готової про
 | Превʼю | `LabelPdfmeViewer` (pdfme Form); підпис під превʼю (дата, автор, партія) |
 | PDF | `@pdfme/generator` + `labelPdfmeRuntime.ts`, шрифти Arial з assets Designer |
 | ШК порції | `catalog_good_barcodes` (`barcodeKind: portion`), привʼязка до `goodPart` (партія) |
-| ШК коробки | `barcodeKind: box`, один EAN-13 на пару good+batch (`CatalogBoxBarcodeService`); скан на моб. переміщенні → +1 «Коробок» |
+| ШК коробки | `barcodeKind: box`, один EAN-13 на пару good+batch (`CatalogBoxBarcodeService`), окрема серія `225…` (порції – `220…`); старі коди коробок `220…` перевидано 06.11.2026. Скан на моб. переміщенні → +1 «Коробок» |
 
 ---
 

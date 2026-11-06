@@ -423,6 +423,22 @@ export class DilovodApiClient {
   }
 
   /**
+   * Часткове оновлення шапки документа: передаються лише змінені реквізити, табличні частини не чіпаємо.
+   * saveType: 0 зберегти, 1 зберегти з проведенням (для вже проведених документів).
+   */
+  async updateDocumentHeader(id: string, fields: Record<string, unknown>, saveType: 0 | 1): Promise<void> {
+    await this.ensureReady();
+    const request: DilovodApiRequest = {
+      version: '0.25',
+      key: this.apiKey,
+      action: 'saveObject',
+      params: { saveType, header: { id, ...fields } },
+    };
+    const resp = await this.makeRequest<unknown>(request);
+    throwIfDilovodSaveObjectError(resp, 'updateDocumentHeader');
+  }
+
+  /**
    * Перелік об'єктів метаданих Dilovod (`listMetadata`).
    * Відповідь — карта `objectName → { id, idPrefix, presentation }`.
    */

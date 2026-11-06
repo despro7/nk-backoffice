@@ -29,7 +29,7 @@ export { WarehouseStatementService, warehouseStatementService } from './Warehous
 export { ProductMovementsService, ProductMovementsQueryError, productMovementsService } from './ProductMovementsService.js';
 export { DilovodExportBuilder, dilovodExportBuilder } from './DilovodExportBuilder.js';
 export { DilovodExportFlowService, dilovodExportFlowService } from './DilovodExportFlowService.js';
-export { acquireSaleShipmentLock, completeSaleShipmentLock, releaseSaleShipmentLock } from './DilovodShipmentLockService.js';
+export { acquireSaleShipmentLock, completeSaleShipmentLock, releaseSaleShipmentLock, hideShipmentErrorLogs } from './DilovodShipmentLockService.js';
 
 // Экспортируем конфигурацию по умолчанию
 export { DEFAULT_DILOVOD_CONFIG } from './DilovodUtils.js';

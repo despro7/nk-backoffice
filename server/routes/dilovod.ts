@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { buildDilovodPayload } from '../../shared/utils/dilovodPayloadBuilder.js';
 import { authenticateToken, requirePermission } from '../middleware/auth.js';
-import { DilovodService, dilovodService, dilovodExportFlowService, acquireSaleShipmentLock, completeSaleShipmentLock, releaseSaleShipmentLock, dilovodMetadataService, dilovodGoodPartsSerialService } from '../services/dilovod/index.js';
+import { DilovodService, dilovodService, dilovodExportFlowService, acquireSaleShipmentLock, completeSaleShipmentLock, releaseSaleShipmentLock, hideShipmentErrorLogs, dilovodMetadataService, dilovodGoodPartsSerialService } from '../services/dilovod/index.js';
 import { handleDilovodApiError, clearConfigCache, cleanDilovodErrorMessageShort, cleanDilovodErrorMessageFull } from '../services/dilovod/DilovodUtils.js';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
@@ -13,6 +13,7 @@ import type {
   DilovodDirectories
 } from '../../shared/types/dilovod.js';
 import { loadDilovodWarehouseDefaults } from '../services/dilovod/DilovodWarehouseDefaults.js';
+import { getSaleDuplicateOrderIds } from '../services/dilovod/dilovodShipmentCycle.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -692,7 +693,9 @@ router.get('/salesdrive/orders/shipment-counts', authenticateToken, dilovodExpor
       ? { ...baseWhere, AND: [{ OR: [{ dilovodSaleExportDate: null }, { orderNumber: { in: errorOrderNumbers } }] }] }
       : { ...baseWhere, dilovodSaleExportDate: null };
 
-    const duplicatesWhere = { ...baseWhere, dilovodSaleDocsCount: { gt: 1 } };
+    // Дублікат: відвантажень більше, ніж повернень + 1 (повторне відвантаження після повернення легітимне)
+    const duplicateOrderIds = await getSaleDuplicateOrderIds();
+    const duplicatesWhere = { ...baseWhere, id: { in: duplicateOrderIds } };
 
     // Підраховуємо паралельно
     const [notShippedCount, notShippedAllCount, duplicatesCount] = await Promise.all([
@@ -871,8 +874,8 @@ router.get('/salesdrive/orders', authenticateToken, dilovodExport, async (req, r
       // Всі не відвантажені у всіх статусах
       whereCondition.dilovodSaleExportDate = null;
     } else if (shipmentStatus === 'duplicates') {
-      // Дублікати: замовлення з більше ніж одним документом відвантаження
-      whereCondition.dilovodSaleDocsCount = { gt: 1 };
+      // Дублікати: відвантажень більше, ніж повернень + 1
+      whereCondition.id = { in: await getSaleDuplicateOrderIds() };
     }
 
     // Додаємо пошук, якщо вказано
@@ -1087,8 +1090,17 @@ router.post('/salesdrive/orders/reset-and-check', authenticateToken, dilovodExpo
     // Для примусової перевірки: просимо перевірити документи у всіх статусах
     const checkResult = await dilovodService.checkOrdersByNumbers(orderNumbers, true);
 
+    // Знайдено відвантаження: знімаємо позначку «невідвантажено» (error-логи відвантаження)
+    const shippedOrderNumbers = Array.isArray(checkResult.data)
+      ? checkResult.data
+          .filter((item: any) => item?.dilovodSaleExportDate && item?.orderNumber)
+          .map((item: any) => String(item.orderNumber))
+      : [];
+    const hiddenShipmentErrorLogs = await hideShipmentErrorLogs(shippedOrderNumbers);
+
     return res.json({
       ...checkResult,
+      hiddenShipmentErrorLogs,
       resetCount: resetResult.count,
       message: `Скинуто поля для ${resetResult.count} замовлень. ${checkResult.message}`
     });
@@ -1756,7 +1768,15 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, dilovodEx
 
     // Відправляємо payload в Dilovod через DilovodService
     try {
-      const exportResult = await dilovodExportFlowService.send({ payload: salePayload, dryRun: false, warnings, label: '[Dilovod/shipment]' });
+      const exportResult = await dilovodExportFlowService.sendSale({
+        payload: salePayload,
+        dryRun: false,
+        warnings,
+        label: '[Dilovod/shipment]',
+        initiatedBy: req.user ? String(req.user.userId) : 'unknown',
+        saleOrderId: order.dilovodDocId,
+        orderNumber: String(orderNum || orderId),
+      });
       const isExportError = !exportResult.success;
       const exportErrorMessage = isExportError ? (exportResult.error || exportResult.translatedError?.message || '') : '';
       const exportResponse = exportResult.dilovodResponse;

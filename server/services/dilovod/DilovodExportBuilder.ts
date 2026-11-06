@@ -156,7 +156,7 @@ export class DilovodExportBuilder {
   /**
    * Побудувати payload для документа відвантаження (documents.sale) на основі baseDoc
    */
-  async buildSalePayload(orderId: string, baseDocId: string, options?: { personId?: string; dryRun?: boolean; payloadDataOverride?: unknown }): Promise<{
+  async buildSalePayload(orderId: string, baseDocId: string, options?: { personId?: string; dryRun?: boolean; payloadDataOverride?: unknown; saleDateOverride?: Date }): Promise<{
     payload: DilovodExportPayload;
     warnings: string[];
   }> {
@@ -209,7 +209,11 @@ export class DilovodExportBuilder {
       // Модифікуємо заголовок для documents.sale
       // Використовуємо readyToShipAt як дату відвантаження, якщо вона є
       let saleDate: string;
-      if (context.order.readyToShipAt) {
+      if (options?.saleDateOverride) {
+        // Повторне відвантаження після повернення: дата останньої комплектації
+        saleDate = formatKyivDateTime(options.saleDateOverride);
+        console.log(`  📅 Використовуємо дату повторної комплектації: ${saleDate}`);
+      } else if (context.order.readyToShipAt) {
         saleDate = formatKyivDateTime(new Date(context.order.readyToShipAt));
         console.log(`  📅 Використовуємо дату готовності до відправки: ${saleDate}`);
       } else {

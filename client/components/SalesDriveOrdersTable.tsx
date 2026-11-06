@@ -41,6 +41,7 @@ import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import ResultDrawer from './ResultDrawer';
 import type { SalesDriveOrderForExport, SalesDriveOrdersResponse, } from "@shared/types/salesdrive";
 import type { SalesChannel } from "@shared/types/dilovod";
+import { isReshippedAfterReturn, isReturnDuplicate, isSaleDuplicate } from "@shared/utils/dilovodShipmentCycle";
 
 // Функція для отримання класів каналу (статична — кольори визначаються по id)
 // Перенесено до client/lib/formatUtils.ts → getChannelClass
@@ -591,33 +592,15 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
         onDrawerOpen();
         fetchOrders();
 
-        // Якщо під час перевірки з'явилась дата відвантаження — сховаємо пов'язані error-логи
-        try {
-          if (Array.isArray(result.data)) {
-            const updated = result.data
-              .filter((d: any) => d && d.dilovodSaleExportDate)
-              .map((d: any) => d.orderNumber)
-              .filter(Boolean);
-            if (updated.length > 0) {
-              await apiCall('/api/meta-logs/hide', {
-                method: 'POST',
-                body: JSON.stringify({ orderNumbers: updated })
-              });
-              ToastService.show({
-                title: 'Логи приховано',
-                description: `Приховано логи для ${updated.length} замовлення(нь).`,
-                color: 'success',
-                hideIcon: false,
-                icon: 'eye-off'
-              });
-              // Оновимо таблицю ще раз, щоб приховані логи не відображались
-              setTimeout(() => {
-                fetchOrders();
-              }, 1000);
-            }
-          }
-        } catch (e) {
-          console.error('Failed to hide meta-logs after force recheck', e);
+        // Error-логи відвантаження сервер приховує сам, якщо перевірка знайшла відвантаження
+        if (result.hiddenShipmentErrorLogs > 0) {
+          ToastService.show({
+            title: 'Логи приховано',
+            description: `Приховано помилок відвантаження: ${result.hiddenShipmentErrorLogs}.`,
+            color: 'success',
+            hideIcon: false,
+            icon: 'eye-off'
+          });
         }
       } else {
         ToastService.show({
@@ -1267,33 +1250,15 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
         onDrawerOpen();
         fetchOrders();
         setSelectedOrderIds([]);
-        // Приховуємо логі для замовлень, де під час перевірки з'явилась дата відвантаження
-        try {
-          if (Array.isArray(result.data)) {
-            const updated = result.data
-              .filter((d: any) => d && d.dilovodSaleExportDate)
-              .map((d: any) => d.orderNumber)
-              .filter(Boolean);
-            if (updated.length > 0) {
-              await apiCall('/api/meta-logs/hide', {
-                method: 'POST',
-                body: JSON.stringify({ orderNumbers: updated })
-              });
-              ToastService.show({
-                title: 'Логи приховано',
-                description: `Приховано логи для ${updated.length} замовлень.`,
-                color: 'success',
-                hideIcon: false,
-                icon: 'eye-off'
-              });
-              // Оновимо таблицю ще раз, щоб приховані логи не відображались
-              setTimeout(() => {
-                fetchOrders();
-              }, 1000);
-            }
-          }
-        } catch (e) {
-          console.error('Failed to hide meta-logs after bulk force recheck', e);
+        // Error-логи відвантаження сервер приховує сам, якщо перевірка знайшла відвантаження
+        if (result.hiddenShipmentErrorLogs > 0) {
+          ToastService.show({
+            title: 'Логи приховано',
+            description: `Приховано помилок відвантаження: ${result.hiddenShipmentErrorLogs}.`,
+            color: 'success',
+            hideIcon: false,
+            icon: 'eye-off'
+          });
         }
       } else {
         ToastService.show({
@@ -2024,15 +1989,17 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
                       <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodExportDate ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="search-check" size={16} /></div>
                     </Tooltip>
                     <Tooltip color={
-                      (order.dilovodSaleDocsCount != null && order.dilovodSaleDocsCount > 1) ||
-                      (order.dilovodReturnDocsCount != null && order.dilovodReturnDocsCount > 1)
+                      isSaleDuplicate(order.dilovodSaleDocsCount, order.dilovodReturnDocsCount) ||
+                      isReturnDuplicate(order.dilovodReturnDocsCount, order.dilovodSaleDocsCount)
                         ? "danger"
                         : "secondary"
                     } content={
-                      order.dilovodSaleDocsCount != null && order.dilovodSaleDocsCount > 1
-                        ? `⚠️ Дублювання відвантаження: знайдено ${order.dilovodSaleDocsCount} документи.`
-                        : order.dilovodReturnDocsCount != null && order.dilovodReturnDocsCount > 1
+                      isSaleDuplicate(order.dilovodSaleDocsCount, order.dilovodReturnDocsCount)
+                        ? `⚠️ Дублювання відвантаження: знайдено ${order.dilovodSaleDocsCount} документи при ${order.dilovodReturnDocsCount ?? 0} поверненнях.`
+                        : isReturnDuplicate(order.dilovodReturnDocsCount, order.dilovodSaleDocsCount)
                           ? `⚠️ Дублювання повернення: знайдено ${order.dilovodReturnDocsCount} документи.`
+                          : isReshippedAfterReturn(order.dilovodSaleExportDate, order.dilovodReturnDate)
+                            ? 'Повторно відвантажено: ' + new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA') + ' | Попереднє повернення: ' + new Date(order.dilovodReturnDate).toLocaleString('uk-UA')
                           : order.dilovodReturnDate
                             ? 'Відвантажено: ' + new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA') + ' | Повернуто: ' + new Date(order.dilovodReturnDate).toLocaleString('uk-UA')
                             : order.dilovodSaleExportDate
@@ -2040,15 +2007,17 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
                               : 'Ще не відвантажено'
                     }>
                       <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${
-                        (order.dilovodSaleDocsCount != null && order.dilovodSaleDocsCount > 1) ||
-                        (order.dilovodReturnDocsCount != null && order.dilovodReturnDocsCount > 1)
+                        isSaleDuplicate(order.dilovodSaleDocsCount, order.dilovodReturnDocsCount) ||
+                        isReturnDuplicate(order.dilovodReturnDocsCount, order.dilovodSaleDocsCount)
                           ? 'bg-red-100 text-red-600 ring-1 ring-red-300'
+                          : isReshippedAfterReturn(order.dilovodSaleExportDate, order.dilovodReturnDate)
+                            ? 'bg-green-100 text-green-600'
                           : order.dilovodReturnDate
                             ? 'bg-orange-100 text-orange-600'
                             : order.dilovodSaleExportDate
                               ? 'bg-green-100 text-green-600'
                               : 'bg-gray-100 text-gray-300'
-                      }`}><DynamicIcon name="truck" size={16} className={order.dilovodReturnDate ? 'scale-x-[-1]' : ''} /></div>
+                      }`}><DynamicIcon name="truck" size={16} className={order.dilovodReturnDate && !isReshippedAfterReturn(order.dilovodSaleExportDate, order.dilovodReturnDate) ? 'scale-x-[-1]' : ''} /></div>
                     </Tooltip>
                     <Tooltip color="secondary" content={order.dilovodCashInDate ? 'Оплачено: ' + new Date(order.dilovodCashInDate).toLocaleString('uk-UA') : 'Ще не оплачено'}>
                       <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodCashInDate ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="wallet" size={16} /></div>
@@ -2119,7 +2088,7 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
                           )}
                         </DropdownSection>
                         <DropdownSection className="border-t-1 border-gray-200 pt-2">
-                          {order.dilovodSaleDocsCount != null && order.dilovodSaleDocsCount > 1 && (
+                          {isSaleDuplicate(order.dilovodSaleDocsCount, order.dilovodReturnDocsCount) && (
                             <DropdownItem textValue="Скинути помилку дублювання" key="resetDuplicateError" className="px-3 py-2 text-danger-500!" startContent={<DynamicIcon className="text-xl text-danger-500 pointer-events-none shrink-0" name="shield-alert" size={16} />}>Скинути помилку дублювання</DropdownItem>
                           )}
                           <DropdownItem textValue="baseDoc ID" key="footer" className="px-3 py-2 font-semibold text-default-700 cursor-default data-[hover=true]:bg-white border-none" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="key-round" size={14} />}>

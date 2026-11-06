@@ -20,6 +20,8 @@ import { DilovodGoodsCacheManager } from './DilovodGoodsCacheManager.js';
 import { compactMetaLogData, DILOVOD_PRODUCTION_WORKSHOP_STORAGE_ID, isActiveDilovodStorage, mapBarCodesByObjectId } from './DilovodUtils.js';
 import { pluralize } from '../../lib/utils.js';
 import { pickHumanBatchLabel } from '../../../shared/utils/dilovodBatchId.js';
+import { isSaleDuplicate } from './dilovodShipmentCycle.js';
+import { dilovodRefId } from './dilovodContractPerson.js';
 
 export class DilovodService {
   // Глобальний AbortController для поточної синхронізації товарів
@@ -93,6 +95,62 @@ export class DilovodService {
   async getMovementDocument(dilovodDocId: string): Promise<any> {
     await this.apiClient.ensureReady();
     return this.apiClient.getObject(dilovodDocId);
+  }
+
+  /**
+   * Перепривʼязує замовлення (saleOrder) і всі його документи (cashIn, sale, saleReturn)
+   * з контрагента `fromPersonId` на `toPersonId`. Документи з іншим контрагентом не чіпає.
+   * Після кожного оновлення звіряє кількість рядків табличних частин: якщо змінилась, кидає помилку.
+   */
+  async reassignOrderDocumentsPerson(
+    saleOrderId: string,
+    fromPersonId: string,
+    toPersonId: string,
+  ): Promise<Array<{ id: string; type: string; presentation: string }>> {
+    await this.apiClient.ensureReady();
+    if (fromPersonId === toPersonId) return [];
+
+    const tablePartsSignature = (obj: any): string =>
+      JSON.stringify(
+        Object.entries(obj?.tableParts ?? {}).map(([name, rows]) => [
+          name,
+          Array.isArray(rows) ? rows.length : Object.keys((rows as object) ?? {}).length,
+        ]),
+      );
+
+    const updated: Array<{ id: string; type: string; presentation: string }> = [];
+
+    const reassign = async (docId: string, type: string) => {
+      const before: any = await this.apiClient.getObject(docId);
+      if (dilovodRefId(before?.header?.person) !== fromPersonId) return;
+
+      const saveType = dilovodRefId(before?.header?.posted) === '1' ? 1 : 0;
+      await this.apiClient.updateDocumentHeader(docId, { person: toPersonId }, saveType);
+
+      const after: any = await this.apiClient.getObject(docId);
+      if (dilovodRefId(after?.header?.person) !== toPersonId) {
+        throw new Error(`Dilovod: контрагента в документі ${docId} не змінено`);
+      }
+      if (tablePartsSignature(after) !== tablePartsSignature(before)) {
+        throw new Error(`Dilovod: після зміни контрагента змінились табличні частини документа ${docId}`);
+      }
+
+      const presentation = before?.header?.id?.pr ?? docId;
+      console.log(`🔁 [Dilovod] ${type} ${presentation}: контрагент ${fromPersonId} → ${toPersonId}`);
+      updated.push({ id: docId, type, presentation: String(presentation) });
+    };
+
+    // Спершу договір: інакше дочірні документи не пройдуть перевірку договору
+    await reassign(saleOrderId, 'saleOrder');
+
+    for (const type of ['cashIn', 'sale', 'saleReturn'] as const) {
+      const docs = await this.apiClient.getDocuments([saleOrderId], type);
+      for (const doc of docs as any[]) {
+        if (doc?.id) await reassign(String(doc.id), type);
+      }
+    }
+
+    return updated;
   }
 
   /**
@@ -2285,6 +2343,19 @@ export class DilovodService {
             console.log(`Виконуємо запит getDocuments() для ${needCashInRequest.length} contract (cashIn)...`);
             cashInDocuments = await this.getDocuments(needCashInRequest, 'cashIn');
           }
+          // Кілька sale на один договір: рахуємо й повернення, щоб відрізнити
+          // повторне відвантаження після повернення від справжнього дубля
+          const saleCountsBeforeReturn = new Map<string, number>();
+          for (const d of saleDocuments) {
+            const key = d?.contract || d?.baseDoc;
+            if (key) saleCountsBeforeReturn.set(key, (saleCountsBeforeReturn.get(key) ?? 0) + 1);
+          }
+          for (const [contractId, count] of saleCountsBeforeReturn) {
+            if (count > 1 && !needReturnRequest.includes(contractId)) {
+              needReturnRequest.push(contractId);
+            }
+          }
+
           if (needReturnRequest.length > 0) {
             console.log(`Виконуємо запит getDocuments() для ${needReturnRequest.length} contract (saleReturn)...`);
             returnDocuments = await this.getDocuments(needReturnRequest, 'saleReturn');
@@ -2340,8 +2411,9 @@ export class DilovodService {
               const saleCount = saleCountByContract.get(contractId) ?? 1;
               if (localOrder?.dilovodSaleDocsCount !== saleCount) {
                 updateData.dilovodSaleDocsCount = saleCount;
-                if (saleCount > 1) {
-                  console.log(`⚠️ Замовлення ${orderInfo.orderNumber}: знайдено ${saleCount} документів відвантаження (має бути 1)!`);
+                const returnCount = returnCountByContract.get(contractId) ?? 0;
+                if (isSaleDuplicate(saleCount, returnCount)) {
+                  console.log(`⚠️ Замовлення ${orderInfo.orderNumber}: знайдено ${saleCount} документів відвантаження при ${returnCount} поверненнях (дублікат)!`);
                 }
               }
             } else if ((orderStatus >= 3 || includeAllStatuses) && !saleByContract.has(contractId) && needSaleRequest.includes(contractId)) {
@@ -2372,8 +2444,9 @@ export class DilovodService {
                 const returnCount = returnCountByContract.get(contractId) ?? 1;
                 if (localOrder?.dilovodReturnDocsCount !== returnCount) {
                   updateData.dilovodReturnDocsCount = returnCount;
-                  if (returnCount > 1) {
-                    console.log(`⚠️ Замовлення ${orderInfo.orderNumber}: знайдено ${returnCount} документів повернення (має бути 1)!`);
+                  const saleCountForReturn = saleCountByContract.get(contractId) ?? localOrder?.dilovodSaleDocsCount ?? 1;
+                  if (returnCount > saleCountForReturn) {
+                    console.log(`⚠️ Замовлення ${orderInfo.orderNumber}: знайдено ${returnCount} документів повернення при ${saleCountForReturn} відвантаженнях!`);
                   }
                 }
               } else {
