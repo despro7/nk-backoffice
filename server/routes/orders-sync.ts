@@ -4,7 +4,6 @@ import { prisma } from '../lib/utils.js';
 import { syncSettingsService } from '../services/syncSettingsService.js';
 import { salesDriveService } from '../services/salesDriveService.js';
 import { generateExternalId } from '../services/salesdrive/externalIdHelper.js';
-import { shouldSkipStatusSyncRollback } from '../services/salesdrive/statusMapper.js';
 
 const router = express.Router();
 
@@ -1307,14 +1306,18 @@ router.post('/sync/single-order', authenticateToken, async (req, res) => {
     // Перевіряємо зміни
     const changeResult = orderDatabaseService.detectOrderChanges(existingOrder, salesDriveOrder);
     let changes = changeResult.fields;
-    const skipStatusRollback = shouldSkipStatusSyncRollback(existingOrder, salesDriveOrder.status);
+    const skipStatusRollback = await orderDatabaseService.isStaleStatusRollback(
+      existingOrder,
+      salesDriveOrder.status,
+      salesDriveOrder.rawData,
+    );
 
     if (
       skipStatusRollback &&
       (changes.includes('status') || changes.includes('statusText'))
     ) {
       console.warn(
-        `⚠️ [SINGLE ORDER SYNC] Skip status rollback for order ${id}: local=${existingOrder.status} readyToShipAt set, incoming=${salesDriveOrder.status}`,
+        `⚠️ [SINGLE ORDER SYNC] Skip stale status rollback for order ${id}: local=${existingOrder.status}, incoming=${salesDriveOrder.status}`,
       );
       changes = changes.filter((field) => field !== 'status' && field !== 'statusText');
     }

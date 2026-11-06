@@ -1,7 +1,7 @@
 import { prisma } from '../lib/utils.js';
 import { ordersCacheService } from './ordersCacheService.js';
 import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
-import { shouldSkipStatusSyncRollback } from './salesdrive/statusMapper.js';
+import { isPotentialStatusRollback, shouldSkipStatusSyncRollback } from './salesdrive/statusMapper.js';
 import { parseKyivDateTime } from '../../shared/utils/kyivDateTime.js';
 
 function toOrderDate(value: string | Date | null | undefined): Date | null {
@@ -221,7 +221,7 @@ export class OrderDatabaseService {
       // Попередній стан потрібен до update — після update order.* уже нові
       const existingOrder = await prisma.order.findUnique({
         where: { externalId },
-        select: { status: true, externalId: true, orderNumber: true, readyToShipAt: true },
+        select: { id: true, status: true, externalId: true, orderNumber: true, readyToShipAt: true },
       });
       const previousStatus = existingOrder?.status ?? null;
       const previousExternalId = existingOrder?.externalId ?? externalId;
@@ -249,10 +249,10 @@ export class OrderDatabaseService {
       const skipStatusRollback =
         data.status !== undefined &&
         !!existingOrder &&
-        shouldSkipStatusSyncRollback(existingOrder, data.status);
+        (await this.isStaleStatusRollback(existingOrder, data.status, data.rawData));
       if (skipStatusRollback) {
         console.warn(
-          `⚠️ [OrderDB] Skip status rollback for ${externalId}: local=${previousStatus} readyToShipAt set, incoming=${data.status}`,
+          `⚠️ [OrderDB] Skip stale status rollback for ${externalId}: local=${previousStatus}, incoming=${data.status}`,
         );
       }
       if (data.status !== undefined && !skipStatusRollback) updateData.status = data.status;
@@ -368,6 +368,34 @@ export class OrderDatabaseService {
   /**
    * Створює запис в історії змін замовлення
    */
+  /**
+   * Чи є incoming статус із SalesDrive застарілим відкатом локальної комплектації (3 → 1/2).
+   * Час комплектації: останній запис історії зі статусом 3, fallback readyToShipAt.
+   * Час зміни в SD: rawData.updateAt (Europe/Kyiv).
+   */
+  async isStaleStatusRollback(
+    order: { id: number; status: string | null; readyToShipAt?: Date | null },
+    incomingStatus: string | number | null | undefined,
+    incomingRawData?: { updateAt?: unknown } | null,
+  ): Promise<boolean> {
+    if (!isPotentialStatusRollback(order.status, incomingStatus)) {
+      return false;
+    }
+
+    const lastPicked = await prisma.ordersHistory.findFirst({
+      where: { orderId: order.id, status: '3' },
+      orderBy: { changedAt: 'desc' },
+      select: { changedAt: true },
+    });
+
+    return shouldSkipStatusSyncRollback({
+      localStatus: order.status,
+      incomingStatus,
+      incomingUpdatedAt: parseKyivDateTime(incomingRawData?.updateAt),
+      localPickedAt: lastPicked?.changedAt ?? order.readyToShipAt ?? null,
+    });
+  }
+
   async createOrderHistory(orderId: number, status: string, statusText: string, source: string, userId?: number, notes?: string) {
     try {
       await prisma.ordersHistory.create({
@@ -1239,10 +1267,10 @@ export class OrderDatabaseService {
 
               if (
                 (changes.includes('status') || changes.includes('statusText')) &&
-                shouldSkipStatusSyncRollback(existingOrder, orderData.status)
+                (await this.isStaleStatusRollback(existingOrder, orderData.status, orderData.rawData))
               ) {
                 console.warn(
-                  `⚠️ [SMART BATCH] Skip status rollback for ${orderData.orderNumber}: local=${existingOrder.status} readyToShipAt set, incoming=${orderData.status}`,
+                  `⚠️ [SMART BATCH] Skip stale status rollback for ${orderData.orderNumber}: local=${existingOrder.status}, incoming=${orderData.status}`,
                 );
                 changes = changes.filter((field) => field !== 'status' && field !== 'statusText');
               }

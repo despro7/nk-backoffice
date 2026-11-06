@@ -44,7 +44,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
         const existingOrder = await orderDatabaseService.getOrderById(orderId);
         
         const webhookData = req.body.data;
-        const webhookMeta = req.body.meta.fields;
+        const webhookMeta = req.body.meta?.fields ?? {};
         
         // Перевірка спеціального випадку для статусу "Видалений" (8)
         const incomingStatus = webhookData.statusId?.toString() || '1';
@@ -97,10 +97,10 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
         let shippingMethod = '';
         let paymentMethod = '';
 
-        if (webhookMeta.shipping_method.options) {
+        if (webhookMeta.shipping_method?.options) {
           shippingMethod = webhookMeta.shipping_method.options[0]?.text?.toString() || '';
         }
-        if (webhookMeta.payment_method.options) {
+        if (webhookMeta.payment_method?.options) {
           paymentMethod = webhookMeta.payment_method.options[0]?.text?.toString() || '';
         }
 
@@ -113,7 +113,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             id: existingOrder.id,
             orderNumber: newExternalId || existingOrder.orderNumber,
             status: newStatus,
-            statusText: webhookMeta.statusId.options[0]?.text?.toString() || getStatusText(newStatus),
+            statusText: webhookMeta.statusId?.options?.[0]?.text?.toString() || getStatusText(newStatus),
             items: items || existingOrder.items,
             customerName: customerName || existingOrder.customerName,
             customerPhone: customerPhone || existingOrder.customerPhone,
@@ -261,7 +261,7 @@ router.post('/salesdrive/order-update', async (req: Request, res: Response) => {
             id: parseInt(webhookData.id) || 0, // Використовуємо внутрішній ID з webhook
             orderNumber: externalId, // Використовуємо externalId з префіксом SD (якщо додано)
             status: newStatus,
-            statusText: webhookMeta.statusId.options[0]?.text?.toString() || getStatusText(newStatus),
+            statusText: webhookMeta.statusId?.options?.[0]?.text?.toString() || getStatusText(newStatus),
             items: items,
             customerName: customerName || 'Невідомий клієнт',
             customerPhone: customerPhone || '',

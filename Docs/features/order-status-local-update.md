@@ -18,14 +18,18 @@
 
 ### Захист від відкату
 
-Після комплектації (`readyToShipAt` задано) sync/webhook/refresh **не** можуть відкотити статус назад (наприклад `3 → 2`).
+Після локальної комплектації (`3`) застарілий webhook / sync із SalesDrive **не** може повернути статус у `1` / `2`.
 
-Правило: `shouldSkipStatusSyncRollback` у `server/services/salesdrive/statusMapper.ts`:
+Правило: `shouldSkipStatusSyncRollback` у `server/services/salesdrive/statusMapper.ts`, обгортка з БД `orderDatabaseService.isStaleStatusRollback`:
 
-- якщо немає `readyToShipAt` — sync статусу як раніше;
-- якщо є — блокуємо `incoming < max(localStatus, 3)`;
-- просування вперед (`3→4→5`) і «вищі» термінали (`6` Відмова тощо) — дозволені;
-- розсинхрон `status=2` + `readyToShipAt`: блокуємо stale `2`, дозволяємо підтягнути `3+`.
+- перевіряється лише пара «локально `3`, incoming `1` / `2`»; усі інші переходи (`3→4→5`, `6→5`, `7→5`, вихід з утримання `9`, повторні цикли) приймаються з SD як є;
+- блокуємо, якщо `rawData.updateAt` із SD (Europe/Kyiv) **не новіший** за момент локальної комплектації: це stale-дані, що «не знають» про комплектацію;
+- якщо `updateAt` новіший: менеджер навмисно повернув замовлення в SD, приймаємо;
+- без `updateAt` або без часу комплектації: блокуємо (безпечніше).
+
+Час комплектації: останній запис `orders_history` зі статусом `3`, fallback `readyToShipAt`.
+
+`readyToShipAt` сам по собі для guard не підходить: він ставиться лише при **першій** комплектації і не скидається. Попереднє правило (`incoming < max(localStatus, 3)` при наявному `readyToShipAt`) назавжди блокувало статуси замовлень після повторного циклу (відмова, повернення, утримання `9`, повторна відправка).
 
 Застосовано в:
 
@@ -37,6 +41,6 @@
 
 - `server/routes/orders.ts` — `PUT /:id/status`
 - `server/services/salesdrive/statusMapper.ts` — `shouldSkipStatusSyncRollback`
-- `server/services/orderDatabaseService.ts` — guard у `updateOrder` / smart batch
+- `server/services/orderDatabaseService.ts` – `isStaleStatusRollback`, guard у `updateOrder` / smart batch
 - `server/routes/orders-sync.ts` — single-order sync
 - `client/hooks/useOrderNavigation.ts` — виклик з комплектації

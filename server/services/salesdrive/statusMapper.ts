@@ -59,36 +59,54 @@ export function isActiveStatus(status: string): boolean {
   return ['1', '2', '3', '4', '9'].includes(status);
 }
 
-export type StatusSyncGuardExisting = {
-  status?: string | null;
-  readyToShipAt?: Date | string | null;
+export type StatusSyncGuardInput = {
+  /** Поточний локальний статус замовлення. */
+  localStatus: string | number | null | undefined;
+  /** Статус, який приніс webhook / sync із SalesDrive. */
+  incomingStatus: string | number | null | undefined;
+  /** `updateAt` замовлення в SalesDrive (момент зміни на їхньому боці). */
+  incomingUpdatedAt?: Date | null;
+  /** Коли локальний статус востаннє став "3" (комплектація). */
+  localPickedAt?: Date | null;
 };
 
+const PRE_PICKING_STATUSES = new Set(['1', '2']);
+
+function normalizeStatus(value: string | number | null | undefined): string {
+  return value === undefined || value === null ? '' : String(value).trim();
+}
+
 /**
- * Не відкатуємо локальний статус після комплектації (readyToShipAt),
- * якщо sync/webhook приносить старіший статус (наприклад 3 → 2).
- * Просування вперед (3→4→5) і «вищі» термінальні статуси — дозволені.
- *
- * Якщо локально ще status=2, але readyToShipAt уже є (розсинхрон),
- * також блокуємо incoming < 3.
+ * Чи може incoming бути відкатом локальної комплектації (локально 3, з SD приходить 1/2).
+ * Дешева перевірка без БД: решта переходів (4–9, повторні цикли) завжди приймаються з SD.
  */
-export function shouldSkipStatusSyncRollback(
-  existing: StatusSyncGuardExisting,
+export function isPotentialStatusRollback(
+  localStatus: string | number | null | undefined,
   incomingStatus: string | number | null | undefined,
 ): boolean {
-  if (!existing.readyToShipAt) {
-    return false;
-  }
-  if (incomingStatus === undefined || incomingStatus === null || incomingStatus === '') {
-    return false;
-  }
+  return (
+    normalizeStatus(localStatus) === '3' &&
+    PRE_PICKING_STATUSES.has(normalizeStatus(incomingStatus))
+  );
+}
 
-  const incoming = Number(incomingStatus);
-  if (Number.isNaN(incoming)) {
+/**
+ * Не відкатуємо локальну комплектацію (3) застарілим статусом із SalesDrive (1/2).
+ *
+ * Блокуємо лише якщо зміна в SD не новіша за локальну комплектацію:
+ * stale webhook / sync, що "не знає" про комплектацію. Якщо менеджер у SD
+ * навмисно повернув замовлення після комплектації (updateAt новіший), приймаємо.
+ * Без однієї з дат блокуємо (безпечніше).
+ *
+ * Не залежить від readyToShipAt: він ставиться лише при першій комплектації
+ * і лишається після повторних циклів (відмова, повернення, утримання).
+ */
+export function shouldSkipStatusSyncRollback(input: StatusSyncGuardInput): boolean {
+  if (!isPotentialStatusRollback(input.localStatus, input.incomingStatus)) {
     return false;
   }
-
-  const local = Number(existing.status);
-  const floor = Number.isNaN(local) ? 3 : Math.max(local, 3);
-  return incoming < floor;
+  if (!input.incomingUpdatedAt || !input.localPickedAt) {
+    return true;
+  }
+  return input.incomingUpdatedAt.getTime() <= input.localPickedAt.getTime();
 }

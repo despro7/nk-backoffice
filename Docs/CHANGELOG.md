@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-11-06 – Захист від відкату статусу: лише stale `3 → 1/2`
+
+**Files:** `server/services/salesdrive/statusMapper.ts` (+ spec), `server/services/orderDatabaseService.ts`, `server/routes/orders-sync.ts`, `server/routes/webhooks.ts`
+
+- **Баг:** webhook і sync SalesDrive мовчки не оновлювали статус старих замовлень, які пройшли повторний цикл (відмова, повернення, утримання `9`, повторна відправка). Guard блокував `incoming < max(local, 3)` за наявного `readyToShipAt`, а він ставиться лише при першій комплектації і не скидається. Наприклад `9 → 4`, `6 → 5`, `7 → 5` відкидались назавжди.
+- **Нове правило:** блокуємо лише пару «локально `3`, із SD `1` / `2`», і тільки якщо `updateAt` із SD не новіший за останню локальну комплектацію (`orders_history` зі статусом `3`, fallback `readyToShipAt`). Навмисний відкат менеджером у SD після комплектації приймається.
+- `orderDatabaseService.isStaleStatusRollback` – спільна перевірка для webhook (`updateOrder`), smart batch sync і `POST /api/orders-sync/sync/single-order`; запит до БД лише для пари `3 → 1/2`.
+- Webhook SalesDrive: безпечний доступ до `meta.fields` (`shipping_method`, `payment_method`, `statusId`), без 500 за відсутніх полів.
+
+**Документація:** `Docs/features/order-status-local-update.md` – «Захист від відкату».
+
+---
+
 ## 2026-11-05 – Модерація специфікації товару: чернетки, затвердження, версії
 
 **Files:** `prisma/schema.prisma`, `prisma/migrations/20261105140000_catalog_spec_moderation`, `shared/types/catalogSpec.ts`, `shared/utils/catalogSpecContent.ts` (+ spec), `shared/types/{catalog,catalogAudit,notifications}.ts`, `shared/utils/catalogGoodAuditFormat.ts`, `shared/constants/{permissions,permissionRoleEditor}.ts`, `server/modules/Products/CatalogSpecService.ts` (+ spec), `CatalogGoodAuditService.ts`, `ProductsCatalogService.ts`, `ProductsController.ts`, `server/routes/notifications.ts`, `client/pages/Products/{catalogApi.ts,index.tsx}`, `components/{SpecDraftsMenu,CatalogTable,CatalogToolbar,CatalogActionsMenu}.tsx`, `components/audit/{CatalogAuditEntry,CatalogAuditFeed}.tsx`, `productDrawer/{SpecModerationPanel,ProductDrawer,BomSection,ProductContentTab}.tsx`, `client/components/NotificationBell.tsx`, `client/hooks/useNotifications.ts`, `CLAUDE.md`
