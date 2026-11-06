@@ -17,6 +17,20 @@
 
 ---
 
+## 2026-11-06 – Склад відвантаження v2: позиції з режимами, коробки, рішення комплектувальника
+
+**Files:** `shared/utils/shipmentRecord.ts` (+ spec), `shared/types/orderShipments.ts`, `client/pages/OrderView.tsx`, `client/hooks/useOrderNavigation.ts`, `client/components/SalesDriveOrdersTable.tsx`, `server/services/orderShipments.ts` (+ spec), `server/routes/orders.ts`, `server/services/dilovod/DilovodExportBuilder.ts`, `server/modules/Warehouse/ReturnsHistoryController.ts`
+
+- **Формат v2** (`order_shipments.schemaVersion = 2`): `summary` (позиції з `itemMode` `regular | monolithic | forced_regular`, монолітні SKU на будь-якій глибині, підсумки) + `manifest` (коробки з `hardCap` і зайнятими порціями, рядки `monolithic_set | set_unit | product`, розділені набори, позиції без коробки, що не влізло, ручні рішення). Без `accGood` на SKU.
+- **Клієнт:** `OrderView` будує склад (`buildShipmentRecord`) і надсилає в `PUT /status` полем `shipment` поруч із `payloadData`. Моноліти – те саме правило, що й `payloadData` (spec порівнює зі старою логікою), тож облік у Dilovod не змінюється. Помилка побудови не блокує статус.
+- **Сервер:** `parseShipmentRecordV2` перевіряє склад; некоректний – цикл у v1. Документ відвантаження бере моноліти з відкритого циклу (без циклу – `payloadData`, ручний `payloadDataOverride` має пріоритет); списання монолітів – з v2; повернення читають склад будь-якої версії.
+- **Тултіп відвантаження:** для циклів v2 – ще й кількість коробок.
+- Міграція БД не потрібна (JSON-поля `summary` / `manifest`). Звіти поки читають `payloadData` (етап 4).
+
+**Документація:** `Docs/integrations/dilovod-shipment-cycles.md` – розділ «Цикли відвантаження» (формат v2, читання); `Docs/plans/dilovod-documents-and-shipment-cycles.md` – статус етапу 3.
+
+---
+
 ## 2026-11-06 – Цикли відвантаження (`order_shipments`), повторні повернення
 
 **Files:** `prisma/schema.prisma`, `prisma/migrations/20261106190000_order_shipments/`, `server/services/orderShipments.ts` (+ spec), `shared/types/orderShipments.ts`, `shared/types/salesdrive.ts`, `shared/utils/dilovodShipmentCycle.ts` (+ spec), `server/services/dilovod/{dilovodShipmentCycle,orderDilovodDocuments,DilovodService,DilovodExportBuilder}.ts`, `server/routes/{orders,dilovod}.ts`, `server/services/orderDatabaseService.ts`, `server/modules/Warehouse/ReturnsHistoryController.ts`, `client/pages/Warehouse/WarehouseReturns/{useWarehouseReturns.ts,components/OrderSearchInput.tsx}`, `client/components/{SalesDriveOrdersTable.tsx,ui/EventTimelineList.tsx}`

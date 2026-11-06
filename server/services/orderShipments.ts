@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/utils.js';
-import type { OrderShipmentBriefDto } from '../../shared/types/orderShipments.js';
+import type { OrderShipmentBriefDto, ShipmentRecordV2, ShipmentSummaryItemV2 } from '../../shared/types/orderShipments.js';
+import { isShipmentSummaryV2, readMonolithicSkus } from '../../shared/utils/shipmentRecord.js';
 
 /**
  * Цикли комплектації / відвантаження (`order_shipments`).
@@ -90,19 +91,14 @@ export function buildShipmentSummaryV1(itemsRaw: unknown, payloadDataRaw: unknow
   return { version: 1, items, monolithicBySku };
 }
 
-/** Summary v1 → старий формат `payloadData` (для споживачів, що ще читають `shipment.bySku`). */
-export function shipmentSummaryToLegacyPayload(summary: ShipmentSummaryV1, monolithicAccGood: string): { shipment: { bySku: Record<string, { accGood: string; quantity: number }> } } | null {
-  const entries = Object.entries(summary.monolithicBySku ?? {});
-  if (entries.length === 0) return null;
-  return {
-    shipment: {
-      bySku: Object.fromEntries(entries.map(([sku, quantity]) => [sku, { accGood: monolithicAccGood, quantity }])),
-    },
-  };
-}
-
 export function isShipmentSummaryV1(value: unknown): value is ShipmentSummaryV1 {
   return !!value && typeof value === 'object' && (value as any).version === 1 && Array.isArray((value as any).items);
+}
+
+/** Позиції циклу з summary будь-якої версії (v1 / v2); null – формат невідомий. */
+export function getShipmentSummaryItems(summary: unknown): Array<ShipmentSummaryItemV1 | ShipmentSummaryItemV2> | null {
+  if (isShipmentSummaryV2(summary) || isShipmentSummaryV1(summary)) return summary.items;
+  return null;
 }
 
 // ---------- Привʼязка документів до циклів (pure) ----------
@@ -203,11 +199,21 @@ async function loadOrderSnapshot(orderId: number) {
  */
 export async function recordShipmentPicking(
   orderId: number,
-  options: { pickedAt: Date; pickedById?: number | null; statusChanged: boolean },
+  options: { pickedAt: Date; pickedById?: number | null; statusChanged: boolean; record?: ShipmentRecordV2 | null },
 ): Promise<void> {
-  const snapshot = await loadOrderSnapshot(orderId);
-  if (!snapshot) return;
-  const summary = buildShipmentSummaryV1(snapshot.items, snapshot.payloadData) as unknown as Prisma.InputJsonValue;
+  // v2 від клієнта (склад + коробки + рішення); без нього – v1 зі знімка замовлення
+  let summary: Prisma.InputJsonValue;
+  let manifest: Prisma.InputJsonValue | typeof Prisma.DbNull = Prisma.DbNull;
+  let schemaVersion: number = SHIPMENT_SUMMARY_VERSION;
+  if (options.record) {
+    summary = options.record.summary as unknown as Prisma.InputJsonValue;
+    manifest = options.record.manifest as unknown as Prisma.InputJsonValue;
+    schemaVersion = 2;
+  } else {
+    const snapshot = await loadOrderSnapshot(orderId);
+    if (!snapshot) return;
+    summary = buildShipmentSummaryV1(snapshot.items, snapshot.payloadData) as unknown as Prisma.InputJsonValue;
+  }
 
   const latest = await prisma.orderShipment.findFirst({ where: { orderId }, orderBy: { cycle: 'desc' } });
   if (latest && latest.saleDocumentId == null) {
@@ -215,7 +221,8 @@ export async function recordShipmentPicking(
       where: { id: latest.id },
       data: {
         summary,
-        schemaVersion: SHIPMENT_SUMMARY_VERSION,
+        manifest,
+        schemaVersion,
         ...(options.statusChanged ? { pickedAt: options.pickedAt, pickedById: options.pickedById ?? null } : {}),
       },
     });
@@ -228,8 +235,9 @@ export async function recordShipmentPicking(
     pickedAt: options.pickedAt,
     pickedById: options.pickedById ?? null,
     source: 'picking',
-    schemaVersion: SHIPMENT_SUMMARY_VERSION,
+    schemaVersion,
     summary,
+    manifest,
   });
 }
 
@@ -303,6 +311,19 @@ export async function findReturnableShipment(orderId: number) {
   });
 }
 
+/**
+ * Монолітні SKU відкритого циклу (скомплектовано, ще без sale) для документа відвантаження.
+ * null – відкритого циклу немає, споживач бере `orders.payloadData` як раніше.
+ */
+export async function getOpenShipmentMonolithicSkus(orderId: number): Promise<Record<string, number> | null> {
+  const open = await prisma.orderShipment.findFirst({
+    where: { orderId, saleDocumentId: null },
+    orderBy: { cycle: 'desc' },
+    select: { summary: true },
+  });
+  return open ? readMonolithicSkus(open.summary) : null;
+}
+
 /** Короткий опис циклів для UI одним запитом. */
 export async function loadOrderShipmentBriefs(orderIds: number[]): Promise<Map<number, OrderShipmentBriefDto[]>> {
   const map = new Map<number, OrderShipmentBriefDto[]>();
@@ -320,15 +341,16 @@ export async function loadOrderShipmentBriefs(orderIds: number[]): Promise<Map<n
     },
   });
   for (const row of rows) {
-    const summary = isShipmentSummaryV1(row.summary) ? row.summary : null;
+    const items = getShipmentSummaryItems(row.summary);
     const list = map.get(row.orderId) ?? [];
     list.push({
       cycle: row.cycle,
       pickedAt: row.pickedAt.toISOString(),
       saleDilovodId: row.saleDocument?.dilovodId ?? null,
       returnDilovodId: row.returnDocument?.dilovodId ?? null,
-      itemsCount: summary?.items.length ?? 0,
-      monolithicCount: summary ? Object.keys(summary.monolithicBySku ?? {}).length : 0,
+      itemsCount: items?.length ?? 0,
+      monolithicCount: Object.keys(readMonolithicSkus(row.summary) ?? {}).length,
+      boxesCount: isShipmentSummaryV2(row.summary) ? row.summary.totals.boxes : null,
     });
     map.set(row.orderId, list);
   }

@@ -8,6 +8,7 @@ import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
 import { dilovodService } from '../services/dilovod/index.js';
 import { getStatusText } from '../services/salesdrive/statusMapper.js';
 import { recordShipmentPicking } from '../services/orderShipments.js';
+import { monolithicSkusToLegacyPayload, parseShipmentRecordV2 } from '../../shared/utils/shipmentRecord.js';
 import {
   computeOrderedSetQuantityBreakdown,
   computeShippedQuantityBreakdown,
@@ -1028,7 +1029,12 @@ router.get('/:id/fiscal-receipts/list', authenticateToken, async (req, res) => {
 router.put('/:id/status', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, payloadData } = req.body;
+    const { status, payloadData, shipment } = req.body;
+    // Склад циклу v2 від клієнта; некоректний ігнорується (цикл пишеться у форматі v1)
+    const shipmentRecord = parseShipmentRecordV2(shipment);
+    if (shipment !== undefined && !shipmentRecord) {
+      console.warn(`⚠️ [Orders API] Order ${req.params.id}: некоректний shipment v2, пишемо цикл у форматі v1`);
+    }
     const orderId = parseInt(id, 10);
     const authUser = (req as any).user as { userId?: number; name?: string | null } | undefined;
 
@@ -1064,8 +1070,12 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
     const shipmentPayloadSource = payloadData !== undefined ? payloadData : currentOrder.payloadData;
 
     try {
+      // Списання монолітів: зі складу v2, якщо він є (еквівалентний payloadData), інакше як раніше
+      const deductionSource = shipmentRecord
+        ? monolithicSkusToLegacyPayload(shipmentRecord.summary.monolithic)
+        : shipmentPayloadSource;
       const stockUpdates = shouldDeductMonolithicStock
-        ? await buildMonolithicSetStockUpdates(shipmentPayloadSource)
+        ? await buildMonolithicSetStockUpdates(deductionSource)
         : [];
 
       await prisma.$transaction([
@@ -1126,6 +1136,7 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
           pickedAt: new Date(),
           pickedById: authUser?.userId && authUser.userId > 0 ? authUser.userId : null,
           statusChanged,
+          record: shipmentRecord,
         });
       } catch (shipmentErr) {
         console.warn(`⚠️ [Orders API] Не вдалося записати цикл комплектації для ${id}:`, shipmentErr instanceof Error ? shipmentErr.message : shipmentErr);

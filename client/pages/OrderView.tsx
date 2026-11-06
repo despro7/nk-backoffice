@@ -25,6 +25,7 @@ import { OrderDetailsAdmin } from '@/components/OrderDetailsAdmin';
 import OrderChecklist from '@/components/OrderChecklist';
 import { MonolithicSetAvailabilityQuizModal } from '@/components/modals/MonolithicSetAvailabilityQuizModal/index';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { buildShipmentRecord } from '@shared/utils/shipmentRecord';
 
 export default function OrderView() {
   const { externalId } = useParams<{ externalId: string }>();
@@ -178,6 +179,25 @@ export default function OrderView() {
 
     return Object.keys(bySku).length > 0 ? { shipment: { bySku } } : null;
   }, [expandedItems]);
+
+  /**
+   * Склад циклу відвантаження v2 (order_shipments): позиції з режимами, коробки, рішення комплектувальника.
+   * Відправляється разом з payloadData у PUT /status; помилка побудови не блокує зміну статусу.
+   */
+  const shipmentRecord = useMemo(() => {
+    try {
+      return buildShipmentRecord({
+        orderItems: Array.isArray(order?.items) ? order.items : [],
+        expandedItems,
+        checklistItems,
+        forcedRegularSkus: getForcedRegularSetSkus(),
+        unallocatedItems,
+      });
+    } catch (error) {
+      LoggingService.orderAssemblyLog('⚠️ [OrderView] не вдалося побудувати shipmentRecord', { error: String(error) }, true);
+      return null;
+    }
+  }, [checklistItems, expandedItems, getForcedRegularSetSkus, order?.items, unallocatedItems]);
 
   const rebuildChecklistItems = useCallback((baseItems: OrderChecklistItem[], boxes: any[] = selectedBoxes, readyToShip: boolean = isReadyToShip) => {
     const itemsWithoutBoxes = baseItems.filter(item => item.type !== 'box');
@@ -358,6 +378,7 @@ export default function OrderView() {
     checklistItems,
     orderStatus: order?.status,
     shipmentPayloadData,
+    shipmentRecord,
     onUpdateOrderStatus: (status, statusText) => {
       // Оновлюємо локальний стан замовлення без очікування відповіді від сервера
       setOrder(prev => prev ? {

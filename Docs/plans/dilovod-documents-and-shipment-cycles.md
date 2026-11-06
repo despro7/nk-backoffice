@@ -1,6 +1,6 @@
 # План: документи Dilovod і цикли відвантаження замовлення
 
-Статус: етапи 1–2 реалізовано (06.11.2026), етапи 3–5 – план. Розвиває `Docs/plans/shipment-payload-refactor.md` і `Docs/integrations/dilovod-shipment-cycles.md`.
+Статус: етапи 1–3 реалізовано (06.11.2026), етапи 4–5 – план. Розвиває `Docs/plans/shipment-payload-refactor.md` і `Docs/integrations/dilovod-shipment-cycles.md`.
 
 ## Проблема
 
@@ -88,7 +88,7 @@ Summary: `{ version, mode, totals, bySku: { [sku]: { quantity, itemMode } } }`, 
 
 Етапи 1 і 2 можна зробити однією міграцією.
 
-### Етап 3. Новий формат складу (фази 1–3 старого плану)
+### Етап 3. Новий формат складу (фази 1–3 старого плану) (виконано)
 
 - Контракти `summary` / `manifest`, `schemaVersion`.
 - Клієнт (`OrderView`, `orderAssemblyUtils`) будує summary і manifest з `expandedItems`, коробок і рішень комплектувальника.

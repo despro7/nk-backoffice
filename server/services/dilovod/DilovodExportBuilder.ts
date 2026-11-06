@@ -27,6 +27,8 @@ import { DilovodService } from './index.js';
 import { orderDatabaseService } from '../orderDatabaseService.js';
 import { dilovodService } from './DilovodService.js';
 import { SHIPMENT_MONOLITHIC_ACC_GOOD } from './dilovodShipmentCycle.js';
+import { getOpenShipmentMonolithicSkus } from '../orderShipments.js';
+import { monolithicSkusToLegacyPayload } from '../../../shared/utils/shipmentRecord.js';
 
 
 const prisma = new PrismaClient();
@@ -174,6 +176,14 @@ export class DilovodExportBuilder {
       context.order = await this.loadOrder(orderId);
       if (!context.order) {
         throw new Error(`Замовлення з ID ${orderId} не знайдено`);
+      }
+
+      // Склад відкритого циклу (order_shipments) – джерело монолітів для sale; без циклу – payloadData
+      if (options?.payloadDataOverride === undefined && context.order?.id) {
+        const openMonolithic = await getOpenShipmentMonolithicSkus(Number(context.order.id));
+        if (openMonolithic) {
+          context.order = { ...context.order, payloadData: monolithicSkusToLegacyPayload(openMonolithic) };
+        }
       }
 
       if (options?.payloadDataOverride !== undefined) {

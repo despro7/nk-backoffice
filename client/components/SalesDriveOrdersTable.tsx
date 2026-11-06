@@ -77,10 +77,12 @@ function dilovodDocumentEntries(
     .map((doc, index) => ({ key: doc.dilovodId, date: doc.docDate, ...toEntry(doc, index) }));
 }
 
-/** Склад циклу комплектації: «Позицій: 3, з них монолітних: 1». */
+/** Склад циклу комплектації: «Позицій: 3, з них монолітних: 1, коробок: 2». */
 function formatShipmentComposition(shipment: OrderShipmentBriefDto): string {
-  const base = `Позицій: ${shipment.itemsCount}`;
-  return shipment.monolithicCount > 0 ? `${base}, з них монолітних: ${shipment.monolithicCount}` : base;
+  const parts = [`Позицій: ${shipment.itemsCount}`];
+  if (shipment.monolithicCount > 0) parts.push(`з них монолітних: ${shipment.monolithicCount}`);
+  if (shipment.boxesCount) parts.push(`коробок: ${shipment.boxesCount}`);
+  return parts.join(', ');
 }
 
 /** Тултіп колонки «Експорт»: документ замовлення (saleOrder). */

@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { shippingClientService } from '../services/ShippingService';
 import { formatDate } from '../lib/formatUtils';
+import type { ShipmentRecordV2 } from '@shared/types/orderShipments';
 
 interface UseOrderNavigationProps {
   externalId: string | undefined;
@@ -13,6 +14,8 @@ interface UseOrderNavigationProps {
   checklistItems?: any[];
   orderStatus?: string;
   shipmentPayloadData?: any;
+  /** Склад циклу v2 (order_shipments), див. shared/utils/shipmentRecord.ts */
+  shipmentRecord?: ShipmentRecordV2 | null;
   onUpdateOrderStatus?: (status: string, statusText: string) => void; // Callback для локального оновлення статусу
 }
 
@@ -26,6 +29,7 @@ export function useOrderNavigation({
   checklistItems = [],
   orderStatus,
   shipmentPayloadData,
+  shipmentRecord,
   onUpdateOrderStatus
 }: UseOrderNavigationProps) {
   const navigate = useNavigate();
@@ -144,6 +148,9 @@ export function useOrderNavigation({
     if (shipmentPayloadData) {
       statusPayload.payloadData = shipmentPayloadData;
     }
+    if (shipmentRecord) {
+      statusPayload.shipment = shipmentRecord;
+    }
 
     try {
       // 1️⃣ СПОЧАТКУ: Отримуємо поточний статус з сервера (без PUT)
@@ -201,7 +208,7 @@ export function useOrderNavigation({
       setShowErrorModal(true);
       console.error('❌ [useOrderNavigation] Помилка оновлення статусу поточного замовлення:', error);
     }
-  }, [id, apiCall, onUpdateOrderStatus]);
+  }, [id, apiCall, onUpdateOrderStatus, shipmentPayloadData, shipmentRecord]);
 
   /**
    * Функція для отримання номера наступного замовлення

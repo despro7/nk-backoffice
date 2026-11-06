@@ -6,13 +6,9 @@ import { salesDriveService } from '../../services/salesDriveService.js';
 import { authenticateToken, requirePermission } from '../../middleware/auth.js';
 import { parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import { recordOrderDilovodDocumentsSafe, toOrderDilovodDocumentInputs } from '../../services/dilovod/orderDilovodDocuments.js';
-import {
-  isLastShipmentReturned,
-  latestDocDate,
-  needsNewSaleDoc,
-  SHIPMENT_MONOLITHIC_ACC_GOOD,
-} from '../../services/dilovod/dilovodShipmentCycle.js';
-import { findReturnableShipment, isShipmentSummaryV1, shipmentSummaryToLegacyPayload } from '../../services/orderShipments.js';
+import { isLastShipmentReturned, latestDocDate, needsNewSaleDoc } from '../../services/dilovod/dilovodShipmentCycle.js';
+import { findReturnableShipment, getShipmentSummaryItems } from '../../services/orderShipments.js';
+import { monolithicSkusToLegacyPayload, readMonolithicSkus } from '../../../shared/utils/shipmentRecord.js';
 import { listReturnsHistory, parseReturnsHistoryListQuery } from './returnsHistoryList.js';
 
 const parseLocalDate = (value: unknown): Date | null => parseKyivDateTime(value);
@@ -84,16 +80,16 @@ const { dilovodExportBuilder } = await import('../../services/dilovod/DilovodExp
 
     // Склад циклу, який повертаємо (order_shipments); без циклів – як раніше, з orders.items / payloadData
     const returnableShipment = await findReturnableShipment(order.id);
-    if (returnableShipment && isShipmentSummaryV1(returnableShipment.summary)) {
-      const summary = returnableShipment.summary;
-      prepareData.items = summary.items.map((item) => ({
+    const shipmentItems = returnableShipment ? getShipmentSummaryItems(returnableShipment.summary) : null;
+    if (returnableShipment && shipmentItems) {
+      prepareData.items = shipmentItems.map((item) => ({
         sku: item.sku,
         productName: item.productName,
         quantity: item.quantity,
         price: Number(item.price || 0),
         dilovodId: item.dilovodId ?? null,
       }));
-      prepareData.payloadData = shipmentSummaryToLegacyPayload(summary, SHIPMENT_MONOLITHIC_ACC_GOOD);
+      prepareData.payloadData = monolithicSkusToLegacyPayload(readMonolithicSkus(returnableShipment.summary));
     }
 
     const orderDate = order.dilovodSaleExportDate ?? order.orderDate ?? null;

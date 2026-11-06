@@ -29,9 +29,19 @@
 
 ## Цикли відвантаження (`order_shipments`)
 
-Кожна комплектація – окремий цикл зі своїм складом: `orderId`, `cycle` (1, 2, …), `pickedAt`, `pickedById`, `source` (`picking | export | migration`), `summary`, `manifest` (етап 3), `saleDocumentId` / `returnDocumentId` → `order_dilovod_documents`. Сервіс: `server/services/orderShipments.ts` (+ spec).
+Кожна комплектація – окремий цикл зі своїм складом: `orderId`, `cycle` (1, 2, …), `pickedAt`, `pickedById`, `source` (`picking | export | migration`), `summary`, `manifest`, `saleDocumentId` / `returnDocumentId` → `order_dilovod_documents`. Сервіс: `server/services/orderShipments.ts` (+ spec), формат складу: `shared/utils/shipmentRecord.ts` (+ spec).
 
-- **Склад (`summary` v1):** знімок `orders.items` у момент комплектації + `monolithicBySku` з `payloadData.shipment.bySku` (без `accGood`). Рівно те, з чого `DilovodExportBuilder` будує `sale`. Новий формат – етап 3 плану.
+- **Склад v2 (`schemaVersion: 2`)** будує клієнт (`OrderView` → `buildShipmentRecord`, `shared/utils/shipmentRecord.ts`) і надсилає в `PUT /status` полем `shipment` поруч із `payloadData`. Типи: `shared/types/orderShipments.ts`.
+  - `summary` v2: `items` (позиції верхнього рівня з `itemMode`: `regular | monolithic | forced_regular`), `monolithic` (усі SKU, відвантажені монолітом, на будь-якій глибині), `mode`, `totals` (позиції, моноліти, коробки). `accGood` не зберігається.
+  - `manifest` v1: `boxes` (номер, назва, `hardCap` = `qntTo`, `usedPortions`, рядки `monolithic_set | set_unit | product`, `split` для розділених наборів), `looseLines` (без коробки), `unallocated` (не влізло), `decisions` (`forced_regular` / `operator_override`).
+  - Моноліти – рівно набори з `dynamicMonolithic`, як у `payloadData` (spec порівнює з еталонною старою логікою). `set_unit` – набір монолітної категорії: пакується цілим, в обліку розкладається.
+  - `parseShipmentRecordV2` перевіряє форму і розмір (≤ 200 KB); некоректний або відсутній склад не блокує статус, цикл пишеться у v1.
+- **Склад v1** (без v2 від клієнта, експорт без комплектації): знімок `orders.items` + `monolithicBySku` з `payloadData.shipment.bySku`.
+- **Читання:** `readMonolithicSkus` (v2 / v1 / старий `payloadData`), `getShipmentSummaryItems`, `monolithicSkusToLegacyPayload`.
+  - `DilovodExportBuilder.buildSalePayload`: моноліти з відкритого циклу (`getOpenShipmentMonolithicSkus`), без циклу – `payloadData`; явний `payloadDataOverride` (ручне відвантаження) має пріоритет.
+  - Списання монолітів у `PUT /status` – з v2, якщо він є.
+  - Повернення – склад циклу будь-якої версії.
+  - Звіти поки читають `payloadData` / `dilovodSaleExportDate` (етап 4 плану).
 - **Комплектація** (`PUT /api/orders/:id/status` → `3`, до запуску auto-export): якщо останній цикл ще без `sale` – оновлюється (перекомплектація), інакше при зміні статусу створюється новий.
 - **Привʼязка відвантаження:** після кожного запису документів (`recordOrderDilovodDocumentsSafe`, синхронізація) `reconcileOrderShipments` дає відкритому циклу найраніший неприв'язаний `sale`, створений не раніше за комплектацію (допуск 12 год). Старі відвантаження до нової комплектації не прилипають.
 - **Без відкритого циклу:** щойно експортований нами `sale` (статус 3 прийшов із SalesDrive) отримує цикл `source: export` з поточним складом. Відвантаження, знайдені синхронізацією, циклів не створюють (старі – backfill, етап 5).

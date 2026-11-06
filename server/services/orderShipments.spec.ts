@@ -4,9 +4,9 @@ vi.mock('../lib/utils.js', () => ({ prisma: {} }));
 
 const {
   buildShipmentSummaryV1,
+  getShipmentSummaryItems,
   planReturnLinks,
   planSaleLinks,
-  shipmentSummaryToLegacyPayload,
 } = await import('./orderShipments.js');
 
 const d = (iso: string) => new Date(iso);
@@ -37,12 +37,14 @@ describe('buildShipmentSummaryV1', () => {
   });
 });
 
-describe('shipmentSummaryToLegacyPayload', () => {
-  it('повертає shipment.bySku або null', () => {
-    expect(shipmentSummaryToLegacyPayload({ version: 1, items: [], monolithicBySku: { A: 2 } }, 'ACC')).toEqual({
-      shipment: { bySku: { A: { accGood: 'ACC', quantity: 2 } } },
-    });
-    expect(shipmentSummaryToLegacyPayload({ version: 1, items: [], monolithicBySku: {} }, 'ACC')).toBeNull();
+describe('getShipmentSummaryItems', () => {
+  it('v1 і v2 мають позиції, інше – null', () => {
+    expect(getShipmentSummaryItems({ version: 1, items: [{ sku: 'A', quantity: 1 }], monolithicBySku: {} })).toEqual([{ sku: 'A', quantity: 1 }]);
+    expect(getShipmentSummaryItems({
+      version: 2, mode: 'regular', items: [{ sku: 'B', quantity: 2, itemMode: 'regular' }], monolithic: {},
+      totals: { items: 1, monolithicItems: 0, boxes: 0 },
+    })).toEqual([{ sku: 'B', quantity: 2, itemMode: 'regular' }]);
+    expect(getShipmentSummaryItems({ shipment: {} })).toBeNull();
   });
 });
 
