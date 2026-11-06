@@ -17,6 +17,21 @@
 
 ---
 
+## 2026-11-06 – Цикли відвантаження (`order_shipments`), повторні повернення
+
+**Files:** `prisma/schema.prisma`, `prisma/migrations/20261106190000_order_shipments/`, `server/services/orderShipments.ts` (+ spec), `shared/types/orderShipments.ts`, `shared/types/salesdrive.ts`, `shared/utils/dilovodShipmentCycle.ts` (+ spec), `server/services/dilovod/{dilovodShipmentCycle,orderDilovodDocuments,DilovodService,DilovodExportBuilder}.ts`, `server/routes/{orders,dilovod}.ts`, `server/services/orderDatabaseService.ts`, `server/modules/Warehouse/ReturnsHistoryController.ts`, `client/pages/Warehouse/WarehouseReturns/{useWarehouseReturns.ts,components/OrderSearchInput.tsx}`, `client/components/{SalesDriveOrdersTable.tsx,ui/EventTimelineList.tsx}`
+
+- **Таблиця `order_shipments`:** кожна комплектація – окремий цикл зі своїм складом (`summary` v1: знімок `orders.items` + монолітні набори з `payloadData`), привʼязаний до свого `sale` і `saleReturn` з `order_dilovod_documents`. Раніше повторна комплектація перезаписувала склад попередньої.
+- **Запис:** `PUT /orders/:id/status` → 3 створює або оновлює цикл до auto-export; після запису документів Dilovod цикли звіряються (`reconcileOrderShipments`). Наш експорт без відкритого циклу створює цикл `source: export`; синхронізація нових циклів не створює.
+- **Повернення:** `prepare` бере склад із циклу, який повертаємо. Друге повернення доступне після повторного відвантаження (`isLastShipmentReturned` у `prepare`, `send`, пошуку на складі; перевірка в Dilovod за кількістю `sale` / `saleReturn`). Бейдж «Дубль» – `isReturnDuplicate`.
+- **Тултіп відвантаження:** склад циклу під кожним `sale`, цикли «Скомплектовано, без відвантаження». `EventTimelineList` отримав `description`.
+- `SHIPMENT_MONOLITHIC_ACC_GOOD` винесено в `shared/utils/dilovodShipmentCycle.ts`.
+- **Деплой:** `npx prisma migrate deploy` + `npm run db:generate` + перезапуск сервера.
+
+**Документація:** `Docs/integrations/dilovod-shipment-cycles.md` – розділи «Цикли відвантаження», «Повернення», прибрано обмеження про друге повернення; `Docs/plans/dilovod-documents-and-shipment-cycles.md` – статус етапів.
+
+---
+
 ## 2026-11-06 – Dilovod: історія документів замовлення, тултіпи з історією в таблиці замовлень
 
 **Files:** `prisma/schema.prisma`, `prisma/migrations/20261106160000_order_dilovod_documents/`, `server/services/dilovod/orderDilovodDocuments.ts` (+ spec), `shared/types/orderDilovodDocuments.ts`, `shared/types/salesdrive.ts`, `server/services/dilovod/{DilovodService,DilovodApiClient,DilovodAutoExportService,CashInExportBuilder}.ts`, `server/modules/Warehouse/ReturnsHistoryController.ts`, `server/routes/dilovod.ts`, `client/components/ui/EventTimelineList.tsx`, `client/components/OrderStatusChip.tsx`, `client/components/SalesDriveOrdersTable.tsx`, `Docs/plans/{dilovod-documents-and-shipment-cycles,shipment-payload-refactor}.md`

@@ -2,6 +2,7 @@ import { prisma } from '../../lib/utils.js';
 import { parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import { dilovodRefId } from './dilovodContractPerson.js';
 import type { OrderDilovodDocumentDto, OrderDilovodDocumentType } from '../../../shared/types/orderDilovodDocuments.js';
+import { reconcileOrderShipmentsSafe } from '../orderShipments.js';
 
 /**
  * Документи Dilovod замовлення (`order_dilovod_documents`): повна історія циклів
@@ -103,7 +104,14 @@ export async function recordOrderDilovodDocumentsSafe(
     await recordOrderDilovodDocuments(orderId, docs, source);
   } catch (error) {
     console.warn(`⚠️ [${label}] Не вдалося записати документи Dilovod для orderId=${orderId}:`, error instanceof Error ? error.message : error);
+    return;
   }
+
+  // Цикли відвантаження: щойно експортований sale без відкритого циклу отримує новий цикл
+  const createForSaleIds = source === 'export'
+    ? docs.filter((doc) => doc.type === 'sale').map((doc) => doc.dilovodId)
+    : [];
+  await reconcileOrderShipmentsSafe(orderId, { createForSaleIds }, label);
 }
 
 export async function deleteOrderDilovodDocumentsByOrderNumbers(orderNumbers: string[]): Promise<number> {

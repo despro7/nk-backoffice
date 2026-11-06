@@ -25,6 +25,8 @@ interface OrderSearchResult {
   statusText?: string;
   dilovodReturnDate?: string | null;
   dilovodReturnDocsCount?: number | null;
+  dilovodSaleExportDate?: string | null;
+  dilovodSaleDocsCount?: number | null;
 }
 
 interface PrepareReturnResponse {
@@ -527,6 +529,8 @@ export function useWarehouseReturns() {
         statusText: order.statusText,
         dilovodReturnDate: order.dilovodReturnDate,
         dilovodReturnDocsCount: order.dilovodReturnDocsCount,
+        dilovodSaleExportDate: order.dilovodSaleExportDate,
+        dilovodSaleDocsCount: order.dilovodSaleDocsCount,
       })));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Невідома помилка пошуку';

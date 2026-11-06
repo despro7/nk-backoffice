@@ -8,6 +8,8 @@ export type EventTimelineEntry = {
   key: string;
   icon: IconName;
   label: ReactNode;
+  /** Додатковий рядок під назвою (напр. склад відвантаження). */
+  description?: ReactNode;
   /** ISO / Date; відображається через `formatDate` (Europe/Kyiv). */
   date: string | Date | null | undefined;
   tone?: EventTimelineTone;
@@ -55,6 +57,7 @@ export function EventTimelineList({
             <DynamicIcon name={entry.icon} size={14} className={`mt-0.5 shrink-0 ${ICON_TONE[tone]}`} />
             <div className="flex min-w-0 flex-col leading-snug">
               <span className={`font-medium ${LABEL_TONE[tone]}`}>{entry.label}</span>
+              {entry.description ? <span className="text-neutral-600">{entry.description}</span> : null}
               <span className="text-neutral-500">{formatDate(entry.date ?? null)}</span>
             </div>
           </div>

@@ -66,6 +66,26 @@ export function isReshippedAfterReturn(
   return new Date(saleExportDate).getTime() > new Date(returnDate).getTime();
 }
 
+/** Рахунок обліку монолітного набору в рядку відвантаження (`accGood`). */
+export const SHIPMENT_MONOLITHIC_ACC_GOOD = '1119000000001079';
+
+/**
+ * Останнє відвантаження вже повернуте: нове повернення недоступне, доки не буде
+ * повторного відвантаження. Лічильники документів мають пріоритет, дати – fallback.
+ */
+export function isLastShipmentReturned(state: {
+  saleDocsCount?: number | null;
+  saleExportDate?: Date | string | null;
+  returnDocsCount?: number | null;
+  returnDate?: Date | string | null;
+}): boolean {
+  const returns = state.returnDocsCount ?? (state.returnDate ? 1 : 0);
+  if (returns <= 0 && !state.returnDate) return false;
+  const sales = state.saleDocsCount ?? (state.saleExportDate ? 1 : 0);
+  if (sales > returns) return false;
+  return !isReshippedAfterReturn(state.saleExportDate, state.returnDate);
+}
+
 /**
  * Мінімальний проміжок між першою і повторною комплектацією.
  * Відсікає відлуння статусу 3 від SalesDrive і зсуви часових поясів у датах.

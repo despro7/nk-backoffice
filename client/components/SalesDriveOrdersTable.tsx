@@ -43,6 +43,7 @@ import { OrderStatusChip } from './OrderStatusChip';
 import { EVENT_TIMELINE_OVERLAY_CLASS, EventTimelineList, type EventTimelineEntry } from '@/components/ui/EventTimelineList';
 import type { SalesDriveOrderForExport, SalesDriveOrdersResponse, } from "@shared/types/salesdrive";
 import type { OrderDilovodDocumentDto, OrderDilovodDocumentType } from "@shared/types/orderDilovodDocuments";
+import type { OrderShipmentBriefDto } from "@shared/types/orderShipments";
 import type { SalesChannel } from "@shared/types/dilovod";
 import { isReshippedAfterReturn, isReturnDuplicate, isSaleDuplicate } from "@shared/utils/dilovodShipmentCycle";
 
@@ -74,6 +75,12 @@ function dilovodDocumentEntries(
   return (order.dilovodDocuments ?? [])
     .filter((doc) => types.includes(doc.type))
     .map((doc, index) => ({ key: doc.dilovodId, date: doc.docDate, ...toEntry(doc, index) }));
+}
+
+/** Склад циклу комплектації: «Позицій: 3, з них монолітних: 1». */
+function formatShipmentComposition(shipment: OrderShipmentBriefDto): string {
+  const base = `Позицій: ${shipment.itemsCount}`;
+  return shipment.monolithicCount > 0 ? `${base}, з них монолітних: ${shipment.monolithicCount}` : base;
 }
 
 /** Тултіп колонки «Експорт»: документ замовлення (saleOrder). */
@@ -128,6 +135,8 @@ function DilovodShipmentTimeline({ order }: { order: SalesDriveOrderForExport })
   const saleDuplicate = isSaleDuplicate(order.dilovodSaleDocsCount, order.dilovodReturnDocsCount);
   const returnDuplicate = isReturnDuplicate(order.dilovodReturnDocsCount, order.dilovodSaleDocsCount);
 
+  const shipmentBySaleId = new Map((order.shipments ?? []).filter((shipment) => shipment.saleDilovodId).map((shipment) => [shipment.saleDilovodId!, shipment]));
+
   let saleIndex = 0;
   const fromDocs = dilovodDocumentEntries(order, ['sale', 'saleReturn'], (doc) => {
     if (doc.type === 'saleReturn') {
@@ -135,9 +144,28 @@ function DilovodShipmentTimeline({ order }: { order: SalesDriveOrderForExport })
     }
     const label = saleIndex === 0 ? 'Відвантажено' : 'Повторно відвантажено';
     saleIndex += 1;
-    return { icon: 'truck', label: withDocNumber(label, doc.number), tone: 'success' };
+    const shipment = shipmentBySaleId.get(doc.dilovodId);
+    return {
+      icon: 'truck',
+      label: withDocNumber(label, doc.number),
+      tone: 'success',
+      ...(shipment ? { description: formatShipmentComposition(shipment) } : {}),
+    };
   });
   const entries = fromDocs.length > 0 ? fromDocs : shipmentEntriesFromOrderFields(order);
+
+  // Скомплектовано, але ще не відвантажено в Dilovod
+  for (const shipment of order.shipments ?? []) {
+    if (shipment.saleDilovodId) continue;
+    entries.push({
+      key: `picked-${shipment.cycle}`,
+      icon: 'package-check',
+      label: 'Скомплектовано, без відвантаження',
+      description: formatShipmentComposition(shipment),
+      date: shipment.pickedAt,
+    });
+  }
+  entries.sort((left, right) => new Date(left.date ?? 0).getTime() - new Date(right.date ?? 0).getTime());
 
   const warning = saleDuplicate
     ? `Дублювання відвантаження: знайдено ${order.dilovodSaleDocsCount} документи при ${order.dilovodReturnDocsCount ?? 0} поверненнях.`

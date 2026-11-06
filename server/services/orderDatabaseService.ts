@@ -766,6 +766,7 @@ export class OrderDatabaseService {
         pricinaZnizki: true,
         sajt: true,
         dilovodSaleExportDate: true,
+        dilovodSaleDocsCount: true,
         dilovodReturnDate: true,
         payloadData: true,
         dilovodReturnDocsCount: true

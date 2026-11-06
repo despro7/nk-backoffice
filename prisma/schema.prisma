@@ -59,14 +59,14 @@ model RolePermission {
 }
 
 model Order {
-  id                         Int             @id
-  externalId                 String          @unique
+  id                         Int                    @id
+  externalId                 String                 @unique
   orderDate                  DateTime?
   quantity                   Int
   status                     String
   statusText                 String
-  items                      String          @db.LongText
-  createdAt                  DateTime        @default(now())
+  items                      String                 @db.LongText
+  createdAt                  DateTime               @default(now())
   updatedAt                  DateTime?
   readyToShipAt              DateTime? // Дата набуття статусу 3 (Готове до відправки)
   cityName                   String?
@@ -76,21 +76,21 @@ model Order {
   ttn                        String
   sajt                       String?
   pricinaZnizki              String?
-  rawData                    String          @db.LongText
+  rawData                    String                 @db.LongText
   payloadData                Json?
   deliveryAddress            String?
-  lastSynced                 DateTime        @default(now())
+  lastSynced                 DateTime               @default(now())
   orderNumber                String
   paymentMethod              String?
   shippingMethod             String?
   totalPrice                 Float?
   syncError                  String?
-  syncStatus                 String          @default("pending")
+  syncStatus                 String                 @default("pending")
   dilovodDocId               String?
   dilovodSaleExportDate      DateTime? // Дата відвантаження в Діловод (documents.sale)
   dilovodSaleDocsCount       Int? // Кількість документів відвантаження в Діловоді (> 1 = помилка дублікату)
   dilovodSaleExportLockUntil DateTime? // TTL-lock для атомарного створення documents.sale
-  dilovodSaleExportLockToken String?         @db.VarChar(64) // Токен власника lock-а
+  dilovodSaleExportLockToken String?                @db.VarChar(64) // Токен власника lock-а
   dilovodExportDate          DateTime? // Дата вивантаження в Dilovod
   dilovodCashInDate          DateTime? // Дата додавання документу (documents.cashIn)
   dilovodCashInLastChecked   DateTime? // Дата останньої перевірки cashIn (для уникнення частих запитів)
@@ -98,6 +98,7 @@ model Order {
   dilovodReturnDocsCount     Int? // Кількість документів повернення (> 1 = помилка дублікату)
   OrdersHistory              OrdersHistory[]
   dilovodDocuments           OrderDilovodDocument[]
+  shipments                  OrderShipment[]
 
   @@index([status])
   @@index([externalId])
@@ -115,20 +116,47 @@ model Order {
 /// Дзеркало документів Dilovod замовлення (saleOrder, cashIn, sale, saleReturn).
 /// Повна історія циклів; поля orders.dilovod* лишаються кешем останнього стану.
 model OrderDilovodDocument {
-  id        Int      @id @default(autoincrement())
-  orderId   Int
-  type      String   @db.VarChar(32) // saleOrder | cashIn | sale | saleReturn
-  dilovodId String   @unique @db.VarChar(32)
-  number    String?  @db.VarChar(64)
-  docDate   DateTime
-  source    String   @db.VarChar(16) // sync | export | migration
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id               Int            @id @default(autoincrement())
+  orderId          Int
+  type             String         @db.VarChar(32) // saleOrder | cashIn | sale | saleReturn
+  dilovodId        String         @unique @db.VarChar(32)
+  number           String?        @db.VarChar(64)
+  docDate          DateTime
+  source           String         @db.VarChar(16) // sync | export | migration
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  order            Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  saleOfShipment   OrderShipment? @relation("ShipmentSaleDocument")
+  returnOfShipment OrderShipment? @relation("ShipmentReturnDocument")
 
   @@index([orderId])
   @@index([type, docDate])
   @@map("order_dilovod_documents")
+}
+
+/// Цикл комплектації / відвантаження замовлення: склад кожного відвантаження окремо.
+/// Звʼязок з документами Dilovod: saleDocumentId (sale), returnDocumentId (saleReturn).
+model OrderShipment {
+  id               Int                   @id @default(autoincrement())
+  orderId          Int
+  cycle            Int
+  pickedAt         DateTime
+  pickedById       Int?
+  source           String                @db.VarChar(16) // picking | export | migration
+  schemaVersion    Int
+  summary          Json
+  manifest         Json?
+  saleDocumentId   Int?                  @unique
+  returnDocumentId Int?                  @unique
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  order            Order                 @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  saleDocument     OrderDilovodDocument? @relation("ShipmentSaleDocument", fields: [saleDocumentId], references: [id], onDelete: SetNull)
+  returnDocument   OrderDilovodDocument? @relation("ShipmentReturnDocument", fields: [returnDocumentId], references: [id], onDelete: SetNull)
+
+  @@unique([orderId, cycle])
+  @@index([pickedAt])
+  @@map("order_shipments")
 }
 
 model OrdersHistory {

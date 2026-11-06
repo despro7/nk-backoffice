@@ -26,6 +26,7 @@ import { catalogOpsLookup } from '../../modules/Products/CatalogOpsLookup.js';
 import { DilovodService } from './index.js';
 import { orderDatabaseService } from '../orderDatabaseService.js';
 import { dilovodService } from './DilovodService.js';
+import { SHIPMENT_MONOLITHIC_ACC_GOOD } from './dilovodShipmentCycle.js';
 
 
 const prisma = new PrismaClient();
@@ -39,7 +40,7 @@ const DILOVOD_CONSTANTS = {
   STATE_POSTED: '1111500000000006',              // Статус замовлення "Виконано"
   BUSINESS_PROCESS: '1115000000000001',          // ID виду бізнесу
   DOC_MODE_WHOLESALE: '1004000000000350',        // Операція "Відвантаження покупцеві"
-  SHIPMENT_MONOLITHIC_ACC_GOOD: '1119000000001079', // Монолітний комплект у shipment
+  SHIPMENT_MONOLITHIC_ACC_GOOD, // Монолітний комплект у shipment (shared/utils/dilovodShipmentCycle)
 } as const;
 
 export interface ExportBuildContext {

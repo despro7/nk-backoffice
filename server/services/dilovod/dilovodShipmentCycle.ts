@@ -1,6 +1,8 @@
 import { prisma } from '../../lib/utils.js';
 
 export {
+  isLastShipmentReturned,
+  SHIPMENT_MONOLITHIC_ACC_GOOD,
   isRepeatPicking,
   isReturnDuplicate,
   isSaleDuplicate,

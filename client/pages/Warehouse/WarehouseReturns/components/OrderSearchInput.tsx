@@ -2,6 +2,7 @@ import { getStatusColor } from '@/lib';
 import { formatTrackingNumberWithIcon } from '@/lib/formatUtilsJSX';
 import { Button, Input } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { isLastShipmentReturned, isReturnDuplicate } from '@shared/utils/dilovodShipmentCycle';
 
 interface OrderSearchInputProps {
   searchQuery: string;
@@ -20,6 +21,8 @@ interface OrderSearchInputProps {
     statusText?: string;
     dilovodReturnDate?: string | null;
     dilovodReturnDocsCount?: number | null;
+    dilovodSaleExportDate?: string | null;
+    dilovodSaleDocsCount?: number | null;
   }>;
   loading: boolean;
   hasSearchExecuted: boolean;
@@ -78,6 +81,13 @@ export function OrderSearchInput({
       {searchResults.length > 0 && (
         <div className="space-y-3">
           {searchResults.map((order) => {
+            // Останнє відвантаження вже повернуте; після повторного відвантаження знову доступно
+            const isReturnBlocked = isLastShipmentReturned({
+              saleDocsCount: order.dilovodSaleDocsCount,
+              saleExportDate: order.dilovodSaleExportDate,
+              returnDocsCount: order.dilovodReturnDocsCount,
+              returnDate: order.dilovodReturnDate,
+            });
             const isHidden = selectedOrderId != null && order.id !== selectedOrderId;
             return (
               <div
@@ -87,12 +97,12 @@ export function OrderSearchInput({
                 <button
                   type="button"
                   className={`w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-left transition ${
-                    order.dilovodReturnDate || (order.dilovodReturnDocsCount ?? 0) > 0
+                    isReturnBlocked
                       ? 'cursor-not-allowed bg-gray-50 text-gray-400'
                       : 'hover:border-primary/70 hover:bg-primary/5'
                   }`}
                   onClick={() => onSelectOrder(order.id)}
-                  disabled={isHidden || order.dilovodReturnDate != null || (order.dilovodReturnDocsCount ?? 0) > 0}
+                  disabled={isHidden || isReturnBlocked}
                 >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -113,10 +123,10 @@ export function OrderSearchInput({
                     {order.dilovodReturnDate && (
                       <span className="ml-2 rounded-full bg-orange-100 px-2 py-0.5 text-xs text-orange-700">Повернення: {new Date(order.dilovodReturnDate).toLocaleDateString('uk-UA')}</span>
                     )}
-                    {order.dilovodReturnDocsCount != null && order.dilovodReturnDocsCount > 1 && (
+                    {isReturnDuplicate(order.dilovodReturnDocsCount, order.dilovodSaleDocsCount) && (
                       <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">Дубль: {order.dilovodReturnDocsCount}</span>
                     )}
-                    {order.dilovodReturnDate || (order.dilovodReturnDocsCount ?? 0) > 0 ? (
+                    {isReturnBlocked ? (
                       <span className="ml-2 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">Недоступно</span>
                     ) : null}
                   </div>

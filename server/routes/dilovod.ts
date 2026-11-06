@@ -20,6 +20,7 @@ import {
   recordOrderDilovodDocumentsSafe,
   toOrderDilovodDocumentInputs,
 } from '../services/dilovod/orderDilovodDocuments.js';
+import { loadOrderShipmentBriefs } from '../services/orderShipments.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -977,7 +978,10 @@ router.get('/salesdrive/orders', authenticateToken, dilovodExport, async (req, r
 
     // Історія статусів і документи Dilovod одним запитом на сторінку (тултіпи в таблиці)
     const orderIds = orders.map((order) => order.id);
-    const dilovodDocumentsByOrderId = await loadOrderDilovodDocuments(orderIds);
+    const [dilovodDocumentsByOrderId, shipmentsByOrderId] = await Promise.all([
+      loadOrderDilovodDocuments(orderIds),
+      loadOrderShipmentBriefs(orderIds),
+    ]);
     const statusHistoryRows = orderIds.length > 0
       ? await prisma.ordersHistory.findMany({
           where: { orderId: { in: orderIds } },
@@ -1000,6 +1004,7 @@ router.get('/salesdrive/orders', authenticateToken, dilovodExport, async (req, r
         ...order,
         statusHistory: statusHistoryByOrderId.get(order.id) || [],
         dilovodDocuments: dilovodDocumentsByOrderId.get(order.id) || [],
+        shipments: shipmentsByOrderId.get(order.id) || [],
       })),
       pagination: {
         page,

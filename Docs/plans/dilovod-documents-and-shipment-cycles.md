@@ -1,6 +1,6 @@
 # План: документи Dilovod і цикли відвантаження замовлення
 
-Статус: план, не реалізовано. Розвиває `Docs/plans/shipment-payload-refactor.md` і `Docs/integrations/dilovod-shipment-cycles.md`.
+Статус: етапи 1–2 реалізовано (06.11.2026), етапи 3–5 – план. Розвиває `Docs/plans/shipment-payload-refactor.md` і `Docs/integrations/dilovod-shipment-cycles.md`.
 
 ## Проблема
 
@@ -69,7 +69,7 @@ Summary: `{ version, mode, totals, bySku: { [sku]: { quantity, itemMode } } }`, 
 
 ## Етапи
 
-### Етап 1. `order_dilovod_documents`
+### Етап 1. `order_dilovod_documents` (виконано)
 
 - Схема, міграція (`migrate dev --create-only`, перегляд SQL, застосування після підтвердження).
 - `server/services/dilovod/orderDilovodDocuments.ts`: `recordOrderDilovodDocuments` (upsert за `dilovodId`), `reconcileOrderDilovodDocuments` (прибирає документи, яких у Dilovod уже немає). Spec поруч.
@@ -78,7 +78,7 @@ Summary: `{ version, mode, totals, bySku: { [sku]: { quantity, itemMode } } }`, 
 - `GET /salesdrive/orders` віддає `dilovodDocuments` одним запитом на сторінку; тултіп показує весь ланцюжок.
 - Поля `orders.dilovod*` лишаються і оновлюються як зараз.
 
-### Етап 2. `order_shipments`
+### Етап 2. `order_shipments` (виконано)
 
 - Новий цикл при кожному переході в статус `3` (`PUT /orders/:id/status`): `summary` будується з поточного `payloadData` + позицій замовлення, `manifest` поки `null`.
 - Після успішного експорту `sale` цикл отримує `saleDocumentId`; повернення отримує `returnDocumentId` останнього неповерненого циклу.

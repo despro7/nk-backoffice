@@ -7,6 +7,7 @@ import { prisma, getOrderSourceDetailed, getOrderSourceMaps, getReportingDayStar
 import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
 import { dilovodService } from '../services/dilovod/index.js';
 import { getStatusText } from '../services/salesdrive/statusMapper.js';
+import { recordShipmentPicking } from '../services/orderShipments.js';
 import {
   computeOrderedSetQuantityBreakdown,
   computeShippedQuantityBreakdown,
@@ -1118,6 +1119,18 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
     }
 
     if (nextStatus === '3') {
+      // Цикл комплектації (order_shipments): склад цієї комплектації окремо від попередніх.
+      // До auto-export, щоб відвантаження привʼязалось до відкритого циклу.
+      try {
+        await recordShipmentPicking(orderId, {
+          pickedAt: new Date(),
+          pickedById: authUser?.userId && authUser.userId > 0 ? authUser.userId : null,
+          statusChanged,
+        });
+      } catch (shipmentErr) {
+        console.warn(`⚠️ [Orders API] Не вдалося записати цикл комплектації для ${id}:`, shipmentErr instanceof Error ? shipmentErr.message : shipmentErr);
+      }
+
       // Тригер автоматичного export/відвантаження в Dilovod (фонова операція — не блокує відповідь)
       import('../services/dilovod/DilovodAutoExportService.js')
         .then(({ dilovodAutoExportService }) =>

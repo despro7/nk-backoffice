@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isLastShipmentReturned,
   isRepeatPicking,
   isReshippedAfterReturn,
   isReturnDuplicate,
@@ -109,5 +110,30 @@ describe('isRepeatPicking', () => {
 
   it('без дат: false', () => {
     expect(isRepeatPicking(null, '2026-10-02T06:35:32Z')).toBe(false);
+  });
+});
+
+describe('isLastShipmentReturned', () => {
+  it('немає повернень: можна повертати', () => {
+    expect(isLastShipmentReturned({ saleDocsCount: 1, saleExportDate: '2026-10-02T05:35:32Z' })).toBe(false);
+  });
+
+  it('одне відвантаження, одне повернення: недоступно', () => {
+    expect(isLastShipmentReturned({
+      saleDocsCount: 1, saleExportDate: '2026-10-02T05:35:32Z',
+      returnDocsCount: 1, returnDate: '2026-10-13T07:52:17Z',
+    })).toBe(true);
+  });
+
+  it('повторне відвантаження після повернення (24453): знову можна', () => {
+    expect(isLastShipmentReturned({
+      saleDocsCount: 2, saleExportDate: '2026-11-05T13:42:29Z',
+      returnDocsCount: 1, returnDate: '2026-10-13T07:52:17Z',
+    })).toBe(false);
+  });
+
+  it('без лічильників: за датами', () => {
+    expect(isLastShipmentReturned({ saleExportDate: '2026-10-02T00:00:00Z', returnDate: '2026-10-13T00:00:00Z' })).toBe(true);
+    expect(isLastShipmentReturned({ saleExportDate: '2026-11-05T00:00:00Z', returnDate: '2026-10-13T00:00:00Z' })).toBe(false);
   });
 });

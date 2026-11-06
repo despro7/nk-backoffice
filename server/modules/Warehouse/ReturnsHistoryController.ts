@@ -6,6 +6,13 @@ import { salesDriveService } from '../../services/salesDriveService.js';
 import { authenticateToken, requirePermission } from '../../middleware/auth.js';
 import { parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import { recordOrderDilovodDocumentsSafe, toOrderDilovodDocumentInputs } from '../../services/dilovod/orderDilovodDocuments.js';
+import {
+  isLastShipmentReturned,
+  latestDocDate,
+  needsNewSaleDoc,
+  SHIPMENT_MONOLITHIC_ACC_GOOD,
+} from '../../services/dilovod/dilovodShipmentCycle.js';
+import { findReturnableShipment, isShipmentSummaryV1, shipmentSummaryToLegacyPayload } from '../../services/orderShipments.js';
 import { listReturnsHistory, parseReturnsHistoryListQuery } from './returnsHistoryList.js';
 
 const parseLocalDate = (value: unknown): Date | null => parseKyivDateTime(value);
@@ -38,6 +45,7 @@ router.get('/prepare', authenticateToken, warehouseOperate, async (req, res) => 
         ttn: true,
         orderDate: true,
         dilovodSaleExportDate: true,
+        dilovodSaleDocsCount: true,
         dilovodDocId: true,
         dilovodReturnDate: true,
         dilovodReturnDocsCount: true,
@@ -49,7 +57,13 @@ router.get('/prepare', authenticateToken, warehouseOperate, async (req, res) => 
       return res.status(404).json({ success: false, error: 'Замовлення не знайдено' });
     }
 
-    if (order.dilovodReturnDate || (order.dilovodReturnDocsCount ?? 0) > 0) {
+    // Блокуємо лише якщо останнє відвантаження вже повернуте (після повторного відвантаження можна знову)
+    if (isLastShipmentReturned({
+      saleDocsCount: order.dilovodSaleDocsCount,
+      saleExportDate: order.dilovodSaleExportDate,
+      returnDocsCount: order.dilovodReturnDocsCount,
+      returnDate: order.dilovodReturnDate,
+    })) {
       const countLabel = order.dilovodReturnDocsCount && order.dilovodReturnDocsCount > 1
         ? ` (${order.dilovodReturnDocsCount} документи)`
         : '';
@@ -67,6 +81,20 @@ router.get('/prepare', authenticateToken, warehouseOperate, async (req, res) => 
 
 const { dilovodExportBuilder } = await import('../../services/dilovod/DilovodExportBuilder.js');
     const prepareData = await dilovodExportBuilder.prepareReturn(String(order.id));
+
+    // Склад циклу, який повертаємо (order_shipments); без циклів – як раніше, з orders.items / payloadData
+    const returnableShipment = await findReturnableShipment(order.id);
+    if (returnableShipment && isShipmentSummaryV1(returnableShipment.summary)) {
+      const summary = returnableShipment.summary;
+      prepareData.items = summary.items.map((item) => ({
+        sku: item.sku,
+        productName: item.productName,
+        quantity: item.quantity,
+        price: Number(item.price || 0),
+        dilovodId: item.dilovodId ?? null,
+      }));
+      prepareData.payloadData = shipmentSummaryToLegacyPayload(summary, SHIPMENT_MONOLITHIC_ACC_GOOD);
+    }
 
     const orderDate = order.dilovodSaleExportDate ?? order.orderDate ?? null;
     res.json({
@@ -100,7 +128,14 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
 
     const order = await prisma.order.findUnique({
       where: { id: Number(orderId) },
-      select: { id: true, dilovodDocId: true, dilovodReturnDate: true, dilovodReturnDocsCount: true },
+      select: {
+        id: true,
+        dilovodDocId: true,
+        dilovodSaleExportDate: true,
+        dilovodSaleDocsCount: true,
+        dilovodReturnDate: true,
+        dilovodReturnDocsCount: true,
+      },
     });
 
     if (!order) {
@@ -108,7 +143,13 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
     }
 
     // Перевірка на дублювання оприбуткування
-    if (order.dilovodReturnDate || (order.dilovodReturnDocsCount ?? 0) > 0) {
+    // Блокуємо лише якщо останнє відвантаження вже повернуте (після повторного відвантаження можна знову)
+    if (isLastShipmentReturned({
+      saleDocsCount: order.dilovodSaleDocsCount,
+      saleExportDate: order.dilovodSaleExportDate,
+      returnDocsCount: order.dilovodReturnDocsCount,
+      returnDate: order.dilovodReturnDate,
+    })) {
       return res.status(400).json({ 
         success: false, 
         error: 'Це замовлення вже було оприбутковано в Діловод (дублювання повернення)' 
@@ -186,17 +227,22 @@ overrideFirmId,
     try {
       const { DilovodService: DilovodServiceCheck } = await import('../../services/dilovod/DilovodService.js');
       const dilovodServiceCheck = new DilovodServiceCheck();
-      const existingReturnDocs = await dilovodServiceCheck.getDocuments([baseDocId], 'saleReturn');
-      if (existingReturnDocs.length > 0) {
+      const [existingReturnDocs, existingSaleDocs] = await Promise.all([
+        dilovodServiceCheck.getDocuments([baseDocId], 'saleReturn'),
+        dilovodServiceCheck.getDocuments([baseDocId], 'sale'),
+      ]);
+      // Блокуємо, якщо всі відвантаження вже повернуті (повторне відвантаження дозволяє нове повернення)
+      if (existingReturnDocs.length > 0 && needsNewSaleDoc(existingSaleDocs.length, existingReturnDocs.length)) {
         const returnDoc = existingReturnDocs[0];
         const returnCount = existingReturnDocs.length;
+        const latestReturnDate = latestDocDate(existingReturnDocs);
         console.log(`⚠️ [Returns] В Dilovod вже існує ${returnCount} документ(ів) повернення для замовлення ${orderId} (return id: ${returnDoc.id}) — синхронізуємо та блокуємо`);
         
         // Синхронізуємо локальну БД
         await prisma.order.update({
           where: { id: Number(orderId) },
           data: {
-            dilovodReturnDate: (parseLocalDate(returnDoc.date) ?? new Date()).toISOString(),
+            dilovodReturnDate: (latestReturnDate ?? parseLocalDate(returnDoc.date) ?? new Date()).toISOString(),
             dilovodReturnDocsCount: returnCount,
           },
         });

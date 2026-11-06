@@ -22,6 +22,7 @@ import { pluralize } from '../../lib/utils.js';
 import { pickHumanBatchLabel } from '../../../shared/utils/dilovodBatchId.js';
 import { isSaleDuplicate, latestDocDate } from './dilovodShipmentCycle.js';
 import { recordOrderDilovodDocuments, syncOrderDilovodDocumentsOfType, toOrderDilovodDocumentInputs } from './orderDilovodDocuments.js';
+import { reconcileOrderShipmentsSafe } from '../orderShipments.js';
 import { parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import { dilovodRefId } from './dilovodContractPerson.js';
 
@@ -2510,6 +2511,8 @@ export class DilovodService {
               } catch (docsErr) {
                 console.warn(`⚠️ Замовлення ${orderInfo.orderNumber}: не вдалося оновити order_dilovod_documents:`, docsErr instanceof Error ? docsErr.message : docsErr);
               }
+              // Привʼязка знайдених sale / saleReturn до циклів (нових циклів синхронізація не створює)
+              await reconcileOrderShipmentsSafe(localOrder.id, {}, 'Sync');
             }
 
             // Sale тільки для status >= '3' (або примусово, коли includeAllStatuses === true)
