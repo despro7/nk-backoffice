@@ -7,6 +7,7 @@ import {
 import { getCatalogCardAttentionLabels } from '../../../shared/utils/catalogCardAttention.js';
 import { isSuspiciousSpecQty } from '../../../shared/utils/catalogBomWeight.js';
 import { isKitAccPolicy } from './ProductsTypes.js';
+import { getFinishedProductsFolderIds } from './catalogFinishedProductsFolder.js';
 
 type ListRowWithPrices = {
   id: string;
@@ -75,12 +76,18 @@ export async function enrichCatalogListDtos(
   },
 ): Promise<CatalogGoodDto[]> {
   const pricesById = new Map(rows.map((row) => [row.id, row.prices ?? []]));
+  const finishedFolderIds = dtos.some((dto) => !dto.isGroup)
+    ? await getFinishedProductsFolderIds()
+    : new Set<string>();
 
   return dtos.map((dto) => {
+    const isFinishedProduct =
+      !dto.isGroup && !!dto.parentId && finishedFolderIds.has(dto.parentId);
     const kitPortionCount = dto.isKit ? options.kitPortionById.get(dto.id) ?? 0 : undefined;
     const specQtySuspicious = options.specQtySuspiciousById.get(dto.id) ?? false;
     const catalogAttentionLabels = getCatalogCardAttentionLabels({
       isGroup: dto.isGroup,
+      isFinishedProduct,
       accPolicyId: dto.accPolicyId,
       isKit: dto.isKit,
       weight: dto.weight,
@@ -98,6 +105,7 @@ export async function enrichCatalogListDtos(
 
     return {
       ...dto,
+      ...(dto.isGroup ? {} : { isFinishedProduct }),
       ...(dto.isKit ? { kitPortionCount: kitPortionCount ?? 0 } : {}),
       ...(specQtySuspicious ? { specQtySuspicious: true } : {}),
       ...(catalogAttentionLabels.length > 0 ? { catalogAttentionLabels } : {}),

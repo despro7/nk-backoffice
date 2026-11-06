@@ -63,4 +63,20 @@ describe('getCatalogCardAttentionLabels', () => {
     expect(labels).not.toContain('Склад');
     expect(labels).not.toContain('КБЖУ');
   });
+
+  it('не рахує увагу для товарів поза гілкою «Готова продукція»', () => {
+    const input = {
+      isGroup: false,
+      accPolicyId: CATALOG_ACC_POLICY_GOOD,
+      weight: null,
+      imageCount: 0,
+      description: '',
+      productIngredientsJson: [],
+      productNutritionJson: null,
+    };
+    expect(getCatalogCardAttentionLabels({ ...input, isFinishedProduct: false })).toEqual([]);
+    expect(getCatalogCardAttentionLabels({ ...input, isFinishedProduct: true })).toEqual(
+      expect.arrayContaining(['Вага', 'Зображення', 'Короткий опис', 'КБЖУ', 'Склад']),
+    );
+  });
 });

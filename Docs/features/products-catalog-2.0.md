@@ -452,7 +452,7 @@ client/pages/Products/
 - DTO рядка: `primaryImageUrl`, `imagePreviewUrls` (до 24 файлів, primary → `sortOrder`); абсолютні URL через `mediaPublicBaseUrl` з storefront settings + fallback на origin.
 - Tooltip на **назві товару** — прев’ю головного зображення + назва.
 - Клік по лічильнику зображень — `CatalogImagePreviewPopover` (сітка 3×3, lightbox); той самий компонент, що в tri-source таблиці pull.
-- **Підказки ⚠️** біля назви (і «Вага» в колонці ваги): `catalogAttentionLabels` з API (`getCatalogCardAttentionLabels` / `catalogListAttentionEnrichment`) — обовʼязкові реквізити, некоректна військова ціна, порожній контент вітрини (зображення, короткий опис; КБЖУ і склад лише для продукції, не для наборів), підозрілий `specQty` для продукції з BOM.
+- **Підказки ⚠️** біля назви (і «Вага» в колонці ваги): `catalogAttentionLabels` з API (`getCatalogCardAttentionLabels` / `catalogListAttentionEnrichment`) — обовʼязкові реквізити, некоректна військова ціна, порожній контент вітрини (зображення, короткий опис; КБЖУ і склад лише для продукції, не для наборів), підозрілий `specQty` для продукції з BOM. Рахуються лише для товарів у гілці «Готова продукція» з підгрупами (`isFinishedProduct` у DTO, `getFinishedProductsFolderIds`); для інгредієнтів, матеріалів, НМА, малоцінки тощо підказок немає.
 - Копіювання SKU — кнопка в комірці (`SkuCopyCell`).
 - На вузьких екранах таблиця в обгортці `overflow-x-auto` (горизонтальний scroll).
 - Опис — `DescriptionEditor` (не name).

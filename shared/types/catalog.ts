@@ -130,6 +130,8 @@ export interface CatalogGoodDto {
   missingRequired?: CatalogMissingRequired;
   /** Підказки для іконки уваги в списку каталогу (обовʼязкові поля + валідація). */
   catalogAttentionLabels?: string[];
+  /** Товар у гілці «Готова продукція» (з підгрупами); лише для них рахується увага в списку. */
+  isFinishedProduct?: boolean;
   /** Ймовірно некоректний «Розрахунок на» (лише продукція). */
   specQtySuspicious?: boolean;
   /** Локальні зображення каталогу (не Dilovod); 0 для груп */

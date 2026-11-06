@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-11-06 – Каталог: «Потребує уваги» лише для «Готової продукції»
+
+**Files:** `shared/utils/catalogCardAttention.ts` (+ spec), `shared/types/catalog.ts`, `server/modules/Products/catalogListAttentionEnrichment.ts`, `client/pages/Products/components/CatalogTable.tsx`
+
+- **Проблема:** червона іконка ⚠️ «Потребує уваги» (зображення, короткий опис, КБЖУ, склад тощо) показувалась і в «Інгредієнтах»: фільтр був лише за політикою обліку, а інгредієнти теж «Товар».
+- **Фікс:** збагачення списку визначає належність до гілки «Готова продукція» з підгрупами через `getFinishedProductsFolderIds()` і віддає `isFinishedProduct` у `CatalogGoodDto`. `getCatalogCardAttentionLabels` при `isFinishedProduct === false` повертає порожній список (разом з підказкою «Вага» в колонці ваги). Клієнтський fallback у `CatalogTable` передає той самий прапор.
+- Інших лічильників чи фільтрів за «увагою» немає, змін не потребували.
+
+**Документація:** `Docs/features/products-catalog-2.0.md` – пункт «Підказки ⚠️».
+
+---
+
 ## 2026-11-06 – Dilovod: історія документів замовлення, тултіпи з історією в таблиці замовлень
 
 **Files:** `prisma/schema.prisma`, `prisma/migrations/20261106160000_order_dilovod_documents/`, `server/services/dilovod/orderDilovodDocuments.ts` (+ spec), `shared/types/orderDilovodDocuments.ts`, `shared/types/salesdrive.ts`, `server/services/dilovod/{DilovodService,DilovodApiClient,DilovodAutoExportService,CashInExportBuilder}.ts`, `server/modules/Warehouse/ReturnsHistoryController.ts`, `server/routes/dilovod.ts`, `client/components/ui/EventTimelineList.tsx`, `client/components/OrderStatusChip.tsx`, `client/components/SalesDriveOrdersTable.tsx`, `Docs/plans/{dilovod-documents-and-shipment-cycles,shipment-payload-refactor}.md`

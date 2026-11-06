@@ -171,6 +171,7 @@ function resolveCatalogAttentionLabels(row: CatalogGoodDto): string[] {
   if (row.catalogAttentionLabels?.length) return row.catalogAttentionLabels;
   return getCatalogCardAttentionLabels({
     isGroup: row.isGroup,
+    isFinishedProduct: row.isFinishedProduct,
     accPolicyId: row.accPolicyId,
     isKit: row.isKit,
     weight: row.weight,

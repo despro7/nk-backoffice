@@ -16,6 +16,11 @@ import {
 import { isEffectivelyEmptyHtml } from './storefrontDescriptionParser.js';
 
 export type CatalogCardAttentionInput = CatalogRequiredFieldsInput & {
+  /**
+   * Товар у гілці «Готова продукція». `false`: увага не рахується (інгредієнти, матеріали тощо).
+   * `undefined`: без обмеження за гілкою.
+   */
+  isFinishedProduct?: boolean;
   doNotPublish?: boolean;
   isKit?: boolean;
   imageCount?: number;
@@ -87,6 +92,7 @@ function resolveSpecQty(raw: number | null | undefined): number {
 
 /** Підказки для іконки уваги в каталозі (як у картці товару). */
 export function getCatalogCardAttentionLabels(input: CatalogCardAttentionInput): string[] {
+  if (input.isFinishedProduct === false) return [];
   const missing: CatalogMissingRequired = getMissingRequiredCatalogFields(input);
   const labels = [...catalogMissingNameLabels(missing)];
 
