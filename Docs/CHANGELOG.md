@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-11-06 – Dilovod: історія документів замовлення, тултіпи з історією в таблиці замовлень
+
+**Files:** `prisma/schema.prisma`, `prisma/migrations/20261106160000_order_dilovod_documents/`, `server/services/dilovod/orderDilovodDocuments.ts` (+ spec), `shared/types/orderDilovodDocuments.ts`, `shared/types/salesdrive.ts`, `server/services/dilovod/{DilovodService,DilovodApiClient,DilovodAutoExportService,CashInExportBuilder}.ts`, `server/modules/Warehouse/ReturnsHistoryController.ts`, `server/routes/dilovod.ts`, `client/components/ui/EventTimelineList.tsx`, `client/components/OrderStatusChip.tsx`, `client/components/SalesDriveOrdersTable.tsx`, `Docs/plans/{dilovod-documents-and-shipment-cycles,shipment-payload-refactor}.md`
+
+- **Таблиця `order_dilovod_documents`:** усі документи Dilovod замовлення (`saleOrder`, `cashIn`, `sale`, `saleReturn`) з номером і датою; раніше повторне відвантаження чи повернення перезаписувало дату попереднього. Пишуть синхронізація і всі місця експорту; зайві записи прибираються лише при повній відповіді Dilovod (`getDocumentsWithStatus`). `getDocuments` запитує `number`. Поля `orders.dilovod*` лишаються кешем останнього стану.
+- **Синхронізація дат:** `dilovodSaleExportDate` / `dilovodReturnDate` беруться з найновішого документа і оновлюються, коли в Dilovod з'являється новіший (допуск 12 год). Раніше записувався перший документ і лише в порожнє поле, тому після «Примусової перевірки» повторне відвантаження зникало (24453).
+- **Таблиця замовлень SalesDrive:** тултіп статусу показує історію статусів з `orders_history` (як у звіті продажів, `OrderStatusChip`); тултіпи «Додано в Діловод» показують усі документи з номерами («Відвантажено №0007621», «Повернуто №0000196», «Повторно відвантажено №0009363»). `GET /salesdrive/orders` віддає `statusHistory` і `dilovodDocuments` одним запитом на сторінку.
+- **UI-примітив `EventTimelineList`** (іконка, назва, дата): спільний для історії статусів і документів Dilovod.
+- **План:** `Docs/plans/dilovod-documents-and-shipment-cycles.md` – цикли відвантаження (`order_shipments`), новий формат складу замість `payloadData`, звіти по днях відвантаження, backfill і прибирання старого формату. Поглинає `shipment-payload-refactor.md`.
+- **Деплой:** `npx prisma migrate deploy` + `npm run db:generate` + перезапуск сервера.
+
+**Документація:** `Docs/integrations/dilovod-shipment-cycles.md` – розділи «Історія документів», «Дати останнього документа в синхронізації».
+
+---
+
 ## 2026-11-06 – ШК коробок: перевидання старих кодів `220…` у серію `225…`
 
 **Files:** – (лише дані `catalog_good_barcodes`)

@@ -39,7 +39,10 @@ import { formatRelativeDate, formatDateTime, getStatusLabel, getStatusColor, get
 import { ToastService } from "@/services/ToastService";
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import ResultDrawer from './ResultDrawer';
+import { OrderStatusChip } from './OrderStatusChip';
+import { EVENT_TIMELINE_OVERLAY_CLASS, EventTimelineList, type EventTimelineEntry } from '@/components/ui/EventTimelineList';
 import type { SalesDriveOrderForExport, SalesDriveOrdersResponse, } from "@shared/types/salesdrive";
+import type { OrderDilovodDocumentDto, OrderDilovodDocumentType } from "@shared/types/orderDilovodDocuments";
 import type { SalesChannel } from "@shared/types/dilovod";
 import { isReshippedAfterReturn, isReturnDuplicate, isSaleDuplicate } from "@shared/utils/dilovodShipmentCycle";
 
@@ -55,6 +58,105 @@ interface SalesDriveOrdersTableProps {
   initialSearch?: string;
   initialSearchCategory?: 'orderNumber' | 'ttn' | 'phone' | 'name' | 'all';
   hideFilters?: boolean;
+}
+
+/** Номер документа Dilovod у підписі: «Відвантажено №0007621». */
+function withDocNumber(label: string, number: string | null | undefined): string {
+  return number ? `${label} №${number}` : label;
+}
+
+/** Документи типу з order_dilovod_documents → рядки тултіпа. Порожньо, якщо історії ще немає. */
+function dilovodDocumentEntries(
+  order: SalesDriveOrderForExport,
+  types: OrderDilovodDocumentType[],
+  toEntry: (doc: OrderDilovodDocumentDto, index: number) => Omit<EventTimelineEntry, 'key' | 'date'>,
+): EventTimelineEntry[] {
+  return (order.dilovodDocuments ?? [])
+    .filter((doc) => types.includes(doc.type))
+    .map((doc, index) => ({ key: doc.dilovodId, date: doc.docDate, ...toEntry(doc, index) }));
+}
+
+/** Тултіп колонки «Експорт»: документ замовлення (saleOrder). */
+function DilovodExportTimeline({ order }: { order: SalesDriveOrderForExport }) {
+  const fromDocs = dilovodDocumentEntries(order, ['saleOrder'], (doc) => ({
+    icon: 'search-check',
+    label: withDocNumber('Експортовано', doc.number),
+  }));
+  const entries: EventTimelineEntry[] = fromDocs.length > 0
+    ? fromDocs
+    : order.dilovodExportDate
+      ? [{ key: 'export', icon: 'search-check', label: 'Експортовано', date: order.dilovodExportDate }]
+      : [];
+  return <EventTimelineList emptyText="Ще не оновлено" entries={entries} />;
+}
+
+/** Тултіп колонки «Оплата»: документи cashIn. */
+function DilovodCashInTimeline({ order }: { order: SalesDriveOrderForExport }) {
+  const fromDocs = dilovodDocumentEntries(order, ['cashIn'], (doc) => ({
+    icon: 'wallet',
+    label: withDocNumber('Оплачено', doc.number),
+  }));
+  const entries: EventTimelineEntry[] = fromDocs.length > 0
+    ? fromDocs
+    : order.dilovodCashInDate
+      ? [{ key: 'cash-in', icon: 'wallet', label: 'Оплачено', date: order.dilovodCashInDate }]
+      : [];
+  return <EventTimelineList emptyText="Ще не оплачено" entries={entries} />;
+}
+
+/** Відвантаження й повернення без історії документів: з полів останнього стану замовлення. */
+function shipmentEntriesFromOrderFields(order: SalesDriveOrderForExport): EventTimelineEntry[] {
+  const reshipped = isReshippedAfterReturn(order.dilovodSaleExportDate, order.dilovodReturnDate);
+  const entries: EventTimelineEntry[] = [];
+  if (order.dilovodSaleExportDate) {
+    entries.push({
+      key: 'sale',
+      icon: 'truck',
+      label: reshipped ? 'Повторно відвантажено' : 'Відвантажено',
+      date: order.dilovodSaleExportDate,
+      tone: 'success',
+    });
+  }
+  if (order.dilovodReturnDate) {
+    entries.push({ key: 'return', icon: 'rotate-ccw', label: 'Повернуто', date: order.dilovodReturnDate, tone: 'warning' });
+  }
+  return entries.sort((left, right) => new Date(left.date ?? 0).getTime() - new Date(right.date ?? 0).getTime());
+}
+
+/** Тултіп колонки «Відвантаження»: усі цикли відвантаження й повернення + попередження про дублікати. */
+function DilovodShipmentTimeline({ order }: { order: SalesDriveOrderForExport }) {
+  const saleDuplicate = isSaleDuplicate(order.dilovodSaleDocsCount, order.dilovodReturnDocsCount);
+  const returnDuplicate = isReturnDuplicate(order.dilovodReturnDocsCount, order.dilovodSaleDocsCount);
+
+  let saleIndex = 0;
+  const fromDocs = dilovodDocumentEntries(order, ['sale', 'saleReturn'], (doc) => {
+    if (doc.type === 'saleReturn') {
+      return { icon: 'rotate-ccw', label: withDocNumber('Повернуто', doc.number), tone: 'warning' };
+    }
+    const label = saleIndex === 0 ? 'Відвантажено' : 'Повторно відвантажено';
+    saleIndex += 1;
+    return { icon: 'truck', label: withDocNumber(label, doc.number), tone: 'success' };
+  });
+  const entries = fromDocs.length > 0 ? fromDocs : shipmentEntriesFromOrderFields(order);
+
+  const warning = saleDuplicate
+    ? `Дублювання відвантаження: знайдено ${order.dilovodSaleDocsCount} документи при ${order.dilovodReturnDocsCount ?? 0} поверненнях.`
+    : returnDuplicate
+      ? `Дублювання повернення: знайдено ${order.dilovodReturnDocsCount} документи.`
+      : null;
+
+  return (
+    <EventTimelineList
+      emptyText="Ще не відвантажено"
+      entries={entries}
+      header={warning ? (
+        <span className="flex items-start gap-2 font-medium text-red-700">
+          <DynamicIcon name="alert-triangle" size={14} className="mt-0.5 shrink-0 text-red-500" />
+          {warning}
+        </span>
+      ) : null}
+    />
+  );
 }
 
 export default function SalesDriveOrdersTable({ className, initialSearch, initialSearchCategory, hideFilters = false }: SalesDriveOrdersTableProps) {
@@ -1958,11 +2060,12 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
                   </Tooltip>
                 </TableCell>
                 <TableCell>
-                  <Tooltip placement="top-start" color="secondary" content={`Оновлено: ${order.updatedAt ? formatDateTime(order.updatedAt) : 'Дата не задана'}`}>
-                    <Chip size="sm" variant="flat" classNames={{ base: `${getStatusColor(order.status)} cursor-help` }}>
-                      {order.statusText || getStatusLabel(order.status)}
-                    </Chip>
-                  </Tooltip>
+                  <OrderStatusChip
+                    status={order.status}
+                    label={order.statusText || getStatusLabel(order.status)}
+                    statusHistory={order.statusHistory ?? []}
+                    tooltipPlacement="top-start"
+                  />
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
                   {order.paymentMethod || 'Не задано'}
@@ -1985,27 +2088,10 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    <Tooltip color="secondary" content={order.dilovodExportDate ? 'Експортовано: ' + new Date(order.dilovodExportDate).toLocaleString('uk-UA') : 'Ще не оновлено'}>
+                    <Tooltip classNames={{ content: EVENT_TIMELINE_OVERLAY_CLASS }} content={<DilovodExportTimeline order={order} />}>
                       <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodExportDate ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="search-check" size={16} /></div>
                     </Tooltip>
-                    <Tooltip color={
-                      isSaleDuplicate(order.dilovodSaleDocsCount, order.dilovodReturnDocsCount) ||
-                      isReturnDuplicate(order.dilovodReturnDocsCount, order.dilovodSaleDocsCount)
-                        ? "danger"
-                        : "secondary"
-                    } content={
-                      isSaleDuplicate(order.dilovodSaleDocsCount, order.dilovodReturnDocsCount)
-                        ? `⚠️ Дублювання відвантаження: знайдено ${order.dilovodSaleDocsCount} документи при ${order.dilovodReturnDocsCount ?? 0} поверненнях.`
-                        : isReturnDuplicate(order.dilovodReturnDocsCount, order.dilovodSaleDocsCount)
-                          ? `⚠️ Дублювання повернення: знайдено ${order.dilovodReturnDocsCount} документи.`
-                          : isReshippedAfterReturn(order.dilovodSaleExportDate, order.dilovodReturnDate)
-                            ? 'Повторно відвантажено: ' + new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA') + ' | Попереднє повернення: ' + new Date(order.dilovodReturnDate).toLocaleString('uk-UA')
-                          : order.dilovodReturnDate
-                            ? 'Відвантажено: ' + new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA') + ' | Повернуто: ' + new Date(order.dilovodReturnDate).toLocaleString('uk-UA')
-                            : order.dilovodSaleExportDate
-                              ? 'Відвантажено: ' + new Date(order.dilovodSaleExportDate).toLocaleString('uk-UA')
-                              : 'Ще не відвантажено'
-                    }>
+                    <Tooltip classNames={{ content: EVENT_TIMELINE_OVERLAY_CLASS }} content={<DilovodShipmentTimeline order={order} />}>
                       <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${
                         isSaleDuplicate(order.dilovodSaleDocsCount, order.dilovodReturnDocsCount) ||
                         isReturnDuplicate(order.dilovodReturnDocsCount, order.dilovodSaleDocsCount)
@@ -2019,7 +2105,7 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
                               : 'bg-gray-100 text-gray-300'
                       }`}><DynamicIcon name="truck" size={16} className={order.dilovodReturnDate && !isReshippedAfterReturn(order.dilovodSaleExportDate, order.dilovodReturnDate) ? 'scale-x-[-1]' : ''} /></div>
                     </Tooltip>
-                    <Tooltip color="secondary" content={order.dilovodCashInDate ? 'Оплачено: ' + new Date(order.dilovodCashInDate).toLocaleString('uk-UA') : 'Ще не оплачено'}>
+                    <Tooltip classNames={{ content: EVENT_TIMELINE_OVERLAY_CLASS }} content={<DilovodCashInTimeline order={order} />}>
                       <div className={`w-8 h-8 inline-flex items-center justify-center box-border select-none cursor-help rounded-sm ${order.dilovodCashInDate ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-300'}`}><DynamicIcon name="wallet" size={16} /></div>
                     </Tooltip>
                   </div>

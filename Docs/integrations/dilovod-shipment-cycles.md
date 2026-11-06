@@ -13,6 +13,24 @@
 
 Одне замовлення може пройти кілька циклів: відвантаження, відмова / повернення, повторне відвантаження. Тому кілька `sale` на одне замовлення не завжди дублікат.
 
+Поля `orders.dilovod*` тримають лише **останній** стан (кеш для фільтрів, сортування і lock). Повна історія всіх документів – у `order_dilovod_documents` (див. нижче).
+
+## Історія документів (`order_dilovod_documents`)
+
+Одна строка на документ Dilovod: `orderId`, `type` (`saleOrder | cashIn | sale | saleReturn`), `dilovodId` (unique), `number`, `docDate`, `source` (`sync | export | migration`). Хелпер: `server/services/dilovod/orderDilovodDocuments.ts`.
+
+- **Запис:** upsert за `dilovodId`, повторний запис оновлює лише дату й номер.
+- **Синхронізація** (`DilovodService.checkOrders…`) – головне джерело: пише `saleOrder` і ті типи, які запитувала (`sale` для статусів ≥ 3, `cashIn` без дати оплати, `saleReturn` для 6/7 або кількох `sale`). Документи, яких у Dilovod уже немає, прибираються **лише** при повній відповіді (`DilovodApiClient.getDocumentsWithStatus` → `complete`; впала хоча б одна пачка – нічого не видаляємо).
+- **Експорт:** авто- і ручний експорт `saleOrder` / `sale` (включно з повторним), повернення (`ReturnsHistoryController`), оплати з виписки (`CashInExportBuilder`). Помилка запису не ламає експорт (`recordOrderDilovodDocumentsSafe`).
+- **Примусова перевірка** (`reset-and-check`) видаляє записи замовлення, синхронізація заповнює їх заново.
+- `getDocuments` запитує поле `number`.
+- **UI:** `GET /api/dilovod/salesdrive/orders` віддає `dilovodDocuments` (один запит на сторінку). Тултіпи колонки «Додано в Діловод» показують усі документи з номерами («Відвантажено №…», «Повернуто №…», «Повторно відвантажено №…»); без історії – fallback на поля `orders`.
+- Старі замовлення заповнюються під час перевірки; масовий backfill – етап 5 плану `Docs/plans/dilovod-documents-and-shipment-cycles.md`.
+
+## Дати останнього документа в синхронізації
+
+Синхронізація записує в `dilovodSaleExportDate` / `dilovodReturnDate` дату **найновішого** документа (`latestDocDate`), а не першого знайденого. Дата оновлюється, якщо локальної немає або документ у Dilovod новіший більш ніж на 12 год (допуск: дата першого циклу береться з комплектації і трохи відрізняється від дати документа).
+
 ## Правила (pure: `shared/utils/dilovodShipmentCycle.ts`)
 
 - `resolveShipmentCycle`: `first` (відвантаження ще не було), `already_shipped` (є відвантаження без повернення), `repeat_candidate` (після відвантаження є повернення).

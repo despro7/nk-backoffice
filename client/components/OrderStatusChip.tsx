@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Chip, Popover, PopoverContent, PopoverTrigger, Tooltip } from "@heroui/react";
-import { DynamicIcon } from "lucide-react/dynamic";
-import { formatDate, getStatusColor, getStatusLabel } from "@/lib";
+import { DynamicIcon, type IconName } from "lucide-react/dynamic";
+import { getStatusColor, getStatusLabel } from "@/lib";
+import { EVENT_TIMELINE_OVERLAY_CLASS, EventTimelineList } from "@/components/ui/EventTimelineList";
 
 export type OrderStatusHistoryEntry = {
   status: string;
@@ -186,35 +187,22 @@ export function OrderStatusHistoryTooltip({
       : getReadyToShipDayMismatch(visibleHistory, dayStartHour);
 
   return (
-    <div className="flex flex-col gap-1.5 py-0.5 pr-2">
-      {visibleHistory.map((entry, index) => {
-        const iconName = STATUS_ICONS[entry.status] ?? "circle";
+    <EventTimelineList
+      entries={visibleHistory.map((entry, index) => {
         const entryLabel = entry.statusText || getStatusLabel(entry.status);
         const isDifferentDay =
           mismatch.mismatched &&
           entry.status === STATUS_READY_TO_SHIP &&
           entry.changedAt === mismatch.lastReadyToShipChangedAt;
-
-        return (
-          <div
-            key={`${entry.status}-${entry.changedAt}-${index}`}
-            className="flex items-start gap-2 text-xs"
-          >
-            <DynamicIcon
-              name={iconName as Parameters<typeof DynamicIcon>[0]["name"]}
-              size={14}
-              className={`mt-0.5 shrink-0 ${isDifferentDay ? "text-amber-500" : "text-neutral-500"}`}
-            />
-            <div className="flex min-w-0 flex-col leading-snug">
-              <span className={isDifferentDay ? "font-medium text-amber-700" : "font-medium text-neutral-800"}>
-                {isDifferentDay ? `${entryLabel} (інший день)` : entryLabel}
-              </span>
-              <span className="text-neutral-500">{formatDate(entry.changedAt)}</span>
-            </div>
-          </div>
-        );
+        return {
+          key: `${entry.status}-${entry.changedAt}-${index}`,
+          icon: (STATUS_ICONS[entry.status] ?? "circle") as IconName,
+          label: isDifferentDay ? `${entryLabel} (інший день)` : entryLabel,
+          date: entry.changedAt,
+          tone: isDifferentDay ? "warning" : "default",
+        };
       })}
-    </div>
+    />
   );
 }
 
@@ -235,8 +223,7 @@ type OrderStatusChipProps = {
   tooltipPlacement?: "top" | "bottom" | "left" | "right" | "top-start" | "top-end";
 };
 
-const OVERLAY_CONTENT_CLASS =
-  "bg-white border border-neutral-200 text-neutral-700 px-3 py-2 shadow-md";
+const OVERLAY_CONTENT_CLASS = EVENT_TIMELINE_OVERLAY_CLASS;
 
 /** Hover+fine pointer → Tooltip; touch / без hover → Popover по кліку. */
 function useCanHover(): boolean {

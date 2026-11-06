@@ -12,6 +12,7 @@
 import { PrismaClient } from '@prisma/client';
 import { dilovodExportFlowService, dilovodService } from './index.js';
 import { getDilovodUserId } from './DilovodUtils.js';
+import { recordOrderDilovodDocumentsSafe, toOrderDilovodDocumentInputs } from './orderDilovodDocuments.js';
 import { logServer } from '../../lib/utils.js';
 import { formatKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import type { CashInConfirmedRow, CashInExportResponse } from '../../../shared/types/cashIn.js';
@@ -112,7 +113,11 @@ export class CashInExportBuilder {
           exportedCount++;
 
           // Оновлюємо дату cashIn в БД
-          await this.markOrderAsCashIn(item.orderNumber).catch((e) =>
+          await this.markOrderAsCashIn(
+            item.orderNumber,
+            exportResult.dilovodDocId ?? exportResult.dilovodResponse?.id,
+            (item.payload as any)?.header?.date,
+          ).catch((e) =>
             logServer(`  ⚠️ [CashIn] Не вдалося оновити dilovodCashInDate для №${item.orderNumber}: ${e.message}`)
           );
 
@@ -341,11 +346,22 @@ export class CashInExportBuilder {
   /**
    * Позначає замовлення як оброблене cashIn в БД
    */
-  private async markOrderAsCashIn(orderNumber: string): Promise<void> {
+  private async markOrderAsCashIn(orderNumber: string, cashInDocId?: unknown, cashInDocDate?: unknown): Promise<void> {
     await prisma.order.updateMany({
       where: { orderNumber },
       data: { dilovodCashInDate: new Date() },
     });
+
+    // Історія документів (order_dilovod_documents)
+    if (cashInDocId) {
+      const order = await prisma.order.findFirst({ where: { orderNumber }, select: { id: true } });
+      await recordOrderDilovodDocumentsSafe(
+        order?.id,
+        toOrderDilovodDocumentInputs('cashIn', [{ id: cashInDocId, date: cashInDocDate ?? new Date() }]),
+        'export',
+        'CashIn',
+      );
+    }
   }
 
   /**

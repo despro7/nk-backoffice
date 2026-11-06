@@ -20,6 +20,7 @@ import {
   needsNewSaleDoc,
   resolveShipmentCycle,
 } from './dilovodShipmentCycle.js';
+import { recordOrderDilovodDocumentsSafe, toOrderDilovodDocumentInputs } from './orderDilovodDocuments.js';
 import type { DilovodSettings } from '../../../shared/types/dilovod.js';
 
 const prisma = new PrismaClient();
@@ -275,6 +276,13 @@ export class DilovodAutoExportService {
             `✅ [AutoExport/saleOrder] EARLY-EXIT 2: ПІСЛЯ запису дати від Dilovod API: orderId=${internalOrderId}, orderNum=${orderNum}, dilovodDocId=${dilovodDoc.id}`
           );
 
+          await recordOrderDilovodDocumentsSafe(
+            internalOrderId,
+            toOrderDilovodDocumentInputs('saleOrder', [{ ...dilovodDoc, number: dilovodDoc.number ?? orderNum }]),
+            'sync',
+            'AutoExport/saleOrder',
+          );
+
           return { triggered: false, success: true };
         }
       } catch (checkErr) {
@@ -314,6 +322,13 @@ export class DilovodAutoExportService {
 
         console.log(
           `✅ [AutoExport/saleOrder] ПІСЛЯ запису дати успішно: orderId=${internalOrderId}, orderNum=${orderNum}, dilovodDocId=${exportResult.dilovodDocId}`
+        );
+
+        await recordOrderDilovodDocumentsSafe(
+          internalOrderId,
+          [{ type: 'saleOrder', dilovodId: String(exportResult.dilovodDocId), number: String(orderNum), docDate: new Date() }],
+          'export',
+          'AutoExport/saleOrder',
         );
       } else {
         console.log(
@@ -483,6 +498,13 @@ export class DilovodAutoExportService {
         ]);
         existingSaleCount = saleDocs.length;
 
+        await recordOrderDilovodDocumentsSafe(
+          internalOrderId,
+          [...toOrderDilovodDocumentInputs('sale', saleDocs), ...toOrderDilovodDocumentInputs('saleReturn', returnDocs)],
+          'sync',
+          'AutoExport/sale',
+        );
+
         const latestReturn = latestDocDate(returnDocs);
         await prisma.order.update({
           where: { id: internalOrderId },
@@ -534,6 +556,13 @@ export class DilovodAutoExportService {
           if (existingSaleDocs.length > 0) {
             const saleDoc = existingSaleDocs[0];
             const saleCount = existingSaleDocs.length;
+
+            await recordOrderDilovodDocumentsSafe(
+              internalOrderId,
+              toOrderDilovodDocumentInputs('sale', existingSaleDocs),
+              'sync',
+              'AutoExport/sale',
+            );
             console.log(
               `⚠️ [AutoExport/sale] В Dilovod вже існує ${saleCount} документ(ів) відвантаження для ${orderNum}, синхронізуємо БД`
             );
@@ -605,6 +634,13 @@ export class DilovodAutoExportService {
         if (!completed) {
           console.warn(`⚠️ [AutoExport/sale] Не вдалося зафіксувати shipment lock для orderId=${internalOrderId} після успішного export`);
         }
+
+        await recordOrderDilovodDocumentsSafe(
+          internalOrderId,
+          [{ type: 'sale', dilovodId: String(exportResult.dilovodDocId), docDate: new Date(shipmentDate) }],
+          'export',
+          'AutoExport/sale',
+        );
 
         console.log(
           `✅ [AutoExport/sale] ПІСЛЯ запису дати успішно: orderId=${internalOrderId}, orderNum=${orderNum}, dilovodSaleExportDate=${shipmentDate}`

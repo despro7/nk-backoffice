@@ -5,6 +5,7 @@ import { safeParseItems, normalizeItemsArray } from './historyNormalize.js';
 import { salesDriveService } from '../../services/salesDriveService.js';
 import { authenticateToken, requirePermission } from '../../middleware/auth.js';
 import { parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
+import { recordOrderDilovodDocumentsSafe, toOrderDilovodDocumentInputs } from '../../services/dilovod/orderDilovodDocuments.js';
 import { listReturnsHistory, parseReturnsHistoryListQuery } from './returnsHistoryList.js';
 
 const parseLocalDate = (value: unknown): Date | null => parseKyivDateTime(value);
@@ -199,6 +200,12 @@ overrideFirmId,
             dilovodReturnDocsCount: returnCount,
           },
         });
+        await recordOrderDilovodDocumentsSafe(
+          Number(orderId),
+          toOrderDilovodDocumentInputs('saleReturn', existingReturnDocs),
+          'sync',
+          'Returns',
+        );
         
         return res.status(409).json({
           success: false,
@@ -243,6 +250,19 @@ overrideFirmId,
         dilovodReturnDocsCount: { increment: 1 },
       },
     });
+
+    if (dilovodDocId) {
+      await recordOrderDilovodDocumentsSafe(
+        Number(orderId),
+        [{
+          type: 'saleReturn',
+          dilovodId: String(dilovodDocId),
+          docDate: requestedDate ? (parseLocalDate(requestedDate) ?? new Date()) : new Date(),
+        }],
+        'export',
+        'Returns',
+      );
+    }
 
     // Оновити статус замовлення локально на '7' (Повернення) та сповістити SalesDrive
     let statusUpdateInfo = { local: false, salesDrive: false };

@@ -20,7 +20,9 @@ import { DilovodGoodsCacheManager } from './DilovodGoodsCacheManager.js';
 import { compactMetaLogData, DILOVOD_PRODUCTION_WORKSHOP_STORAGE_ID, isActiveDilovodStorage, mapBarCodesByObjectId } from './DilovodUtils.js';
 import { pluralize } from '../../lib/utils.js';
 import { pickHumanBatchLabel } from '../../../shared/utils/dilovodBatchId.js';
-import { isSaleDuplicate } from './dilovodShipmentCycle.js';
+import { isSaleDuplicate, latestDocDate } from './dilovodShipmentCycle.js';
+import { recordOrderDilovodDocuments, syncOrderDilovodDocumentsOfType, toOrderDilovodDocumentInputs } from './orderDilovodDocuments.js';
+import { parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import { dilovodRefId } from './dilovodContractPerson.js';
 
 export class DilovodService {
@@ -1123,6 +1125,22 @@ export class DilovodService {
   }
 
   // Пошук documents.sale / documents.cashIn / documents.saleReturn
+  /** Документи з ознакою повноти відповіді (див. `DilovodApiClient.getDocumentsWithStatus`). */
+  async getDocumentsWithStatus(
+    baseDoc: any[],
+    documentType: 'sale' | 'cashIn' | 'saleReturn',
+  ): Promise<{ docs: any[]; complete: boolean }> {
+    try {
+      const result = await this.apiClient.getDocumentsWithStatus(baseDoc, documentType);
+      console.log(`Знайдено ${result.docs.length} documents.${documentType}${result.complete ? '' : ' (неповна відповідь)'}`);
+      return result;
+    } catch (error) {
+      const errorMessage = `Помилка пошуку documents.${documentType}: ${error instanceof Error ? error.message : 'Невідома помилка'}`;
+      console.log(errorMessage);
+      return { docs: [], complete: false };
+    }
+  }
+
   async getDocuments(baseDoc: any[], documentType: 'sale' | 'cashIn' | 'saleReturn'): Promise<any[]> {
     try {
       console.log(`Пошук documents.${documentType} за базовим документом:`, baseDoc);
@@ -2293,8 +2311,10 @@ export class DilovodService {
               ]
             },
             select: {
+              id: true,
               orderNumber: true,
               dilovodDocId: true,
+              dilovodExportDate: true,
               dilovodSaleExportDate: true,
               dilovodSaleDocsCount: true,
               dilovodCashInDate: true,
@@ -2334,14 +2354,22 @@ export class DilovodService {
           let saleDocuments: any[] = [];
           let cashInDocuments: any[] = [];
           let returnDocuments: any[] = [];
+          // Повнота відповіді Dilovod: лише повна дозволяє прибирати документи з order_dilovod_documents
+          let saleComplete = false;
+          let cashInComplete = false;
+          let returnComplete = false;
 
           if (needSaleRequest.length > 0) {
             console.log(`Виконуємо запит getDocuments() для ${needSaleRequest.length} contract (sale)...`);
-            saleDocuments = await this.getDocuments(needSaleRequest, 'sale');
+            const saleResult = await this.getDocumentsWithStatus(needSaleRequest, 'sale');
+            saleDocuments = saleResult.docs;
+            saleComplete = saleResult.complete;
           }
           if (needCashInRequest.length > 0) {
             console.log(`Виконуємо запит getDocuments() для ${needCashInRequest.length} contract (cashIn)...`);
-            cashInDocuments = await this.getDocuments(needCashInRequest, 'cashIn');
+            const cashInResult = await this.getDocumentsWithStatus(needCashInRequest, 'cashIn');
+            cashInDocuments = cashInResult.docs;
+            cashInComplete = cashInResult.complete;
           }
           // Кілька sale на один договір: рахуємо й повернення, щоб відрізнити
           // повторне відвантаження після повернення від справжнього дубля
@@ -2358,7 +2386,9 @@ export class DilovodService {
 
           if (needReturnRequest.length > 0) {
             console.log(`Виконуємо запит getDocuments() для ${needReturnRequest.length} contract (saleReturn)...`);
-            returnDocuments = await this.getDocuments(needReturnRequest, 'saleReturn');
+            const returnResult = await this.getDocumentsWithStatus(needReturnRequest, 'saleReturn');
+            returnDocuments = returnResult.docs;
+            returnComplete = returnResult.complete;
           }
 
           // Групуємо за contract (або baseDoc - вони ідентичні), беремо перший документ
@@ -2386,10 +2416,54 @@ export class DilovodService {
             return map;
           };
 
+          // Найпізніша дата документа на contractId: при повторному відвантаженні після
+          // повернення актуальні останні sale / saleReturn, а не перші знайдені
+          const latestDateByContract = (docs: any[]) => {
+            const docsByContract = new Map<string, any[]>();
+            for (const d of docs) {
+              const contractKey = d?.contract || d?.baseDoc;
+              if (!contractKey) continue;
+              const list = docsByContract.get(contractKey) ?? [];
+              list.push(d);
+              docsByContract.set(contractKey, list);
+            }
+            const map = new Map<string, Date>();
+            for (const [contractKey, list] of docsByContract) {
+              const latest = latestDocDate(list);
+              if (latest) map.set(contractKey, latest);
+            }
+            return map;
+          };
+
+          // Оновлюємо дату, якщо локально її немає або в Dilovod є суттєво новіший документ.
+          // Допуск: локальна дата першого циклу (readyToShipAt / комплектація) може трохи
+          // відрізнятися від дати документа, перезаписувати її тоді не треба.
+          const NEWER_DOC_TOLERANCE_MS = 12 * 60 * 60 * 1000;
+          const isNewerDocDate = (latest: Date | undefined, local: Date | string | null | undefined) =>
+            !!latest && (!local || latest.getTime() - new Date(local).getTime() > NEWER_DOC_TOLERANCE_MS);
+
+          // Усі документи на contractId (для order_dilovod_documents)
+          const docsByContract = (docs: any[]) => {
+            const map = new Map<string, any[]>();
+            for (const d of docs) {
+              const contractKey = d?.contract || d?.baseDoc;
+              if (!contractKey) continue;
+              const list = map.get(contractKey) ?? [];
+              list.push(d);
+              map.set(contractKey, list);
+            }
+            return map;
+          };
+          const saleDocsByContract = docsByContract(saleDocuments);
+          const cashInDocsByContract = docsByContract(cashInDocuments);
+          const returnDocsByContract = docsByContract(returnDocuments);
+
           const saleByContract = groupByContract(saleDocuments);
+          const latestSaleDateByContract = latestDateByContract(saleDocuments);
           const saleCountByContract = countByContract(saleDocuments);
           const cashInByContract = groupByContract(cashInDocuments);
           const returnByContract = groupByContract(returnDocuments);
+          const latestReturnDateByContract = latestDateByContract(returnDocuments);
           const returnCountByContract = countByContract(returnDocuments);
 
           // Оновлюємо дати документів
@@ -2400,11 +2474,52 @@ export class DilovodService {
             const localOrder = existingOrders.find(o => o.dilovodDocId === contractId);
             const updateData: any = {};
 
+            // Історія документів (order_dilovod_documents). Тип пишемо лише якщо його запитували;
+            // зайві записи прибираються тільки при повній відповіді Dilovod.
+            if (localOrder?.id) {
+              try {
+                const saleOrderDate = parseKyivDateTime(orderInfo.dilovodExportDate) ?? localOrder.dilovodExportDate;
+                if (saleOrderDate) {
+                  await recordOrderDilovodDocuments(
+                    localOrder.id,
+                    [{ type: 'saleOrder', dilovodId: contractId, number: orderInfo.orderNumber, docDate: saleOrderDate }],
+                    'sync',
+                  );
+                }
+                if (needSaleRequest.includes(contractId)) {
+                  await syncOrderDilovodDocumentsOfType(
+                    localOrder.id, 'sale',
+                    toOrderDilovodDocumentInputs('sale', saleDocsByContract.get(contractId)),
+                    { complete: saleComplete, source: 'sync' },
+                  );
+                }
+                if (needCashInRequest.includes(contractId)) {
+                  await syncOrderDilovodDocumentsOfType(
+                    localOrder.id, 'cashIn',
+                    toOrderDilovodDocumentInputs('cashIn', cashInDocsByContract.get(contractId)),
+                    { complete: cashInComplete, source: 'sync' },
+                  );
+                }
+                if (needReturnRequest.includes(contractId)) {
+                  await syncOrderDilovodDocumentsOfType(
+                    localOrder.id, 'saleReturn',
+                    toOrderDilovodDocumentInputs('saleReturn', returnDocsByContract.get(contractId)),
+                    { complete: returnComplete, source: 'sync' },
+                  );
+                }
+              } catch (docsErr) {
+                console.warn(`⚠️ Замовлення ${orderInfo.orderNumber}: не вдалося оновити order_dilovod_documents:`, docsErr instanceof Error ? docsErr.message : docsErr);
+              }
+            }
+
             // Sale тільки для status >= '3' (або примусово, коли includeAllStatuses === true)
             const orderStatus = parseInt(localOrder?.status || '0');
             if ((orderStatus >= 3 || includeAllStatuses) && saleByContract.has(contractId)) {
-              // Записуємо дату відвантаження, якщо ще немає
-              if (!localOrder?.dilovodSaleExportDate) {
+              // Дата останнього відвантаження: якщо ще немає або в Dilovod з'явилось новіше (повторний цикл)
+              const latestSaleDate = latestSaleDateByContract.get(contractId);
+              if (isNewerDocDate(latestSaleDate, localOrder?.dilovodSaleExportDate)) {
+                updateData.dilovodSaleExportDate = latestSaleDate!.toISOString();
+              } else if (!localOrder?.dilovodSaleExportDate) {
                 updateData.dilovodSaleExportDate = new Date(saleByContract.get(contractId).date).toISOString();
               }
               // Завжди оновлюємо кількість документів відвантаження (щоб виявити дублікати)
@@ -2436,8 +2551,11 @@ export class DilovodService {
             // SaleReturn для статусів 6/7
             if (needReturnRequest.includes(contractId)) {
               if (returnByContract.has(contractId)) {
-                // Зберігаємо дату повернення, якщо ще не збережена
-                if (!localOrder?.dilovodReturnDate) {
+                // Дата останнього повернення: якщо ще немає або в Dilovod з'явилось новіше
+                const latestReturnDate = latestReturnDateByContract.get(contractId);
+                if (isNewerDocDate(latestReturnDate, localOrder?.dilovodReturnDate)) {
+                  updateData.dilovodReturnDate = latestReturnDate!.toISOString();
+                } else if (!localOrder?.dilovodReturnDate) {
                   updateData.dilovodReturnDate = new Date(returnByContract.get(contractId).date).toISOString();
                 }
                 // Завжди оновлюємо кількість документів повернення (для виявлення дублікатів)

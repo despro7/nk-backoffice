@@ -1,3 +1,4 @@
+import type { OrderDilovodDocumentDto } from './orderDilovodDocuments.js';
 // Типи для SalesDrive замовлень з підтримкою Dilovod вивантаження
 
 export interface DilovodExportInfo {
@@ -33,6 +34,8 @@ export interface SalesDriveOrderForExport {
   rawData: any; // JSON string or parsed object
   payloadData?: any; // JSON object/string with shipment breakdown and monolithic overrides
   logsCount?: number;
+  statusHistory?: Array<{ status: string; statusText: string; changedAt: string }>; // з orders_history, asc
+  dilovodDocuments?: OrderDilovodDocumentDto[]; // з order_dilovod_documents, asc за датою
 }
 
 export interface SalesDriveOrdersResponse {

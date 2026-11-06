@@ -1398,11 +1398,23 @@ export class DilovodApiClient {
 
   // Отримання мета-даних документів за списком baseDocId (для documents.sale, documents.cashIn, documents.saleReturn)
   async getDocuments(baseDocId: any[], documentType: 'sale' | 'cashIn' | 'saleReturn'): Promise<DilovodOrderResponse[]> {
+    return (await this.getDocumentsWithStatus(baseDocId, documentType)).docs;
+  }
+
+  /**
+   * Як `getDocuments`, але повідомляє, чи відповідь повна (`complete: false`, якщо хоча б
+   * одна пачка впала). Неповну відповідь не можна використовувати для видалення документів.
+   */
+  async getDocumentsWithStatus(
+    baseDocId: any[],
+    documentType: 'sale' | 'cashIn' | 'saleReturn',
+  ): Promise<{ docs: DilovodOrderResponse[]; complete: boolean }> {
     await this.ensureReady();
     
     // Розбиваємо на чанки по 50 ID
     const chunks = this.chunkArray(baseDocId, 50);
     const allResults: DilovodOrderResponse[] = [];
+    let complete = true;
     
     for (const chunk of chunks) {
       // Для documents.sale та documents.saleReturn фільтруємо за contract, для documents.cashIn за baseDoc
@@ -1414,7 +1426,7 @@ export class DilovodApiClient {
         action: "request",
         params: {
           from: `documents.${documentType}`,
-          fields: { id: "id", date: "date", baseDoc: "baseDoc", contract: "contract", delMark: "delMark" },
+          fields: { id: "id", date: "date", number: "number", baseDoc: "baseDoc", contract: "contract", delMark: "delMark" },
           filters: [
             {
               alias: filterAlias,
@@ -1439,11 +1451,12 @@ export class DilovodApiClient {
           await new Promise(resolve => setTimeout(resolve, 200));
         }
       } catch (error) {
+        complete = false;
         console.log(`DilovodApiClient: Помилка отримання чанку документів ${documentType}:`, error);
       }
     }
     
-    return allResults;
+    return { docs: allResults, complete };
   }
 
   // Отримання складів (усі сторінки catalogs.storages, без delMark).

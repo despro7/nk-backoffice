@@ -14,6 +14,12 @@ import type {
 } from '../../shared/types/dilovod.js';
 import { loadDilovodWarehouseDefaults } from '../services/dilovod/DilovodWarehouseDefaults.js';
 import { getSaleDuplicateOrderIds } from '../services/dilovod/dilovodShipmentCycle.js';
+import {
+  deleteOrderDilovodDocumentsByOrderNumbers,
+  loadOrderDilovodDocuments,
+  recordOrderDilovodDocumentsSafe,
+  toOrderDilovodDocumentInputs,
+} from '../services/dilovod/orderDilovodDocuments.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -969,11 +975,32 @@ router.get('/salesdrive/orders', authenticateToken, dilovodExport, async (req, r
       }
     }
 
+    // Історія статусів і документи Dilovod одним запитом на сторінку (тултіпи в таблиці)
+    const orderIds = orders.map((order) => order.id);
+    const dilovodDocumentsByOrderId = await loadOrderDilovodDocuments(orderIds);
+    const statusHistoryRows = orderIds.length > 0
+      ? await prisma.ordersHistory.findMany({
+          where: { orderId: { in: orderIds } },
+          orderBy: { changedAt: 'asc' },
+          select: { orderId: true, status: true, statusText: true, changedAt: true },
+        })
+      : [];
+    const statusHistoryByOrderId = new Map<number, Array<{ status: string; statusText: string; changedAt: string }>>();
+    for (const entry of statusHistoryRows) {
+      const list = statusHistoryByOrderId.get(entry.orderId) || [];
+      list.push({ status: entry.status, statusText: entry.statusText, changedAt: entry.changedAt.toISOString() });
+      statusHistoryByOrderId.set(entry.orderId, list);
+    }
+
     const totalPages = Math.ceil(totalCount / limit);
 
     res.json({
       success: true,
-      data: orders,
+      data: orders.map((order) => ({
+        ...order,
+        statusHistory: statusHistoryByOrderId.get(order.id) || [],
+        dilovodDocuments: dilovodDocumentsByOrderId.get(order.id) || [],
+      })),
       pagination: {
         page,
         limit,
@@ -1084,6 +1111,8 @@ router.post('/salesdrive/orders/reset-and-check', authenticateToken, dilovodExpo
     });
 
     console.log(`Скинуто Dilovod-поля для ${resetResult.count} замовлень`);
+    const deletedDocs = await deleteOrderDilovodDocumentsByOrderNumbers(orderNumbers.map(String));
+    if (deletedDocs > 0) console.log(`Видалено ${deletedDocs} записів order_dilovod_documents (буде заповнено перевіркою)`);
 
     // Запускаємо перевірку в Dilovod API (тепер поля чисті — буде повний пошук)
     const dilovodService = new DilovodService();
@@ -1366,6 +1395,12 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, dilovodExpo
             dilovodExportDate: new Date(dilovodDoc.date || new Date()).toISOString()
           }
         });
+        await recordOrderDilovodDocumentsSafe(
+          parseInt(orderId),
+          toOrderDilovodDocumentInputs('saleOrder', [{ ...dilovodDoc, number: dilovodDoc.number ?? orderNum }]),
+          'sync',
+          'Export/saleOrder',
+        );
         return res.status(409).json({
           success: false,
           error: 'already_exists_in_dilovod',
@@ -1436,6 +1471,12 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, dilovodExpo
             }
           });
           console.log(`✅ baseDoc ID (${exportResult.dilovodDocId}) збережено для замовлення ${orderNum} (id: ${orderId})`);
+          await recordOrderDilovodDocumentsSafe(
+            parseInt(orderId),
+            [{ type: 'saleOrder', dilovodId: String(exportResult.dilovodDocId), number: String(orderNum), docDate: new Date() }],
+            'export',
+            'Export/saleOrder',
+          );
         } catch (dbError) {
           console.log(`❌ Помилка збереження baseDoc ID в БД:`, dbError);
         }
@@ -1791,6 +1832,12 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, dilovodEx
             : new Date().toISOString();
 
           const completed = await completeSaleShipmentLock(Number(orderId), lockResult.lockToken, shipmentDate);
+          await recordOrderDilovodDocumentsSafe(
+            Number(orderId),
+            [{ type: 'sale', dilovodId: String(exportResult.dilovodDocId), docDate: new Date(shipmentDate) }],
+            'export',
+            'Export/sale',
+          );
           if (!completed) {
             console.warn(`⚠️ Не вдалося зафіксувати shipment lock для замовлення ${orderNumber}`);
           }

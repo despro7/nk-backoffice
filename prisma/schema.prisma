@@ -97,6 +97,7 @@ model Order {
   dilovodReturnDate          DateTime? // Дата документа повернення (documents.saleReturn), тільки для статусів 6/7
   dilovodReturnDocsCount     Int? // Кількість документів повернення (> 1 = помилка дублікату)
   OrdersHistory              OrdersHistory[]
+  dilovodDocuments           OrderDilovodDocument[]
 
   @@index([status])
   @@index([externalId])
@@ -109,6 +110,25 @@ model Order {
   @@index([customerPhone])
   @@index([dilovodSaleExportLockUntil])
   @@map("orders")
+}
+
+/// Дзеркало документів Dilovod замовлення (saleOrder, cashIn, sale, saleReturn).
+/// Повна історія циклів; поля orders.dilovod* лишаються кешем останнього стану.
+model OrderDilovodDocument {
+  id        Int      @id @default(autoincrement())
+  orderId   Int
+  type      String   @db.VarChar(32) // saleOrder | cashIn | sale | saleReturn
+  dilovodId String   @unique @db.VarChar(32)
+  number    String?  @db.VarChar(64)
+  docDate   DateTime
+  source    String   @db.VarChar(16) // sync | export | migration
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([type, docDate])
+  @@map("order_dilovod_documents")
 }
 
 model OrdersHistory {
