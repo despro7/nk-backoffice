@@ -27,6 +27,8 @@ export interface ProductOrdersModalProduct {
 
 export interface ProductOrderRow {
   externalId: string;
+  /** Унікальний ключ рядка: подія відвантаження (`externalId#sale`) або замовлення. */
+  reportKey?: string;
   orderNumber: string;
   ttn?: string | null;
   orderDate?: string | null;
@@ -337,7 +339,7 @@ export function ProductOrdersModal({
           </TableHeader>
           <TableBody items={orderList}>
             {(order) => (
-              <TableRow key={order.externalId} className="hover:bg-grey-50 transition-colors duration-200">
+              <TableRow key={order.reportKey ?? order.externalId} className="hover:bg-grey-50 transition-colors duration-200">
                 <TableCell className="font-medium text-sm">{order.orderNumber}</TableCell>
                 <TableCell className="font-medium text-sm">
                   {order.ttn &&

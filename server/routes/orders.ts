@@ -8,6 +8,7 @@ import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
 import { dilovodService } from '../services/dilovod/index.js';
 import { getStatusText } from '../services/salesdrive/statusMapper.js';
 import { recordShipmentPicking } from '../services/orderShipments.js';
+import { loadShipmentEvents } from '../services/shipmentEvents.js';
 import { monolithicSkusToLegacyPayload, parseShipmentRecordV2 } from '../../shared/utils/shipmentRecord.js';
 import {
   computeOrderedSetQuantityBreakdown,
@@ -81,6 +82,11 @@ function normalizeDeductionQuantity(value: unknown): number {
   }
 
   return Math.max(0, Math.round(quantity));
+}
+
+/** Ключ кешу позицій у звіті: подія відвантаження (`externalId#sale`) або замовлення. */
+function reportKeyOf(order: { externalId: string; reportKey?: string }): string {
+  return order.reportKey ?? order.externalId;
 }
 
 async function buildMonolithicSetStockUpdates(payloadData: unknown): Promise<[]> {
@@ -1843,8 +1849,11 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
       }
     }
 
-    // Отримуємо замовлення з фільтрами включно з датою
-    const orders = await orderDatabaseService.getOrders({
+    // Відвантаження за період: події (кожен документ sale окремо, склад циклу); інакше замовлення
+    const shippedEvents = shippedDateRangeFilter
+      ? await loadShipmentEvents({ range: shippedDateRangeFilter, status: parsedStatus, includeItems: true, sortOrder: 'desc', limit: 10000 })
+      : null;
+    const orders = shippedEvents ? shippedEvents.orders : await orderDatabaseService.getOrders({
       status: parsedStatus,
       limit: 10000, // Збільшуємо ліміт для отримання більшої кількості даних
       sortBy: shippedOnly === 'true' ? 'dilovodSaleExportDate' : 'orderDate',
@@ -1876,22 +1885,21 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
     } = {};
 
 
-    // Отримуємо всі externalId для bulk-запиту до кешу
-    const orderExternalIds = filteredOrders.map(order => order.externalId);
-
-    // Отримуємо всі кеші одним запитом
-    const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
+    // Кеш розгорнутих позицій за ключем звіту (подія відвантаження або externalId)
+    const orderCaches: Map<string, { processedItems?: string | null } | null> = shippedEvents
+      ? shippedEvents.caches
+      : await ordersCacheService.getMultipleOrderCaches(filteredOrders.map(order => order.externalId));
 
     const allSkus = new Set<string>();
     const processedItemsByOrder = new Map<string, Array<{ sku: string; name?: string; orderedQuantity?: number }>>();
 
     for (const order of filteredOrders) {
-      const cacheData = orderCaches.get(order.externalId);
+      const cacheData = orderCaches.get(reportKeyOf(order));
       if (cacheData?.processedItems) {
         try {
           const parsedItems = JSON.parse(cacheData.processedItems);
           if (Array.isArray(parsedItems)) {
-            processedItemsByOrder.set(order.externalId, parsedItems);
+            processedItemsByOrder.set(reportKeyOf(order), parsedItems);
 
             for (const item of parsedItems) {
               if (item?.sku) {
@@ -1937,7 +1945,7 @@ router.get('/products/stats', authenticateToken, async (req, res) => {
 
       try {
         // Перевіряємо, чи є кешовані дані
-        const cachedStats = processedItemsByOrder.get(order.externalId);
+        const cachedStats = processedItemsByOrder.get(reportKeyOf(order));
         const kitItems = shippedOnlyMode
           ? extractShipmentPayloadItems(order.payloadData)
           : splitMonolithicSets
@@ -2120,7 +2128,10 @@ router.get('/products/orders', authenticateToken, async (req, res) => {
       }
     }
 
-    const orders = await orderDatabaseService.getOrders({
+    const shippedEvents = shippedDateRangeFilter
+      ? await loadShipmentEvents({ range: shippedDateRangeFilter, status: parsedStatus, includeItems: true, sortOrder: 'asc', limit: 1000 })
+      : null;
+    const orders = shippedEvents ? shippedEvents.orders : await orderDatabaseService.getOrders({
       status: parsedStatus,
       limit: 1000,
       sortBy: shippedOnly === 'true' ? 'dilovodSaleExportDate' : 'orderDate',
@@ -2131,17 +2142,16 @@ router.get('/products/orders', authenticateToken, async (req, res) => {
       includeItems: true
     });
 
-    // Отримуємо всі externalId для bulk-запиту до кешу
-    const orderExternalIds = orders.map(order => order.externalId);
-
-    // Отримуємо всі кеші одним запитом (з розгорнутими комплектами)
-    const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
+    // Кеш розгорнутих позицій за ключем звіту (подія відвантаження або externalId)
+    const orderCaches: Map<string, { processedItems?: string | null } | null> = shippedEvents
+      ? shippedEvents.caches
+      : await ordersCacheService.getMultipleOrderCaches(orders.map(order => order.externalId));
 
     // Для режиму відвантажень: завантажуємо дескриптори продуктів, щоб розгортати
     // монолітні набори до листових SKU через expandSetToLeaves.
     const allSkus = new Set<string>();
     for (const order of orders) {
-      const cacheData = orderCaches.get(order.externalId);
+      const cacheData = orderCaches.get(reportKeyOf(order));
       if (cacheData?.processedItems) {
         try {
           const parsedItems = JSON.parse(cacheData.processedItems);
@@ -2173,7 +2183,7 @@ router.get('/products/orders', authenticateToken, async (req, res) => {
     const monolithicOrders: typeof orders = [];
 
     for (const order of orders) {
-      const cacheData = orderCaches.get(order.externalId);
+      const cacheData = orderCaches.get(reportKeyOf(order));
       let cachedStats: Array<{ sku: string; name?: string; orderedQuantity?: number }> | null = null;
       if (cacheData && cacheData.processedItems) {
         try {
@@ -2330,7 +2340,10 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
     }
 
     // Отримуємо замовлення з фільтрами включно з датою
-    const orders = await orderDatabaseService.getOrders({
+    const shippedEvents = shippedDateRangeFilter
+      ? await loadShipmentEvents({ range: shippedDateRangeFilter, status: parsedStatus, sortOrder: 'asc', limit: 10000 })
+      : null;
+    const orders = shippedEvents ? shippedEvents.orders : await orderDatabaseService.getOrders({
       status: parsedStatus,
       limit: 10000, // Збільшуємо ліміт для отримання більшої кількості даних
       sortBy: shippedOnly === 'true' ? 'dilovodSaleExportDate' : 'orderDate',
@@ -2342,18 +2355,17 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
 
     const filteredOrders = orders; // Вже відфільтровані в БД
 
-    // Отримуємо всі externalId для bulk-запиту до кешу
-    const orderExternalIds = filteredOrders.map(order => order.externalId);
-
-    // Отримуємо всі кеші одним запитом
-    const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
+    // Кеш розгорнутих позицій за ключем звіту (подія відвантаження або externalId)
+    const orderCaches: Map<string, { processedItems?: string | null } | null> = shippedEvents
+      ? shippedEvents.caches
+      : await ordersCacheService.getMultipleOrderCaches(filteredOrders.map(order => order.externalId));
 
     // Збираємо статистику по датах для конкретного товару (використовуючи звітні дати)
     const dateStats: { [date: string]: { date: string; orderedQuantity: number; stockBalances: { [warehouse: string]: number } } } = {};
 
     for (const order of filteredOrders) {
       try {
-        const cacheData = orderCaches.get(order.externalId);
+        const cacheData = orderCaches.get(reportKeyOf(order));
         let cachedStats: Array<{ sku: string; name?: string; orderedQuantity?: number }> | null = null;
         if (cacheData && cacheData.processedItems) {
           const parsedCache = JSON.parse(cacheData.processedItems);
@@ -2416,7 +2428,7 @@ router.get('/products/stats/dates', authenticateToken, async (req, res) => {
     let productInfo = { name: sku, sku: sku };
     for (const order of filteredOrders.slice().reverse()) {
       try {
-        const cacheData = orderCaches.get(order.externalId);
+        const cacheData = orderCaches.get(reportKeyOf(order));
         if (cacheData && cacheData.processedItems) {
           const cachedStats = JSON.parse(cacheData.processedItems);
           if (Array.isArray(cachedStats)) {

@@ -17,6 +17,20 @@
 
 ---
 
+## 2026-11-06 – Звіти відвантажень по документах: кожне відвантаження в свій день
+
+**Files:** `server/services/shipmentEvents.ts` (+ spec), `server/services/orderDatabaseService.ts`, `server/routes/orders.ts`, `server/modules/Warehouse/inventoryProductHistoryMovements.ts`, `client/components/modals/ProductOrdersModal.tsx`, `server/scripts/compare-shipped-report.ts`, `package.json`
+
+- **Події відвантаження** (`loadShipmentEvents`): кожен документ `sale` з `order_dilovod_documents` – окрема подія з датою документа і складом свого циклу (`order_shipments`); без циклу – поточний склад; замовлення без документів – як раніше за `dilovodSaleExportDate`. Раніше звіт бачив лише останнє відвантаження: перше відвантаження повторно відвантаженого замовлення випадало зі звіту свого дня.
+- **Статус:** для подій з документом поточний статус замовлення не фільтрується; для замовлень без документів – як раніше. Повернення не віднімаються.
+- **Підключено:** `/api/orders/products/stats`, `/products/orders`, `/products/stats/dates` (`shippedOnly` з датами), історія руху товару. `ProductOrdersModal` ключує рядки за `reportKey`.
+- `orderDatabaseService.expandOrderItemsForReport` (розгортання позицій, спільне для кешу і циклів), фільтр `getOrders({ orderIds })`.
+- **Звірка:** `npm run reports:compare-shipped -- --from=… --to=…`. За 01.10–06.11.2026: 1729 замовлень / 38 393 порції → 1730 подій / 38 396 порцій; відмінність лише 24453 (друге відвантаження).
+
+**Документація:** `Docs/integrations/dilovod-shipment-cycles.md` – розділ «Звіти відвантажень»; `Docs/plans/dilovod-documents-and-shipment-cycles.md` – статус етапу 4.
+
+---
+
 ## 2026-11-06 – Склад відвантаження v2: позиції з режимами, коробки, рішення комплектувальника
 
 **Files:** `shared/utils/shipmentRecord.ts` (+ spec), `shared/types/orderShipments.ts`, `client/pages/OrderView.tsx`, `client/hooks/useOrderNavigation.ts`, `client/components/SalesDriveOrdersTable.tsx`, `server/services/orderShipments.ts` (+ spec), `server/routes/orders.ts`, `server/services/dilovod/DilovodExportBuilder.ts`, `server/modules/Warehouse/ReturnsHistoryController.ts`

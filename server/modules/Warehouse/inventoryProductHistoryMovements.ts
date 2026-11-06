@@ -6,6 +6,7 @@ import {
   recomputeSetPortions,
   sumQuantityForSku,
 } from '../../services/orderShipmentMetricsService.js';
+import { loadShipmentEvents } from '../../services/shipmentEvents.js';
 import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
 import { kyivDayRangeExclusiveFromYmd } from '../../../shared/utils/kyivDateTime.js';
 import { safeParseItems } from './historyNormalize.js';
@@ -52,42 +53,41 @@ export async function computeInventoryProductHistoryDayMovements(
   const { start: startOfDay, endExclusive: endOfDay } = bounds;
 
   try {
-    const orders = await prisma.order.findMany({
-      where: { dilovodSaleExportDate: { gte: startOfDay, lt: endOfDay } },
-      select: { externalId: true, payloadData: true, items: true },
+    // Події відвантаження за день: кожен документ sale окремо, склад циклу (order_shipments)
+    const { orders, caches } = await loadShipmentEvents({
+      range: { start: startOfDay, end: new Date(endOfDay.getTime() - 1) },
+      status: 'all',
+      includeItems: true,
     });
 
-    const orderExternalIds = orders.map((o) => o.externalId).filter(Boolean);
     let shipped = 0;
-    if (orderExternalIds.length > 0) {
-      const caches = await prisma.ordersCache.findMany({
-        where: { externalId: { in: orderExternalIds } },
-        select: { externalId: true, processedItems: true },
-      });
-
+    if (orders.length > 0) {
       const cachedItemsByExternalId = new Map<
         string,
         Array<{ sku?: string; name?: string; orderedQuantity?: number; quantity?: number }>
       >();
-      for (const cache of caches) {
-        if (!cache.processedItems) continue;
+      for (const order of orders) {
+        const processedItems = caches.get(order.reportKey)?.processedItems;
+        if (!processedItems) continue;
         try {
-          const parsed = JSON.parse(cache.processedItems);
+          const parsed = JSON.parse(processedItems);
           if (Array.isArray(parsed)) {
-            cachedItemsByExternalId.set(cache.externalId, parsed);
+            cachedItemsByExternalId.set(order.reportKey, parsed);
           }
         } catch {
           // ignore malformed cache
         }
       }
 
-      const allSkus = collectSkusFromOrders(orders, cachedItemsByExternalId, true);
+      // collectSkusFromOrders шукає кеш за externalId: подаємо події з ключем reportKey
+      const ordersByReportKey = orders.map((order) => ({ ...order, externalId: order.reportKey }));
+      const allSkus = collectSkusFromOrders(ordersByReportKey, cachedItemsByExternalId, true);
       const productDescriptors = await getReportProductDescriptors(allSkus);
       recomputeSetPortions(productDescriptors);
 
       for (const order of orders) {
-        const cachedItems = cachedItemsByExternalId.get(order.externalId) ?? null;
-        shipped += computeShippedQuantityForSku(order, cachedItems, normalizedSku, productDescriptors);
+        const cachedItems = cachedItemsByExternalId.get(order.reportKey) ?? null;
+        shipped += computeShippedQuantityForSku({ ...order, items: order.items ?? null }, cachedItems, normalizedSku, productDescriptors);
       }
     }
 

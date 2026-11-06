@@ -1,6 +1,6 @@
 # План: документи Dilovod і цикли відвантаження замовлення
 
-Статус: етапи 1–3 реалізовано (06.11.2026), етапи 4–5 – план. Розвиває `Docs/plans/shipment-payload-refactor.md` і `Docs/integrations/dilovod-shipment-cycles.md`.
+Статус: етапи 1–4 реалізовано (06.11.2026), етап 5 – план. Розвиває `Docs/plans/shipment-payload-refactor.md` і `Docs/integrations/dilovod-shipment-cycles.md`.
 
 ## Проблема
 
@@ -94,7 +94,7 @@ Summary: `{ version, mode, totals, bySku: { [sku]: { quantity, itemMode } } }`, 
 - Клієнт (`OrderView`, `orderAssemblyUtils`) будує summary і manifest з `expandedItems`, коробок і рішень комплектувальника.
 - Експорт `sale`, списання і повернення читають цикл через адаптер `readShipmentSummary(order)`: спершу `order_shipments`, fallback на `payloadData` (dual-read).
 
-### Етап 4. Звіти по днях відвантаження
+### Етап 4. Звіти по днях відвантаження (виконано)
 
 - `shippedOnly`-звіти, `inventoryProductHistoryMovements`, `orderShipmentMetricsService` рахують кожен цикл у день його `sale` з `order_shipments` + `order_dilovod_documents`.
 

@@ -669,13 +669,21 @@ export class OrderDatabaseService {
     includeItems?: boolean;
     includeRaw?: boolean;
     fields?: string[];
+    /** Лише ці замовлення; статус тоді не фільтрується, якщо не заданий явно. */
+    orderIds?: number[];
   }) {
     const startTime = Date.now();
 
     try {
       const where: any = {};
 
-      if (filters?.status) {
+      if (filters?.orderIds) {
+        where.id = { in: filters.orderIds };
+      }
+
+      if (filters?.orderIds && !filters.status) {
+        // Події відвантаження: статус замовлення не відкидає вже відвантажене
+      } else if (filters?.status) {
         if (Array.isArray(filters.status)) {
           if (!filters.status.includes('all')) {
             where.status = { in: filters.status };
@@ -1821,35 +1829,45 @@ export class OrderDatabaseService {
       }
 
       // Собираем статистику по товарам
-      const productStats: { [key: string]: { name: string; sku: string; orderedQuantity: number } } = {};
-
-      for (const item of orderItems) {
-        if (!item || typeof item !== 'object' || !item.sku || !item.quantity) {
-          continue;
-        }
-
-        try {
-          // Рекурсивно розгортаємо товар (він може бути комплектом з вкладеними комплектами)
-          await this.expandProductRecursively(
-            item.sku,
-            item.quantity,
-            productStats,
-            new Set(), // Новий Set для кожного товару замовлення
-            0 // Починаємо з глибини 0
-          );
-        } catch (productError) {
-          console.warn(`Error processing product ${item.sku} in order ${order.externalId}:`, productError);
-        }
-      }
-
-      // Конвертируем в массив и сериализуем
-      const processedData = Object.values(productStats);
+      const processedData = await this.expandOrderItemsForReport(orderItems, order.externalId);
       return JSON.stringify(processedData);
 
     } catch (error) {
       console.error(`❌ Error preprocessing items for order ${orderId}:`, error);
       return null;
     }
+  }
+
+  /**
+   * Позиції замовлення → розгорнуті листові товари (як `orders_cache.processedItems`).
+   * Спільне для кешу замовлення і складу циклів відвантаження (`order_shipments`).
+   */
+  async expandOrderItemsForReport(
+    orderItems: any[],
+    label = '',
+  ): Promise<Array<{ name: string; sku: string; orderedQuantity: number }>> {
+    const productStats: { [key: string]: { name: string; sku: string; orderedQuantity: number } } = {};
+
+    for (const item of orderItems) {
+      if (!item || typeof item !== 'object' || !item.sku || !item.quantity) {
+        continue;
+      }
+
+      try {
+        // Рекурсивно розгортаємо товар (він може бути комплектом з вкладеними комплектами)
+        await this.expandProductRecursively(
+          item.sku,
+          item.quantity,
+          productStats,
+          new Set(), // Новий Set для кожного товару замовлення
+          0 // Починаємо з глибини 0
+        );
+      } catch (productError) {
+        console.warn(`Error processing product ${item.sku} in order ${label}:`, productError);
+      }
+    }
+
+    return Object.values(productStats);
   }
 
   /**
