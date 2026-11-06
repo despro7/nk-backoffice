@@ -38,6 +38,7 @@ export interface SalesDriveOrderForExport {
   statusHistory?: Array<{ status: string; statusText: string; changedAt: string }>; // з orders_history, asc
   dilovodDocuments?: OrderDilovodDocumentDto[]; // з order_dilovod_documents, asc за датою
   shipments?: OrderShipmentBriefDto[]; // цикли комплектації з order_shipments, asc за номером
+  shipmentDateConfirmed?: boolean; // дату відвантаження без комплектації перевірено вручну
 }
 
 export interface SalesDriveOrdersResponse {

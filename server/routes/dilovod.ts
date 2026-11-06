@@ -14,7 +14,11 @@ import type {
 } from '../../shared/types/dilovod.js';
 import { parseDilovodStockFirmScope } from '../../shared/types/dilovod.js';
 import { loadDilovodWarehouseDefaults } from '../services/dilovod/DilovodWarehouseDefaults.js';
-import { getSaleDuplicateOrderIds } from '../services/dilovod/dilovodShipmentCycle.js';
+import {
+  getSaleDuplicateOrderIds,
+  getShippedWithoutPickingOrderIds,
+  SHIPMENT_DATE_CONFIRMED_LOG_TITLE,
+} from '../services/dilovod/dilovodShipmentCycle.js';
 import {
   deleteOrderDilovodDocumentsByOrderNumbers,
   loadOrderDilovodDocuments,
@@ -706,12 +710,15 @@ router.get('/salesdrive/orders/shipment-counts', authenticateToken, dilovodExpor
     // Дублікат: відвантажень більше, ніж повернень + 1 (повторне відвантаження після повернення легітимне)
     const duplicateOrderIds = await getSaleDuplicateOrderIds();
     const duplicatesWhere = { ...baseWhere, id: { in: duplicateOrderIds } };
+    // Відвантажено без комплектації (2 → 4 або документ раніше за комплектацію), не перевірені
+    const withoutPickingWhere = { ...baseWhere, id: { in: await getShippedWithoutPickingOrderIds() } };
 
     // Підраховуємо паралельно
-    const [notShippedCount, notShippedAllCount, duplicatesCount] = await Promise.all([
+    const [notShippedCount, notShippedAllCount, duplicatesCount, withoutPickingCount] = await Promise.all([
       prisma.order.count({ where: notShippedWhere }),
       prisma.order.count({ where: notShippedAllWhere }),
-      prisma.order.count({ where: duplicatesWhere })
+      prisma.order.count({ where: duplicatesWhere }),
+      prisma.order.count({ where: withoutPickingWhere }),
     ]);
 
     res.json({
@@ -719,7 +726,8 @@ router.get('/salesdrive/orders/shipment-counts', authenticateToken, dilovodExpor
       counts: {
         not_shipped: notShippedCount,
         not_shipped_all: notShippedAllCount,
-        duplicates: duplicatesCount
+        duplicates: duplicatesCount,
+        shipped_without_picking: withoutPickingCount,
       }
     });
   } catch (error) {
@@ -886,6 +894,9 @@ router.get('/salesdrive/orders', authenticateToken, dilovodExport, async (req, r
     } else if (shipmentStatus === 'duplicates') {
       // Дублікати: відвантажень більше, ніж повернень + 1
       whereCondition.id = { in: await getSaleDuplicateOrderIds() };
+    } else if (shipmentStatus === 'shipped_without_picking') {
+      // Відвантажено без комплектації: дату відвантаження треба перевірити / виправити
+      whereCondition.id = { in: await getShippedWithoutPickingOrderIds() };
     }
 
     // Додаємо пошук, якщо вказано
@@ -981,10 +992,17 @@ router.get('/salesdrive/orders', authenticateToken, dilovodExport, async (req, r
 
     // Історія статусів і документи Dilovod одним запитом на сторінку (тултіпи в таблиці)
     const orderIds = orders.map((order) => order.id);
-    const [dilovodDocumentsByOrderId, shipmentsByOrderId] = await Promise.all([
+    const [dilovodDocumentsByOrderId, shipmentsByOrderId, confirmedRows] = await Promise.all([
       loadOrderDilovodDocuments(orderIds),
       loadOrderShipmentBriefs(orderIds),
+      orders.length > 0
+        ? prisma.meta_logs.findMany({
+            where: { title: SHIPMENT_DATE_CONFIRMED_LOG_TITLE, orderNumber: { in: orders.map((order) => order.orderNumber) } },
+            select: { orderNumber: true },
+          })
+        : Promise.resolve([] as Array<{ orderNumber: string | null }>),
     ]);
+    const confirmedOrderNumbers = new Set(confirmedRows.map((row) => row.orderNumber));
     const statusHistoryRows = orderIds.length > 0
       ? await prisma.ordersHistory.findMany({
           where: { orderId: { in: orderIds } },
@@ -1008,6 +1026,7 @@ router.get('/salesdrive/orders', authenticateToken, dilovodExport, async (req, r
         statusHistory: statusHistoryByOrderId.get(order.id) || [],
         dilovodDocuments: dilovodDocumentsByOrderId.get(order.id) || [],
         shipments: shipmentsByOrderId.get(order.id) || [],
+        shipmentDateConfirmed: confirmedOrderNumbers.has(order.orderNumber),
       })),
       pagination: {
         page,
@@ -1150,6 +1169,166 @@ router.post('/salesdrive/orders/reset-and-check', authenticateToken, dilovodExpo
       error: 'Dilovod API error',
       message: errorMessage
     });
+  }
+});
+
+/**
+ * POST /api/dilovod/salesdrive/orders/:orderId/shipment-date
+ * Body: { date: ISO, saleDilovodId?: string }.
+ * Змінює дату документа відвантаження (documents.sale) у Dilovod і локально:
+ * для замовлень, відвантажених раніше за комплектацію (2 → 4). За замовчуванням –
+ * останній sale замовлення. Помилку Dilovod (напр. закритий період) повертає як є.
+ */
+router.post('/salesdrive/orders/:orderId/shipment-date', authenticateToken, dilovodExport, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.orderId);
+    if (isNaN(orderId)) {
+      return res.status(400).json({ success: false, error: 'Invalid orderId' });
+    }
+    const newDate = new Date(String(req.body?.date ?? ''));
+    if (Number.isNaN(newDate.getTime())) {
+      return res.status(400).json({ success: false, error: 'Некоректна дата' });
+    }
+    if (newDate.getTime() > Date.now() + 5 * 60 * 1000) {
+      return res.status(400).json({ success: false, error: 'Дата відвантаження не може бути в майбутньому' });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, orderNumber: true, dilovodDocId: true, dilovodSaleExportDate: true },
+    });
+    if (!order) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+    if (!order.dilovodDocId) {
+      return res.status(400).json({ success: false, error: 'Замовлення не має документа в Dilovod' });
+    }
+
+    // Документи sale: з order_dilovod_documents, якщо порожньо – з Dilovod
+    let saleDocs = await prisma.orderDilovodDocument.findMany({
+      where: { orderId, type: 'sale' },
+      orderBy: { docDate: 'asc' },
+      select: { dilovodId: true, number: true, docDate: true },
+    });
+    if (saleDocs.length === 0) {
+      const fetched = toOrderDilovodDocumentInputs('sale', await dilovodService.getDocuments([order.dilovodDocId], 'sale'));
+      await recordOrderDilovodDocumentsSafe(orderId, fetched, 'sync', 'ShipmentDate');
+      saleDocs = fetched
+        .map((doc) => ({ dilovodId: doc.dilovodId, number: doc.number ?? null, docDate: doc.docDate }))
+        .sort((left, right) => left.docDate.getTime() - right.docDate.getTime());
+    }
+    if (saleDocs.length === 0) {
+      return res.status(400).json({ success: false, error: 'У Dilovod немає документа відвантаження для цього замовлення' });
+    }
+
+    const requestedId = req.body?.saleDilovodId ? String(req.body.saleDilovodId) : null;
+    const target = requestedId
+      ? saleDocs.find((doc) => doc.dilovodId === requestedId)
+      : saleDocs[saleDocs.length - 1];
+    if (!target) {
+      return res.status(404).json({ success: false, error: 'Документ відвантаження не знайдено' });
+    }
+
+    const result = await dilovodService.updateDocumentDate(target.dilovodId, newDate);
+
+    // Локально: документ, дата останнього відвантаження, цикли
+    await recordOrderDilovodDocumentsSafe(
+      orderId,
+      [{ type: 'sale', dilovodId: target.dilovodId, number: result.number ?? target.number, docDate: result.after }],
+      'sync',
+      'ShipmentDate',
+    );
+    const latestSale = await prisma.orderDilovodDocument.findFirst({
+      where: { orderId, type: 'sale' },
+      orderBy: { docDate: 'desc' },
+      select: { docDate: true },
+    });
+    await prisma.order.update({
+      where: { id: orderId },
+      data: { dilovodSaleExportDate: latestSale?.docDate ?? result.after },
+    });
+
+    const user = (req as any).user as { userId?: number; name?: string | null } | undefined;
+    await prisma.meta_logs.create({
+      data: {
+        category: 'dilovod',
+        title: 'Sale date changed',
+        status: 'success',
+        message: `Дату ${result.presentation} змінено: ${result.before?.toISOString() ?? '–'} → ${result.after.toISOString()}${user?.name ? ` (${user.name})` : ''}`,
+        data: {
+          orderNumber: order.orderNumber,
+          saleDilovodId: target.dilovodId,
+          before: result.before?.toISOString() ?? null,
+          after: result.after.toISOString(),
+        },
+        orderNumber: order.orderNumber,
+        initiatedBy: user?.userId ? String(user.userId) : null,
+      },
+    });
+
+    return res.json({
+      success: true,
+      saleDilovodId: target.dilovodId,
+      number: result.number ?? target.number,
+      before: result.before?.toISOString() ?? null,
+      after: result.after.toISOString(),
+    });
+  } catch (error) {
+    const errorMessage = handleDilovodApiError(error, 'Update sale date');
+    console.log('API: Помилка зміни дати відвантаження:', errorMessage);
+    res.status(500).json({ success: false, error: errorMessage });
+  }
+});
+
+/**
+ * POST /api/dilovod/salesdrive/orders/:orderId/shipment-date-confirmation
+ * Body: { confirmed: boolean }. Позначка «дату відвантаження перевірено» для замовлень,
+ * відвантажених без комплектації (законний перехід 2 → 4): прибирає зі списку
+ * `shipped_without_picking`. Зберігається в meta_logs (хто і коли), `confirmed: false` знімає.
+ */
+router.post('/salesdrive/orders/:orderId/shipment-date-confirmation', authenticateToken, dilovodExport, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.orderId);
+    if (isNaN(orderId)) {
+      return res.status(400).json({ success: false, error: 'Invalid orderId' });
+    }
+    const confirmed = req.body?.confirmed !== false;
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      select: { orderNumber: true, dilovodSaleExportDate: true },
+    });
+    if (!order) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+
+    if (!confirmed) {
+      const removed = await prisma.meta_logs.deleteMany({
+        where: { orderNumber: order.orderNumber, title: SHIPMENT_DATE_CONFIRMED_LOG_TITLE },
+      });
+      return res.json({ success: true, confirmed: false, removed: removed.count });
+    }
+
+    const user = (req as any).user as { userId?: number; name?: string | null } | undefined;
+    await prisma.meta_logs.create({
+      data: {
+        category: 'dilovod',
+        title: SHIPMENT_DATE_CONFIRMED_LOG_TITLE,
+        status: 'success',
+        message: `Дату відвантаження замовлення ${order.orderNumber} перевірено${user?.name ? ` (${user.name})` : ''}`,
+        data: {
+          orderNumber: order.orderNumber,
+          dilovodSaleExportDate: order.dilovodSaleExportDate?.toISOString() ?? null,
+        },
+        orderNumber: order.orderNumber,
+        initiatedBy: user?.userId ? String(user.userId) : null,
+      },
+    });
+    return res.json({ success: true, confirmed: true });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.log('API: Помилка позначки перевірки дати відвантаження:', errorMessage);
+    res.status(500).json({ success: false, error: errorMessage });
   }
 });
 

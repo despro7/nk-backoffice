@@ -23,7 +23,7 @@ import { pickHumanBatchLabel } from '../../../shared/utils/dilovodBatchId.js';
 import { isSaleDuplicate, latestDocDate } from './dilovodShipmentCycle.js';
 import { recordOrderDilovodDocuments, syncOrderDilovodDocumentsOfType, toOrderDilovodDocumentInputs } from './orderDilovodDocuments.js';
 import { reconcileOrderShipmentsSafe } from '../orderShipments.js';
-import { parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
+import { formatKyivDateTime, parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import { dilovodRefId } from './dilovodContractPerson.js';
 import { INGREDIENT_STOCK_STORAGE_IDS } from '../../../shared/utils/catalogStock.js';
 import {
@@ -161,6 +161,44 @@ export class DilovodService {
     }
 
     return updated;
+  }
+
+  /**
+   * Змінює дату документа (лише поле `date` у шапці, проведений лишається проведеним).
+   * Після запису перечитує документ: дата має збігтися, табличні частини – не змінитись.
+   * Дата – абсолютний момент; у Dilovod пишеться як Europe/Kyiv `YYYY-MM-DD HH:mm:ss`.
+   */
+  async updateDocumentDate(docId: string, newDate: Date): Promise<{ before: Date | null; after: Date; presentation: string; number: string | null }> {
+    await this.apiClient.ensureReady();
+
+    const tablePartsSignature = (obj: any): string =>
+      JSON.stringify(
+        Object.entries(obj?.tableParts ?? {}).map(([name, rows]) => [
+          name,
+          Array.isArray(rows) ? rows.length : Object.keys((rows as object) ?? {}).length,
+        ]),
+      );
+
+    const before: any = await this.apiClient.getObject(docId);
+    if (!before?.header) {
+      throw new Error(`Dilovod: документ ${docId} не знайдено`);
+    }
+    const saveType = dilovodRefId(before.header.posted) === '1' ? 1 : 0;
+    await this.apiClient.updateDocumentHeader(docId, { date: formatKyivDateTime(newDate) }, saveType);
+
+    const after: any = await this.apiClient.getObject(docId);
+    const afterDate = parseKyivDateTime(after?.header?.date);
+    if (!afterDate || Math.abs(afterDate.getTime() - newDate.getTime()) > 1000) {
+      throw new Error(`Dilovod: дату документа ${docId} не змінено (зараз ${after?.header?.date ?? '–'})`);
+    }
+    if (tablePartsSignature(after) !== tablePartsSignature(before)) {
+      throw new Error(`Dilovod: після зміни дати змінились табличні частини документа ${docId}`);
+    }
+
+    const presentation = String(after?.header?.id?.pr ?? before?.header?.id?.pr ?? docId);
+    const number = after?.header?.number != null ? String(after.header.number) : null;
+    console.log(`📅 [Dilovod] ${presentation}: дата ${before.header.date} → ${after.header.date}`);
+    return { before: parseKyivDateTime(before.header.date), after: afterDate, presentation, number };
   }
 
   /**

@@ -66,6 +66,36 @@ export function isReshippedAfterReturn(
   return new Date(saleExportDate).getTime() > new Date(returnDate).getTime();
 }
 
+/**
+ * Допуск: відвантаження раніше за першу комплектацію більше ніж на 3 год – «без комплектації».
+ * Покриває годинний зсув TZ у старих датах документів Dilovod (і мілісекунди).
+ */
+export const SHIPPED_BEFORE_PICKING_TOLERANCE_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * З цієї дати `orders_history` надійно фіксує перехід у статус 3 (історія ведеться з 08.08.2026,
+ * 10–12.08 – масова синхронізація старих замовлень). Раніші відвантаження не перевіряються.
+ */
+export const SHIPPED_WITHOUT_PICKING_SINCE = '2026-08-13T00:00:00.000Z';
+
+/** meta_logs.title позначки «дату відвантаження перевірено» (виключає замовлення зі списку). */
+export const SHIPMENT_DATE_CONFIRMED_LOG_TITLE = 'Shipment date confirmed';
+
+/**
+ * Відвантаження в Dilovod без комплектації: статус перескочив на «Відправлено» (2 → 4)
+ * без «На відправку», або документ датовано раніше за першу комплектацію.
+ * firstPickedAt – перший перехід у статус 3 (`orders_history`).
+ */
+export function isShippedWithoutPicking(
+  saleExportDate: Date | string | null | undefined,
+  firstPickedAt: Date | string | null | undefined,
+): boolean {
+  if (!saleExportDate) return false;
+  if (new Date(saleExportDate).getTime() < new Date(SHIPPED_WITHOUT_PICKING_SINCE).getTime()) return false;
+  if (!firstPickedAt) return true;
+  return new Date(saleExportDate).getTime() < new Date(firstPickedAt).getTime() - SHIPPED_BEFORE_PICKING_TOLERANCE_MS;
+}
+
 /** Рахунок обліку монолітного набору в рядку відвантаження (`accGood`). */
 export const SHIPMENT_MONOLITHIC_ACC_GOOD = '1119000000001079';
 

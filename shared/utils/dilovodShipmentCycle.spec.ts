@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isLastShipmentReturned,
+  isShippedWithoutPicking,
   isRepeatPicking,
   isReshippedAfterReturn,
   isReturnDuplicate,
@@ -135,5 +136,32 @@ describe('isLastShipmentReturned', () => {
   it('без лічильників: за датами', () => {
     expect(isLastShipmentReturned({ saleExportDate: '2026-10-02T00:00:00Z', returnDate: '2026-10-13T00:00:00Z' })).toBe(true);
     expect(isLastShipmentReturned({ saleExportDate: '2026-11-05T00:00:00Z', returnDate: '2026-10-13T00:00:00Z' })).toBe(false);
+  });
+});
+
+describe('isShippedWithoutPicking', () => {
+  it('без відвантаження – ні', () => {
+    expect(isShippedWithoutPicking(null, null)).toBe(false);
+  });
+
+  it('2 → 4 без комплектації – так', () => {
+    expect(isShippedWithoutPicking('2026-09-24T05:39:20Z', null)).toBe(true);
+  });
+
+  it('до 13.08.2026 історії комплектацій немає – не перевіряємо', () => {
+    expect(isShippedWithoutPicking('2026-08-12T08:06:54Z', null)).toBe(false);
+  });
+
+  it('відвантаження раніше за комплектацію (26191) – так', () => {
+    expect(isShippedWithoutPicking('2026-11-04T14:36:16Z', '2026-11-06T06:53:11Z')).toBe(true);
+  });
+
+  it('звичайне: одразу після комплектації або годинний зсув TZ (24453) – ні', () => {
+    expect(isShippedWithoutPicking('2026-11-05T07:38:49Z', '2026-11-05T07:38:48Z')).toBe(false);
+    expect(isShippedWithoutPicking('2026-10-02T05:35:32.000Z', '2026-10-02T06:35:32.433Z')).toBe(false);
+  });
+
+  it('на 4,5 год раніше (23190) – так', () => {
+    expect(isShippedWithoutPicking('2026-09-10T06:58:33Z', '2026-09-10T11:36:51Z')).toBe(true);
   });
 });

@@ -38,6 +38,8 @@ import { DynamicIcon } from "lucide-react/dynamic";
 import { formatRelativeDate, formatDateTime, getStatusLabel, getStatusColor, getChannelClass, ORDER_STATUSES } from "../lib/formatUtils";
 import { ToastService } from "@/services/ToastService";
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
+import { ConfirmModal } from '@/components/modals/ConfirmModal';
+import { DateTimePicker } from '@/components/DateTimePicker';
 import ResultDrawer from './ResultDrawer';
 import { OrderStatusChip } from './OrderStatusChip';
 import { EVENT_TIMELINE_OVERLAY_CLASS, EventTimelineList, type EventTimelineEntry } from '@/components/ui/EventTimelineList';
@@ -45,7 +47,7 @@ import type { SalesDriveOrderForExport, SalesDriveOrdersResponse, } from "@share
 import type { OrderDilovodDocumentDto, OrderDilovodDocumentType } from "@shared/types/orderDilovodDocuments";
 import type { OrderShipmentBriefDto } from "@shared/types/orderShipments";
 import type { SalesChannel } from "@shared/types/dilovod";
-import { isReshippedAfterReturn, isReturnDuplicate, isSaleDuplicate } from "@shared/utils/dilovodShipmentCycle";
+import { isReshippedAfterReturn, isReturnDuplicate, isSaleDuplicate, isShippedWithoutPicking } from "@shared/utils/dilovodShipmentCycle";
 
 // Функція для отримання класів каналу (статична — кольори визначаються по id)
 // Перенесено до client/lib/formatUtils.ts → getChannelClass
@@ -59,6 +61,17 @@ interface SalesDriveOrdersTableProps {
   initialSearch?: string;
   initialSearchCategory?: 'orderNumber' | 'ttn' | 'phone' | 'name' | 'all';
   hideFilters?: boolean;
+}
+
+/** Перша комплектація (перший перехід у статус 3) з історії статусів рядка. */
+function getFirstPickedAt(order: SalesDriveOrderForExport): string | null {
+  const picks = (order.statusHistory ?? []).filter((entry) => entry.status === '3').map((entry) => entry.changedAt);
+  return picks.length > 0 ? picks.reduce((min, value) => (new Date(value) < new Date(min) ? value : min)) : null;
+}
+
+/** Відвантажено в Dilovod без комплектації (див. `isShippedWithoutPicking`). */
+function isOrderShippedWithoutPicking(order: SalesDriveOrderForExport): boolean {
+  return order.status !== '8' && isShippedWithoutPicking(order.dilovodSaleExportDate, getFirstPickedAt(order));
 }
 
 /** Номер документа Dilovod у підписі: «Відвантажено №0007621». */
@@ -156,6 +169,19 @@ function DilovodShipmentTimeline({ order }: { order: SalesDriveOrderForExport })
   });
   const entries = fromDocs.length > 0 ? fromDocs : shipmentEntriesFromOrderFields(order);
 
+  // Відвантажено раніше за комплектацію: комплектація окремим рядком у хронології
+  const firstPickedAt = getFirstPickedAt(order);
+  const shippedWithoutPicking = isOrderShippedWithoutPicking(order);
+  if (shippedWithoutPicking && firstPickedAt) {
+    entries.push({
+      key: 'first-picking',
+      icon: 'package-check',
+      label: 'Скомплектовано',
+      date: firstPickedAt,
+      tone: 'warning',
+    });
+  }
+
   // Скомплектовано, але ще не відвантажено в Dilovod
   for (const shipment of order.shipments ?? []) {
     if (shipment.saleDilovodId) continue;
@@ -175,15 +201,32 @@ function DilovodShipmentTimeline({ order }: { order: SalesDriveOrderForExport })
       ? `Дублювання повернення: знайдено ${order.dilovodReturnDocsCount} документи.`
       : null;
 
+  // Відвантажено без комплектації: дату документа варто звірити з фактичною відправкою
+  const pickingWarning = shippedWithoutPicking
+    ? firstPickedAt
+      ? 'Відвантажено раніше за комплектацію'
+      : 'Відвантажено без комплектації (статус 2 → 4)'
+    : null;
+
   return (
     <EventTimelineList
       emptyText="Ще не відвантажено"
       entries={entries}
-      header={warning ? (
-        <span className="flex items-start gap-2 font-medium text-red-700">
-          <DynamicIcon name="alert-triangle" size={14} className="mt-0.5 shrink-0 text-red-500" />
-          {warning}
-        </span>
+      header={warning || pickingWarning ? (
+        <div className="flex flex-col gap-1">
+          {warning ? (
+            <span className="flex items-start gap-2 font-medium text-red-700">
+              <DynamicIcon name="alert-triangle" size={14} className="mt-0.5 shrink-0 text-red-500" />
+              {warning}
+            </span>
+          ) : null}
+          {pickingWarning ? (
+            <span className="flex items-start gap-2 font-medium text-amber-700">
+              <DynamicIcon name="clock-alert" size={14} className="mt-0.5 shrink-0 text-amber-500" />
+              {order.shipmentDateConfirmed ? `${pickingWarning}, дату перевірено` : pickingWarning}
+            </span>
+          ) : null}
+        </div>
       ) : null}
     />
   );
@@ -266,7 +309,7 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
   const [selectedStatus, setSelectedStatus] = useState<StatusFilterType>('all');
 
   // State для фільтру по даті відвантаження
-  type ShipmentFilterType = 'all' | 'shipped' | 'not_shipped' | 'not_shipped_all' | 'duplicates';
+  type ShipmentFilterType = 'all' | 'shipped' | 'not_shipped' | 'not_shipped_all' | 'duplicates' | 'shipped_without_picking';
   const [shipmentFilter, setShipmentFilter] = useState<ShipmentFilterType>('all');
 
   // State для фільтру по конкретним датам відвантаження (DateRangePicker)
@@ -291,10 +334,11 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
 
   // Лічильники для фільтрів відвантаження
-  const [shipmentCounts, setShipmentCounts] = useState<{ not_shipped: number; not_shipped_all: number; duplicates: number }>({
+  const [shipmentCounts, setShipmentCounts] = useState<{ not_shipped: number; not_shipped_all: number; duplicates: number; shipped_without_picking: number }>({
     not_shipped: 0,
     not_shipped_all: 0,
     duplicates: 0,
+    shipped_without_picking: 0,
   });
 
   // Функція для завантаження замовлень
@@ -345,6 +389,8 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
         params.append('shipmentStatus', 'not_shipped_all');
       } else if (shipmentFilter === 'duplicates') {
         params.append('shipmentStatus', 'duplicates');
+      } else if (shipmentFilter === 'shipped_without_picking') {
+        params.append('shipmentStatus', 'shipped_without_picking');
       }
 
       // Додаємо фільтр по датам відвантаження (DateRange)
@@ -500,7 +546,8 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
         nextShipment === 'shipped' ||
           nextShipment === 'not_shipped' ||
           nextShipment === 'not_shipped_all' ||
-          nextShipment === 'duplicates'
+          nextShipment === 'duplicates' ||
+          nextShipment === 'shipped_without_picking'
           ? nextShipment
           : 'all'
       );
@@ -788,6 +835,90 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
         hideIcon: false,
         icon: "octagon-alert",
       });
+    }
+  };
+
+  // Виправлення дати документа відвантаження в Dilovod (відвантажено раніше за комплектацію)
+  const [shipmentDateEdit, setShipmentDateEdit] = useState<{ order: SalesDriveOrderForExport; date: Date } | null>(null);
+  const [shipmentDateSaving, setShipmentDateSaving] = useState(false);
+
+  const openShipmentDateEdit = (order: SalesDriveOrderForExport) => {
+    const firstPickedAt = getFirstPickedAt(order);
+    const initial = firstPickedAt ?? order.dilovodSaleExportDate;
+    setShipmentDateEdit({ order, date: initial ? new Date(initial) : new Date() });
+  };
+
+  const handleShipmentDateSave = async () => {
+    if (!shipmentDateEdit) return;
+    const { order, date } = shipmentDateEdit;
+    setShipmentDateSaving(true);
+    try {
+      const response = await apiCall(`/api/dilovod/salesdrive/orders/${order.id}/shipment-date`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: date.toISOString() }),
+      });
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error || 'Не вдалося змінити дату відвантаження');
+      ToastService.show({
+        title: 'Дату змінено',
+        description: `Відвантаження${result.number ? ` №${result.number}` : ''} замовлення ${order.orderNumber}: ${formatDateTime(result.after)}`,
+        color: 'success',
+        hideIcon: false,
+        icon: 'calendar-check',
+        timeout: 5000,
+      });
+      setShipmentDateEdit(null);
+      fetchOrders();
+    } catch (error) {
+      ToastService.show({
+        title: 'Помилка Діловода',
+        description: error instanceof Error ? error.message : 'Помилка з\'єднання з сервером',
+        color: 'danger',
+        hideIcon: false,
+        icon: 'x-circle',
+      });
+    } finally {
+      setShipmentDateSaving(false);
+    }
+  };
+
+  // Позначка «дату відвантаження перевірено» (законний перехід 2 → 4 без комплектації)
+  const [shipmentConfirmTarget, setShipmentConfirmTarget] = useState<SalesDriveOrderForExport | null>(null);
+  const [shipmentConfirmSaving, setShipmentConfirmSaving] = useState(false);
+
+  const handleShipmentDateConfirmation = async (order: SalesDriveOrderForExport, confirmed: boolean) => {
+    setShipmentConfirmSaving(true);
+    try {
+      const response = await apiCall(`/api/dilovod/salesdrive/orders/${order.id}/shipment-date-confirmation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmed }),
+      });
+      const result = await response.json();
+      if (!result.success) throw new Error(result.error || 'Не вдалося зберегти позначку');
+      ToastService.show({
+        title: confirmed ? 'Перевірено' : 'Позначку знято',
+        description: confirmed
+          ? `Дату відвантаження ${order.orderNumber} позначено перевіреною`
+          : `Замовлення ${order.orderNumber} знову у списку «Відвантажено без комплектації»`,
+        color: 'success',
+        hideIcon: false,
+        icon: confirmed ? 'calendar-check' : 'calendar-x',
+        timeout: 4000,
+      });
+      setShipmentConfirmTarget(null);
+      fetchOrders();
+    } catch (error) {
+      ToastService.show({
+        title: 'Помилка',
+        description: error instanceof Error ? error.message : 'Помилка з\'єднання з сервером',
+        color: 'danger',
+        hideIcon: false,
+        icon: 'x-circle',
+      });
+    } finally {
+      setShipmentConfirmSaving(false);
     }
   };
 
@@ -1785,6 +1916,7 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
                 {shipmentFilter === 'not_shipped' && `Невідвантажені (${shipmentCounts.not_shipped})`}
                 {shipmentFilter === 'not_shipped_all' && `Всі невідвантажені (${shipmentCounts.not_shipped_all})`}
                 {shipmentFilter === 'duplicates' && `Дублікати відвантажень (${shipmentCounts.duplicates})`}
+                {shipmentFilter === 'shipped_without_picking' && `Відвантажено без комплектації (${shipmentCounts.shipped_without_picking})`}
               </Button>
             </DropdownTrigger>
             <DropdownMenu
@@ -1844,6 +1976,18 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
                 {shipmentCounts.duplicates > 0 && (
                   <span className="ml-1.5 border-1 border-red-300 text-red-500 px-1.5 py-0.5 rounded text-xs font-medium">
                     {shipmentCounts.duplicates}
+                  </span>
+                )}
+              </DropdownItem>
+              <DropdownItem
+                key="shipped_without_picking"
+                textValue="Відвантажено без комплектації"
+                startContent={<DynamicIcon name="clock-alert" size={16} className="text-amber-600" />}
+              >
+                <span>Відвантажено без комплектації</span>
+                {shipmentCounts.shipped_without_picking > 0 && (
+                  <span className="ml-1.5 border-1 bg-amber-300/15 border-amber-300 text-amber-600 px-1.5 py-0.5 rounded text-xs font-medium">
+                    {shipmentCounts.shipped_without_picking}
                   </span>
                 )}
               </DropdownItem>
@@ -2187,6 +2331,9 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
                           if (key === "previewShipment") handlePreviewShipmentPayload(order);
                           if (key === "viewLogs") handleViewOrderLogs(order);
                           if (key === "resetDuplicateError") handleResetDuplicateError(order);
+                          if (key === "editShipmentDate") openShipmentDateEdit(order);
+                          if (key === "confirmShipmentDate") setShipmentConfirmTarget(order);
+                          if (key === "unconfirmShipmentDate") handleShipmentDateConfirmation(order, false);
                         }}
                       >
                         <DropdownSection>
@@ -2204,6 +2351,15 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
                           )}
                         </DropdownSection>
                         <DropdownSection className="border-t-1 border-gray-200 pt-2">
+                          {isOrderShippedWithoutPicking(order) && (
+                            <DropdownItem textValue="Виправити дату відвантаження" key="editShipmentDate" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-amber-600 pointer-events-none shrink-0" name="calendar-clock" size={16} />}>Виправити дату відвантаження</DropdownItem>
+                          )}
+                          {isOrderShippedWithoutPicking(order) && !order.shipmentDateConfirmed && (
+                            <DropdownItem textValue="Дата відвантаження перевірена" key="confirmShipmentDate" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-amber-600 pointer-events-none shrink-0" name="calendar-check" size={16} />}>Дата відвантаження перевірена</DropdownItem>
+                          )}
+                          {isOrderShippedWithoutPicking(order) && order.shipmentDateConfirmed && (
+                            <DropdownItem textValue="Зняти позначку перевірки дати" key="unconfirmShipmentDate" className="px-3 py-2" startContent={<DynamicIcon className="text-xl text-default-500 pointer-events-none shrink-0" name="calendar-x" size={16} />}>Зняти позначку перевірки дати</DropdownItem>
+                          )}
                           {isSaleDuplicate(order.dilovodSaleDocsCount, order.dilovodReturnDocsCount) && (
                             <DropdownItem textValue="Скинути помилку дублювання" key="resetDuplicateError" className="px-3 py-2 text-danger-500!" startContent={<DynamicIcon className="text-xl text-danger-500 pointer-events-none shrink-0" name="shield-alert" size={16} />}>Скинути помилку дублювання</DropdownItem>
                           )}
@@ -2272,6 +2428,60 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
         title={drawerTitle}
         type={drawerType}
         getChannelName={getChannelName}
+      />
+
+      <ConfirmModal
+        isOpen={!!shipmentConfirmTarget}
+        title={`Дата відвантаження ${shipmentConfirmTarget?.orderNumber ?? ''} перевірена?`}
+        confirmText="Так, перевірена"
+        cancelText="Скасувати"
+        confirmColor="warning"
+        confirmLoading={shipmentConfirmSaving}
+        onConfirm={() => { if (shipmentConfirmTarget) handleShipmentDateConfirmation(shipmentConfirmTarget, true); }}
+        onCancel={() => { if (!shipmentConfirmSaving) setShipmentConfirmTarget(null); }}
+        message={shipmentConfirmTarget ? (
+          <div className="flex flex-col gap-2 text-sm">
+            <span className="text-default-600">
+              Відвантаження в Діловоді: <b>{shipmentConfirmTarget.dilovodSaleExportDate ? formatDateTime(shipmentConfirmTarget.dilovodSaleExportDate) : '–'}</b>
+              <br />
+              Комплектація: <b>{getFirstPickedAt(shipmentConfirmTarget) ? formatDateTime(getFirstPickedAt(shipmentConfirmTarget)!) : 'не було (статус 2 → 4)'}</b>
+            </span>
+            <span className="text-xs text-default-500">
+              Дата в Діловоді не зміниться: замовлення лише зникне зі списку «Відвантажено без комплектації».
+              Позначку можна зняти в меню «Інші дії».
+            </span>
+          </div>
+        ) : null}
+      />
+
+      <ConfirmModal
+        isOpen={!!shipmentDateEdit}
+        title={`Дата відвантаження ${shipmentDateEdit?.order.orderNumber ?? ''}`}
+        confirmText="Змінити в Діловоді"
+        cancelText="Скасувати"
+        confirmColor="warning"
+        confirmLoading={shipmentDateSaving}
+        onConfirm={handleShipmentDateSave}
+        onCancel={() => { if (!shipmentDateSaving) setShipmentDateEdit(null); }}
+        message={shipmentDateEdit ? (
+          <div className="flex flex-col gap-3 text-sm">
+            <div className="flex flex-col gap-1 text-default-600">
+              <span>Зараз у Діловоді: <b>{shipmentDateEdit.order.dilovodSaleExportDate ? formatDateTime(shipmentDateEdit.order.dilovodSaleExportDate) : '–'}</b></span>
+              <span>Комплектація: <b>{getFirstPickedAt(shipmentDateEdit.order) ? formatDateTime(getFirstPickedAt(shipmentDateEdit.order)!) : 'не було (статус 2 → 4)'}</b></span>
+            </div>
+            <DateTimePicker
+              value={shipmentDateEdit.date}
+              onChange={(date) => setShipmentDateEdit((prev) => (prev ? { ...prev, date } : prev))}
+              label="Нова дата"
+              isDisabled={shipmentDateSaving}
+              size="sm"
+            />
+            <span className="text-xs text-default-500">
+              Документ відвантаження в Діловоді буде перепроведено новою датою, списання товару переїде на цей день.
+              Якщо період закритий, Діловод відхилить зміну.
+            </span>
+          </div>
+        ) : null}
       />
 
       <PayloadPreviewModal

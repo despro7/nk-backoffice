@@ -45,6 +45,20 @@
 
 ---
 
+## 2026-11-06 – Відвантажено без комплектації: список, виправлення дати в Діловоді
+
+**Files:** `shared/utils/dilovodShipmentCycle.ts` (+ spec), `shared/types/salesdrive.ts`, `server/services/dilovod/{dilovodShipmentCycle,DilovodService}.ts`, `server/routes/dilovod.ts`, `client/components/SalesDriveOrdersTable.tsx`
+
+- **Причина:** автовідвантаження на статусі `4` створює `sale` при переході 2 → 4 у SalesDrive до фізичної комплектації (26191: `sale` 04.11, комплектація 06.11 → «+1» на 01011 / 01008 / 01004 в інвентаризації #196). Перехід 2 → 4 буває законним, тому автовідвантаження не змінено.
+- **Список «Відвантажено без комплектації»** у фільтрі відвантажень з бейджем: немає статусу `3` в історії або відвантаження раніше за першу комплектацію більш ніж на 3 год; лише відвантаження з 13.08.2026 (раніше історії немає), без видалених. На 06.11.2026 – 5 замовлень.
+- **Тултіп:** попередження і рядок «Скомплектовано» з датою першої комплектації.
+- **«Виправити дату відвантаження»:** модалка з `DateTimePicker` (за замовчуванням – дата комплектації) змінює дату документа `sale` у Dilovod (лише шапка, з перевіркою після запису) і локально; лог `Sale date changed`.
+- **«Дата відвантаження перевірена»** (з підтвердженням): позначка в `meta_logs` прибирає замовлення зі списку, знімається в «Інших діях».
+
+**Документація:** `Docs/integrations/dilovod-shipment-cycles.md` – розділ «Відвантажено без комплектації».
+
+---
+
 ## 2026-11-06 – Звіти відвантажень по документах: кожне відвантаження в свій день
 
 **Files:** `server/services/shipmentEvents.ts` (+ spec), `server/services/orderDatabaseService.ts`, `server/routes/orders.ts`, `server/modules/Warehouse/inventoryProductHistoryMovements.ts`, `client/components/modals/ProductOrdersModal.tsx`, `server/scripts/compare-shipped-report.ts`, `package.json`
