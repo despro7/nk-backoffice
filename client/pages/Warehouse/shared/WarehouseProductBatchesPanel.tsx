@@ -5,6 +5,11 @@
 import { useEffect, useState } from 'react';
 import ReleaseComponentBatchesPanel from '../WarehouseReleaseSets/components/ReleaseComponentBatchesPanel';
 import type { ReleaseComponentAllocation, ReleaseComponentBatch } from '@shared/types/warehouseRelease';
+import type { StockSnapshotCatalogMeta } from '@shared/types/warehouse';
+import {
+  DILOVOD_PRODUCTION_STORAGE_ID,
+  DILOVOD_RAW_MATERIALS_STORAGE_ID,
+} from '@shared/utils/catalogStock';
 
 interface Props {
   sku: string;
@@ -44,6 +49,10 @@ export default function WarehouseProductBatchesPanel({
   );
   const [catalogStockGp, setCatalogStockGp] = useState<number | null>(null);
   const [catalogStockMs, setCatalogStockMs] = useState<number | null>(null);
+  /** СП / ВП для товарів поза «Готовою продукцією» */
+  const [catalogStockSp, setCatalogStockSp] = useState<number | null>(null);
+  const [catalogStockVp, setCatalogStockVp] = useState<number | null>(null);
+  const [catalogMeta, setCatalogMeta] = useState<StockSnapshotCatalogMeta | null>(null);
 
   useEffect(() => {
     if (portionsPerBox != null && portionsPerBox > 1) {
@@ -88,12 +97,17 @@ export default function WarehouseProductBatchesPanel({
         const response = await fetch(url.pathname + url.search, { credentials: 'include' });
         if (!response.ok) return;
         const data = await response.json().catch(() => null) as {
-          stocks?: Record<string, { mainStock?: number; smallStock?: number }>;
+          stocks?: Record<string, { mainStock?: number; smallStock?: number; storages?: Record<string, number> }>;
+          catalog?: Record<string, StockSnapshotCatalogMeta>;
         } | null;
+        if (cancelled) return;
+        setCatalogMeta(data?.catalog?.[sku] ?? null);
         const row = data?.stocks?.[sku];
-        if (cancelled || !row) return;
+        if (!row) return;
         setCatalogStockGp(Number(row.mainStock) || 0);
         setCatalogStockMs(Number(row.smallStock) || 0);
+        setCatalogStockSp(Number(row.storages?.[DILOVOD_RAW_MATERIALS_STORAGE_ID]) || 0);
+        setCatalogStockVp(Number(row.storages?.[DILOVOD_PRODUCTION_STORAGE_ID]) || 0);
       } catch {
         // ignore
       }
@@ -112,6 +126,9 @@ export default function WarehouseProductBatchesPanel({
       catalogStockAtStorage: stockAtStorage ?? null,
       catalogStockGp,
       catalogStockMs,
+      catalogStockSp,
+      catalogStockVp,
+      catalogMeta,
     },
   ];
 

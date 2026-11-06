@@ -101,3 +101,15 @@ export interface WarehouseBatchesListResponse {
     limit: number;
   };
 }
+
+/** Довідка по товару у відповіді `GET /api/warehouse/stock-snapshot` (поле `catalog`). */
+export interface StockSnapshotCatalogMeta {
+  /** Dilovod id товару (`catalog_goods.id`) */
+  dilovodId: string;
+  /** Справжній SKU; `null`, якщо товар без SKU (ключ запиту = Dilovod id) */
+  sku: string | null;
+  /** Товар у гілці «Готова продукція»: ГП/МС у порціях; інакше СП/ВП в одиниці товару */
+  isFinishedProduct: boolean;
+  /** Одиниця виміру товару (`кг`, `л`, `шт`…) */
+  unitName: string | null;
+}

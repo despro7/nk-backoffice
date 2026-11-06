@@ -53,6 +53,7 @@ import {
   type InventoryProductHistorySessionInput,
 } from '../../../shared/utils/mergeProductHistoryEntriesByDay.js';
 import { computeInventoryProductHistoryDayMovements } from './inventoryProductHistoryMovements.js';
+import { resolveSnapshotCatalogMeta } from './stockSnapshotCatalog.js';
 
 const router = Router();
 const warehouseOperate = requirePermission('warehouse', 'operate', 'Створювати/відправляти складські документи');
@@ -1067,7 +1068,15 @@ router.get('/stock-snapshot', authenticateToken, async (req, res) => {
     const label = parsedDate ? parsedDate.toLocaleString('uk-UA') : 'поточна';
     console.log(`📊 [Warehouse] GET /stock-snapshot — ${skus.length} SKU на дату: ${label}${firmId ? ` (firmId=${firmId})` : ''}`);
 
-    const balances = await dilovodService.getStockBalanceForSkus(skus, parsedDate, firmId);
+    // Довідка каталогу; ключі-Dilovod id (товари без SKU) питаємо за id товару, решту за SKU
+    const { meta: catalog, idKeys } = await resolveSnapshotCatalogMeta(skus);
+    const idKeySet = new Set(idKeys);
+    const skuKeys = skus.filter((key) => !idKeySet.has(key));
+    const [skuBalances, idBalances] = await Promise.all([
+      skuKeys.length > 0 ? dilovodService.getStockBalanceForSkus(skuKeys, parsedDate, firmId) : Promise.resolve([]),
+      dilovodService.getStockBalanceForGoodIds(idKeys, parsedDate, firmId),
+    ]);
+    const balances = [...skuBalances, ...idBalances];
 
     const result: Record<string, { mainStock: number; smallStock: number; selectedStock?: number; storages?: Record<string, number> }> = {};
     for (const item of balances) {
@@ -1084,8 +1093,8 @@ router.get('/stock-snapshot', authenticateToken, async (req, res) => {
       };
     }
 
-    console.log(`✅ [Warehouse] stock-snapshot: повернено залишки для ${balances.length} SKU`);
-    res.json({ success: true, asOfDate: parsedDate?.toISOString() ?? null, stocks: result });
+    console.log(`✅ [Warehouse] stock-snapshot: повернено залишки для ${balances.length} SKU${idKeys.length ? ` (з них за Dilovod id: ${idKeys.length})` : ''}`);
+    res.json({ success: true, asOfDate: parsedDate?.toISOString() ?? null, stocks: result, catalog });
   } catch (error) {
     console.error('🚨 [Warehouse] Помилка при отриманні stock-snapshot:', error);
     res.status(500).json({

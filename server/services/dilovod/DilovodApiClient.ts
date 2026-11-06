@@ -1194,13 +1194,19 @@ export class DilovodApiClient {
   }
 
   /**
-   * Залишки за id товарів (без SKU, напр. інгредієнти) на вказаних складах.
+   * Залишки за id товарів (без SKU, напр. інгредієнти) на вказаних складах
+   * (порожній список = усі склади), на дату або поточні.
    * Один запит на 500 id; рядки з кількох фірм повертаються окремо.
    */
-  async getStockBalanceByGoodIds(goodIds: string[], storageIds: readonly string[], firmId?: string): Promise<any[]> {
+  async getStockBalanceByGoodIds(
+    goodIds: string[],
+    storageIds: readonly string[],
+    firmId?: string,
+    asOfDate?: Date,
+  ): Promise<any[]> {
     await this.ensureReady();
-    if (goodIds.length === 0 || storageIds.length === 0) return [];
-    const formattedDate = formatDateForDilovod('Kyiv');
+    if (goodIds.length === 0) return [];
+    const formattedDate = asOfDate ? formatKyivDateTime(asOfDate) : formatDateForDilovod('Kyiv');
     const rows: any[] = [];
     for (const chunk of this.chunkArray(goodIds, 500)) {
       const request: DilovodApiRequest = {
@@ -1222,7 +1228,7 @@ export class DilovodApiClient {
           },
           filters: [
             { "alias": "id", "operator": "IL", "value": chunk },
-            { "alias": "storage", "operator": "IL", "value": [...storageIds] },
+            ...(storageIds.length > 0 ? [{ "alias": "storage", "operator": "IL", "value": [...storageIds] }] : []),
             ...(firmId ? [{ "alias": "firm", "operator": "=", "value": firmId }] : [])
           ]
         }

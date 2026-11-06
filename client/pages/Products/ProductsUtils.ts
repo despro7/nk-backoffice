@@ -4,6 +4,7 @@ import {
   type BomWeightComponent,
 } from '@shared/utils/catalogBomWeight.js';
 import type { CatalogGoodDto, CatalogTreeItemData, CatalogTreeNodeDto } from './ProductsTypes';
+export { formatStockQty, resolveUnitName } from '@shared/utils/catalogStock.js';
 import {
   CATALOG_ROOT_ID,
   CATALOG_TRASH_ID,
@@ -651,22 +652,6 @@ export function isInIngredientsBranch(
   if (folderId === CATALOG_INGREDIENTS_FOLDER_ID) return true;
   const path = buildFolderBreadcrumbs(folderId, items);
   return path.some((p) => p.id === CATALOG_INGREDIENTS_FOLDER_ID);
-}
-
-/** Залишок у кг/шт: до 3 знаків після коми, без зайвих нулів (`412,626`, `29,26`, `0`). */
-export function formatStockQty(qty: number | null | undefined): string {
-  const n = Number(qty);
-  if (!Number.isFinite(n)) return '0';
-  return n.toLocaleString('uk-UA', { maximumFractionDigits: 3, useGrouping: false });
-}
-
-/** Назва одиниці виміру товару (`кг`, `шт`, `л`…) з довідника; `''`, якщо невідома. */
-export function resolveUnitName(
-  unitId: string | null | undefined,
-  units: ReadonlyArray<{ id: string; name: string }> | undefined,
-): string {
-  if (!unitId || !units?.length) return '';
-  return units.find((u) => u.id === unitId)?.name?.trim() ?? '';
 }
 
 export function formatStock(main: number, small: number): string {

@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-11-06 – Переміщення: товари поза «Готовою продукцією» (Dilovod ID, СП / ВП, без коробок)
+
+**Files:** `server/modules/Warehouse/stockSnapshotCatalog.ts` (+ spec), `server/modules/Warehouse/WarehouseController.ts`, `server/services/dilovod/{DilovodService,DilovodApiClient}.ts`, `shared/types/warehouse.ts`, `shared/utils/catalogStock.ts`, `client/pages/Warehouse/shared/WarehouseProductBatchesPanel.tsx`, `client/pages/Warehouse/WarehouseReleaseSets/components/ReleaseComponentBatchesPanel.tsx`, `client/pages/Products/ProductsUtils.ts`
+
+- **Проблема:** у дровері «Переміщення» (зокрема з «Рухів товару») інгредієнти без SKU показували Dilovod id як «SKU», нульові ГП/МС і віджет «коробки + порції» з float-хвостом (`11 + 0.010999…`).
+- **`stock-snapshot`:** приймає Dilovod id товару без SKU (залишки за id товару на дату документа, один запит у Dilovod на 500 id) і віддає довідку `catalog` (Dilovod id, SKU, «Готова продукція» чи ні, одиниця виміру).
+- **Картка позиції поза «Готовою продукцією»:** «Dilovod ID» замість SKU, якщо SKU немає; залишки СП / ВП з одиницею і підказками; кількість `11,011 кг`; без «В коробці» і коробок. Готова продукція без змін.
+- `formatStockQty` / `resolveUnitName` перенесено в `shared/utils/catalogStock.ts` (реекспорт з `ProductsUtils`).
+
+**Документація:** `Docs/features/warehouse-movement-v2.md` – реєстр і `stock-snapshot`.
+
+---
+
 ## 2026-11-06 – Каталог: залишки інгредієнтів (СП / ВП), перемикач ФОП, «Рухи товару»
 
 **Files:** `shared/utils/catalogStock.ts` (+ spec), `shared/types/catalog.ts`, `shared/types/dilovod.ts` (+ `dilovodStockFirmScope.spec.ts`), `server/modules/Products/ingredientStockSync.ts` (+ spec), `server/modules/Products/catalogFinishedProductsFolder.ts`, `server/modules/Products/ProductsCatalogService.ts`, `server/services/dilovod/{DilovodApiClient,DilovodService,DilovodUtils}.ts`, `server/services/cronService.ts`, `server/routes/dilovod.ts`, `client/components/{StockBadge,DilovodSettingsManager}.tsx`, `client/pages/Products/{index.tsx,ProductsTypes.ts,ProductsUtils.ts}` (+ spec), `client/pages/Products/components/{CatalogTable,CatalogActionsMenu,CatalogContextMenu}.tsx`, `client/pages/Products/components/productDrawer/ProductDrawer.tsx`

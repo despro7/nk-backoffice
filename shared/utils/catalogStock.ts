@@ -80,3 +80,19 @@ export function buildIngredientStockJson(rawStock: number, productionStock: numb
 export function roundStockQty(qty: number): number {
   return Math.round(toQty(qty) * 1000) / 1000;
 }
+
+/** Залишок у кг/шт: до 3 знаків після коми, без зайвих нулів (`412,626`, `29,26`, `0`). */
+export function formatStockQty(qty: number | null | undefined): string {
+  const n = Number(qty);
+  if (!Number.isFinite(n)) return '0';
+  return n.toLocaleString('uk-UA', { maximumFractionDigits: 3, useGrouping: false });
+}
+
+/** Назва одиниці виміру товару (`кг`, `шт`, `л`…) з довідника; `''`, якщо невідома. */
+export function resolveUnitName(
+  unitId: string | null | undefined,
+  units: ReadonlyArray<{ id: string; name: string }> | undefined,
+): string {
+  if (!unitId || !units?.length) return '';
+  return units.find((u) => u.id === unitId)?.name?.trim() ?? '';
+}

@@ -749,6 +749,35 @@ export class DilovodService {
   }
 
   /**
+   * Те саме, що `getStockBalanceForSkus`, але за Dilovod id товару (товари без SKU:
+   * інгредієнти, матеріали). Ключ результату `sku` = id товару. Один запит на 500 id.
+   */
+  async getStockBalanceForGoodIds(
+    goodIds: string[],
+    asOfDate?: Date,
+    firmId?: string,
+  ): Promise<Array<{ sku: string; mainStorage: number; smallStorage: number; total: number; storages?: Record<string, number> }>> {
+    if (goodIds.length === 0) return [];
+    await this.apiClient.ensureReady();
+    const finalFirmId = firmId ?? this.apiClient.getConfig().defaultFirmId;
+    const rows = await this.apiClient.getStockBalanceByGoodIds(goodIds, [], finalFirmId, asOfDate);
+    const processed = this.dataProcessor.processStockBalance(
+      rows.map((row: any) => ({ ...row, sku: String(row.id ?? '') })),
+    );
+    const byId = new Map(processed.map((item) => [item.sku, item]));
+    return goodIds.map((id) => {
+      const item = byId.get(id);
+      return {
+        sku: id,
+        mainStorage: item?.mainStorage ?? 0,
+        smallStorage: item?.smallStorage ?? 0,
+        total: item?.total ?? 0,
+        storages: item?.storages,
+      };
+    });
+  }
+
+  /**
    * Доповнює balance-партії каталожними з qty=0 (Dilovod balance не повертає нульові залишки).
    * Використовується для коригування партійного обліку на розукомплектуванні.
    */

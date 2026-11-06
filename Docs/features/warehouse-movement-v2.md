@@ -17,7 +17,9 @@
 
 - **Напрям:** `MovementDirectionDetails` — вибір складів, swap, `DateTimePicker`; у dropdown — `StockBadge` (ГП/МС).
 - **Реєстр:** `MovementRegisterPanel` + `WarehouseProductBatchesPanel` (винесено з release sets) — партії, GP/MS залишки під назвою, confirm на видалення позиції.
+- **Товари поза «Готовою продукцією»** (інгредієнти, матеріали тощо): за довідкою `catalog` з `stock-snapshot` (`isFinishedProduct: false`) картка позиції показує «Dilovod ID», якщо SKU немає (ключ рядка = Dilovod id товару); залишки **СП** / **ВП** (склад сировини/пакування, виробництво продукції) на дату документа в одиниці товару; кількість через `formatStockQty` (`11,011 кг`). «В коробці» і `QtyPills` (коробки + порції) не показуються. Готова продукція: SKU, ГП/МС у порціях, коробки, як раніше.
 - **Пошук товарів:** `WarehouseProductSearch` + `useWarehouseProductSearch` — індекс `GET /api/catalog/warehouse-search-index`, партії `GET /api/warehouse/search-by-batch`, залишки `GET /api/warehouse/stock-snapshot`.
+- **`GET /api/warehouse/stock-snapshot`:** ключ `skus` може бути SKU або Dilovod id товару без SKU (`resolveSnapshotCatalogMeta` / `matchSnapshotKeys` у `stockSnapshotCatalog.ts`, SKU має пріоритет). Ключі-id питаються в Dilovod за id товару (`getStockBalanceForGoodIds`, один запит на 500 id, та сама дата / фірма), решта за SKU. Відповідь: `stocks[key]` (`mainStock`, `smallStock`, `storages`) і `catalog[key]`: `StockSnapshotCatalogMeta` (`dilovodId`, `sku`, `isFinishedProduct`, `unitName`).
 - **Summary:** `MovementSummaryPanel` — `MovementMobDirectionBadges` (короткі бейджі складів) + таблиця позицій.
 - **Відправка:** `useMovementV2SendFlow` → `WarehousePayloadBuilder` / goodMoving (аналог v1).
 
