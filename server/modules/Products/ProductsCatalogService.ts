@@ -36,6 +36,8 @@ import {
   rebalanceSortOrders,
 } from '../../../shared/utils/catalogSortOrder.js';
 import { getMissingRequiredCatalogFields } from '../../../shared/utils/catalogRequiredFields.js';
+import { parseCatalogStockJson } from '../../../shared/utils/catalogStock.js';
+import { resolveCatalogStockBranch } from './catalogFinishedProductsFolder.js';
 import {
   collectListAttentionGoodIds,
   collectListKitIds,
@@ -102,24 +104,6 @@ function normalizeParentId(parent: string | null | undefined): string | null {
   return parent;
 }
 
-function parseStockJson(
-  raw: string | null | undefined
-): { mainStock: number; smallStock: number; stockBalanceByStock: Record<string, number> | null } {
-  if (!raw) {
-    return { mainStock: 0, smallStock: 0, stockBalanceByStock: null };
-  }
-  try {
-    const parsed = JSON.parse(raw) as Record<string, number>;
-    return {
-      mainStock: Number(parsed['1'] || 0),
-      smallStock: Number(parsed['2'] || 0),
-      stockBalanceByStock: parsed,
-    };
-  } catch {
-    return { mainStock: 0, smallStock: 0, stockBalanceByStock: null };
-  }
-}
-
 function toStructurePayload(g: DilovodCatalogGoodRow): LocalSyncGoodPayload {
   return {
     id: g.id,
@@ -176,7 +160,7 @@ function mapGoodDto(
   parentName: string | null = null
 ): CatalogGoodDto {
   const isKit = isKitAccPolicy(row.accPolicyId);
-  const stock = parseStockJson(row.stockBalanceByStock);
+  const stock = parseCatalogStockJson(row.stockBalanceByStock);
   return {
     id: row.id,
     parentId: row.parentId,
@@ -197,6 +181,8 @@ function mapGoodDto(
     unitRatio: row.unitRatio ?? 1,
     mainStock: stock.mainStock,
     smallStock: stock.smallStock,
+    rawStock: stock.rawStock,
+    productionStock: stock.productionStock,
     stockBalanceByStock: stock.stockBalanceByStock,
     syncedAt: row.syncedAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -587,7 +573,7 @@ export class ProductsCatalogService {
     },
     options?: { forcePcs?: boolean; componentsSnapshot?: Array<{ id: string; name?: string; quantity: number }> }
   ) {
-    const stock = parseStockJson(row.stockBalanceByStock);
+    const stock = parseCatalogStockJson(row.stockBalanceByStock);
     const portionsPerBox = options?.forcePcs
       ? 1
       : row.packageRatio != null && !Number.isNaN(Number(row.packageRatio))
@@ -1450,16 +1436,15 @@ export class ProductsCatalogService {
 
     let stock: CatalogGoodDetailDto['stock'] = null;
     if (!row.isGroup) {
-      if (row.stockBalanceByStock) {
-        const parsed = parseStockJson(row.stockBalanceByStock);
-        stock = {
-          mainStock: parsed.mainStock,
-          smallStock: parsed.smallStock,
-          stockBalanceByStock: parsed.stockBalanceByStock,
-        };
-      } else {
-        stock = { mainStock: 0, smallStock: 0, stockBalanceByStock: null };
-      }
+      const parsed = parseCatalogStockJson(row.stockBalanceByStock);
+      stock = {
+        mainStock: parsed.mainStock,
+        smallStock: parsed.smallStock,
+        rawStock: parsed.rawStock,
+        productionStock: parsed.productionStock,
+        stockBalanceByStock: parsed.stockBalanceByStock,
+        branch: await resolveCatalogStockBranch(row.parentId),
+      };
     }
 
     const images: CatalogGoodImageDto[] = row.images.map((img) => ({

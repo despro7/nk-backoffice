@@ -21,7 +21,7 @@
 
 Мутації: спочатку Dilovod → потім sync у `catalog_*`. UI читає з локального дзеркала; повний/частковий re-pull — `POST /api/catalog/refresh`.
 
-Залишки в картці / таблиці — з `catalog_goods.stockBalanceByStock` (дзеркало JSON `{"1":ГП,"2":МС}`); при create/update також dual-write у `products`.
+Залишки в картці / таблиці: з `catalog_goods.stockBalanceByStock`; при create/update також dual-write у `products`. Склади залежать від гілки, див. «Залишки по складах».
 
 ---
 
@@ -47,7 +47,7 @@
 | --------------------- | --------------------------------------------------------------------------- |
 | `sortOrder`           | Ручний порядок siblings у папці; інтервал **крок 10**; індекс `(parentId, sortOrder)` |
 | `unitRatio`           | Коеф. порцій; dual-write → `products.unitRatio` (Admin UI у Drawer)         |
-| `stockBalanceByStock` | JSON залишків; дзеркало з Dilovod stock sync + dual-write у `products`      |
+| `stockBalanceByStock` | JSON залишків (формат залежить від гілки, див. «Залишки по складах»); дзеркало з Dilovod stock sync |
 
 `catalog_good_components.note` — примітка рядка специфікації продукції ↔ Dilovod `tpGoods.remark` (varchar до 150 у gateway; у БД до 512). **Не використовується** для товарних наборів (`accPolicy` kit) у UI/save.
 
@@ -368,8 +368,8 @@ client/pages/Products/
     PullFieldBarcodesComparePopover.tsx
     CatalogBreadcrumbs.tsx      # у пошуку: лише Каталог > Пошук
     CatalogToolbar.tsx          # пошук, «Додати обʼєкт», «Оновити залишки», «На затвердженні», «Журнал змін»
-    CatalogActionsMenu.tsx      # «Дії»: Синхронізувати гілку (+ TEMP Legacy), вибірковий Legacy, archive/trash
-    CatalogContextMenu.tsx      # Legacy Update, fromTrash / fromArchive (і в пошуку)
+    CatalogActionsMenu.tsx      # «Дії»: Рухи товару, Синхронізувати гілку (+ TEMP Legacy), вибірковий Legacy, archive/trash
+    CatalogContextMenu.tsx      # Рухи товару, Legacy Update, fromTrash / fromArchive (і в пошуку)
     MoveToFolderModal.tsx
     ProductDrawer.tsx           # футер: Оновити Legacy; Tabs kind, BOM, UsedIn, техкарта, unitRatio Admin, Наліпки, …
     productDrawer/
@@ -462,6 +462,21 @@ client/pages/Products/
 - Смітник у картці: `parentId === CATALOG_TRASH_ID` → кнопка «Відновити» (move picker).
 - Футер (edit, є SKU): зліва **Оновити Legacy** → той самий confirm / `legacySyncMutation`, що в toolbar і context menu.
 
+### Залишки по складах
+
+Набір складів залежить від гілки товару (`resolveCatalogStockBranch`, `getFinishedProductsFolderIds` / `getIngredientsFolderIds` у `catalogFinishedProductsFolder.ts`; на клієнті `isInFinishedProductsBranch` / `isInIngredientsBranch`):
+
+| Гілка | Склади | Бейдж | `stockBalanceByStock` |
+| --- | --- | --- | --- |
+| «Готова продукція» | Склад готової продукції / Малий склад (`dilovod_main_storage_id` / `dilovod_small_storage_id`) | **ГП** / **МС** | `{"1":ГП,"2":МС}` (слоти), dual-write у `products` |
+| «Інгредієнти» (`CATALOG_INGREDIENTS_FOLDER_ID`) | Склад сировини/пакування `1100700000001018` / Виробництво продукції `1100700000001020` | **СП** / **ВП** | ключі = id складів Dilovod; лише `catalog_goods` |
+| Інші | – | – | залишки не показуються |
+
+- Парсинг: `parseCatalogStockJson` (`shared/utils/catalogStock.ts`) → `mainStock` / `smallStock` / `rawStock` / `productionStock`; картка отримує `stock.branch`.
+- `StockBadge` (`ms` / `gp` / `sp` / `vp`) з `withTooltip` показує повну назву складу (таблиця, картка). Біля СП / ВП – одиниця виміру товару (`mainUnitId` → довідник одиниць, `resolveUnitName`), qty до 3 знаків (`formatStockQty`).
+- **Оновлення:** «Оновити залишки» / cron (`runLegacyStockSyncChain`): ГП/МС – `getBalanceBySkuList` (фільтр за SKU); інгредієнти – `updateIngredientStockBalancesInDatabase`: **один** запит `balance/goods` на 500 товарів за id товару (більшість інгредієнтів без SKU) і двома складами (`ingredientStockSync.ts`). Незмінені записи не перезаписуються. Складські сценарії (експорт переміщень, випуск наборів) залишки інгредієнтів не оновлюють.
+- **ФОП:** налаштування Dilovod «Залишки в каталозі» (`dilovod_stock_firm_scope`): `all` (за замовчуванням) – сума по всіх ФОП, `default` – лише «Фірма за замовчуванням». Діє на ГП/МС і СП/ВП; читається з БД перед кожним оновленням (`resolveCatalogStockFirmId`). ГП/МС далі експортуються в SalesDrive і на сайт.
+
 ### UI: тип у таблиці
 
 `goodTypeLabel(item, accPolicies?)`:
@@ -493,6 +508,8 @@ client/pages/Products/
 **Таблиця** — діти поточної папки; рядки-папки з іменем архіву **приховані** (доступ лише через іконку в дереві або breadcrumbs).
 
 - Гілка «Готова продукція»: колонки weight, packageRatio, unitRatio (Admin), ГП/МС, «В замовленнях»; stats з `/api/orders/products/stats?status=1|2|9&splitMonolithic=true`.
+- Гілка «Інгредієнти» (з підгрупами): колонки залишків **СП** / **ВП** з одиницею виміру товару; інші гілки (Матеріали, НМА тощо) колонок залишків не мають. Див. «Залишки по складах».
+- **«Рухи товару»** (контекстне меню і «Дії», один товар): звіт рухів по товару без партії ([`product-movements.md`](./product-movements.md)).
 - **«В замовленнях»:** комплекти (`products.set`) — кількість наборів з рядків замовлення; звичайні товари — порції з `processedItems` мінус компоненти наборів (та сама логіка, що звіт відвантажень, але без `payload.shipment.bySku`).
 - **Пошук** (`q` ≥ 2): колонки **Категорія** (`parentName`, клік → папка) і **В замовленнях** (навіть поза гілкою ГП). Клік по сумі або кольоровій цифрі відкриває модалку замовлень.
 - Column `SortDescriptor`; кнопка **«Ручний порядок»** біля breadcrumbs скидає на `sortOrder`.

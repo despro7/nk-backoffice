@@ -19,6 +19,8 @@ export interface CatalogActionsMenuItemsProps {
   fromArchive?: boolean;
   groupsOnly?: boolean;
   onEdit?: (id: string) => void;
+  /** Звіт «Рухи товару» (за товаром, без партії); лише для одного товару */
+  onShowMovements?: (id: string) => void;
   onSyncFromDilovod: (ids: string[]) => void;
   onLegacyUpdate: (ids: string[]) => void;
   onPushStorefront?: (ids: string[]) => void;
@@ -46,6 +48,7 @@ export function CatalogActionsMenuItems({
   fromArchive,
   groupsOnly,
   onEdit,
+  onShowMovements,
   onSyncFromDilovod,
   onLegacyUpdate,
   onPushStorefront,
@@ -71,6 +74,7 @@ export function CatalogActionsMenuItems({
   const inArchive = Boolean(fromArchive) && !inTrash;
   const onlyGroups = Boolean(groupsOnly);
   const canEditGroup = Boolean(onEdit) && onlyGroups && ids.length === 1 && !busy;
+  const canShowMovements = Boolean(onShowMovements) && !onlyGroups && ids.length === 1 && !inTrash;
 
   const run = (action: (ids: string[]) => void) => {
     action(ids);
@@ -91,6 +95,17 @@ export function CatalogActionsMenuItems({
           label="Редагувати групу"
           onSelect={() => {
             onEdit?.(ids[0]);
+            onClose?.();
+          }}
+        />
+      )}
+      {!onlyGroups && onShowMovements && (
+        <CatalogMenuItem
+          icon="arrow-left-right"
+          label="Рухи товару"
+          disabled={!canShowMovements}
+          onSelect={() => {
+            onShowMovements(ids[0]);
             onClose?.();
           }}
         />
@@ -211,6 +226,7 @@ function CatalogMenuItem({
     | 'boxes'
     | 'database'
     | 'pencil'
+    | 'arrow-left-right'
     | 'shapes';
   label: string;
   danger?: boolean;
@@ -268,6 +284,7 @@ export function CatalogActionsDropdown({
   fromArchive,
   groupsOnly,
   onEdit,
+  onShowMovements,
   onSyncFromDilovod,
   onLegacyUpdate,
   onPushStorefront,
@@ -303,6 +320,7 @@ export function CatalogActionsDropdown({
   const inArchive = Boolean(fromArchive) && !inTrash;
   const onlyGroups = Boolean(groupsOnly);
   const canEditGroup = Boolean(onEdit) && onlyGroups && ids.length === 1 && !busy;
+  const canShowMovements = Boolean(onShowMovements) && !onlyGroups && ids.length === 1 && !inTrash;
   const catalogBusy = Boolean(
     busy || branchRefreshing || stockRefreshing || stockStorefrontSyncing || fullRefreshing,
   );
@@ -363,6 +381,9 @@ export function CatalogActionsDropdown({
               break;
             case 'editGroup':
               if (ids[0]) onEdit?.(ids[0]);
+              break;
+            case 'movements':
+              if (canShowMovements) onShowMovements?.(ids[0]);
               break;
             case 'syncDilovod':
               onSyncFromDilovod(ids);
@@ -468,6 +489,14 @@ export function CatalogActionsDropdown({
             startContent={<DynamicIcon name="pencil" size={16} className="shrink-0" />}
           >
             Редагувати групу
+          </DropdownItem>
+          <DropdownItem
+            key="movements"
+            className={onlyGroups || !onShowMovements ? 'hidden' : undefined}
+            isDisabled={!canShowMovements}
+            startContent={<DynamicIcon name="arrow-left-right" size={16} className="shrink-0" />}
+          >
+            Рухи товару
           </DropdownItem>
           <DropdownItem
             key="syncDilovod"

@@ -24,6 +24,7 @@ interface CatalogContextMenuProps {
   isInsideArchive?: boolean;
   onClose: () => void;
   onEdit?: (id: string) => void;
+  onShowMovements?: (id: string) => void;
   onSyncFromDilovod: (ids: string[]) => void;
   onLegacyUpdate: (ids: string[]) => void;
   onPushStorefront?: (ids: string[]) => void;
@@ -50,6 +51,7 @@ export function CatalogContextMenu({
   isInsideArchive,
   onClose,
   onEdit,
+  onShowMovements,
   onSyncFromDilovod,
   onLegacyUpdate,
   onPushStorefront,
@@ -127,6 +129,7 @@ export function CatalogContextMenu({
         fromArchive={fromArchive}
         groupsOnly={state.groupsOnly}
         onEdit={onEdit}
+        onShowMovements={onShowMovements}
         onSyncFromDilovod={onSyncFromDilovod}
         onLegacyUpdate={onLegacyUpdate}
         onPushStorefront={onPushStorefront}

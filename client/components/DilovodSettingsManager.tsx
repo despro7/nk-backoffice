@@ -3,7 +3,7 @@ import { Card, CardBody, CardHeader, Input, Button, Select, SelectItem, Checkbox
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useDilovodSettings } from '../hooks/useDilovodSettings';
 import { getBankIcon, getPaymentIcon } from '../lib/bankIcons';
-import type { DilovodSettings, SalesChannel, DilovodChannelMapping } from '../../shared/types/dilovod.js';
+import type { DilovodSettings, DilovodStockFirmScope, SalesChannel, DilovodChannelMapping } from '../../shared/types/dilovod.js';
 import { DILOVOD_WAREHOUSE_DEFAULTS } from '../../shared/types/dilovod.js';
 import type { SalesDriveStatus, SalesDriveChannel } from '../../server/services/salesdrive/SalesDriveTypes.js';
 
@@ -694,6 +694,21 @@ const DilovodSettingsManager: React.FC = () => {
 									))}
 								</Select>
 							)}
+
+							{/* Підрахунок залишків каталогу по ФОП */}
+							<Select
+								label="Залишки в каталозі"
+								selectedKeys={[formData.stockFirmScope ?? 'all']}
+								disallowEmptySelection
+								onSelectionChange={(keys) => {
+									const value = Array.from(keys)[0] as DilovodStockFirmScope | undefined;
+									if (value) handleFieldChange('stockFirmScope', value);
+								}}
+								description="Як рахувати залишки ГП/МС і СП/ВП при «Оновити залишки». ГП/МС далі йдуть у SalesDrive і на сайт."
+							>
+								<SelectItem key="all">Сума по всіх ФОП</SelectItem>
+								<SelectItem key="default">Лише фірма за замовчуванням</SelectItem>
+							</Select>
 
 							<div className="rounded-lg p-4 border border-gray-200 shadow-md shadow-gray-100">
 								<div className="grid grid-cols-1 gap-4 pl-1">

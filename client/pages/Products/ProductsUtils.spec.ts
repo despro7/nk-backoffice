@@ -9,6 +9,10 @@ import {
   expectedBomWeightKg,
   expectedMilitaryPrice,
   formatBomQtyDisplay,
+  formatStockQty,
+  isInFinishedProductsBranch,
+  isInIngredientsBranch,
+  resolveUnitName,
   getMissingRequiredCatalogFields,
   isSuspiciousBomIngredientQty,
   isSuspiciousSpecQty,
@@ -23,6 +27,9 @@ import {
   CATALOG_PRICE_TYPE_MILITARY_ID,
   CATALOG_PRICE_TYPE_REGULAR_ID,
   CATALOG_PRICE_TYPE_RETAIL_ID,
+  CATALOG_INGREDIENTS_FOLDER_ID,
+  CATALOG_ROOT_ID,
+  type CatalogTreeItemData,
 } from './ProductsTypes';
 
 const units = [
@@ -442,5 +449,43 @@ describe('expectedMilitaryPrice', () => {
     expect(expectedMilitaryPrice(main, true, portions)).toBe(
       main - portions * CATALOG_MILITARY_DISCOUNT_PER_PORTION
     );
+  });
+});
+
+describe('stock branches', () => {
+  const folder = (id: string, name: string, parentId: string | null, children: string[] = []): CatalogTreeItemData => ({
+    id, name, isGroup: true, delMark: false, sku: null, isKit: false, parentId, children,
+  });
+  const items: Record<string, CatalogTreeItemData> = {
+    [CATALOG_ROOT_ID]: folder(CATALOG_ROOT_ID, 'Каталог', null, ['fin', CATALOG_INGREDIENTS_FOLDER_ID, 'mat']),
+    fin: folder('fin', 'Готова продукція', CATALOG_ROOT_ID),
+    [CATALOG_INGREDIENTS_FOLDER_ID]: folder(CATALOG_INGREDIENTS_FOLDER_ID, 'Інгредієнти', CATALOG_ROOT_ID, ['veg']),
+    veg: folder('veg', 'Овочі', CATALOG_INGREDIENTS_FOLDER_ID),
+    mat: folder('mat', 'Матеріали', CATALOG_ROOT_ID),
+  };
+
+  it('detects ingredients branch with subfolders only', () => {
+    expect(isInIngredientsBranch(CATALOG_INGREDIENTS_FOLDER_ID, items)).toBe(true);
+    expect(isInIngredientsBranch('veg', items)).toBe(true);
+    expect(isInIngredientsBranch('mat', items)).toBe(false);
+    expect(isInIngredientsBranch('fin', items)).toBe(false);
+    expect(isInFinishedProductsBranch('veg', items)).toBe(false);
+  });
+
+  it('formats fractional stock without trailing zeros', () => {
+    expect(formatStockQty(412.626)).toBe('412,626');
+    expect(formatStockQty(29.26)).toBe('29,26');
+    expect(formatStockQty(0)).toBe('0');
+    expect(formatStockQty(-1.5)).toBe('-1,5');
+    expect(formatStockQty(undefined)).toBe('0');
+  });
+
+  it('resolves unit name for stock label', () => {
+    const dict = [{ id: 'kg', name: 'кг' }, { id: 'l', name: ' л ' }];
+    expect(resolveUnitName('kg', dict)).toBe('кг');
+    expect(resolveUnitName('l', dict)).toBe('л');
+    expect(resolveUnitName('pcs', dict)).toBe('');
+    expect(resolveUnitName(null, dict)).toBe('');
+    expect(resolveUnitName('kg', undefined)).toBe('');
   });
 });

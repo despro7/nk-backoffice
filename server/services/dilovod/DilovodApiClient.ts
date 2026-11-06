@@ -1193,6 +1193,46 @@ export class DilovodApiClient {
     return this.normalizeToArray<any>(response);
   }
 
+  /**
+   * Залишки за id товарів (без SKU, напр. інгредієнти) на вказаних складах.
+   * Один запит на 500 id; рядки з кількох фірм повертаються окремо.
+   */
+  async getStockBalanceByGoodIds(goodIds: string[], storageIds: readonly string[], firmId?: string): Promise<any[]> {
+    await this.ensureReady();
+    if (goodIds.length === 0 || storageIds.length === 0) return [];
+    const formattedDate = formatDateForDilovod('Kyiv');
+    const rows: any[] = [];
+    for (const chunk of this.chunkArray(goodIds, 500)) {
+      const request: DilovodApiRequest = {
+        version: "0.25",
+        key: this.apiKey,
+        action: "request",
+        params: {
+          from: {
+            "type": "balance",
+            "register": "goods",
+            "date": formattedDate,
+            "dimensions": ["good", "storage", "firm"]
+          },
+          fields: {
+            "good": "id",
+            "storage": "storage",
+            "qty": "qty",
+            "firm": "firm"
+          },
+          filters: [
+            { "alias": "id", "operator": "IL", "value": chunk },
+            { "alias": "storage", "operator": "IL", "value": [...storageIds] },
+            ...(firmId ? [{ "alias": "firm", "operator": "=", "value": firmId }] : [])
+          ]
+        }
+      };
+      const response = await this.makeRequest<any>(request);
+      rows.push(...this.normalizeToArray<any>(response));
+    }
+    return rows;
+  }
+
   // Оновлення конфігурації
   updateConfig(newConfig: Partial<typeof DEFAULT_DILOVOD_CONFIG>): void {
     this.config = { ...this.config, ...newConfig };

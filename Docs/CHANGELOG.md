@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-11-06 – Каталог: залишки інгредієнтів (СП / ВП), перемикач ФОП, «Рухи товару»
+
+**Files:** `shared/utils/catalogStock.ts` (+ spec), `shared/types/catalog.ts`, `shared/types/dilovod.ts` (+ `dilovodStockFirmScope.spec.ts`), `server/modules/Products/ingredientStockSync.ts` (+ spec), `server/modules/Products/catalogFinishedProductsFolder.ts`, `server/modules/Products/ProductsCatalogService.ts`, `server/services/dilovod/{DilovodApiClient,DilovodService,DilovodUtils}.ts`, `server/services/cronService.ts`, `server/routes/dilovod.ts`, `client/components/{StockBadge,DilovodSettingsManager}.tsx`, `client/pages/Products/{index.tsx,ProductsTypes.ts,ProductsUtils.ts}` (+ spec), `client/pages/Products/components/{CatalogTable,CatalogActionsMenu,CatalogContextMenu}.tsx`, `client/pages/Products/components/productDrawer/ProductDrawer.tsx`
+
+- **Залишки інгредієнтів:** у гілці «Інгредієнти» (з підгрупами) колонки **СП** (склад сировини/пакування) і **ВП** (виробництво продукції) у таблиці та картці, з одиницею виміру товару (кг, л, шт). Готова продукція – ГП/МС без змін; інші гілки колонок не мають.
+- **Оновлення:** «Оновити залишки» і cron після ГП/МС оновлюють інгредієнти одним запитом у Dilovod за id товару (більшість інгредієнтів без SKU), незмінені записи пропускаються. JSON у `stockBalanceByStock` з ключами-id складів; `parseCatalogStockJson` спільний для сервера і клієнта.
+- **Картка:** блок «Залишки» за гілкою товару (`stock.branch`); раніше інгредієнти й матеріали бачили хибне `ГП 0 / МС 0`.
+- **Підказки:** бейджі ГП / МС / СП / ВП у каталозі показують повну назву складу при наведенні (`StockBadge withTooltip`).
+- **Перемикач ФОП:** налаштування Dilovod «Залишки в каталозі» (`dilovod_stock_firm_scope`): сума по всіх ФОП (за замовчуванням) або лише фірма за замовчуванням, для ГП/МС і СП/ВП. Режим читається з БД перед кожним оновленням: раніше `defaultFirmId` брався до завантаження конфігу, і на свіжому екземплярі сервісу фільтр фірми губився. ГП/МС далі йдуть у SalesDrive і на сайт, тож тепер там сума по всіх ФОП.
+- **«Рухи товару»:** пункт у контекстному меню і меню «Дії» (один товар) відкриває звіт рухів по товару без партії, зокрема для інгредієнтів без SKU.
+
+**Документація:** `Docs/features/products-catalog-2.0.md` – розділ «Залишки по складах», колонки таблиці, меню; `Docs/features/product-movements.md` – точка входу з каталогу.
+
+---
+
 ## 2026-11-06 – Каталог: «Потребує уваги» лише для «Готової продукції»
 
 **Files:** `shared/utils/catalogCardAttention.ts` (+ spec), `shared/types/catalog.ts`, `server/modules/Products/catalogListAttentionEnrichment.ts`, `client/pages/Products/components/CatalogTable.tsx`

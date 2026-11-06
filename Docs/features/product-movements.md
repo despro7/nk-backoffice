@@ -117,6 +117,7 @@ interface ProductMovementsOpenParams {
 | `/warehouse/batches` | Клік по партії → `autoGenerate: true` |
 | `/warehouse/movement-mob/:id` | Клік по назві партії в `MovementMobProductCard` (`autoGenerate: true`) |
 | `/warehouse/release-sets` | Кнопка «Рухи партії» в `ReleaseComponentBatchesPanel` |
+| `/products` (каталог) | «Рухи товару» в контекстному меню і меню «Дії» (один товар, не група): `dilovodGoodId` + `sku` (якщо є) + назва, без партії, `autoGenerate: true`. Працює і для інгредієнтів без SKU |
 
 ---
 

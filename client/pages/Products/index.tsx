@@ -32,6 +32,7 @@ import {
   getBranchMaxDepth,
   isArchiveFolderId,
   isInFinishedProductsBranch,
+  isInIngredientsBranch,
   predictArchiveFolderName,
   resolveCatalogItemLabels,
   resolveCatalogItemLocation,
@@ -53,6 +54,7 @@ import {
 } from './components/StorefrontSyncReportModal';
 import { StorefrontBlockingProgressModal } from './components/StorefrontBlockingProgressModal';
 import type { StorefrontBulkSyncReport } from '@shared/types/storefront';
+import { useProductMovementsDrawer } from '@/features/product-movements/context/ProductMovementsDrawerContext';
 
 const MANUAL_SORT: SortDescriptor = {
   column: 'sortOrder',
@@ -153,6 +155,10 @@ export default function ProductsPage() {
 
   const isFinishedProductsBranch = useMemo(
     () => isInFinishedProductsBranch(catalog.selectedFolderId, catalog.treeItemsFull),
+    [catalog.selectedFolderId, catalog.treeItemsFull]
+  );
+  const isIngredientsBranch = useMemo(
+    () => isInIngredientsBranch(catalog.selectedFolderId, catalog.treeItemsFull),
     [catalog.selectedFolderId, catalog.treeItemsFull]
   );
 
@@ -584,6 +590,25 @@ export default function ProductsPage() {
     []
   );
 
+  const { open: openProductMovements } = useProductMovementsDrawer();
+  /** «Рухи товару»: звіт по товару без партії (працює і для інгредієнтів без SKU). */
+  const showProductMovements = useCallback(
+    (id: string) => {
+      const row =
+        catalog.tableRows.find((r) => r.id === id) ??
+        (catalog.detail?.id === id ? catalog.detail : undefined);
+      const treeItem = catalog.treeItems[id];
+      if (row?.isGroup ?? treeItem?.isGroup) return;
+      openProductMovements({
+        dilovodGoodId: id,
+        sku: (row?.sku ?? treeItem?.sku)?.trim() || undefined,
+        productName: (row?.name ?? treeItem?.name)?.trim() || undefined,
+        autoGenerate: true,
+      });
+    },
+    [catalog.tableRows, catalog.detail, catalog.treeItems, openProductMovements]
+  );
+
   const requestDuplicate = useCallback(
     (ids: string[]) => {
       if (ids.length !== 1) return;
@@ -919,6 +944,7 @@ export default function ProductsPage() {
             fromArchive={selectionInArchive}
             groupsOnly={selectedGroupsOnly}
             onEdit={catalog.openEdit}
+            onShowMovements={showProductMovements}
             onSyncFromDilovod={requestSyncFromDilovod}
             onLegacyUpdate={requestLegacyUpdate}
             onPushStorefront={requestPushStorefront}
@@ -1021,6 +1047,8 @@ export default function ProductsPage() {
               accPolicies={catalog.dictionaries.accPolicies}
               pinnedHues={pinnedHues}
               isFinishedProductsBranch={isFinishedProductsBranch}
+              isIngredientsBranch={isIngredientsBranch}
+              units={catalog.dictionaries.units}
               isAdmin={isAdmin}
               portionsBySku={portionsBySku}
               portionsLoading={portionsLoading}
@@ -1102,6 +1130,7 @@ export default function ProductsPage() {
         isInsideArchive={isInsideArchive}
         onClose={() => setContextMenu(null)}
         onEdit={catalog.openEdit}
+        onShowMovements={showProductMovements}
         onSyncFromDilovod={requestSyncFromDilovod}
         onLegacyUpdate={requestLegacyUpdate}
         onPushStorefront={requestPushStorefront}

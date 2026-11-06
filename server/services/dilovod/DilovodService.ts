@@ -17,7 +17,7 @@ import { isKitAccPolicy } from '../../modules/Products/ProductsTypes.js';
 import { syncSettingsService } from '../syncSettingsService.js';
 import { dilovodCacheService, type CacheType } from './DilovodCacheService.js';
 import { DilovodGoodsCacheManager } from './DilovodGoodsCacheManager.js';
-import { compactMetaLogData, DILOVOD_PRODUCTION_WORKSHOP_STORAGE_ID, isActiveDilovodStorage, mapBarCodesByObjectId } from './DilovodUtils.js';
+import { compactMetaLogData, DILOVOD_PRODUCTION_WORKSHOP_STORAGE_ID, isActiveDilovodStorage, mapBarCodesByObjectId, resolveCatalogStockFirmId } from './DilovodUtils.js';
 import { pluralize } from '../../lib/utils.js';
 import { pickHumanBatchLabel } from '../../../shared/utils/dilovodBatchId.js';
 import { isSaleDuplicate, latestDocDate } from './dilovodShipmentCycle.js';
@@ -25,6 +25,13 @@ import { recordOrderDilovodDocuments, syncOrderDilovodDocumentsOfType, toOrderDi
 import { reconcileOrderShipmentsSafe } from '../orderShipments.js';
 import { parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import { dilovodRefId } from './dilovodContractPerson.js';
+import { INGREDIENT_STOCK_STORAGE_IDS } from '../../../shared/utils/catalogStock.js';
+import {
+  aggregateIngredientStockRows,
+  applyIngredientStockChanges,
+  diffIngredientStock,
+  listIngredientGoodsForStock,
+} from '../../modules/Products/ingredientStockSync.js';
 
 export class DilovodService {
   // Глобальний AbortController для поточної синхронізації товарів
@@ -668,7 +675,9 @@ export class DilovodService {
 
       console.log(`Отримано ${skus.length} SKU товарів з БД (включаючи застарілі)`);
 
-      const stockResponse = await this.apiClient.getStockBalance(skus, this.apiClient.getConfig().defaultFirmId);
+      // Фірма за налаштуванням «Залишки в каталозі» (усі ФОП або фірма за замовчуванням)
+      const firmId = await resolveCatalogStockFirmId();
+      const stockResponse = await this.apiClient.getStockBalance(skus, firmId);
       const processedStock = this.dataProcessor.processStockBalance(stockResponse);
 
       console.log(`Оброблено ${processedStock.length} товарів з залишками`);
@@ -944,6 +953,44 @@ export class DilovodService {
         updatedProducts: 0,
         errors: [error instanceof Error ? error.message : 'Невідома помилка']
       };
+    }
+  }
+
+  /**
+   * Залишки інгредієнтів (склад сировини/пакування + виробництво) у `catalog_goods`,
+   * ФОП за налаштуванням `dilovod_stock_firm_scope`. Інгредієнти здебільшого без SKU, тому запит за id товару: один запит на 500 товарів.
+   */
+  async updateIngredientStockBalancesInDatabase(): Promise<{
+    success: boolean;
+    message: string;
+    updatedProducts: number;
+    errors: string[];
+  }> {
+    try {
+      const goods = await listIngredientGoodsForStock();
+      if (goods.length === 0) {
+        return { success: true, message: 'Інгредієнтів не знайдено', updatedProducts: 0, errors: [] };
+      }
+      // Фірма за налаштуванням «Залишки в каталозі»; без фільтра ФОП сумуються в aggregateIngredientStockRows
+      const rows = await this.apiClient.getStockBalanceByGoodIds(
+        goods.map((g) => g.id),
+        INGREDIENT_STOCK_STORAGE_IDS,
+        await resolveCatalogStockFirmId(),
+      );
+      const changes = diffIngredientStock(goods, aggregateIngredientStockRows(rows));
+      const result = await applyIngredientStockChanges(changes);
+      const skipped = goods.length - changes.length;
+      console.log(`📦 [Dilovod] Залишки інгредієнтів: ${goods.length} товарів, оновлено ${result.updated}, без змін ${skipped}, помилок ${result.errors.length}`);
+      return {
+        success: result.errors.length === 0,
+        message: `Інгредієнти: оновлено ${result.updated}, пропущено ${skipped} (без змін)`,
+        updatedProducts: result.updated,
+        errors: result.errors,
+      };
+    } catch (error) {
+      const message = (error instanceof Error ? error.message || error.name : String(error ?? '')) || 'Невідома помилка';
+      console.log('Помилка оновлення залишків інгредієнтів:', error);
+      return { success: false, message: `Помилка оновлення залишків інгредієнтів: ${message}`, updatedProducts: 0, errors: [message] };
     }
   }
 

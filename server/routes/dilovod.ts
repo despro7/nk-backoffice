@@ -12,6 +12,7 @@ import type {
   DilovodSettingsRequest,
   DilovodDirectories
 } from '../../shared/types/dilovod.js';
+import { parseDilovodStockFirmScope } from '../../shared/types/dilovod.js';
 import { loadDilovodWarehouseDefaults } from '../services/dilovod/DilovodWarehouseDefaults.js';
 import { getSaleDuplicateOrderIds } from '../services/dilovod/dilovodShipmentCycle.js';
 import {
@@ -95,6 +96,7 @@ async function getDilovodSettings(): Promise<DilovodSettings> {
     autoSendSaleChannelSettings: parseJsonSafe(settingsMap.get('dilovod_auto_send_sale_channel_settings'), []),
     getPersonBy: (settingsMap.get('dilovod_get_person_by') as DilovodSettings['getPersonBy']) || 'end_user',
     defaultFirmId: settingsMap.get('dilovod_default_firm_id'),
+    stockFirmScope: parseDilovodStockFirmScope(settingsMap.get('dilovod_stock_firm_scope')),
     channelPaymentMapping: parseJsonSafe(settingsMap.get('dilovod_channel_payment_mapping'), {}),
     deliveryMappings: parseJsonSafe(settingsMap.get('dilovod_delivery_mappings'), []),
     logSendOrder: parseBool(settingsMap.get('dilovod_log_send_order')),
@@ -143,6 +145,7 @@ async function saveDilovodSettings(settings: DilovodSettingsRequest): Promise<Di
   if (settings.autoSendSaleChannelSettings !== undefined) add('dilovod_auto_send_sale_channel_settings', JSON.stringify(settings.autoSendSaleChannelSettings || []), 'Канали для автовідправки sale');
   if (settings.getPersonBy !== undefined) add('dilovod_get_person_by', settings.getPersonBy || 'end_user', 'Пошук контрагентів');
   if (settings.defaultFirmId !== undefined) add('dilovod_default_firm_id', settings.defaultFirmId || '', 'Фірма за замовчуванням');
+  if (settings.stockFirmScope !== undefined) add('dilovod_stock_firm_scope', parseDilovodStockFirmScope(settings.stockFirmScope), 'Залишки каталогу: усі ФОП (all) чи фірма за замовчуванням (default)');
   if (settings.channelPaymentMapping !== undefined) add('dilovod_channel_payment_mapping', JSON.stringify(settings.channelPaymentMapping || {}), 'Мапінг каналів продажів');
   if (settings.deliveryMappings !== undefined) add('dilovod_delivery_mappings', JSON.stringify(settings.deliveryMappings || []), 'Мапінг способів доставки');
   if (settings.logSendOrder !== undefined) add('dilovod_log_send_order', String(settings.logSendOrder ?? false), 'Логування відправки замовлень');

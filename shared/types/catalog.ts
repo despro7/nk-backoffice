@@ -3,6 +3,7 @@
  */
 
 import type { ProductNutritionJson, StorefrontDescriptionDoc } from './storefront.js';
+import type { CatalogStockBranch } from '../utils/catalogStock.js';
 
 /** Dilovod trash folder id («Видалені обʼєкти(смітник)») */
 export const CATALOG_TRASH_ID = '1100300000001805';
@@ -44,6 +45,9 @@ export const CATALOG_FINISHED_PRODUCTS_FOLDER_NAME = 'Готова продук�
 
 /** Папка «Готова продукція» — порції та комплекти (`/products#folder=…`). */
 export const CATALOG_FINISHED_PRODUCTS_FOLDER_ID = '1100300000001026';
+
+/** Папка «Інгредієнти»: залишки по складах сировини/пакування і виробництва. */
+export const CATALOG_INGREDIENTS_FOLDER_ID = '1100300000001028';
 
 /** Папка матеріалів (`/products#folder=…`). */
 export const CATALOG_MATERIALS_FOLDER_ID = '1100300000001651';
@@ -110,9 +114,12 @@ export interface CatalogGoodDto {
   sortOrder: number;
   /** Локальний коеф. порцій; dual-write → products.unitRatio */
   unitRatio: number | null;
-  /** Розпарсені залишки з stockBalanceByStock */
+  /** Розпарсені залишки з stockBalanceByStock: ГП / МС (готова продукція) */
   mainStock?: number;
   smallStock?: number;
+  /** Інгредієнти: склад сировини/пакування / виробництво продукції */
+  rawStock?: number;
+  productionStock?: number;
   stockBalanceByStock?: Record<string, number> | null;
   syncedAt: string;
   updatedAt: string;
@@ -223,7 +230,11 @@ export interface CatalogGoodBarcodeDto {
 export interface CatalogStockDto {
   mainStock: number;
   smallStock: number;
+  rawStock: number;
+  productionStock: number;
   stockBalanceByStock: Record<string, number> | null;
+  /** Який набір складів показувати; `null`: товар поза «Готовою продукцією» та «Інгредієнтами» */
+  branch: CatalogStockBranch | null;
 }
 
 export interface CatalogGoodDetailDto extends CatalogGoodDto {

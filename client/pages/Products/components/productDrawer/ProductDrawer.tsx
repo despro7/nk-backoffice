@@ -132,7 +132,7 @@ import {
   sortDictByName,
 } from './productDrawerUtils';
 import { prepareStorefrontDescriptionDocForForm } from '@shared/utils/storefrontDescription';
-import { isInFinishedProductsBranch } from '../../ProductsUtils';
+import { formatStockQty, isInFinishedProductsBranch, resolveUnitName } from '../../ProductsUtils';
 import { BarcodesSection } from './BarcodesSection';
 import { BomSection, newBomRowFromSearch } from './BomSection';
 import { PricesSection } from './PricesSection';
@@ -1468,6 +1468,8 @@ export function ProductDrawer({
       ),
     [dictionaries.units]
   );
+  /** Одиниця залишків СП / ВП: збережена одиниця товару (залишки в Dilovod у ній) */
+  const stockUnitName = resolveUnitName(detail?.mainUnitId, dictionaries.units);
   const priceTypes = useMemo(
     () => sortDictByName(dictionaries.priceTypes),
     [dictionaries.priceTypes]
@@ -1602,18 +1604,30 @@ export function ProductDrawer({
                   <span className="font-semibold hidden md:inline">
                     SKU: <span className="font-normal">{detail?.sku || 'відсутній'}</span>
                   </span>
-                  {detail?.stock ? (
+                  {detail?.stock?.branch ? (
                     <>
                       <Divider orientation="vertical" />
                       <span className="font-semibold flex gap-2">
                         Залишки:{' '}
-                        <span className="inline-flex items-center gap-1 font-normal">
-                          <StockBadge variant="gp" size="9px" />
-                          {detail.stock.mainStock}
-                          <span className="text-default-300">/</span>
-                          <StockBadge variant="ms" size="9px" />
-                          {detail.stock.smallStock}
-                        </span>
+                        {detail.stock.branch === 'finished' ? (
+                          <span className="inline-flex items-center gap-1 font-normal">
+                            <StockBadge variant="gp" size="9px" withTooltip />
+                            {detail.stock.mainStock}
+                            <span className="text-default-300">/</span>
+                            <StockBadge variant="ms" size="9px" withTooltip />
+                            {detail.stock.smallStock}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 font-normal tabular-nums">
+                            <StockBadge variant="sp" size="9px" withTooltip />
+                            {formatStockQty(detail.stock.rawStock)}
+                            {stockUnitName ? ` ${stockUnitName}` : null}
+                            <span className="text-default-300">/</span>
+                            <StockBadge variant="vp" size="9px" withTooltip />
+                            {formatStockQty(detail.stock.productionStock)}
+                            {stockUnitName ? ` ${stockUnitName}` : null}
+                          </span>
+                        )}
                       </span>
                     </>
                   ) : null}

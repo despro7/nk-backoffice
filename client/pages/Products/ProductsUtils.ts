@@ -10,6 +10,7 @@ import {
   CATALOG_ACC_POLICY_GOOD,
   CATALOG_ACC_POLICY_KIT,
   CATALOG_FINISHED_PRODUCTS_FOLDER_NAME,
+  CATALOG_INGREDIENTS_FOLDER_ID,
   CATALOG_PRICE_TYPE_RETAIL_ID,
   CATALOG_PRICE_TYPE_REGULAR_ID,
   CATALOG_PRICE_TYPE_MILITARY_ID,
@@ -640,6 +641,32 @@ export function isInFinishedProductsBranch(
 ): boolean {
   const path = buildFolderBreadcrumbs(folderId, items);
   return path.some((p) => p.name === finishedFolderName);
+}
+
+/** Чи поточна папка лежить у гілці «Інгредієнти» (включно з самою папкою). */
+export function isInIngredientsBranch(
+  folderId: string,
+  items: Record<string, CatalogTreeItemData>,
+): boolean {
+  if (folderId === CATALOG_INGREDIENTS_FOLDER_ID) return true;
+  const path = buildFolderBreadcrumbs(folderId, items);
+  return path.some((p) => p.id === CATALOG_INGREDIENTS_FOLDER_ID);
+}
+
+/** Залишок у кг/шт: до 3 знаків після коми, без зайвих нулів (`412,626`, `29,26`, `0`). */
+export function formatStockQty(qty: number | null | undefined): string {
+  const n = Number(qty);
+  if (!Number.isFinite(n)) return '0';
+  return n.toLocaleString('uk-UA', { maximumFractionDigits: 3, useGrouping: false });
+}
+
+/** Назва одиниці виміру товару (`кг`, `шт`, `л`…) з довідника; `''`, якщо невідома. */
+export function resolveUnitName(
+  unitId: string | null | undefined,
+  units: ReadonlyArray<{ id: string; name: string }> | undefined,
+): string {
+  if (!unitId || !units?.length) return '';
+  return units.find((u) => u.id === unitId)?.name?.trim() ?? '';
 }
 
 export function formatStock(main: number, small: number): string {

@@ -4,6 +4,7 @@ import { DilovodConfig } from './DilovodTypes.js';
 import { prisma } from '../../lib/utils.js';
 import { pickHumanBatchLabel } from '../../../shared/utils/dilovodBatchId.js';
 import { formatKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
+import { parseDilovodStockFirmScope, resolveStockFirmFilter } from '../../../shared/types/dilovod.js';
 
 // ============================================================
 // Діагностика результату saveObject від Dilovod API
@@ -500,6 +501,7 @@ export async function loadDilovodSettingsFromDB() {
       ordersBatchSize: settingsMap['dilovod_orders_batch_size'] !== undefined ? Number(settingsMap['dilovod_orders_batch_size']) : 50,
       ordersRetryAttempts: settingsMap['dilovod_orders_retry_attempts'] !== undefined ? Number(settingsMap['dilovod_orders_retry_attempts']) : 3,
     defaultFirmId: settingsMap['dilovod_default_firm_id'] || undefined,
+    stockFirmScope: parseDilovodStockFirmScope(settingsMap['dilovod_stock_firm_scope']),
   };
 }
 
@@ -851,4 +853,15 @@ export async function getDilovodUserId(
   }
 
   return fallback;
+}
+
+
+/**
+ * Фірма для запиту залишків каталогу (ГП/МС, СП/ВП) за налаштуванням `dilovod_stock_firm_scope`.
+ * Читає налаштування напряму з БД (без кешу конфігу), тож перемикач діє з наступного оновлення.
+ * `undefined` = без фільтра, сума по всіх ФОП.
+ */
+export async function resolveCatalogStockFirmId(): Promise<string | undefined> {
+  const settings = await loadDilovodSettingsFromDB();
+  return resolveStockFirmFilter(settings.stockFirmScope, settings.defaultFirmId);
 }

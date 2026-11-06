@@ -1,3 +1,24 @@
+/** Підрахунок залишків каталогу: `all` = сума по всіх ФОП, `default` = лише фірма за замовчуванням. */
+export type DilovodStockFirmScope = 'all' | 'default';
+
+export const DILOVOD_STOCK_FIRM_SCOPE_DEFAULT: DilovodStockFirmScope = 'all';
+
+export function parseDilovodStockFirmScope(raw: string | null | undefined): DilovodStockFirmScope {
+  return raw === 'default' ? 'default' : DILOVOD_STOCK_FIRM_SCOPE_DEFAULT;
+}
+
+/**
+ * Фільтр фірми для запиту залишків каталогу: `undefined` = без фільтра (усі ФОП).
+ * Режим `default` без заданої фірми теж дає всі ФОП.
+ */
+export function resolveStockFirmFilter(
+  scope: DilovodStockFirmScope,
+  defaultFirmId: string | null | undefined,
+): string | undefined {
+  if (scope !== 'default') return undefined;
+  return defaultFirmId?.trim() || undefined;
+}
+
 // Налаштування Dilovod (зберігаються в settings_base з category = 'dilovod')
 export interface DilovodSettings {
   // Основні налаштування API
@@ -44,6 +65,9 @@ export interface DilovodSettings {
   
   // Фірма за замовчуванням
   defaultFirmId?: string;
+
+  /** Залишки каталогу (ГП/МС, СП/ВП): сума по всіх ФОП чи лише фірма за замовчуванням */
+  stockFirmScope?: DilovodStockFirmScope;
   
   // Мапінг каналів продажів
   channelPaymentMapping?: DilovodChannelPaymentMapping;

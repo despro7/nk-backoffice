@@ -55,6 +55,8 @@ import {
   clearCatalogDropAttrs,
   markCatalogDndSources,
   isKitGood,
+  formatStockQty,
+  resolveUnitName,
 } from '../ProductsUtils';
 
 export type CatalogOrdersTabKey =
@@ -86,6 +88,10 @@ interface CatalogTableProps {
   pinnedHues?: Record<string, string>;
   /** Гілка «Готова продукція» — додаткові колонки */
   isFinishedProductsBranch?: boolean;
+  /** Гілка «Інгредієнти»: колонки залишків СП / ВП */
+  isIngredientsBranch?: boolean;
+  /** Довідник одиниць виміру: підпис до залишків СП / ВП */
+  units?: Array<{ id: string; name: string }>;
   isAdmin?: boolean;
   portionsBySku?: Map<string, PortionsStat>;
   portionsLoading?: boolean;
@@ -138,6 +144,8 @@ type ColumnKey =
   | 'unitRatio'
   | 'stockGp'
   | 'stockMs'
+  | 'stockSp'
+  | 'stockVp'
   | 'inOrders'
   | 'images'
   | 'actions';
@@ -664,6 +672,8 @@ export function CatalogTable({
   accPolicies,
   pinnedHues,
   isFinishedProductsBranch = false,
+  isIngredientsBranch = false,
+  units,
   isAdmin = false,
   portionsBySku,
   portionsLoading,
@@ -753,6 +763,10 @@ export function CatalogTable({
           return row.mainStock ?? 0;
         case 'stockMs':
           return row.smallStock ?? 0;
+        case 'stockSp':
+          return row.rawStock ?? 0;
+        case 'stockVp':
+          return row.productionStock ?? 0;
         case 'inOrders': {
           const p = portionsBySku?.get(String(row.sku ?? '').trim().toLowerCase());
           return (
@@ -813,7 +827,7 @@ export function CatalogTable({
           label: (
             <span className="inline-flex items-center gap-1">
               Залишки
-              <StockBadge variant="gp" size="9px" />
+              <StockBadge variant="gp" size="9px" withTooltip />
             </span>
           ),
           sortable: true,
@@ -822,16 +836,39 @@ export function CatalogTable({
         { key: 'stockMs', label: (
           <span className="inline-flex items-center gap-1">
             Залишки
-            <StockBadge variant="ms" size="9px" />
+            <StockBadge variant="ms" size="9px" withTooltip />
           </span>
         ), sortable: true },
         { key: 'inOrders', label: 'В замовленнях', sortable: true }
+      );
+    } else if (hasGoods && isIngredientsBranch) {
+      cols.push(
+        {
+          key: 'stockSp',
+          label: (
+            <span className="inline-flex items-center gap-1">
+              Залишки
+              <StockBadge variant="sp" size="9px" withTooltip />
+            </span>
+          ),
+          sortable: true,
+        },
+        {
+          key: 'stockVp',
+          label: (
+            <span className="inline-flex items-center gap-1">
+              Залишки
+              <StockBadge variant="vp" size="9px" withTooltip />
+            </span>
+          ),
+          sortable: true,
+        },
       );
     } else if (hasGoods && isSearchMode) {
       cols.push({ key: 'inOrders', label: 'В замовленнях', sortable: true });
     }
     return cols;
-  }, [hasGoods, isFinishedProductsBranch, isAdmin, isSearchMode]);
+  }, [hasGoods, isFinishedProductsBranch, isIngredientsBranch, isAdmin, isSearchMode]);
 
   const specColors = buildSpecColorMap(accPolicies ?? [], {
     theme: 'light',
@@ -1625,6 +1662,18 @@ export function CatalogTable({
         return (
           <span className={`inline-flex items-center gap-1.5 text-sm font-semibold tabular-nums ${qty < 0 ? 'text-danger' : ''}`}>
             {qty}
+          </span>
+        );
+      }
+      case 'stockSp':
+      case 'stockVp': {
+        if (row.isGroup) return <span className="text-default-300">–</span>;
+        const qty = (key === 'stockSp' ? row.rawStock : row.productionStock) ?? 0;
+        const unitName = resolveUnitName(row.mainUnitId, units);
+        return (
+          <span className={`text-sm font-semibold tabular-nums ${qty < 0 ? 'text-danger' : ''}`}>
+            {formatStockQty(qty)}
+            {unitName ? <span className="ml-1 text-xs font-normal text-default-400">{unitName}</span> : null}
           </span>
         );
       }

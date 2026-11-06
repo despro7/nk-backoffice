@@ -389,6 +389,18 @@ export class CronService {
         };
       }
 
+      // Інгредієнти (склад сировини/пакування + виробництво): лише backoffice, у SD не йдуть
+      try {
+        const ingredientResult = await this.dilovodService.updateIngredientStockBalancesInDatabase();
+        if (!ingredientResult.success) {
+          console.warn(`⚠️ ${tag} [1/3] Ingredient stock update had errors: ${ingredientResult.message}`);
+          errors.push(...ingredientResult.errors);
+        }
+      } catch (error) {
+        console.error(`❌ ${tag} [1/3] Ingredient stock update failed:`, error);
+        errors.push(error instanceof Error ? error.message : 'Помилка оновлення залишків інгредієнтів');
+      }
+
       console.log(`🕐 ${tag} [2/3] Exporting products to SalesDrive...`);
       try {
         const exportResult = await salesDriveService.buildAndExportProducts();
