@@ -1,3 +1,4 @@
+import { useProductionSettings } from '@/hooks/useProductionSettings';
 import { useMemo } from 'react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { SpecChip } from '@/components/SpecChip';
@@ -88,7 +89,11 @@ interface Props {
 
 /** Запис журналу змін товару: іконка дії, хто і коли, сітка змін «поле | значення». */
 export function CatalogAuditEntry({ item, dictionaries, showGood = false, onGoodClick }: Props) {
-  const lines = useMemo(() => buildCatalogAuditLines(item.payload, dictionaries), [item.payload, dictionaries]);
+  const { settings: productionSettings } = useProductionSettings();
+  const lines = useMemo(
+    () => buildCatalogAuditLines(item.payload, { ...dictionaries, lossTypes: productionSettings.lossTypes }),
+    [item.payload, dictionaries, productionSettings.lossTypes]
+  );
   const hue = SOURCE_HUE[item.source];
   const goodName = item.payload?.goodName || item.entityId;
   const goodSku = item.payload?.goodSku;

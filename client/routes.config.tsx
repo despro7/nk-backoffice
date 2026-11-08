@@ -42,6 +42,7 @@ const ChatwootBotDialogs = lazyPage(() => import('./pages/ChatwootBotDialogs'));
 const SettingsStorefront = lazyPage(() => import('./pages/SettingsStorefront'));
 const SettingsUsers = lazyPage(() => import('./pages/Settings/Users'));
 const SettingsLabelTemplates = lazyPage(() => import('./pages/SettingsLabelTemplates'));
+const SettingsProduction = lazyPage(() => import('./pages/SettingsProduction'));
 const SettingsDilovod = lazyPage(() => import('./pages/SettingsDilovod'));
 const SettingsDirectoriesCache = lazyPage(() => import('./pages/SettingsDirectoriesCache'));
 const SettingsWarehouseMovement = lazyPage(() => import('./pages/SettingsWarehouseMovement'));
@@ -733,6 +734,18 @@ export const appRoutes: AppRoute[] = [
     parent: 'settings',
     order: 9.6,
     permission: { name: 'labelTemplates', label: 'Шаблони наліпок' },
+  },
+  {
+    path: '/settings/production',
+    component: SettingsProduction,
+    title: 'Виробництво',
+    pageTitle: 'Налаштування виробництва | NK Backoffice',
+    navLabel: 'Виробництво',
+    icon: <DynamicIcon name="chef-hat" size={20} className="max-w-full max-h-full" />,
+    inNav: true,
+    parent: 'settings',
+    order: 9.7,
+    permission: { name: 'production', label: 'Налаштування виробництва' },
   },
   {
     path: '/settings/design',

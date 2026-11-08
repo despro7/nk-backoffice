@@ -6,6 +6,7 @@ import type {
   CatalogGoodAuditPayload,
 } from '../types/catalogAudit.js';
 import { CATALOG_AUDIT_ACTIONS } from '../types/catalogAudit.js';
+import { parseLossEntriesKey } from './catalogLoss.js';
 
 export const CATALOG_AUDIT_ACTION_LABELS: Record<string, string> = {
   [CATALOG_AUDIT_ACTIONS.CREATED]: 'Створено',
@@ -63,6 +64,7 @@ const COMPONENT_FIELD_LABELS: Record<string, string> = {
   unitId: 'од.',
   note: 'примітка',
   cookingLossPercent: 'втрати %',
+  losses: 'типи втрат',
 };
 
 /** Довідники для людських назв (id → name). */
@@ -70,6 +72,8 @@ export interface CatalogAuditDictionaries {
   units?: Array<{ id: string; name: string }>;
   priceTypes?: Array<{ id: string; name: string }>;
   accPolicies?: Array<{ id: string; name: string }>;
+  /** Типи втрат (`production.lossTypes`), щоб показати назви замість id */
+  lossTypes?: Array<{ id: number; name: string }>;
 }
 
 export type CatalogAuditLineKind = 'changed' | 'added' | 'removed' | 'info';
@@ -134,7 +138,10 @@ function fieldLine(change: AuditFieldChange, dicts: CatalogAuditDictionaries): C
 
 function componentText(row: CatalogAuditComponentRow, dicts: CatalogAuditDictionaries): string {
   const unit = row.unitId ? ` ${dictName(dicts.units, row.unitId)}` : '';
-  const loss = row.cookingLossPercent ? `, втрати ${formatNumber(row.cookingLossPercent)}%` : '';
+  const split = formatLossesKey(row.losses ?? null, dicts);
+  const loss = row.cookingLossPercent
+    ? `, втрати ${formatNumber(row.cookingLossPercent)}%${split ? ` (${split})` : ''}`
+    : '';
   return `${row.name}${row.sku ? ` (${row.sku})` : ''} – ${formatNumber(row.qty)}${unit}${loss}`;
 }
 
@@ -144,8 +151,20 @@ function barcodeText(row: CatalogAuditBarcodeRow): string {
   return `${row.code}${kind}${part}${row.activity ? '' : ' (неактивний)'}`;
 }
 
+/** Ключ розбивки втрат (`1:32|2:12`) → «Очистка 32%, Розсип 12%». */
+function formatLossesKey(key: string | null, dicts: CatalogAuditDictionaries): string {
+  const entries = parseLossEntriesKey(key);
+  return entries
+    .map((e) => {
+      const name = dicts.lossTypes?.find((t) => t.id === e.typeId)?.name ?? `тип #${e.typeId}`;
+      return `${name} ${formatNumber(e.percent)}%`;
+    })
+    .join(', ');
+}
+
 function componentValue(key: string, value: unknown, dicts: CatalogAuditDictionaries): string {
   if (key === 'unitId') return dictName(dicts.units, value);
+  if (key === 'losses') return formatLossesKey(typeof value === 'string' ? value : null, dicts) || EMPTY;
   if (typeof value === 'number') return formatNumber(value);
   return value == null || value === '' ? EMPTY : String(value);
 }

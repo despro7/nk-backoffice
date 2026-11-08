@@ -2,6 +2,7 @@
  * Internal types for Products 2.0 Dilovod gateway / local sync.
  */
 
+import type { CatalogLossEntry } from '../../../shared/types/production.js';
 import type {
   CatalogCreateGoodInput,
   CatalogGoodBarcodeDto,
@@ -118,6 +119,8 @@ export interface LocalSyncGoodPayload {
     unitId?: string | null;
     note?: string | null;
     cookingLossPercent?: number | null;
+    /** Локально: розбивка втрат; undefined = зберегти попередню (sync з Dilovod) */
+    losses?: CatalogLossEntry[] | null;
   }>;
   prices?: Array<{ priceType: string; price: number; currency?: string | null }>;
   barcodes?: Array<{

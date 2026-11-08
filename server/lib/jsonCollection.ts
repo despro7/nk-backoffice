@@ -1,16 +1,14 @@
 /**
  * A small list of records stored as one JSON value in settings_base.
- * Used for Notification Centre config that is tiny and rarely edited (rules, glossary,
- * user prefs, Telegram links), so it does not need its own tables.
+ * Used for config that is tiny and rarely edited (Notification Centre rules, glossary,
+ * user prefs, Telegram links; production loss types), so it does not need its own tables.
  *
  * Writes lock the settings_base row (SELECT … FOR UPDATE) for the whole read-modify-write,
  * so two instances or two admins do not overwrite each other's changes.
  */
 
 import type { Prisma } from '@prisma/client';
-import { prisma } from '../../lib/utils.js';
-
-const CATEGORY = 'notifications';
+import { prisma } from './utils.js';
 
 export interface JsonCollectionDoc<T> {
   nextId: number;
@@ -40,6 +38,8 @@ export class JsonCollection<T extends { id: number }> {
   constructor(
     readonly key: string,
     private readonly description: string,
+    /** settings_base.category для нового рядка */
+    private readonly category: string = 'notifications',
   ) {}
 
   /** Чи є ключ у settings_base (для засіву при першому запуску). */
@@ -60,7 +60,7 @@ export class JsonCollection<T extends { id: number }> {
     return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.settingsBase.upsert({
         where: { key: this.key },
-        create: { key: this.key, value: JSON.stringify({ nextId: 1, items: [] }), category: CATEGORY, description: this.description },
+        create: { key: this.key, value: JSON.stringify({ nextId: 1, items: [] }), category: this.category, description: this.description },
         update: {},
       });
       const locked = await tx.$queryRaw<Array<{ value: string }>>`SELECT value FROM settings_base WHERE \`key\` = ${this.key} FOR UPDATE`;

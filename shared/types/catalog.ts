@@ -2,6 +2,8 @@
  * Shared types for Products 2.0 catalog domain (`catalog_*` + /api/catalog).
  */
 
+import type { CatalogLossEntry } from './production.js';
+
 import type { ProductNutritionJson, StorefrontDescriptionDoc } from './storefront.js';
 import type { CatalogStockBranch } from '../utils/catalogStock.js';
 
@@ -199,8 +201,10 @@ export interface CatalogGoodComponentDto {
   unitId?: string | null;
   /** Примітка рядка специфікації ↔ Dilovod tpGoods.remark */
   note?: string | null;
-  /** Локально: % втрат при готуванні (0–100) */
+  /** Локально: % втрат при готуванні (0–100); при розбивці – сума `losses` */
   cookingLossPercent?: number | null;
+  /** Локально: розбивка втрат за типами; null – розбивки немає */
+  losses?: CatalogLossEntry[] | null;
   /** Батьківська папка компонента в каталозі (для групування складу комплекту) */
   componentCategoryName?: string | null;
 }
@@ -295,6 +299,7 @@ export interface CatalogCreateGoodInput {
     unitId?: string | null;
     note?: string | null;
     cookingLossPercent?: number | null;
+    losses?: CatalogLossEntry[] | null;
   }>;
   prices?: Array<{ priceType: string; price: number; currency?: string | null }>;
   barcodes?: Array<{
@@ -334,6 +339,7 @@ export interface CatalogUpdateGoodInput {
     unitId?: string | null;
     note?: string | null;
     cookingLossPercent?: number | null;
+    losses?: CatalogLossEntry[] | null;
   }>;
   prices?: Array<{ priceType: string; price: number; currency?: string | null }>;
   barcodes?: Array<{

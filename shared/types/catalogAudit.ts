@@ -11,6 +11,8 @@ export interface CatalogAuditComponentRow {
   unitId: string | null;
   note: string | null;
   cookingLossPercent: number;
+  /** Канонічний ключ розбивки втрат (`lossEntriesKey`), null – розбивки немає */
+  losses?: string | null;
 }
 
 export interface CatalogAuditBarcodeRow {

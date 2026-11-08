@@ -3,6 +3,7 @@
  */
 
 import { randomBytes } from 'crypto';
+import type { CatalogLossEntry } from '../../../shared/types/production.js';
 import type { DilovodTpGoodsRow } from './ProductsTypes.js';
 import { productsDilovodGateway } from './ProductsDilovodGateway.js';
 
@@ -14,6 +15,8 @@ export type CatalogComponentSaveInput = {
   note?: string | null;
   /** Локально: % втрат при готуванні (0–100) */
   cookingLossPercent?: number | null;
+  /** Локально: розбивка втрат за типами */
+  losses?: CatalogLossEntry[] | null;
 };
 
 export type CatalogComponentRowRef = {

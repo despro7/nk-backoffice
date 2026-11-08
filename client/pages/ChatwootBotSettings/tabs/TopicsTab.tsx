@@ -7,11 +7,10 @@ import {
   Divider,
   Input,
   Link,
-  Radio,
   RadioGroup,
-  type RadioProps,
   Slider,
 } from '@heroui/react';
+import { CARD_RADIO_GROUP_CLASS_NAMES, CardRadio } from '@/components/ui/CardRadio';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { CHATWOOT_BOT_TOPICS_LIMITS as LIMITS } from '@shared/types/chatwootBot';
 import type { FormState } from '../chatwootBotFormState';
@@ -19,25 +18,6 @@ import { FormSwitchField } from '../components/FormSwitchField';
 import type { ChatwootBotSettingsPageModel } from '../useChatwootBotSettingsPage';
 
 type Props = { page: ChatwootBotSettingsPageModel };
-
-/** Radio як картка-варіант (назва + опис, вибраний – з рамкою). */
-function CardRadio({ children, ...props }: RadioProps) {
-  return (
-    <Radio
-      {...props}
-      classNames={{
-        base: [
-          'inline-flex m-0 bg-content2 items-start justify-between',
-          'flex-row-reverse cursor-pointer rounded-lg gap-4 p-2 border-2 border-transparent hover:border-primary-200',
-          'data-[selected=true]:border-primary',
-        ],
-        description: 'text-xs',
-      }}
-    >
-      {children}
-    </Radio>
-  );
-}
 
 type NumberField = 'topicsJevExamplesPerTopic' | 'topicsJevMaxPerSync' | 'topicsSyncDelaySeconds' | 'topicsCronMinutes';
 
@@ -82,10 +62,7 @@ export function TopicsTab({ page }: Props) {
           label="Класифікатор"
           value={form.topicsClassifier}
           onValueChange={(v) => updateField('topicsClassifier', v === 'jev' ? 'jev' : 'local')}
-          classNames={{
-            label: 'text-sm text-default-700 font-semibold',
-            wrapper: 'grid grid-cols-1 md:grid-cols-2 gap-4',
-          }}
+          classNames={CARD_RADIO_GROUP_CLASS_NAMES}
         >
           <CardRadio value="local" description="Схожість слів з учасниками тем. Безкоштовно, без зовнішніх сервісів.">
             Локальний

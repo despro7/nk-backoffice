@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { lossEntriesKey, normalizeLossEntries } from '../../../shared/utils/catalogLoss.js';
 import type { Prisma } from '@prisma/client';
 import { logServer, prisma } from '../../lib/utils.js';
 import { auditLogService, type AuditLogQuery } from '../../services/AuditLogService.js';
@@ -148,6 +149,7 @@ export class CatalogGoodAuditService {
             unitId: c.unitId,
             note: c.note,
             cookingLossPercent: c.cookingLossPercent ?? 0,
+            losses: lossEntriesKey(normalizeLossEntries(c.lossesJson)),
           })),
           prices: Object.fromEntries(row.prices.map((p) => [p.priceType, p.price])),
           barcodes: row.barcodes.map((b) => ({

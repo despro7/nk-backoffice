@@ -3,7 +3,9 @@
  * Таблицю `products` Products 2.0 НЕ чіпає — legacy Dilovod sync лишається єдиним власником.
  */
 
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
+import type { CatalogLossEntry } from '../../../shared/types/production.js';
+import { normalizeLossEntries, sumLossPercent } from '../../../shared/utils/catalogLoss.js';
 import { prisma, logServer } from '../../lib/utils.js';
 import { LocalSyncGoodPayload } from './ProductsTypes.js';
 import { nextSiblingSortOrder } from '../../../shared/utils/catalogSortOrder.js';
@@ -255,6 +257,7 @@ export class ProductsLocalSync {
       note?: string | null;
       dilovodRowId?: string | null;
       cookingLossPercent?: number | null;
+      losses?: CatalogLossEntry[] | null;
     }>
   ): Promise<void> {
     // Примітки: Dilovod SoT (remark). Якщо payload.note === undefined — зберігаємо попереднє
@@ -269,6 +272,7 @@ export class ProductsLocalSync {
         note: true,
         dilovodRowId: true,
         cookingLossPercent: true,
+        lossesJson: true,
       },
     });
     const noteByRow = new Map(
@@ -285,6 +289,11 @@ export class ProductsLocalSync {
       existingRows
         .filter((r) => r.cookingLossPercent != null && Number.isFinite(r.cookingLossPercent))
         .map((r) => [`${r.rowNum}:${r.componentGoodId}`, r.cookingLossPercent as number])
+    );
+    const lossesByRow = new Map(
+      existingRows
+        .map((r) => [`${r.rowNum}:${r.componentGoodId}`, normalizeLossEntries(r.lossesJson)] as const)
+        .filter((entry): entry is readonly [`${number}:${string}`, CatalogLossEntry[]] => entry[1] != null)
     );
     await tx.catalogGoodComponent.deleteMany({ where: { parentGoodId } });
     if (components.length === 0) return;
@@ -330,10 +339,21 @@ export class ProductsLocalSync {
             : rowIdByRow.get(`${c.rowNum}:${c.componentGoodId}`) ??
               rowIdByRow.get(`${rowNum}:${c.componentGoodId}`) ??
               null;
+        // Розбивка втрат: з payload; якщо payload несе лише cookingLossPercent – розбивки немає;
+        // якщо нічого (sync з Dilovod) – зберігаємо попередню разом із сумою.
+        const losses =
+          c.losses !== undefined
+            ? normalizeLossEntries(c.losses)
+            : c.cookingLossPercent !== undefined
+              ? null
+              : lossesByRow.get(`${c.rowNum}:${c.componentGoodId}`) ??
+                lossesByRow.get(`${rowNum}:${c.componentGoodId}`) ??
+                null;
         const lossFromPayload =
           c.cookingLossPercent !== undefined ? this.normalizeCookingLossPercent(c.cookingLossPercent) : undefined;
-        const cookingLossPercent =
-          lossFromPayload !== undefined
+        const cookingLossPercent = losses
+          ? sumLossPercent(losses)
+          : lossFromPayload !== undefined
             ? lossFromPayload
             : lossByRow.get(`${c.rowNum}:${c.componentGoodId}`) ??
               lossByRow.get(`${rowNum}:${c.componentGoodId}`) ??
@@ -347,6 +367,7 @@ export class ProductsLocalSync {
           unitId: c.unitId ?? null,
           note,
           cookingLossPercent,
+          lossesJson: losses ? (losses as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
         };
       }),
     });

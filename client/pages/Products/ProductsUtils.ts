@@ -1,4 +1,10 @@
 import {
+  DEFAULT_CATALOG_LOSS_FORMULA,
+  type CatalogLossEntry,
+  type CatalogLossFormula,
+} from '@shared/types/production';
+import { grossFromNet, resolveCookingLossPercent } from '@shared/utils/catalogLoss';
+import {
   bomRowGrossKg,
   massUnitToKgFactor,
   type BomWeightComponent,
@@ -1061,7 +1067,10 @@ export function isSuspiciousBomIngredientQty(
   return false;
 }
 
-/** Рядки техкарти для N порцій: нетто з урахуванням % втрат, брутто = нетто / (1 − loss%). */
+/**
+ * Рядки техкарти для N порцій. Брутто з нетто за формулою втрат (`grossFromNet`):
+ * additive – нетто / (1 − Σ%), sequential – нетто / Π(1 − %). Без розбивки – `cookingLossPercent`.
+ */
 export function buildTechCardRows(
   components: Array<{
     componentName: string;
@@ -1070,11 +1079,13 @@ export function buildTechCardRows(
     componentWeight: number | null;
     note?: string | null;
     cookingLossPercent?: number | null;
+    losses?: CatalogLossEntry[] | null;
   }>,
   units: Array<{ id: string; name: string; code?: string | null }>,
   specQty: number,
   portions: number,
-  massPrecision: TechCardMassPrecision = 'auto'
+  massPrecision: TechCardMassPrecision = 'auto',
+  lossFormula: CatalogLossFormula = DEFAULT_CATALOG_LOSS_FORMULA
 ): TechCardResult {
   const unitById = new Map(units.map((u) => [u.id, u]));
   const safeSpecQty = Number.isFinite(specQty) && specQty > 0 ? specQty : 1;
@@ -1095,14 +1106,13 @@ export function buildTechCardRows(
       const unit = unitById.get(c.unitId);
       const unitName = unit?.name?.trim() || '';
       const recipeQty = c.qty;
-      const loss = clampCookingLossPercent(c.cookingLossPercent);
+      const loss = resolveCookingLossPercent(c.losses, c.cookingLossPercent);
       const netRecipe = bomRowGrossKg(
         { qty: recipeQty, unitId: c.unitId, componentWeight: c.componentWeight },
         unitById
       );
       const netTotal = netRecipe != null ? netRecipe * scale : null;
-      const grossTotal =
-        netTotal != null && loss < 100 ? netTotal / (1 - loss / 100) : netTotal;
+      const grossTotal = netTotal != null ? grossFromNet(netTotal, c, lossFormula) : netTotal;
 
       if (netRecipe != null) {
         totalRecipeMassKg += netRecipe;

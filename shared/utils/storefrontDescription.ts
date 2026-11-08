@@ -28,6 +28,7 @@ import {
   STOREFRONT_WC_META,
 } from '../types/storefront.js';
 import { STOREFRONT_BUILTIN_DEFAULTS } from '../constants/storefrontDefaults.js';
+import { grossFromNet } from './catalogLoss.js';
 import {
   buildKitComponentsLegacyHtml,
   renderKitComponentsTemplate,
@@ -727,12 +728,6 @@ function massUnitToKgFactor(
   return null;
 }
 
-function clampCookingLossPercent(value: number | null | undefined): number {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 0;
-  return Math.min(100, Math.max(0, n));
-}
-
 function bomRowNetKg(
   row: { qty: number; unitId: string; componentWeight: number | null },
   unitById: Map<string, { id: string; name: string; code?: string | null }>,
@@ -761,8 +756,7 @@ function computeBomGrossKg(input: StorefrontGrossResolveInput): number | null {
     const netRecipe = bomRowNetKg(c, unitById);
     if (netRecipe == null) continue;
     const netTotal = netRecipe * scale;
-    const loss = isKit ? 0 : clampCookingLossPercent(c.cookingLossPercent);
-    const grossTotal = loss < 100 && !isKit ? netTotal / (1 - loss / 100) : netTotal;
+    const grossTotal = isKit ? netTotal : grossFromNet(netTotal, c, input.lossFormula);
     totalGross += grossTotal;
     hasMass = true;
   }

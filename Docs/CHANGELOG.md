@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-11-10 – Техкарти, фаза 1: розбивка втрат за типами
+
+**Files:** `client/pages/Products/components/productDrawer/{BomSection,BomLossSplitPopover,ProductDrawer,TechCardModal,productDrawerTypes,productDrawerUtils}.ts(x)`, `client/pages/Products/ProductsUtils.ts`, `client/pages/Products/components/audit/CatalogAuditEntry.tsx`, `client/pages/SettingsProduction.tsx`, `client/components/ui/CardRadio.tsx`, `client/pages/ChatwootBotSettings/tabs/TopicsTab.tsx`, `client/hooks/useProductionSettings.ts`, `client/routes.config.tsx`, `server/modules/Production/ProductionSettingsService.ts`, `server/routes/production.ts`, `server/index.ts`, `server/lib/jsonCollection.ts` (перенесено з `Notifications/`, + spec), `server/modules/Products/{CatalogSpecService,ProductsCatalogService,ProductsLocalSync,CatalogGoodAuditService,ProductsTypes,catalogTpGoods}.ts`, `server/modules/Storefront/StorefrontDescriptionBuilder.ts`, `shared/types/{production,catalog,catalogSpec,catalogAudit,storefront}.ts`, `shared/utils/{catalogLoss,catalogSpecContent,catalogGoodAuditDiff,catalogGoodAuditFormat,catalogProductFieldAccess,storefrontDescription}.ts` (+ spec), `shared/constants/permissions.ts`, `prisma/schema.prisma`, `prisma/migrations/20261110120000_catalog_component_losses/`
+
+- **Розбивка втрат:** у специфікації при наведенні на `%` у полі «Втрати» – іконка `split`, клік відкриває Popover «Типи втрат» (тип із довідника + %). З розбивкою поле read-only і показує суму, суфікс – `split`.
+- **Дані:** `catalog_good_components.lossesJson` (`[{ typeId, percent }]`, лише локально); `cookingLossPercent` = сума. Розбивка входить у чернетки й версії специфікації (те саме затвердження), у журнал змін («типи втрат: Очистка 32%, Розсип 12%»), зберігається при sync з Dilovod.
+- **Формули брутто:** `additive` (нетто / (1 − Σ%), як в Excel) і `sequential` (нетто / Π(1 − %)) у `shared/utils/catalogLoss.ts`; використовуються в техкарті, автобрутто картки і брутто для вітрини.
+- **Налаштування → Виробництво** (`/settings/production`, `page.settings.production`: адмін, Директор): довідник типів втрат (порядок перетягуванням, вимкнення; збережені типи не видаляються) і формула за замовчуванням (картки-радіо). API: `GET/PUT /api/production/settings`, `settings_base` ключі `production_loss_types`, `production_loss_formula`.
+- `JsonCollection` перенесено в `server/lib/` з параметром `category`; `CardRadio` (картка-варіант для `RadioGroup`) винесено з `TopicsTab` у `client/components/ui/`.
+- Специфікація: трохи більший верхній відступ рядка (`pt-2`, `sm:pb-2`).
+
+**Документація:** `Docs/plans/production-techcards.md` (дизайн техкарт і варок, фази 1–3), `Docs/plans/production-dilovod-documents.md` (чернетка: документи Dilovod і собівартість), `Docs/features/products-catalog-2.0.md` – `lossesJson`, Popover втрат, `Docs/features/notification-centre.md` – шлях `jsonCollection.ts`.
+
+---
+
 ## 2026-11-09 – Центр сповіщень: нестача в позиціях документа, дубль Raw JSON
 
 **Files:** `server/modules/Notifications/NotificationDocumentService.ts` (+ spec), `client/components/notifications/NotificationDocumentDrawer.tsx`, `shared/types/notifications.ts`, `client/components/ResultDrawer.tsx`

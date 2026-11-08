@@ -1,3 +1,4 @@
+import type { CatalogLossEntry } from './production.js';
 import type { CatalogGoodComponentDto } from './catalog.js';
 
 /** Звідки взялась версія специфікації. */
@@ -23,6 +24,8 @@ export interface CatalogSpecComponent {
   unitId: string | null;
   note: string | null;
   cookingLossPercent: number;
+  /** Розбивка втрат за типами (з фази 1 техкарт); відсутня в старих версіях */
+  losses?: CatalogLossEntry[] | null;
 }
 
 export interface CatalogSpecContent {
@@ -101,6 +104,7 @@ export interface CatalogSpecDraftInput {
     unitId?: string | null;
     note?: string | null;
     cookingLossPercent?: number | null;
+    losses?: CatalogLossEntry[] | null;
   }>;
   comment: string;
 }

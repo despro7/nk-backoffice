@@ -16,10 +16,14 @@ import {
 } from '../../../shared/types/catalogSpec.js';
 import {
   diffSpecContent,
-  normalizeCookingLoss,
   normalizeSpecQty,
   specContentEquals,
 } from '../../../shared/utils/catalogSpecContent.js';
+import {
+  normalizeLossEntries,
+  parseLossEntriesKey,
+  resolveCookingLossPercent,
+} from '../../../shared/utils/catalogLoss.js';
 import { catalogGoodAuditService } from './CatalogGoodAuditService.js';
 import { productsCatalogService } from './ProductsCatalogService.js';
 
@@ -63,7 +67,8 @@ function parseComponents(raw: unknown): CatalogSpecComponent[] {
       rowNum: Number(r.rowNum) || idx + 1,
       unitId: r.unitId != null && r.unitId !== '' ? String(r.unitId) : null,
       note: typeof r.note === 'string' && r.note.trim() ? r.note.trim() : null,
-      cookingLossPercent: normalizeCookingLoss(r.cookingLossPercent),
+      cookingLossPercent: resolveCookingLossPercent(r.losses, r.cookingLossPercent),
+      losses: normalizeLossEntries(r.losses),
     }))
     .filter((r) => r.componentGoodId);
 }
@@ -86,6 +91,7 @@ function snapshotContent(snapshot: CatalogGoodAuditSnapshot | null): CatalogSpec
       unitId: c.unitId,
       note: c.note,
       cookingLossPercent: c.cookingLossPercent,
+      losses: normalizeLossEntries(parseLossEntriesKey(c.losses ?? null)),
     })),
   };
 }
@@ -135,7 +141,8 @@ export class CatalogSpecService {
         rowNum: c.rowNum || idx + 1,
         unitId: c.unitId ?? null,
         note: c.note?.trim() || null,
-        cookingLossPercent: normalizeCookingLoss(c.cookingLossPercent),
+        cookingLossPercent: resolveCookingLossPercent(c.lossesJson, c.cookingLossPercent),
+        losses: normalizeLossEntries(c.lossesJson),
       })),
     };
   }
@@ -173,7 +180,8 @@ export class CatalogSpecService {
             rowNum: c.rowNum ?? idx + 1,
             unitId: c.unitId || null,
             note: c.note?.trim() || null,
-            cookingLossPercent: normalizeCookingLoss(c.cookingLossPercent),
+            cookingLossPercent: resolveCookingLossPercent(c.losses, c.cookingLossPercent),
+            losses: normalizeLossEntries(c.losses),
           };
         }),
     };
@@ -204,6 +212,7 @@ export class CatalogSpecService {
         unitId: c.unitId,
         note: c.note,
         cookingLossPercent: c.cookingLossPercent,
+        lossesJson: c.losses ?? null,
       })),
     );
   }
@@ -594,6 +603,7 @@ export class CatalogSpecService {
             unitId: c.unitId,
             note: c.note,
             cookingLossPercent: c.cookingLossPercent,
+            losses: c.losses ?? null,
           })),
           ...(content.specQty != null ? { specQty: content.specQty } : {}),
         }),

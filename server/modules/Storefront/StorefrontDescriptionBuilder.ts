@@ -2,6 +2,9 @@
  * Assembles WooCommerce product description HTML from storefrontDescriptionDoc + product fields.
  */
 
+import type { CatalogLossEntry, CatalogLossFormula } from '../../../shared/types/production.js';
+import { normalizeLossEntries } from '../../../shared/utils/catalogLoss.js';
+import { productionSettingsService } from '../Production/ProductionSettingsService.js';
 import { prisma } from '../../lib/utils.js';
 import { CATALOG_ACC_POLICY_KIT } from '../../../shared/types/catalog.js';
 import {
@@ -64,6 +67,7 @@ type GoodRow = {
     qty: number;
     unitId: string | null;
     cookingLossPercent: number | null;
+    lossesJson: unknown;
     componentGood: { name: string; weight: number | null } | null;
   }>;
 };
@@ -84,8 +88,10 @@ type ResolveCtx = {
     unitId: string | null;
     componentWeight: number | null;
     cookingLossPercent: number | null;
+    losses: CatalogLossEntry[] | null;
     componentCategoryName: string | null;
   }>;
+  lossFormula: CatalogLossFormula;
   kitComponentRows: KitComponentRow[];
   kitComponentSettings: StorefrontKitComponentSettings;
 };
@@ -113,6 +119,7 @@ export class StorefrontDescriptionBuilder {
       isKit: ctx.isKit,
       components: loaded.bomComponents,
       units: loaded.units,
+      lossFormula: loaded.lossFormula,
     });
 
     const resolveCtx = ctx;
@@ -217,6 +224,7 @@ export class StorefrontDescriptionBuilder {
         unitId: c.unitId || good.mainUnitId || '1103600000000001',
         componentWeight: c.componentGood?.weight ?? null,
         cookingLossPercent: c.cookingLossPercent,
+        losses: normalizeLossEntries(c.lossesJson),
         componentCategoryName: parentId ? componentParentNameById.get(parentId) ?? null : null,
       };
     });
@@ -233,9 +241,12 @@ export class StorefrontDescriptionBuilder {
       qty: c.qty,
     }));
 
+    const lossFormula = await productionSettingsService.getLossFormula();
+
     return {
       good: good as GoodRow,
       isKit,
+      lossFormula,
       parentFolderName,
       presetBlocks: preset.blocks,
       metaKeys: settings.metaKeys,
@@ -256,6 +267,7 @@ export class StorefrontDescriptionBuilder {
       isKit: loaded.isKit,
       components: loaded.bomComponents,
       units: loaded.units,
+      lossFormula: loaded.lossFormula,
     });
 
     return {
@@ -269,6 +281,7 @@ export class StorefrontDescriptionBuilder {
       nutrition: parseProductNutritionJson(loaded.good.productNutritionJson),
       ingredientRows: loaded.ingredientRows,
       bomComponents: loaded.bomComponents,
+      lossFormula: loaded.lossFormula,
       kitComponentRows: loaded.kitComponentRows,
       kitComponentSettings: loaded.kitComponentSettings,
     };

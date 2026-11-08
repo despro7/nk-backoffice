@@ -1,9 +1,9 @@
 /**
  * Notification Centre storage in settings_base (category `notifications`).
- * Each key holds `{ nextId, items }`; see jsonCollection.ts.
+ * Each key holds `{ nextId, items }`; see server/lib/jsonCollection.ts.
  */
 
-import { JsonCollection } from './jsonCollection.js';
+import { JsonCollection } from '../../lib/jsonCollection.js';
 
 export interface StoredRule {
   id: number;

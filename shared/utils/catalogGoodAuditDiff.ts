@@ -48,7 +48,7 @@ function diffPrices(before: Record<string, number>, after: Record<string, number
   return out;
 }
 
-const COMPONENT_COMPARE_KEYS = ['qty', 'unitId', 'note', 'cookingLossPercent'] as const;
+const COMPONENT_COMPARE_KEYS = ['qty', 'unitId', 'note', 'cookingLossPercent', 'losses'] as const;
 
 /**
  * Склад порівнюємо за componentGoodId (а не rowNum), щоб перестановка рядків не давала шуму.

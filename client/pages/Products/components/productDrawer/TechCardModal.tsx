@@ -1,3 +1,4 @@
+import { useProductionSettings } from '@/hooks/useProductionSettings';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Button,
@@ -88,6 +89,7 @@ export function TechCardModal({
   }, [isOpen]);
 
   const safePortions = Number(portions) > 0 ? Number(portions) : 1;
+  const { settings: productionSettings } = useProductionSettings();
 
   const techCard = useMemo(
     () =>
@@ -99,13 +101,15 @@ export function TechCardModal({
           componentWeight: c.componentWeight,
           note: c.note,
           cookingLossPercent: c.cookingLossPercent,
+          losses: c.losses,
         })),
         units,
         parsedSpecQty,
         safePortions,
-        massPrecision
+        massPrecision,
+        productionSettings.lossFormula
       ),
-    [components, units, parsedSpecQty, safePortions, massPrecision]
+    [components, units, parsedSpecQty, safePortions, massPrecision, productionSettings.lossFormula]
   );
 
   const handlePrint = async () => {

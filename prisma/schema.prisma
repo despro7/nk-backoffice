@@ -665,8 +665,10 @@ model CatalogGoodComponent {
   unitId             String?  @db.VarChar(32)
   /// Примітка рядка tpGoods → Dilovod `remark` (varchar 150)
   note               String?  @db.VarChar(512)
-  /// Локально: % втрат при готуванні (0–100)
+  /// Локально: % втрат при готуванні (0–100); при розбивці = сума lossesJson
   cookingLossPercent Float?   @default(0)
+  /// Локально: розбивка втрат за типами [{ typeId, percent }] (типи: settings_base production.lossTypes)
+  lossesJson         Json?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

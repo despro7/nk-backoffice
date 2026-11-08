@@ -4,7 +4,9 @@ import type {
   CatalogGoodDetailDto,
   CatalogUpdateGoodInput,
 } from '../types/catalog.js';
+import type { CatalogLossEntry } from '../types/production.js';
 import type { ProductNutritionJson } from '../types/storefront.js';
+import { lossEntriesKey, resolveCookingLossPercent } from './catalogLoss.js';
 
 type ComponentInput = {
   componentGoodId: string;
@@ -13,13 +15,8 @@ type ComponentInput = {
   unitId?: string | null;
   note?: string | null;
   cookingLossPercent?: number | null;
+  losses?: CatalogLossEntry[] | null;
 };
-
-function normalizeCookingLossPercent(value: number | null | undefined): number {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 0;
-  return Math.min(100, Math.max(0, n));
-}
 
 function normalizeComponent(row: ComponentInput, fallbackUnitId?: string | null): string {
   return JSON.stringify({
@@ -28,7 +25,8 @@ function normalizeComponent(row: ComponentInput, fallbackUnitId?: string | null)
     rowNum: row.rowNum ?? 0,
     unitId: row.unitId ?? fallbackUnitId ?? null,
     note: (row.note ?? '').trim() || null,
-    cookingLossPercent: normalizeCookingLossPercent(row.cookingLossPercent),
+    cookingLossPercent: resolveCookingLossPercent(row.losses, row.cookingLossPercent),
+    losses: lossEntriesKey(row.losses),
   });
 }
 
@@ -41,6 +39,7 @@ function normalizeComponentDto(row: CatalogGoodComponentDto, fallbackUnitId?: st
       unitId: row.unitId,
       note: row.note,
       cookingLossPercent: row.cookingLossPercent,
+      losses: row.losses,
     },
     fallbackUnitId,
   );

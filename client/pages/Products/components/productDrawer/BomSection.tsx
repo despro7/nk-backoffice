@@ -46,6 +46,8 @@ function fieldLabel(text: string, dirty?: boolean) {
   );
 }
 import { RowDeleteButton } from './RowDeleteButton';
+import { BomLossSplitPopover, hasLossSplit } from './BomLossSplitPopover';
+import type { CatalogLossFormula, ProductionLossType } from '@shared/types/production';
 import {
   BOM_MANUAL_SORT,
   getBomSortIconName,
@@ -96,6 +98,10 @@ interface BomSectionProps {
   canEditSpec?: boolean;
   /** Віджет версії специфікації (версія, чернетка) у заголовку специфікації. */
   moderationSlot?: ReactNode;
+  /** Довідник типів втрат (settings_base, «Виробництво») */
+  lossTypes: ProductionLossType[];
+  /** Формула складання типів втрат у брутто */
+  lossFormula: CatalogLossFormula;
 }
 
 function BomRowWeightHint({
@@ -189,6 +195,8 @@ export function BomSection({
   isReadOnly = false,
   canEditSpec = false,
   moderationSlot,
+  lossTypes,
+  lossFormula,
 }: BomSectionProps) {
   const packCols = isAdmin ? (isKit ? '3' : '4') : isKit ? '2' : '3';
   const isSpecReadOnly = isReadOnly || !canEditSpec;
@@ -446,8 +454,21 @@ export function BomSection({
                   content: 'text-xs',
                 },
               }}
-              endContent={<span className="text-xs text-default-400">%</span>}
-              isReadOnly={isSpecReadOnly}
+              endContent={
+                <BomLossSplitPopover
+                  losses={c.losses}
+                  cookingLossPercent={c.cookingLossPercent}
+                  lossTypes={lossTypes}
+                  lossFormula={lossFormula}
+                  isReadOnly={isSpecReadOnly}
+                  onChange={({ losses, cookingLossPercent }) =>
+                    onComponentsChange((prev) =>
+                      prev.map((row, i) => (i === idx ? { ...row, losses, cookingLossPercent } : row))
+                    )
+                  }
+                />
+              }
+              isReadOnly={isSpecReadOnly || hasLossSplit(c.losses)}
               onChange={(cookingLossPercent) =>
                 onComponentsChange((prev) =>
                   prev.map((row, i) => (i === idx ? { ...row, cookingLossPercent } : row))
@@ -841,7 +862,7 @@ export function BomSection({
                         <div
                           ref={dragProvided.innerRef}
                           {...dragProvided.draggableProps}
-                          className={`flex flex-col gap-1.5 [&:not(:last-child)]:border-b border-default-200/60 pt-1.5 pb-3 ${snapshot.isDragging ? 'bg-default-100 shadow-sm rounded-md' : undefined}`}
+                          className={`flex flex-col gap-1.5 [&:not(:last-child)]:border-b border-default-200/60 pt-2 pb-3 sm:pb-2 ${snapshot.isDragging ? 'bg-default-100 shadow-sm rounded-md' : undefined}`}
                         >
                           {renderBomRow(
                             entry,
@@ -879,5 +900,6 @@ export function newBomRowFromSearch(hit: CatalogSearchHit, mainUnitId: string): 
     componentNestedPortionCount,
     componentCategoryName: hit.parentName ?? null,
     cookingLossPercent: 0,
+    losses: null,
   };
 }

@@ -182,7 +182,7 @@
 - `notification_outbox` – черга Telegram: росте постійно, рядки атомарно забираються воркером, антиспам рахується запитом. Очищення раз на 6 год: `sent` / `skipped` старші за 7 днів, `failed` старші за 30 днів (`NotificationTelegramService.cleanupOutbox`).
 - `notification_config_revisions` – історія змін правил і словника для відкату. Росте лише при редагуванні.
 
-Решта – малі списки, що рідко змінюються, у `settings_base` як JSON `{ "nextId": N, "items": [...] }` (`server/modules/Notifications/jsonCollection.ts`, ключі в `notificationStores.ts`). Запис іде під блокуванням рядка (`SELECT … FOR UPDATE` у транзакції), тож два адміни чи два інстанси не перезаписують зміни одне одного. `nextId` не повторює id видалених записів (на них посилаються ревізії). Для `notification_user_prefs` і `notification_telegram_links` `id` = `userId`.
+Решта – малі списки, що рідко змінюються, у `settings_base` як JSON `{ "nextId": N, "items": [...] }` (`server/lib/jsonCollection.ts`, ключі в `notificationStores.ts`). Запис іде під блокуванням рядка (`SELECT … FOR UPDATE` у транзакції), тож два адміни чи два інстанси не перезаписують зміни одне одного. `nextId` не повторює id видалених записів (на них посилаються ревізії). Для `notification_user_prefs` і `notification_telegram_links` `id` = `userId`.
 
 Перенесення з таблиць: міграція `20261109120000_notification_config_to_settings_base` (JSON збирається як текст, бо в MariaDB JSON-колонки – LONGTEXT).
 

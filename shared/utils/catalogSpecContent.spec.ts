@@ -31,6 +31,27 @@ describe('specContentEquals', () => {
     expect(specContentEquals(base, { specQty: 1, components: [row('a', 1, { cookingLossPercent: 10 })] })).toBe(false);
   });
 
+  it('detects loss split changes; split order does not matter', () => {
+    const split = [
+      { typeId: 1, percent: 32 },
+      { typeId: 2, percent: 12 },
+    ];
+    const base = { specQty: 1, components: [row('a', 1, { cookingLossPercent: 44, losses: split })] };
+    expect(
+      specContentEquals(base, {
+        specQty: 1,
+        components: [row('a', 1, { cookingLossPercent: 44, losses: [...split].reverse() })],
+      }),
+    ).toBe(true);
+    expect(
+      specContentEquals(base, {
+        specQty: 1,
+        components: [row('a', 1, { cookingLossPercent: 44, losses: [{ typeId: 1, percent: 44 }] })],
+      }),
+    ).toBe(false);
+    expect(specContentEquals(base, { specQty: 1, components: [row('a', 1, { cookingLossPercent: 44 })] })).toBe(false);
+  });
+
   it('treats empty note as null and duplicate ingredients as a multiset', () => {
     expect(
       specContentEquals(

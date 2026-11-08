@@ -1,3 +1,4 @@
+import type { CatalogLossEntry } from '@shared/types/production';
 import type { IconName } from 'lucide-react/dynamic';
 import type { ProductNutritionJson } from '@shared/types/storefront';
 import type {
@@ -71,8 +72,10 @@ export interface BomRow {
    * Джерело — detail/search API (`componentNestedPortionCount` / `kitPortionCount`).
    */
   componentNestedPortionCount: number;
-  /** % втрат при готуванні (0–100) */
+  /** % втрат при готуванні (0–100); при розбивці – сума `losses` */
   cookingLossPercent: number;
+  /** Розбивка втрат за типами; null / відсутнє – розбивки немає */
+  losses?: CatalogLossEntry[] | null;
   /** Батьківська папка компонента в каталозі */
   componentCategoryName?: string | null;
 }

@@ -2,6 +2,8 @@
  * WooCommerce storefront sync — shared contract (Phase 1: BO-only, Phase 2: WC meta).
  */
 
+import type { CatalogLossEntry, CatalogLossFormula } from './production.js';
+
 /** Default WC meta key strings (seed only) */
 export const STOREFRONT_WC_META = {
   ingredients: '_nk_ingredients',
@@ -560,8 +562,11 @@ export interface StorefrontGrossResolveInput {
     unitId: string;
     componentWeight: number | null;
     cookingLossPercent?: number | null;
+    losses?: CatalogLossEntry[] | null;
   }>;
   units: Array<{ id: string; name: string; code?: string | null }>;
+  /** Формула складання типів втрат (settings_base `production.lossFormula`) */
+  lossFormula?: CatalogLossFormula;
 }
 
 export interface StorefrontGrossResolveResult {

@@ -33,7 +33,7 @@
 | Таблиця                   | Призначення                                                              |
 | ------------------------- | ------------------------------------------------------------------------ |
 | `catalog_goods`           | Папки (`isGroup`) і товари; PK = Dilovod `id`                            |
-| `catalog_good_components` | BOM / `tpGoods` (+ `note` ↔ Dilovod `remark`; `cookingLossPercent` — лише локально) |
+| `catalog_good_components` | BOM / `tpGoods` (+ `note` ↔ Dilovod `remark`; `cookingLossPercent`, `lossesJson` — лише локально) |
 | `catalog_good_prices`     | Snapshot `informationRegisters.goodsPrices`                              |
 | `catalog_good_barcodes`   | Snapshot `informationRegisters.barCodes` (+ `goodPart` / `goodPartName`) |
 | `catalog_good_images`     | Локальні зображення товару                                               |
@@ -52,6 +52,8 @@
 `catalog_good_components.note` — примітка рядка специфікації продукції ↔ Dilovod `tpGoods.remark` (varchar до 150 у gateway; у БД до 512). **Не використовується** для товарних наборів (`accPolicy` kit) у UI/save.
 
 `catalog_good_components.cookingLossPercent` — **лише локально**: % втрат при готуванні (0–100) для рядків специфікації продукції; у Dilovod не пишеться. При sync з Dilovod існуюче значення зберігається (`ProductsLocalSync` merge). Міграція: `prisma/migrations/20260920120000_catalog_component_cooking_loss/`.
+
+`catalog_good_components.lossesJson` — **лише локально**: розбивка втрат за типами `[{ typeId, percent }]` (типи – довідник `production_loss_types` у `settings_base`). Якщо розбивка є, `cookingLossPercent` = сума (`resolveCookingLossPercent`), тож код, що читає лише суму, працює як раніше. Розбивка входить у `componentsJson` чернетки й версії специфікації (поле `losses`) і проходить те саме затвердження. При sync з Dilovod (payload без втрат) розбивка зберігається разом із сумою; payload лише з `cookingLossPercent` скидає розбивку. Брутто: `grossFromNet` (`shared/utils/catalogLoss.ts`) за формулою з `production_loss_formula`: `additive` – нетто / (1 − Σ%), `sequential` – нетто / Π(1 − %). Міграція: `prisma/migrations/20261110120000_catalog_component_losses/`.
 
 Константи (`shared/types/catalog.ts`):
 
@@ -417,7 +419,7 @@ client/pages/Products/
 - BOM (`BomSection`):
   - **Права:** редагування BOM / `specQty` – окремий ключ `action.products.editSpec` (seed лише admin; не залежить від ACL папки). Без `action.products.approveSpec` зміни йдуть у чернетку на затвердження (див. «Модерація специфікації»). Упаковка (вага, порції в коробці) – за ACL папки. Деталі: [`woocommerce-storefront-phase1.md`](./woocommerce-storefront-phase1.md#права-доступу-rbac).
   - **Продукція** — «Специфікація товару»; qty через `NumberInputFromNumber` (див. `Docs/architecture/number-input.md`); **примітка** (Chip + Popover, Dilovod remark); мікро-конфірм видалення примітки (іконка → «Видалити?» → clear).
-  - **Продукція** — колонка **% втрат** (`cookingLossPercent`, локально); підсвітка підозрілої qty (`isSuspiciousBomIngredientQty`); кнопка переносу тексту з дужок назви в примітку (`extractParenthesizedTextFromName`).
+  - **Продукція** — колонка **% втрат** (`cookingLossPercent`, локально). При наведенні на `%` – іконка `split`, клік відкриває `BomLossSplitPopover`: типи втрат (Select з довідника) і % кожного. З розбивкою поле read-only і показує суму, суфікс – завжди `split`; для послідовної формули Popover показує ефективний %. Довідник і формула – `useProductionSettings` (`GET /api/production/settings`), налаштування – `/settings/production`. Підсвітка підозрілої qty (`isSuspiciousBomIngredientQty`); кнопка переносу тексту з дужок назви в примітку (`extractParenthesizedTextFromName`).
   - **Продукція** — сортування колонок (назва, втрати, qty, од. вим.) + опційне **ручне сортування** перетягуванням (`bomSectionSort.ts`, `@hello-pangea/dnd`); адаптивний layout рядків BOM на вузьких екранах.
   - **Ціни** — опційне **ручне сортування** рядків (`pricesSectionSort.ts`, `@hello-pangea/dnd`).
   - **Продукція** — **«Друк техкарти»** → `TechCardModal`: розрахунок на N порцій, нетто/брутто з урахуванням втрат, експорт PDF/Excel, друк (`buildTechCardRows` у `ProductsUtils.ts`).

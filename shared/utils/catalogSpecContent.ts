@@ -1,6 +1,7 @@
 import type { CatalogGoodAuditPayload, CatalogGoodAuditSnapshot } from '../types/catalogAudit.js';
 import type { CatalogSpecComponent, CatalogSpecContent, CatalogSpecContentDetail } from '../types/catalogSpec.js';
 import { diffCatalogGoodSnapshots } from './catalogGoodAuditDiff.js';
+import { lossEntriesKey, normalizeLossEntries, resolveCookingLossPercent } from './catalogLoss.js';
 
 const EPS = 1e-9;
 
@@ -16,13 +17,16 @@ export function normalizeCookingLoss(value: unknown): number {
   return Math.min(100, Math.max(0, n));
 }
 
-function componentSignature(row: Pick<CatalogSpecComponent, 'componentGoodId' | 'qty' | 'unitId' | 'note' | 'cookingLossPercent'>): string {
+function componentSignature(
+  row: Pick<CatalogSpecComponent, 'componentGoodId' | 'qty' | 'unitId' | 'note' | 'cookingLossPercent' | 'losses'>,
+): string {
   return JSON.stringify([
     row.componentGoodId,
     Number(Number(row.qty).toFixed(9)),
     row.unitId || null,
     (row.note ?? '').trim() || null,
-    normalizeCookingLoss(row.cookingLossPercent),
+    resolveCookingLossPercent(row.losses, row.cookingLossPercent),
+    lossEntriesKey(row.losses),
   ]);
 }
 
@@ -52,7 +56,8 @@ export function specContentFromDetail(detail: CatalogSpecContentDetail): Catalog
       rowNum: c.rowNum || idx + 1,
       unitId: c.unitId ?? null,
       note: c.note?.trim() || null,
-      cookingLossPercent: normalizeCookingLoss(c.cookingLossPercent),
+      cookingLossPercent: resolveCookingLossPercent(c.losses, c.cookingLossPercent),
+      losses: normalizeLossEntries(c.losses),
     })),
   };
 }
@@ -70,6 +75,7 @@ export function specContentToAuditSnapshot(goodId: string, content: CatalogSpecC
       unitId: c.unitId,
       note: c.note,
       cookingLossPercent: c.cookingLossPercent,
+      losses: lossEntriesKey(c.losses),
     })),
     prices: {},
     barcodes: [],

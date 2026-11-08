@@ -3,7 +3,10 @@
  * Dilovod is SoT; local catalog_* is a mirror read via UI.
  */
 
+import { Prisma } from '@prisma/client';
 import { prisma, logServer } from '../../lib/utils.js';
+import type { CatalogLossEntry } from '../../../shared/types/production.js';
+import { normalizeLossEntries, resolveCookingLossPercent } from '../../../shared/utils/catalogLoss.js';
 import { isRebatchSku } from '../../../shared/types/warehouseRelease.js';
 import {
   CATALOG_ACC_POLICY_GOOD,
@@ -1334,7 +1337,8 @@ export class ProductsCatalogService {
       dilovodRowId: row.dilovodRowId,
       unitId: row.unitId || mainUnitId,
       note: row.note?.trim() || null,
-      cookingLossPercent: this.normalizeCookingLossPercent(row.cookingLossPercent),
+      cookingLossPercent: resolveCookingLossPercent(row.losses, row.cookingLossPercent),
+      losses: normalizeLossEntries(row.losses),
     }));
   }
 
@@ -1364,6 +1368,8 @@ export class ProductsCatalogService {
       unitId?: string | null;
       note?: string | null;
       cookingLossPercent?: number | null;
+      /** Сирий JSON з БД (`lossesJson`) */
+      lossesJson?: unknown;
     }>,
   ): Promise<CatalogGoodComponentDto[]> {
     const componentIds = [...new Set(rows.map((c) => c.componentGoodId))];
@@ -1404,7 +1410,8 @@ export class ProductsCatalogService {
         dilovodRowId: c.dilovodRowId ?? null,
         unitId: c.unitId ?? null,
         note: c.note ?? null,
-        cookingLossPercent: c.cookingLossPercent ?? 0,
+        cookingLossPercent: resolveCookingLossPercent(c.lossesJson, c.cookingLossPercent),
+        losses: normalizeLossEntries(c.lossesJson),
       };
     });
   }
@@ -1544,7 +1551,8 @@ export class ProductsCatalogService {
       rowNum: c.rowNum,
       unitId: c.unitId || mainUnitId,
       note: c.note?.trim() || null,
-      cookingLossPercent: this.normalizeCookingLossPercent(c.cookingLossPercent),
+      cookingLossPercent: resolveCookingLossPercent(c.losses, c.cookingLossPercent),
+      losses: normalizeLossEntries(c.losses),
     }));
     const { tpGoods, componentsWithRowIds } = !isGroup && hasComponents
       ? await resolveTpGoodsForSave({
@@ -1670,12 +1678,18 @@ export class ProductsCatalogService {
       if (input.components?.length) {
         for (const [idx, c] of input.components.entries()) {
           const rowNum = c.rowNum ?? idx + 1;
-          const patch: { note?: string; cookingLossPercent?: number } = {};
+          const patch: {
+            note?: string;
+            cookingLossPercent?: number;
+            lossesJson?: Prisma.InputJsonValue | typeof Prisma.DbNull;
+          } = {};
           if (c.note != null && String(c.note).trim()) {
             patch.note = String(c.note).trim();
           }
-          if (c.cookingLossPercent !== undefined) {
-            patch.cookingLossPercent = this.normalizeCookingLossPercent(c.cookingLossPercent);
+          if (c.cookingLossPercent !== undefined || c.losses !== undefined) {
+            const losses = normalizeLossEntries(c.losses);
+            patch.cookingLossPercent = resolveCookingLossPercent(losses, c.cookingLossPercent);
+            patch.lossesJson = losses ? (losses as unknown as Prisma.InputJsonValue) : Prisma.DbNull;
           }
           if (Object.keys(patch).length === 0) continue;
           await prisma.catalogGoodComponent.updateMany({
@@ -1728,6 +1742,7 @@ export class ProductsCatalogService {
       unitId: c.unitId ?? null,
       note: c.note ?? null,
       cookingLossPercent: c.cookingLossPercent ?? 0,
+      losses: c.losses ?? null,
     }));
     const componentInputs: CatalogComponentSaveInput[] = components.map((c) => ({
       componentGoodId: c.componentGoodId,
@@ -1735,9 +1750,11 @@ export class ProductsCatalogService {
       rowNum: c.rowNum,
       unitId: c.unitId ?? mainUnitId,
       note: 'note' in c ? (c.note ?? null) : null,
-      cookingLossPercent: this.normalizeCookingLossPercent(
+      cookingLossPercent: resolveCookingLossPercent(
+        'losses' in c ? c.losses : null,
         'cookingLossPercent' in c ? c.cookingLossPercent : 0
       ),
+      losses: normalizeLossEntries('losses' in c ? c.losses : null),
     }));
     const hasComponents = !isGroup && components.length > 0;
     const accPolicyId = isGroup
@@ -2016,12 +2033,18 @@ export class ProductsCatalogService {
       if (input.components?.length) {
         for (const [idx, c] of input.components.entries()) {
           const rowNum = c.rowNum ?? idx + 1;
-          const patch: { note?: string | null; cookingLossPercent?: number } = {};
+          const patch: {
+            note?: string | null;
+            cookingLossPercent?: number;
+            lossesJson?: Prisma.InputJsonValue | typeof Prisma.DbNull;
+          } = {};
           if (c.note !== undefined) {
             patch.note = c.note?.trim() || null;
           }
-          if (c.cookingLossPercent !== undefined) {
-            patch.cookingLossPercent = this.normalizeCookingLossPercent(c.cookingLossPercent);
+          if (c.cookingLossPercent !== undefined || c.losses !== undefined) {
+            const losses = normalizeLossEntries(c.losses);
+            patch.cookingLossPercent = resolveCookingLossPercent(losses, c.cookingLossPercent);
+            patch.lossesJson = losses ? (losses as unknown as Prisma.InputJsonValue) : Prisma.DbNull;
           }
           if (Object.keys(patch).length === 0) continue;
           await prisma.catalogGoodComponent.updateMany({

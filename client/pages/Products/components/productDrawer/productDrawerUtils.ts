@@ -1,3 +1,4 @@
+import { lossEntriesKey } from '@shared/utils/catalogLoss';
 import { parseNumberInput } from '@/lib/numberInput';
 import type { CatalogGoodImageDto } from '@shared/types/catalog';
 import type { CatalogGoodDetailDto, DrawerMode } from '../../ProductsTypes';
@@ -65,6 +66,7 @@ type ComparableBomRow = {
   unitId: string;
   note: string;
   cookingLossPercent: number;
+  losses: string | null;
 };
 
 type ComparableImageRow = {
@@ -91,6 +93,7 @@ function mapComparableComponents(components: BomRow[]): ComparableBomRow[] {
     unitId: row.unitId,
     note: row.note,
     cookingLossPercent: row.cookingLossPercent,
+    losses: lossEntriesKey(row.losses),
   }));
 }
 

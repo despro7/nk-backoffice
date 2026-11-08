@@ -1,3 +1,5 @@
+import { useProductionSettings } from '@/hooks/useProductionSettings';
+import { normalizeLossEntries } from '@shared/utils/catalogLoss';
 import {
   lazy,
   Suspense,
@@ -271,6 +273,7 @@ export function ProductDrawer({
   /** Батьківська група при створенні (впливає на parentId і SKU) */
   const [createParentId, setCreateParentId] = useState(parentFolderId);
   const [components, setComponents] = useState<BomRow[]>([]);
+  const { settings: productionSettings } = useProductionSettings();
   const [prices, setPrices] = useState<PriceRow[]>([]);
   const [barcodes, setBarcodes] = useState<BarcodeRow[]>([]);
   const [bomQuery, setBomQuery] = useState('');
@@ -681,6 +684,7 @@ export function ProductDrawer({
           componentNestedPortionCount: Number.isFinite(nested) && nested > 0 ? nested : 1,
           componentCategoryName: c.componentCategoryName ?? null,
           cookingLossPercent: c.cookingLossPercent ?? 0,
+          losses: c.losses ?? null,
         };
       });
       const nextPrices = detail.prices.map((p) => ({
@@ -1014,6 +1018,7 @@ export function ProductDrawer({
               // Примітка лише для специфікації продукції (не для товарних наборів)
               note: isKit ? null : c.note.trim() || null,
               cookingLossPercent: isKit ? undefined : c.cookingLossPercent,
+              losses: isKit ? undefined : normalizeLossEntries(c.losses),
             }))
           : [],
         prices: prices.map((p) => ({
@@ -1209,6 +1214,7 @@ export function ProductDrawer({
           componentNestedPortionCount: Number.isFinite(nested) && nested > 0 ? nested : 1,
           componentCategoryName: c.componentCategoryName ?? null,
           cookingLossPercent: c.cookingLossPercent ?? 0,
+          losses: c.losses ?? null,
         };
       }),
     );
@@ -1510,13 +1516,16 @@ export function ProductDrawer({
         componentWeight: c.componentWeight,
         note: c.note,
         cookingLossPercent: isKit ? 0 : c.cookingLossPercent,
+        losses: isKit ? null : c.losses,
       })),
       units,
       parseSpecQtyInput(form.specQty),
       1,
+      'auto',
+      productionSettings.lossFormula,
     );
     return rows.totalGrossMassKg;
-  }, [showBom, components, units, form.specQty, isKit]);
+  }, [showBom, components, units, form.specQty, isKit, productionSettings.lossFormula]);
   const requiredFieldsOk = requiredPricesOk && !packageRatioInvalid && !weightInvalid;
   const nameHasWeight = catalogNameContainsWeight(form.name);
 
@@ -1764,6 +1773,8 @@ export function ProductDrawer({
                             rowDeleteConfirm={rowDeleteConfirm}
                             bomWeightExpected={bomWeightExpected}
                             autoGrossKg={autoGrossKg}
+                            lossTypes={productionSettings.lossTypes}
+                            lossFormula={productionSettings.lossFormula}
                             specQtySuspicious={specQtySuspicious}
                             onOpenTechCard={() => setTechCardOpen(true)}
                             onFormChange={setForm}
