@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-11-08 – Центр сповіщень: рушій правил, стрічка з вкладками, права ролей
+
+**Files:** `shared/constants/notifications.ts`, `shared/types/{notificationRules,notifications}.ts`, `shared/notifications/{ruleEngine,defaultRules}.ts` (+ spec), `server/modules/Notifications/{NotificationConfigService,NotificationFeedService,notificationFeed}.ts` (+ spec), `server/routes/notifications.ts`, `server/routes/dilovod.ts`, `server/modules/Warehouse/WriteOffController.ts`, `prisma/schema.prisma`, `prisma/migrations/20261108120000_notification_rules`
+
+- **Рушій правил:** кожен запис `meta_logs` класифікується (`kind`: проблема / задача / подія, група, рівень, видимість) і переписується зрозумілою мовою через regex, ланцюжок замін, шаблони `{{…}}` і глобальний словник. Правила в БД (`notification_rules`), стандартні – з реальних записів (нестача товару списком, мапінг оплат, `object locked`, `multithreadApiSession`, переміщення, списання, штрих-коди тощо).
+- **Видимість без хаку через severity:** модерація специфікацій тепер «задача», а не `warning`; рутинні success Діловода й аудит приховані правилами.
+- **API `GET /api/notifications/feed`:** вкладки «Всі», «Мої», «Помилки», «Архів», лічильники непрочитаних, згортання повторів `×N`, аватар джерела (користувач або сервіс). Дії `read` / `archive` / `unarchive` / `resolve` пакетом `ids`.
+- **Права ролей:** ключі `action.notify.<група>.<рівень>.<app|tg>`; міграція зберігає поточну поведінку (error / warning у застосунку для всіх ролей). Адресні сповіщення бачать лише адресати незалежно від матриці.
+- **`initiatedBy`:** ручний експорт пише userId замість `manual:user:<email>` і `unknown`, щоб працювала вкладка «Мої».
+
+**Документація:** `Docs/features/notification-centre.md` (новий); `Docs/plans/notification-role-filtering.md` позначено застарілим.
+
+---
+
 ## 2026-11-06 – Переміщення: товари поза «Готовою продукцією» (Dilovod ID, СП / ВП, без коробок)
 
 **Files:** `server/modules/Warehouse/stockSnapshotCatalog.ts` (+ spec), `server/modules/Warehouse/WarehouseController.ts`, `server/services/dilovod/{DilovodService,DilovodApiClient}.ts`, `shared/types/warehouse.ts`, `shared/utils/catalogStock.ts`, `client/pages/Warehouse/shared/WarehouseProductBatchesPanel.tsx`, `client/pages/Warehouse/WarehouseReleaseSets/components/ReleaseComponentBatchesPanel.tsx`, `client/pages/Products/ProductsUtils.ts`

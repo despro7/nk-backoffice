@@ -11,12 +11,27 @@
  * PUT    /api/notifications/:id/read – mark one as read by current user
  * PUT    /api/notifications/read-all – mark all as read for current user
  * DELETE /api/notifications/read-state – clear own read marks (debug / reset)
+ *
+ * Notification Centre v2:
+ * GET    /api/notifications/feed?tab=all|mine|errors|archive – rendered feed + tab counters
+ * PUT    /api/notifications/read       { ids } – mark read for current user
+ * PUT    /api/notifications/archive    { ids } – archive for current user (hiddenBy[userId])
+ * PUT    /api/notifications/unarchive  { ids } – restore from own archive
+ * PUT    /api/notifications/resolve    { ids } – [admin] «Вирішено» for everyone (hiddenBy._all)
  */
 
 import { Router, Request, Response } from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { prisma } from '../lib/utils.js';
-import type { AppNotification, NotificationsResponse } from '../../shared/types/notifications.js';
+import type {
+  AppNotification,
+  NotificationFeedResponse,
+  NotificationTab,
+  NotificationsResponse,
+} from '../../shared/types/notifications.js';
+import { NOTIFICATION_TABS } from '../../shared/types/notifications.js';
+import { roleService } from '../services/RoleService.js';
+import { notificationFeedService } from '../modules/Notifications/NotificationFeedService.js';
 
 const router = Router();
 
@@ -431,6 +446,82 @@ router.delete('/read-state', authenticateToken, async (req: Request, res: Respon
     }
 
     res.json({ success: true, clearedCount });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+// ─── Notification Centre v2 ───────────────────────────────────────────────────
+
+function parseIds(body: unknown): number[] {
+  const raw = (body as { ids?: unknown } | undefined)?.ids;
+  if (!Array.isArray(raw)) return [];
+  return raw.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+}
+
+router.get('/feed', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+    const tabParam = String(req.query.tab ?? 'all') as NotificationTab;
+    const tab: NotificationTab = NOTIFICATION_TABS.includes(tabParam) ? tabParam : 'all';
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 100, 1), 200);
+    const permissions = await roleService.getPermissionSet(user.role);
+    const feed = await notificationFeedService.getFeed(
+      { userId: user.userId, isAdmin: user.role === 'admin', permissions },
+      tab,
+      limit,
+    );
+    const response: NotificationFeedResponse = {
+      success: true,
+      tab,
+      data: feed.data,
+      counts: feed.counts,
+      serverTime: new Date().toISOString(),
+    };
+    res.json(response);
+  } catch (err) {
+    console.error('❌ [Notifications] GET /feed error:', err);
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+router.put('/read', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const updated = await notificationFeedService.markForUser('readBy', parseIds(req.body), req.user!.userId);
+    res.json({ success: true, updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+router.put('/archive', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const ids = parseIds(req.body);
+    const userId = req.user!.userId;
+    await notificationFeedService.markForUser('readBy', ids, userId);
+    const updated = await notificationFeedService.markForUser('hiddenBy', ids, userId);
+    res.json({ success: true, updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+router.put('/unarchive', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const updated = await notificationFeedService.unarchiveForUser(parseIds(req.body), req.user!.userId);
+    res.json({ success: true, updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+router.put('/resolve', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ success: false, error: 'Admin role required' });
+    }
+    const updated = await notificationFeedService.resolveForAll(parseIds(req.body));
+    res.json({ success: true, updated });
   } catch (err) {
     res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
   }

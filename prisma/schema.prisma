@@ -1417,3 +1417,58 @@ model LlmUsageLog {
   @@index([provider, createdAt])
   @@map("llm_usage_log")
 }
+
+/// Центр сповіщень: правило класифікації й шаблону виводу для записів meta_logs.
+/// Перше увімкнене правило за position, що підійшло, перемагає.
+model NotificationRule {
+  id          Int      @id @default(autoincrement())
+  /// Стабільний ключ стандартного правила (для «Скинути до стандартного»); null – створене вручну.
+  key         String?  @unique @db.VarChar(64)
+  name        String   @db.VarChar(160)
+  enabled     Boolean  @default(true)
+  position    Int      @default(0)
+  /// NotificationRuleMatch (shared/types/notificationRules.ts)
+  match       Json
+  /// NotificationRuleOutput
+  output      Json
+  updatedById Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([position])
+  @@map("notification_rules")
+}
+
+/// Центр сповіщень: словник фраз, що застосовується після правил (напр. англ. → укр.).
+model NotificationGlossaryEntry {
+  id          Int      @id @default(autoincrement())
+  phrase      String   @db.VarChar(300)
+  replacement String   @db.VarChar(500)
+  isRegex     Boolean  @default(false)
+  enabled     Boolean  @default(true)
+  position    Int      @default(0)
+  updatedById Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([position])
+  @@map("notification_glossary")
+}
+
+/// Історія змін правил і словника (хто, коли, що було) для відкату.
+model NotificationConfigRevision {
+  id        Int      @id @default(autoincrement())
+  /// rule | glossary
+  entity    String   @db.VarChar(16)
+  entityId  Int?
+  /// create | update | delete | reorder | reset | revert
+  action    String   @db.VarChar(16)
+  before    Json?
+  after     Json?
+  userId    Int?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@map("notification_config_revisions")
+}

@@ -3,6 +3,12 @@
  * Used by both server (route responses) and client (NotificationBell, useNotifications).
  */
 
+import type {
+  NotificationGroupId,
+  NotificationKind,
+  NotificationLevel,
+} from '../constants/notifications.js';
+
 export type NotificationSeverity = 'error' | 'warning' | 'info' | 'success';
 
 /**
@@ -45,4 +51,75 @@ export interface NotificationsResponse {
 export interface MarkAllReadResponse {
   success: true;
   markedCount: number;
+}
+
+// ─── Notification Centre v2 (feed with tabs) ─────────────────────────────────
+
+export type NotificationTab = 'all' | 'mine' | 'errors' | 'archive';
+
+export const NOTIFICATION_TABS: readonly NotificationTab[] = ['all', 'mine', 'errors', 'archive'];
+
+/** Хто «надіслав» сповіщення: користувач (ініціали) або сервіс (іконка). */
+export type NotificationSource =
+  | { type: 'user'; userId: number; name: string; initials: string }
+  | { type: 'service'; id: NotificationServiceId; label: string };
+
+export type NotificationServiceId =
+  | 'dilovod'
+  | 'salesdrive'
+  | 'sync'
+  | 'warehouse'
+  | 'products'
+  | 'assembly'
+  | 'cron'
+  | 'webhook'
+  | 'system';
+
+/** null – активне; mine – архівовано користувачем; resolved – «Вирішено» адміністратором. */
+export type NotificationArchiveState = null | 'mine' | 'resolved';
+
+export interface NotificationFeedItem {
+  /** Найновіший meta_logs.id у групі однакових сповіщень. */
+  id: number;
+  /** Усі meta_logs.id, згорнуті в цей рядок (повтори). */
+  ids: number[];
+  /** Кількість повторів (≥1). */
+  count: number;
+  kind: NotificationKind;
+  group: NotificationGroupId;
+  level: NotificationLevel;
+  title: string;
+  message: string;
+  createdAt: string;
+  read: boolean;
+  archived: NotificationArchiveState;
+  /** Адресне (data.recipients містить поточного користувача). */
+  addressed: boolean;
+  /** Адресне або ініційоване поточним користувачем. */
+  mine: boolean;
+  orderNumber: string | null;
+  category: string;
+  source: NotificationSource;
+  /** Канал виклику: cron / webhook / salesdrive / manual – для підпису «через …». */
+  via: string | null;
+  action: { label: string; link: string } | null;
+  /** Правило, що сформувало рядок; null – «Без шаблону». */
+  ruleId: number | null;
+  ruleName: string | null;
+}
+
+export interface NotificationFeedCounts {
+  /** Непрочитані у вкладках all / mine / errors; archive – загальна кількість. */
+  all: number;
+  mine: number;
+  errors: number;
+  archive: number;
+}
+
+export interface NotificationFeedResponse {
+  success: true;
+  tab: NotificationTab;
+  data: NotificationFeedItem[];
+  counts: NotificationFeedCounts;
+  serverTime: string;
 }

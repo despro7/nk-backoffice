@@ -124,7 +124,7 @@ router.post('/send', authenticateToken, warehouseOperate, async (req, res) => {
       try {
         const { prisma } = await import('../../lib/utils.js');
         await prisma.meta_logs.create({ data: {
-          category: 'dilovod', title: 'WriteOff export failed', status: 'error', message: shortMsg, data: { payload, result } as Prisma.InputJsonValue, initiatedBy: (req as any).user?.userId ? String((req as any).user.userId) : 'unknown'
+          category: 'dilovod', title: 'WriteOff export failed', status: 'error', message: shortMsg, data: { payload, result } as Prisma.InputJsonValue, initiatedBy: (req as any).user?.userId ? String((req as any).user.userId) : null
         } });
       } catch (metaErr) {
         console.warn('[WriteOff] Failed to write meta log:', metaErr);

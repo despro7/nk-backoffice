@@ -1712,7 +1712,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, dilovodExpo
         title: 'Dilovod export result',
         status: isExportError ? 'error' : 'success',
         message: metaLogMessage,
-        initiatedBy: req.user ? String(req.user.userId) : 'unknown',
+        initiatedBy: req.user ? String(req.user.userId) : undefined,
         data: metaLogData
       });
 
@@ -1794,7 +1794,7 @@ router.post('/salesdrive/orders/:orderId/export', authenticateToken, dilovodExpo
           title: 'Manual export error (saleOrder)',
           status: 'error',
           message: `[Ручний] Помилка export замовлення ${exportOrderNum || exportOrderId}: ${errorMessage}`,
-          initiatedBy: `manual:user:${req.user?.email || req.user?.role || 'unknown'}`,
+          initiatedBy: req.user ? String(req.user.userId) : undefined,
           data: { orderId: exportOrderId, orderNumber: exportOrderNum, errorMessage }
         });
       } catch { /* ігноруємо помилку логування */ }
@@ -2001,7 +2001,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, dilovodEx
         dryRun: false,
         warnings,
         label: '[Dilovod/shipment]',
-        initiatedBy: req.user ? String(req.user.userId) : 'unknown',
+        initiatedBy: req.user ? String(req.user.userId) : undefined,
         saleOrderId: order.dilovodDocId,
         orderNumber: String(orderNum || orderId),
       });
@@ -2064,7 +2064,7 @@ router.post('/salesdrive/orders/:orderId/shipment', authenticateToken, dilovodEx
         title: 'Dilovod shipment export result',
         status: isExportError ? 'error' : 'success',
         message: metaLogMessage,
-        initiatedBy: req.user ? String(req.user.userId) : 'unknown',
+        initiatedBy: req.user ? String(req.user.userId) : undefined,
         data: metaLogData
       });
 
