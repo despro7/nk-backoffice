@@ -17,6 +17,7 @@ import { TesterTab } from './components/TesterTab';
 import { SourcesTab } from './components/SourcesTab';
 import { GlossaryTab } from './components/GlossaryTab';
 import { HistoryTab } from './components/HistoryTab';
+import { TelegramTab } from './components/TelegramTab';
 import { emptyRule, ruleFromSample } from './notificationPlayground';
 
 const TABS = {
@@ -26,6 +27,7 @@ const TABS = {
   sources: 'Джерела',
   glossary: 'Словник',
   history: 'Історія',
+  telegram: 'Telegram',
 } as const;
 
 type TabKey = keyof typeof TABS;
@@ -185,6 +187,8 @@ export default function SettingsNotifications() {
           onRevert={(r) => withBusy(() => notificationSettingsApi.revert(r.id), 'Не вдалося відкотити')}
         />
       )}
+
+      {tab === 'telegram' && <TelegramTab />}
 
       <RuleEditorDrawer
         isOpen={editing !== null}

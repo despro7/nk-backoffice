@@ -111,8 +111,28 @@
 
 - **Групи в дзвіночку:** вимкнути можна лише ті, що дозволяє роль; заборонені роллю показані неактивними. Адресних сповіщень не стосується.
 - **Звук:** короткий сигнал (Web Audio), коли зростає кількість непрочитаних під час опитування.
-- **Telegram:** підключення бота й вимкнення груп для Telegram (див. нижче).
+- **Telegram:** підключення бота й вимкнення груп для Telegram (див. «Telegram»).
 Міграція `20261108120000_notification_rules` видає всім ролям, крім admin, `error` і `warning` усіх груп у застосунку, плюс `success` для складу й товарів (поведінка як до редизайну). Telegram вимкнено.
+
+## Telegram
+
+Окремий бот сповіщень, на який працівники підписуються самі. Код: `server/modules/Notifications/{NotificationTelegramService,telegramDelivery}.ts` (+ spec).
+
+**Налаштування** (адмін, вкладка «Telegram» у `/settings/notifications`): токен з @BotFather (перевіряється `getMe`, зберігається в `settings_base.notification_telegram`, у UI маскований), перемикач «Розсилка увімкнена», «Надіслати собі тест», список підключених з відключенням, статистика outbox за 7 днів і останні помилки. Новий токен скидає всі привʼязки.
+
+**Підключення працівника:** дзвіночок → шестерня → «Підключити Telegram» → одноразове посилання `t.me/<bot>?start=<code>` (15 хв). Бот отримує `/start <code>` через `getUpdates` і привʼязує `chat_id` (`notification_telegram_links`). `/stop` у боті – відключення. Після підключення в шестерні можна вимкнути окремі групи для Telegram.
+
+**Хто отримує:** запис видимий (правило не «Лише журнал») і
+
+- адресний – лише адресати;
+- інакше – право ролі `action.notify.<group>.<level>.tg` (галочка «Telegram» у матриці), група не вимкнена користувачем ні в дзвіночку, ні для Telegram;
+- `user_report` – лише адміністратор.
+
+**Доставка:** воркер кожні 15 с: `getUpdates` → нові `meta_logs` після курсора (`settings_base.notification_telegram_cursor`; при першому запуску курсор ставиться на останній id, історія не розсилається) → рушій правил → `notification_outbox` (унікально на запис + користувача) → відправка з атомарним захопленням рядка, повтори 30 с / 2 хв / 10 хв / 30 хв, до 5 спроб; 403 (бота заблоковано) відключає чат.
+**Антиспам:** однакове сповіщення (правило + група + текст + замовлення) одному користувачу – не частіше раз на 30 хв.
+**Формат:** HTML, емодзі рівня (задача – 📌), жирний заголовок, текст після правил, курсивом «група · №замовлення · хто»; кнопка «Відкрити …» на `CLIENT_URL` + посилання, якщо адреса https (інакше посилання текстом).
+
+**Де працює воркер:** не в `NODE_ENV=development` (локальний бекофіс на спільній БД не дублює розсилку); локально вмикається `NOTIFICATION_TG_WORKER=1`.
 
 ## Файли
 
@@ -124,4 +144,5 @@
 | Клієнт | `client/components/NotificationBell.tsx`, `client/components/notifications/*`, `client/hooks/useNotificationFeed.ts` |
 | Сервер | `server/modules/Notifications/{NotificationConfigService,NotificationFeedService,notificationFeed}.ts` (+ spec), `server/routes/notifications.ts` |
 | Налаштування | `client/pages/SettingsNotifications/**`, `client/services/NotificationSettingsService.ts`, `server/routes/notification-settings.ts`, `server/modules/Notifications/NotificationSettingsService.ts`, `shared/types/notificationSettings.ts`, `shared/notifications/feedPresentation.ts` |
-| БД | `notification_rules`, `notification_glossary`, `notification_config_revisions` |
+| Telegram | `server/modules/Notifications/{NotificationTelegramService,telegramDelivery}.ts`, `client/components/notifications/NotificationTelegramConnect.tsx`, `client/pages/SettingsNotifications/components/TelegramTab.tsx` |
+| БД | `notification_rules`, `notification_glossary`, `notification_config_revisions`, `notification_user_prefs`, `notification_telegram_links`, `notification_outbox` |

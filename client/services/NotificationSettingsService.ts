@@ -1,5 +1,6 @@
 import type { NotificationGlossaryEntry, NotificationRuleDef } from '@shared/types/notificationRules';
 import type {
+  NotificationTelegramAdminState,
   NotificationConfigRevisionDto,
   NotificationRawLog,
   NotificationSourceSummary,
@@ -54,6 +55,11 @@ export const notificationSettingsApi = {
     if (params.ids?.length) qs.set('ids', params.ids.join(','));
     return call<NotificationRawLog[]>(`/logs?${qs}`);
   },
+  telegram: () => call<NotificationTelegramAdminState>('/telegram'),
+  saveTelegram: (input: { botToken?: string; enabled?: boolean }) =>
+    call<NotificationTelegramAdminState>('/telegram', { method: 'PUT', json: input }),
+  unlinkTelegram: (userId: number) => call<NotificationTelegramAdminState>(`/telegram/links/${userId}`, { method: 'DELETE' }),
+  telegramTest: () => call<null>('/telegram/test', { method: 'POST' }),
   previewFeed: (role: string, tab: NotificationTab) =>
     call<{ data: NotificationFeedItem[]; counts: NotificationFeedCounts }>(`/preview-feed?role=${encodeURIComponent(role)}&tab=${tab}`),
 };

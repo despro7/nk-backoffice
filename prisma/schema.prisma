@@ -1482,3 +1482,44 @@ model NotificationUserPrefs {
 
   @@map("notification_user_prefs")
 }
+
+/// Центр сповіщень: привʼязка користувача до чату Telegram-бота сповіщень.
+model NotificationTelegramLink {
+  userId           Int       @id
+  /// null – ще не підключено (є лише код).
+  chatId           String?   @db.VarChar(32)
+  username         String?   @db.VarChar(64)
+  firstName        String?   @db.VarChar(128)
+  /// Одноразовий код для t.me/<bot>?start=<code>
+  linkCode         String?   @unique @db.VarChar(32)
+  linkCodeExpires  DateTime?
+  linkedAt         DateTime?
+  updatedAt        DateTime  @updatedAt
+
+  @@index([chatId])
+  @@map("notification_telegram_links")
+}
+
+/// Центр сповіщень: черга відправки в Telegram (повтори, антиспам).
+model NotificationOutbox {
+  id            Int       @id @default(autoincrement())
+  metaLogId     Int
+  userId        Int
+  /// telegram
+  channel       String    @db.VarChar(16)
+  /// pending | sending | sent | failed | skipped
+  status        String    @db.VarChar(16)
+  /// Однакові сповіщення одному користувачу – не частіше раз на 30 хв.
+  fingerprint   String    @db.VarChar(64)
+  payload       Json
+  attempts      Int       @default(0)
+  lastError     String?   @db.VarChar(500)
+  nextAttemptAt DateTime  @default(now())
+  sentAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@unique([metaLogId, userId, channel])
+  @@index([status, nextAttemptAt])
+  @@index([userId, fingerprint, createdAt])
+  @@map("notification_outbox")
+}

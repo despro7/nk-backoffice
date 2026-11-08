@@ -151,6 +151,13 @@ export class NotificationFeedService {
     }
   }
 
+  /** Відрендерені записи за id (для Telegram-диспетчера), у порядку ids. */
+  async prepareLogs(ids: number[]): Promise<PreparedLog[]> {
+    const config = await notificationConfigService.get();
+    await this.prepare(ids, config.rules, config.glossary, config.version);
+    return ids.map((id) => this.cache.get(id)?.log).filter((l): l is PreparedLog => Boolean(l));
+  }
+
   async getFeed(viewer: FeedViewer, tab: NotificationTab, limit = 100): Promise<BuiltFeed> {
     const config = await notificationConfigService.get();
     const light = await this.lightRows(config.rules);

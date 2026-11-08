@@ -8,6 +8,7 @@
  * GET    /revisions · POST /revisions/:id/revert
  * GET    /sources?days=90 · GET /logs?search&category&status&limit&ids
  * GET    /preview-feed?role=&tab= – feed as seen by a role (current user as addressee)
+ * GET    /telegram · PUT /telegram { botToken?, enabled? } · DELETE /telegram/links/:userId · POST /telegram/test
  */
 
 import { Router, type NextFunction, type Request, type Response } from 'express';
@@ -16,6 +17,10 @@ import { sendInsufficientRole } from '../middleware/requirePermission.js';
 import { roleService } from '../services/RoleService.js';
 import { pageKey } from '../../shared/constants/permissions.js';
 import { NOTIFICATION_TABS, type NotificationTab } from '../../shared/types/notifications.js';
+import {
+  NotificationTelegramError,
+  notificationTelegramService as telegram,
+} from '../modules/Notifications/NotificationTelegramService.js';
 import {
   NotificationSettingsError,
   notificationSettingsService as service,
@@ -40,6 +45,9 @@ function wrap(fn: Handler) {
       const data = await fn(req, res);
       if (!res.headersSent) res.json({ success: true, data: data ?? null });
     } catch (err) {
+      if (err instanceof NotificationTelegramError) {
+        return res.status(400).json({ success: false, error: err.message });
+      }
       if (err instanceof NotificationSettingsError) {
         return res.status(err.status).json({ success: false, error: err.message, details: err.details });
       }
@@ -96,6 +104,21 @@ router.get('/logs', wrap((req) => {
     ids,
   });
 }));
+
+// ── Telegram ─────────────────────────────────────────────────────────────────
+router.get('/telegram', wrap(() => telegram.adminState()));
+router.put('/telegram', wrap(async (req) => {
+  await telegram.saveSettings({
+    botToken: typeof req.body?.botToken === 'string' ? req.body.botToken : undefined,
+    enabled: typeof req.body?.enabled === 'boolean' ? req.body.enabled : undefined,
+  });
+  return telegram.adminState();
+}));
+router.delete('/telegram/links/:id', wrap(async (req) => {
+  await telegram.unlink(idParam(req));
+  return telegram.adminState();
+}));
+router.post('/telegram/test', wrap((req) => telegram.sendTest(uid(req))));
 
 router.get('/preview-feed', wrap(async (req) => {
   const role = typeof req.query.role === 'string' && req.query.role ? req.query.role : req.user!.role;

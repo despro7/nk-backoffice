@@ -7,6 +7,7 @@ import { useDebug } from '../contexts/debug-context';
 import { useRolePreview } from '../contexts/role-preview-context';
 import { NotificationPanel } from './notifications/NotificationPanel';
 import { NotificationPrefsView } from './notifications/NotificationPrefsView';
+import { NotificationTelegramConnect } from './notifications/NotificationTelegramConnect';
 import ResultDrawer from './ResultDrawer';
 
 // ─── DebugFooter ──────────────────────────────────────────────────────────────
@@ -140,7 +141,14 @@ export function NotificationBell({ onNavigate, size = 'default' }: NotificationB
             title={showPrefs ? 'Налаштування сповіщень' : 'Сповіщення'}
             body={
               showPrefs ? (
-                <NotificationPrefsView data={feed.prefs} onChange={feed.savePrefs} onBack={() => setShowPrefs(false)} />
+                <NotificationPrefsView
+                  data={feed.prefs}
+                  onChange={feed.savePrefs}
+                  onBack={() => setShowPrefs(false)}
+                  telegramSlot={
+                    feed.prefs ? <NotificationTelegramConnect telegram={feed.prefs.telegram} onRefresh={feed.loadPrefs} /> : null
+                  }
+                />
               ) : undefined
             }
             onOpen={handleOpen}

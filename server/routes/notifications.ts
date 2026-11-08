@@ -20,6 +20,8 @@
  * PUT    /api/notifications/resolve    { ids } – [admin] «Вирішено» for everyone (hiddenBy._all)
  * GET    /api/notifications/prefs      – personal prefs + groups the role allows per channel
  * PUT    /api/notifications/prefs      – save personal prefs
+ * POST   /api/notifications/telegram/link – one-time deep link to the notifications bot
+ * DELETE /api/notifications/telegram/link – disconnect own Telegram
  */
 
 import { Router, Request, Response } from 'express';
@@ -35,6 +37,7 @@ import { NOTIFICATION_TABS } from '../../shared/types/notifications.js';
 import { roleService } from '../services/RoleService.js';
 import { notificationFeedService } from '../modules/Notifications/NotificationFeedService.js';
 import { allowedGroups, notificationPrefsService } from '../modules/Notifications/NotificationPrefsService.js';
+import { notificationTelegramService } from '../modules/Notifications/NotificationTelegramService.js';
 import type { NotificationPrefsResponse } from '../../shared/types/notifications.js';
 
 const router = Router();
@@ -493,15 +496,16 @@ router.get('/feed', authenticateToken, async (req: Request, res: Response) => {
 });
 
 async function prefsResponse(userId: number, role: string): Promise<NotificationPrefsResponse> {
-  const [permissions, prefs] = await Promise.all([
+  const [permissions, prefs, telegram] = await Promise.all([
     roleService.getPermissionSet(role),
     notificationPrefsService.get(userId),
+    notificationTelegramService.linkStatus(userId),
   ]);
   return {
     success: true,
     prefs,
     allowed: { app: allowedGroups(permissions, 'app'), tg: allowedGroups(permissions, 'tg') },
-    telegram: { configured: false, linked: false, username: null },
+    telegram,
   };
 }
 
@@ -516,6 +520,23 @@ router.get('/prefs', authenticateToken, async (req: Request, res: Response) => {
 router.put('/prefs', authenticateToken, async (req: Request, res: Response) => {
   try {
     await notificationPrefsService.save(req.user!.userId, req.body);
+    res.json(await prefsResponse(req.user!.userId, req.user!.role));
+  } catch (err) {
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+router.post('/telegram/link', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    res.json({ success: true, ...(await notificationTelegramService.createLink(req.user!.userId)) });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+router.delete('/telegram/link', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    await notificationTelegramService.unlink(req.user!.userId);
     res.json(await prefsResponse(req.user!.userId, req.user!.role));
   } catch (err) {
     res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });

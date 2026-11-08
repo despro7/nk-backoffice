@@ -42,3 +42,29 @@ export interface NotificationConfigRevisionDto {
   /** Назва правила / фраза словника. */
   label: string;
 }
+
+/** Telegram-бот сповіщень (settings_base `notification_telegram`). */
+export interface NotificationTelegramSettings {
+  botToken: string;
+  botUsername: string | null;
+  enabled: boolean;
+}
+
+export interface NotificationTelegramAdminState {
+  configured: boolean;
+  enabled: boolean;
+  botUsername: string | null;
+  botTokenMasked: string;
+  /** Чи працює воркер на цьому сервері (вимкнено в development без NOTIFICATION_TG_WORKER=1). */
+  workerActive: boolean;
+  links: Array<{
+    userId: number;
+    name: string;
+    roleName: string | null;
+    telegramUsername: string | null;
+    linkedAt: string | null;
+  }>;
+  /** Кількість записів outbox за 7 днів за статусом. */
+  stats: Record<string, number>;
+  lastErrors: Array<{ id: number; userId: number; lastError: string | null; createdAt: string }>;
+}

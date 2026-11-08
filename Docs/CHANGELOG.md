@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-11-08 – Центр сповіщень: дублювання в Telegram
+
+**Files:** `server/modules/Notifications/{NotificationTelegramService,telegramDelivery}.ts` (+ spec), `server/modules/Notifications/NotificationFeedService.ts`, `server/routes/{notifications,notification-settings}.ts`, `server/index.ts`, `client/components/notifications/{NotificationTelegramConnect,NotificationPrefsView}.tsx`, `client/components/NotificationBell.tsx`, `client/pages/SettingsNotifications/{index.tsx,components/TelegramTab.tsx}`, `client/services/NotificationSettingsService.ts`, `shared/types/notificationSettings.ts`, `prisma/schema.prisma`, `prisma/migrations/20261108160000_notification_telegram`
+
+- **Окремий бот сповіщень:** токен і перемикач розсилки в «Налаштування → Сповіщення → Telegram», тестове повідомлення, список підключених працівників.
+- **Самостійне підключення:** шестерня в дзвіночку → «Підключити Telegram» → одноразове посилання на бота (`/start <code>`), `/stop` – відключення; після підключення – вимкнення окремих груп для Telegram.
+- **Що дублюється:** галочки «Telegram» у матриці ролі (група × рівень) з урахуванням персональних налаштувань; адресні – лише адресатам.
+- **Надійність:** черга `notification_outbox` з повторами, антиспам 30 хв на однакове сповіщення, курсор по `meta_logs` без розсилки історії; воркер не працює в development (локальний бекофіс не дублює).
+
+**Документація:** `Docs/features/notification-centre.md` – розділ «Telegram».
+
+---
+
 ## 2026-11-08 – Центр сповіщень: матриця ролей і персональні налаштування
 
 **Files:** `client/pages/Settings/Users/components/{NotificationPermissionsMatrix,RolesManager}.tsx`, `client/components/notifications/{NotificationPrefsView,notificationSound}.ts(x)`, `client/components/NotificationBell.tsx`, `client/hooks/useNotificationFeed.ts`, `server/modules/Notifications/{NotificationPrefsService,notificationFeed}.ts`, `server/routes/notifications.ts`, `shared/types/notifications.ts`, `prisma/schema.prisma`, `prisma/migrations/20261108140000_notification_user_prefs`

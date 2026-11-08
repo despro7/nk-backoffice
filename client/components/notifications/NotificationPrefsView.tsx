@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Switch } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { NOTIFICATION_GROUPS, type NotificationGroupId } from '@shared/constants/notifications';
@@ -10,7 +10,7 @@ interface NotificationPrefsViewProps {
   onChange: (prefs: NotificationUserPrefsData) => void;
   onBack: () => void;
   /** Блок Telegram (підключення бота), якщо налаштовано. */
-  telegramSlot?: React.ReactNode;
+  telegramSlot?: ReactNode;
 }
 
 function Row({

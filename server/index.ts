@@ -312,6 +312,9 @@ app.listen(port, () => {
   console.log('\n🚀 Starting cron tasks...');
   forceStopAllCronJobs(); // Clean up any orphaned jobs from previous runs
   cronService.startAll(); // Start new jobs
+  void import('./modules/Notifications/NotificationTelegramService.js')
+    .then(({ notificationTelegramService }) => notificationTelegramService.start())
+    .catch((err) => console.error('❌ Notification Telegram worker failed to start', err));
 });
 }
 
