@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-11-08 – Центр сповіщень: матриця ролей і персональні налаштування
+
+**Files:** `client/pages/Settings/Users/components/{NotificationPermissionsMatrix,RolesManager}.tsx`, `client/components/notifications/{NotificationPrefsView,notificationSound}.ts(x)`, `client/components/NotificationBell.tsx`, `client/hooks/useNotificationFeed.ts`, `server/modules/Notifications/{NotificationPrefsService,notificationFeed}.ts`, `server/routes/notifications.ts`, `shared/types/notifications.ts`, `prisma/schema.prisma`, `prisma/migrations/20261108140000_notification_user_prefs`
+
+- **Редактор ролі:** блок «Сповіщення» – група × рівень, у кожній клітинці окремо «в застосунку» і «Telegram», масові галочки на рядок і колонку.
+- **Шестерня в дропдауні:** вимкнення груп (у межах ролі), звуковий сигнал на нові непрочитані. Налаштування в `notification_user_prefs`.
+- Лічильник «дії» у списку ролей не враховує notify-ключі.
+
+**Документація:** `Docs/features/notification-centre.md` – «Права ролей», «Персональні налаштування».
+
+---
+
 ## 2026-11-08 – Центр сповіщень: playground у налаштуваннях
 
 **Files:** `client/pages/SettingsNotifications/**`, `client/services/NotificationSettingsService.ts`, `client/routes.config.tsx`, `server/routes/notification-settings.ts`, `server/index.ts`, `server/modules/Notifications/{NotificationSettingsService,notificationFeed}.ts`, `shared/notifications/feedPresentation.ts`, `shared/types/notificationSettings.ts`

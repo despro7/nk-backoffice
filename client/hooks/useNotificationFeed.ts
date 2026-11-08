@@ -3,8 +3,11 @@ import type {
   NotificationFeedCounts,
   NotificationFeedItem,
   NotificationFeedResponse,
+  NotificationPrefsResponse,
   NotificationTab,
+  NotificationUserPrefsData,
 } from '@shared/types/notifications';
+import { playNotificationSound } from '@/components/notifications/notificationSound';
 import { useApi } from './useApi';
 
 const POLL_INTERVAL_MS = 30_000;
@@ -23,6 +26,9 @@ export interface UseNotificationFeedReturn {
   archive: (item: NotificationFeedItem) => Promise<void>;
   unarchive: (item: NotificationFeedItem) => Promise<void>;
   resolve: (item: NotificationFeedItem) => Promise<void>;
+  prefs: NotificationPrefsResponse | null;
+  loadPrefs: () => Promise<void>;
+  savePrefs: (prefs: NotificationUserPrefsData) => Promise<void>;
   /** [debug] глобальні дії зі старого API. */
   debug: {
     readAllGlobal: (offset: number) => Promise<string | null>;
@@ -47,6 +53,9 @@ export function useNotificationFeed(isOpen: boolean): UseNotificationFeedReturn 
   const [counts, setCounts] = useState<NotificationFeedCounts>(EMPTY_COUNTS);
   const [loading, setLoading] = useState(false);
   const [loadedTab, setLoadedTab] = useState<NotificationTab | null>(null);
+  const [prefs, setPrefs] = useState<NotificationPrefsResponse | null>(null);
+  const soundRef = useRef(false);
+  const lastUnreadRef = useRef<number | null>(null);
   const requestRef = useRef(0);
   const tabRef = useRef(tab);
   const openRef = useRef(isOpen);
@@ -64,6 +73,9 @@ export function useNotificationFeed(isOpen: boolean): UseNotificationFeedReturn 
       const json: NotificationFeedResponse = await res.json();
       if (requestId !== requestRef.current) return;
       setCounts(json.counts);
+      const prev = lastUnreadRef.current;
+      if (prev !== null && json.counts.all > prev && soundRef.current) playNotificationSound();
+      lastUnreadRef.current = json.counts.all;
       if (full) {
         setItems(json.data);
         setLoadedTab(activeTab);
@@ -74,6 +86,38 @@ export function useNotificationFeed(isOpen: boolean): UseNotificationFeedReturn 
       if (requestId === requestRef.current) setLoading(false);
     }
   }, []);
+
+  const loadPrefs = useCallback(async () => {
+    try {
+      const res = await apiRef.current('/api/notifications/prefs');
+      if (!res.ok) return;
+      const json: NotificationPrefsResponse = await res.json();
+      soundRef.current = json.prefs.sound;
+      setPrefs(json);
+    } catch {
+      // optional
+    }
+  }, []);
+
+  const savePrefs = useCallback(async (next: NotificationUserPrefsData) => {
+    soundRef.current = next.sound;
+    setPrefs((p) => (p ? { ...p, prefs: next } : p));
+    try {
+      const res = await apiRef.current('/api/notifications/prefs', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(next),
+      });
+      if (res.ok) setPrefs(await res.json());
+    } catch {
+      // keep optimistic state
+    }
+    fetchFeed();
+  }, [fetchFeed]);
+
+  useEffect(() => {
+    loadPrefs();
+  }, [loadPrefs]);
 
   useEffect(() => {
     fetchFeed();
@@ -169,6 +213,9 @@ export function useNotificationFeed(isOpen: boolean): UseNotificationFeedReturn 
     archive,
     unarchive,
     resolve,
+    prefs,
+    loadPrefs,
+    savePrefs,
     debug: {
       readAllGlobal: (offset) =>
         debugCall(`/api/notifications/read-all-global?offset=${offset}`, 'PUT', (j) => `read: ${j.markedCount}, skip: ${j.skipped}`),

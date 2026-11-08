@@ -51,6 +51,8 @@ export interface FeedViewer {
   userId: number;
   isAdmin: boolean;
   permissions: ReadonlySet<string>;
+  /** Групи, приглушені користувачем (не діє на адресні). */
+  mutedGroups?: readonly string[];
 }
 
 export function isReadBy(map: ReadByMap, userId: number): boolean {
@@ -72,6 +74,7 @@ export function canSee(log: PreparedLog, viewer: FeedViewer): { visible: boolean
     // Адресні сповіщення приходять лише адресатам і незалежно від матриці ролі.
     return { visible: addressed, addressed };
   }
+  if (viewer.mutedGroups?.includes(log.rendered.group)) return { visible: false, addressed: false };
   if (viewer.isAdmin) return { visible: true, addressed: false };
   const key = notifyPermissionKey(log.rendered.group as NotificationGroupId, log.rendered.level, 'app');
   return { visible: hasPermission(viewer.permissions, key), addressed: false };

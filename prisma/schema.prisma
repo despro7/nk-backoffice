@@ -1472,3 +1472,13 @@ model NotificationConfigRevision {
   @@index([createdAt])
   @@map("notification_config_revisions")
 }
+
+/// Центр сповіщень: персональні налаштування користувача (шестерня в дропдауні).
+model NotificationUserPrefs {
+  userId    Int      @id
+  /// NotificationUserPrefsData (shared/types/notifications.ts)
+  prefs     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("notification_user_prefs")
+}

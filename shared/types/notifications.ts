@@ -123,3 +123,27 @@ export interface NotificationFeedResponse {
   counts: NotificationFeedCounts;
   serverTime: string;
 }
+
+/** Персональні налаштування сповіщень (шестерня в дропдауні). */
+export interface NotificationUserPrefsData {
+  /** Групи, приглушені в дропдауні (адресні сповіщення все одно приходять). */
+  mutedGroups: NotificationGroupId[];
+  /** Групи, які не дублювати в Telegram. */
+  mutedTgGroups: NotificationGroupId[];
+  /** Звуковий сигнал при новому сповіщенні. */
+  sound: boolean;
+}
+
+export const DEFAULT_NOTIFICATION_USER_PREFS: NotificationUserPrefsData = {
+  mutedGroups: [],
+  mutedTgGroups: [],
+  sound: false,
+};
+
+export interface NotificationPrefsResponse {
+  success: true;
+  prefs: NotificationUserPrefsData;
+  /** Групи, які роль дозволяє в кожному каналі (хоч один рівень). */
+  allowed: { app: NotificationGroupId[]; tg: NotificationGroupId[] };
+  telegram: { configured: boolean; linked: boolean; username: string | null };
+}

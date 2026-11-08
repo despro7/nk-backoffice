@@ -18,6 +18,8 @@
  * PUT    /api/notifications/archive    { ids } – archive for current user (hiddenBy[userId])
  * PUT    /api/notifications/unarchive  { ids } – restore from own archive
  * PUT    /api/notifications/resolve    { ids } – [admin] «Вирішено» for everyone (hiddenBy._all)
+ * GET    /api/notifications/prefs      – personal prefs + groups the role allows per channel
+ * PUT    /api/notifications/prefs      – save personal prefs
  */
 
 import { Router, Request, Response } from 'express';
@@ -32,6 +34,8 @@ import type {
 import { NOTIFICATION_TABS } from '../../shared/types/notifications.js';
 import { roleService } from '../services/RoleService.js';
 import { notificationFeedService } from '../modules/Notifications/NotificationFeedService.js';
+import { allowedGroups, notificationPrefsService } from '../modules/Notifications/NotificationPrefsService.js';
+import type { NotificationPrefsResponse } from '../../shared/types/notifications.js';
 
 const router = Router();
 
@@ -465,9 +469,12 @@ router.get('/feed', authenticateToken, async (req: Request, res: Response) => {
     const tabParam = String(req.query.tab ?? 'all') as NotificationTab;
     const tab: NotificationTab = NOTIFICATION_TABS.includes(tabParam) ? tabParam : 'all';
     const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 100, 1), 200);
-    const permissions = await roleService.getPermissionSet(user.role);
+    const [permissions, prefs] = await Promise.all([
+      roleService.getPermissionSet(user.role),
+      notificationPrefsService.get(user.userId),
+    ]);
     const feed = await notificationFeedService.getFeed(
-      { userId: user.userId, isAdmin: user.role === 'admin', permissions },
+      { userId: user.userId, isAdmin: user.role === 'admin', permissions, mutedGroups: prefs.mutedGroups },
       tab,
       limit,
     );
@@ -481,6 +488,36 @@ router.get('/feed', authenticateToken, async (req: Request, res: Response) => {
     res.json(response);
   } catch (err) {
     console.error('❌ [Notifications] GET /feed error:', err);
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+async function prefsResponse(userId: number, role: string): Promise<NotificationPrefsResponse> {
+  const [permissions, prefs] = await Promise.all([
+    roleService.getPermissionSet(role),
+    notificationPrefsService.get(userId),
+  ]);
+  return {
+    success: true,
+    prefs,
+    allowed: { app: allowedGroups(permissions, 'app'), tg: allowedGroups(permissions, 'tg') },
+    telegram: { configured: false, linked: false, username: null },
+  };
+}
+
+router.get('/prefs', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    res.json(await prefsResponse(req.user!.userId, req.user!.role));
+  } catch (err) {
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+router.put('/prefs', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    await notificationPrefsService.save(req.user!.userId, req.body);
+    res.json(await prefsResponse(req.user!.userId, req.user!.role));
+  } catch (err) {
     res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
   }
 });

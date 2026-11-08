@@ -35,6 +35,8 @@ import { notifyPermissionsChanged } from '@/lib/notifyPermissionsChanged';
 import type { RoleDto } from '@shared/types/role';
 import { appRoutes } from '@/routes.config';
 import { CatalogFolderAclTree } from './CatalogFolderAclTree';
+import { NotificationPermissionsMatrix } from './NotificationPermissionsMatrix';
+import { isNotifyPermissionKey } from '@shared/constants/notifications';
 
 const ROLE_ROW_GRID = 'grid grid-cols-[32px_minmax(160px,1.4fr)_120px_140px_80px] gap-2 items-center';
 
@@ -165,7 +167,7 @@ export const RolesManager = forwardRef<RolesTabActions>(function RolesManager(_p
                     <div ref={provided.innerRef} {...provided.droppableProps}>
                       {roles.map((role, index) => {
                         const pageCount = role.permissions.filter(isPagePermission).length;
-                        const actionCount = role.permissions.filter(isActionPermission).length;
+                        const actionCount = role.permissions.filter((key) => isActionPermission(key) && !isNotifyPermissionKey(key)).length;
                         return (
                           <Draggable
                             key={role.id}
@@ -497,6 +499,13 @@ function RoleEditorDrawer({
                 disabled={isAdminLocked}
                 onToggle={toggle}
                 onToggleGroup={toggleGroup}
+              />
+              <Divider className="bg-default-200/60" />
+
+              <NotificationPermissionsMatrix
+                selected={selected}
+                disabled={isAdminLocked}
+                onChange={setSelected}
               />
               <Divider className="bg-default-200/60" />
 

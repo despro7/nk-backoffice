@@ -6,6 +6,7 @@ import { useNotificationFeed } from '../hooks/useNotificationFeed';
 import { useDebug } from '../contexts/debug-context';
 import { useRolePreview } from '../contexts/role-preview-context';
 import { NotificationPanel } from './notifications/NotificationPanel';
+import { NotificationPrefsView } from './notifications/NotificationPrefsView';
 import ResultDrawer from './ResultDrawer';
 
 // ─── DebugFooter ──────────────────────────────────────────────────────────────
@@ -66,6 +67,7 @@ interface NotificationBellProps {
 export function NotificationBell({ onNavigate, size = 'default' }: NotificationBellProps) {
   const iconSize = size === 'sm' ? 22 : 24;
   const [isOpen, setIsOpen] = useState(false);
+  const [showPrefs, setShowPrefs] = useState(false);
   const [drawerItem, setDrawerItem] = useState<NotificationFeedItem | null>(null);
   const [drawerLog, setDrawerLog] = useState<any[] | null>(null);
   const feed = useNotificationFeed(isOpen);
@@ -100,7 +102,12 @@ export function NotificationBell({ onNavigate, size = 'default' }: NotificationB
 
   return (
     <>
-      <Popover isOpen={isOpen} onOpenChange={setIsOpen} placement="bottom-end" offset={8} showArrow={false}>
+      <Popover
+        isOpen={isOpen}
+        onOpenChange={(open) => {
+          setIsOpen(open);
+          if (!open) setShowPrefs(false);
+        }} placement="bottom-end" offset={8} showArrow={false}>
         <PopoverTrigger>
           <button
             type="button"
@@ -126,6 +133,16 @@ export function NotificationBell({ onNavigate, size = 'default' }: NotificationB
             isAdmin={isAdmin}
             showRuleHints={isAdmin && isDebugMode}
             onOpenReport={() => navigate('/reports/meta-logs')}
+            onOpenSettings={() => {
+              feed.loadPrefs();
+              setShowPrefs(true);
+            }}
+            title={showPrefs ? 'Налаштування сповіщень' : 'Сповіщення'}
+            body={
+              showPrefs ? (
+                <NotificationPrefsView data={feed.prefs} onChange={feed.savePrefs} onBack={() => setShowPrefs(false)} />
+              ) : undefined
+            }
             onOpen={handleOpen}
             onMarkRead={feed.markRead}
             onArchive={feed.archive}
