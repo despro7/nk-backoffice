@@ -365,7 +365,8 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 											</div>
 										)}
 
-										{/* Raw JSON (згорнутий за замовчуванням) */}
+										{/* Raw JSON (згорнутий за замовчуванням); для orderDetails його малює OrderDetailsContent */}
+										{type !== 'orderDetails' && (
 										<details className="group">
 											<summary className="cursor-pointer font-semibold text-sm mb-3 list-none items-center gap-2 inline-flex">
 												<DynamicIcon name="chevron-right" size={16} className="group-open:rotate-90 transition-transform" />
@@ -375,6 +376,7 @@ export default function ResultDrawer({ isOpen, onOpenChange, result, title = 'Р
 												<MetaLogJsonView value={result} className="max-h-[50vh]" collapsed={3} />
 											</div>
 										</details>
+										)}
 									</>
 								)}
 							</div>

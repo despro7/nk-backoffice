@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectDocumentKind, parseShortageError, readableError } from './NotificationDocumentService';
+import { computeTotals, detectDocumentKind, mergeShortage, parseShortageError, readableError } from './NotificationDocumentService';
 
 describe('NotificationDocumentService', () => {
   it('detects warehouse document kind from log data', () => {
@@ -32,5 +32,42 @@ describe('NotificationDocumentService', () => {
       { name: 'Червона квасоля зі свининою', sku: '02033', batch: '20.08.2026 Комплектація 0000630', needed: 20, stock: 1.5, missing: 18.5 },
     ]);
     expect(parseShortageError('Інша помилка')).toEqual({ summary: null, rows: [] });
+  });
+
+  it('parses write-off shortage format', () => {
+    const text = 'Недостатня кількість:\n- Печеня зі свининою | арт: 03001 | партія: 60722 | потрібно: 6.000 шт | залишок: 0 шт | бракує: 6.000 шт';
+    expect(parseShortageError(text)).toEqual({
+      summary: 'Недостатня кількість',
+      rows: [{ name: 'Печеня зі свининою', sku: '03001', batch: '60722', needed: 6, stock: 0, missing: 6 }],
+    });
+  });
+
+  it('merges shortage into item rows by sku and batch', () => {
+    const items = [
+      { sku: '02033', name: 'Квасоля', quantity: 20, batch: 'A' },
+      { sku: '02033', name: 'Квасоля', quantity: 20, batch: 'B' },
+      { sku: '03001', name: 'Печеня', quantity: 6, batch: null },
+    ];
+    const merged = mergeShortage(items, [
+      { name: 'Квасоля', sku: '02033', batch: 'B', needed: 20, stock: 0, missing: 20 },
+      { name: 'Печеня', sku: '03001', batch: '60722', needed: 6, stock: 1, missing: 5 },
+      { name: 'Інше', sku: '09999', batch: null, needed: 2, stock: 0, missing: 2 },
+    ]);
+    expect(merged.map((i) => i.missing ?? null)).toEqual([null, 20, 5, 2]);
+    expect(merged[3]).toMatchObject({ sku: '09999', quantity: 2 });
+  });
+
+  it('counts positions, dishes and portions with nested sets', () => {
+    const sets: Record<string, Array<{ sku: string; qty: number }>> = {
+      K24: [{ sku: '01001', qty: 12 }, { sku: 'K12', qty: 1 }],
+      K12: [{ sku: '03001', qty: 12 }],
+    };
+    const lookup = { composition: (sku: string) => sets[sku] ?? null };
+    const items = [
+      { sku: 'K24', name: 'Набір', quantity: 2, batch: null },
+      { sku: '03001', name: 'Печеня', quantity: 6, batch: null },
+    ];
+    expect(computeTotals(items, lookup)).toEqual({ positions: 2, dishes: 8, portions: 54 });
+    expect(computeTotals(items, null).portions).toBeNull();
   });
 });

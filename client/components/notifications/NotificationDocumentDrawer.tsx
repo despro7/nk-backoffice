@@ -5,7 +5,8 @@ import ResizableAppDrawer from '@/components/drawer/ResizableAppDrawer';
 import { useApi } from '@/hooks/useApi';
 import { useDilovodDirectories } from '@/contexts/DilovodDirectoriesContext';
 import { useWarehouseDocumentEditDrawer } from '@/features/warehouse-document-edit/context/WarehouseDocumentEditDrawerContext';
-import type { NotificationDocument, NotificationDocumentKind, NotificationShortageRow } from '@shared/types/notifications';
+import { pluralize } from '@/lib/formatUtils';
+import type { NotificationDocument, NotificationDocumentKind, NotificationDocumentTotals } from '@shared/types/notifications';
 
 const DILOVOD_TYPE: Record<NotificationDocumentKind, string> = {
   release: 'documents.goodKit',
@@ -35,45 +36,11 @@ function formatDate(iso: string | null): string | null {
 
 const formatQty = (n: number | null) => (n == null ? '–' : n.toLocaleString('uk-UA', { maximumFractionDigits: 3 }));
 
-/** Позиції, яких забракло: та сама таблиця, що й «Замовлені товари» в деталях замовлення. */
-function ShortageTable({ rows }: { rows: NotificationShortageRow[] }) {
-  return (
-    <Table
-      aria-label="Позиції, яких бракує"
-      removeWrapper
-      classNames={{
-        th: 'first:rounded-s-md last:rounded-e-md bg-default-100 text-xs text-default-500 h-8 px-2',
-        td: 'py-1.5 px-2',
-        tr: 'hover:bg-default-100/60',
-      }}
-    >
-      <TableHeader>
-        <TableColumn>Товар</TableColumn>
-        <TableColumn>Партія</TableColumn>
-        <TableColumn align="end" width={80}>Потрібно</TableColumn>
-        <TableColumn align="end" width={80}>Залишок</TableColumn>
-        <TableColumn align="end" width={80}>Бракує</TableColumn>
-      </TableHeader>
-      <TableBody>
-        {rows.map((row, i) => (
-          <TableRow key={i}>
-            <TableCell>
-              <div className="flex items-center gap-1.5">
-                {row.sku && <span className="shrink-0 rounded bg-amber-200/60 px-1 py-0.5 text-tiny tabular-nums">{row.sku}</span>}
-                <span>{row.name}</span>
-              </div>
-            </TableCell>
-            <TableCell className="text-default-600">{row.batch || '–'}</TableCell>
-            <TableCell className="whitespace-nowrap text-right tabular-nums">{formatQty(row.needed)}</TableCell>
-            <TableCell className={`whitespace-nowrap text-right tabular-nums ${row.stock ? 'font-medium' : 'text-default-400'}`}>
-              {formatQty(row.stock)}
-            </TableCell>
-            <TableCell className="whitespace-nowrap text-right font-medium tabular-nums text-danger">{formatQty(row.missing)}</TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
+/** «(N поз. / M страв / K порцій)», як «Склад комплекту» в картці товару. */
+function totalsLabel({ positions, dishes, portions }: NotificationDocumentTotals): string {
+  const parts = [`${positions} поз.`, `${formatQty(dishes)} ${pluralize(dishes, 'страва', 'страви', 'страв')}`];
+  if (portions != null) parts.push(`${formatQty(portions)} ${pluralize(portions, 'порція', 'порції', 'порцій')}`);
+  return `(${parts.join(' / ')})`;
 }
 
 /** Сира відповідь Діловода під спойлером. */
@@ -151,6 +118,18 @@ export function NotificationDocumentDrawer({ logId, onClose }: NotificationDocum
       : storageName(doc.storageId)
     : null;
 
+  const columns: Array<{ key: string; label: string; align?: 'center' | 'end'; width?: number }> = [
+    { key: 'name', label: 'Товар' },
+    { key: 'batch', label: 'Партія', align: 'center' },
+    { key: 'qty', label: 'Кількість', align: 'end', width: 90 },
+    ...(doc?.hasShortage
+      ? [
+          { key: 'stock', label: 'Залишок', align: 'end' as const, width: 90 },
+          { key: 'missing', label: 'Бракує', align: 'end' as const, width: 90 },
+        ]
+      : []),
+  ];
+
   return (
     <ResizableAppDrawer
       isOpen={logId != null}
@@ -199,7 +178,7 @@ export function NotificationDocumentDrawer({ logId, onClose }: NotificationDocum
             <Fact label={doc.storageToId ? 'Склади' : 'Склад'} value={storage} />
           </div>
 
-          {doc.error && doc.shortage.length > 0 ? (
+          {doc.error && doc.hasShortage ? (
             <section className="space-y-4">
               <div className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2.5">
                 <div className="flex items-center gap-1.5 text-sm font-semibold text-danger-700">
@@ -208,8 +187,6 @@ export function NotificationDocumentDrawer({ logId, onClose }: NotificationDocum
                 </div>
                 {doc.errorSummary && <p className="mt-1 text-[13px] text-danger-700">{doc.errorSummary}</p>}
               </div>
-              <div className="pt-1 text-sm font-semibold text-default-900">Бракує на складі</div>
-              <ShortageTable rows={doc.shortage} />
               <RawErrorSpoiler text={doc.error} />
             </section>
           ) : doc.error ? (
@@ -230,7 +207,10 @@ export function NotificationDocumentDrawer({ logId, onClose }: NotificationDocum
           )}
 
           <section className="space-y-2">
-            <div className="text-sm font-semibold text-default-900">Позиції</div>
+            <div className="text-sm font-semibold text-default-900">
+              Позиції
+              {doc.items.length > 0 && <span className="ml-1.5 font-normal text-default-400">{totalsLabel(doc.totals)}</span>}
+            </div>
             {doc.items.length === 0 ? (
               <p className="text-sm text-default-500">Позицій немає</p>
             ) : (
@@ -243,24 +223,38 @@ export function NotificationDocumentDrawer({ logId, onClose }: NotificationDocum
                   tr: 'hover:bg-default-100/60',
                 }}
               >
-                <TableHeader>
-                  <TableColumn>Товар</TableColumn>
-                  <TableColumn align="center">Партія</TableColumn>
-                  <TableColumn align="end">Кількість</TableColumn>
+                <TableHeader columns={columns}>
+                  {(col) => (
+                    <TableColumn key={col.key} align={col.align} width={col.width}>
+                      {col.label}
+                    </TableColumn>
+                  )}
                 </TableHeader>
                 <TableBody>
-                  {doc.items.map((item, i) => (
-                    <TableRow key={i}>
-                      <TableCell className={`${item.isGroup ? 'font-semibold' : doc.kind === 'release' ? 'pl-6' : ''}`}>
+                  {doc.items.map((item, i) => {
+                    const short = (item.missing ?? 0) > 0;
+                    const cells = [
+                      <TableCell key="name" className={`${item.isGroup ? 'font-semibold' : doc.kind === 'release' ? 'pl-6' : ''}`}>
                         {item.sku && (
                           <span className="mr-1.5 shrink-0 rounded bg-amber-200/60 px-1 py-0.5 text-tiny tabular-nums">{item.sku}</span>
                         )}
                         {item.name}
-                      </TableCell>
-                      <TableCell className="text-default-600">{item.batch || '–'}</TableCell>
-                      <TableCell className="text-right tabular-nums">{item.quantity}</TableCell>
-                    </TableRow>
-                  ))}
+                      </TableCell>,
+                      <TableCell key="batch" className="text-default-600">{item.batch || '–'}</TableCell>,
+                      <TableCell key="qty" className="whitespace-nowrap text-right tabular-nums">{formatQty(item.quantity)}</TableCell>,
+                    ];
+                    if (doc.hasShortage) {
+                      cells.push(
+                        <TableCell key="stock" className={`whitespace-nowrap text-right tabular-nums ${short ? 'font-medium' : 'text-default-400'}`}>
+                          {item.stock != null ? formatQty(item.stock) : '–'}
+                        </TableCell>,
+                        <TableCell key="missing" className={`whitespace-nowrap text-right tabular-nums ${short ? 'font-medium text-danger' : 'text-default-400'}`}>
+                          {short ? formatQty(item.missing!) : '–'}
+                        </TableCell>,
+                      );
+                    }
+                    return <TableRow key={i}>{cells}</TableRow>;
+                  })}
                 </TableBody>
               </Table>
             )}

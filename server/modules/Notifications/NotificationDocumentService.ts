@@ -9,6 +9,7 @@ import type {
   NotificationDocument,
   NotificationDocumentItem,
   NotificationDocumentKind,
+  NotificationDocumentTotals,
   NotificationShortageRow,
 } from '../../../shared/types/notifications.js';
 
@@ -69,9 +70,10 @@ const qty = (text: string | undefined): number | null => {
  *  - Код: … | Артикул: … | Партія: … | Рахунок …. Потрібно: 40.000 шт | Вільний залишок: 0 шт | Недостатньо: 40.000 шт.
  *  - Назва 2 | Код: … »
  * Назва першої позиції стоїть у кінці заголовка, наступних – першим полем рядка.
+ * Списання пише свій формат: «Недостатня кількість:\n- Назва | арт: X | партія: Y | потрібно: 6 шт | залишок: 0 шт | бракує: 6 шт».
  */
 export function parseShortageError(text: string | null): { summary: string | null; rows: NotificationShortageRow[] } {
-  if (!text || !/Недостатньо:/i.test(text)) return { summary: null, rows: [] };
+  if (!text || !/(Недостатньо|бракує):/i.test(text)) return { summary: null, rows: [] };
   const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   const itemStart = lines.findIndex((l) => l.startsWith('-'));
   if (itemStart < 0) return { summary: null, rows: [] };
@@ -79,7 +81,7 @@ export function parseShortageError(text: string | null): { summary: string | nul
   const header = lines.slice(0, itemStart).join(' ');
   // «… Недостатня кількість. Біла квасоля з куркою» – останнє речення заголовка є назвою першої позиції.
   const headerMatch = /^(.*?\.)\s*([^.]*)$/.exec(header);
-  const summary = headerMatch ? headerMatch[1].trim() : header || null;
+  const summary = (headerMatch ? headerMatch[1] : header).trim().replace(/:$/, '') || null;
   let pendingName = headerMatch?.[2]?.trim() || null;
 
   const rows: NotificationShortageRow[] = [];
@@ -95,14 +97,90 @@ export function parseShortageError(text: string | null): { summary: string | nul
     const amount = (label: string) => qty(new RegExp(`${label}:\\s*([\\d.,]+)`, 'i').exec(line)?.[1]);
     rows.push({
       name: name || field('Код') || '–',
-      sku: field('Артикул') ?? null,
+      sku: field('(?:Артикул|арт)') ?? null,
       batch: field('Партія') ?? null,
       needed: amount('Потрібно'),
-      stock: amount('Вільний залишок'),
-      missing: amount('Недостатньо'),
+      stock: amount('(?:Вільний залишок|залишок)'),
+      missing: amount('(?:Недостатньо|бракує)'),
     });
   }
   return { summary, rows };
+}
+
+/**
+ * Нестачу пишемо прямо в рядки позицій: спершу збіг артикул + партія, потім лише артикул.
+ * Позиції з помилки, яких немає в документі, додаються в кінець.
+ */
+export function mergeShortage(items: NotificationDocumentItem[], shortage: NotificationShortageRow[]): NotificationDocumentItem[] {
+  const result = items.map((item) => ({ ...item }));
+  const used = new Set<number>();
+  const batchesOf = (item: NotificationDocumentItem) => (item.batch ?? '').split(',').map((b) => b.trim()).filter(Boolean);
+  const pick = (row: NotificationShortageRow, withBatch: boolean) =>
+    result.findIndex(
+      (item, i) =>
+        !used.has(i) &&
+        !item.isGroup &&
+        row.sku != null &&
+        item.sku === row.sku &&
+        (!withBatch || (row.batch != null && batchesOf(item).includes(row.batch))),
+    );
+  for (const row of shortage) {
+    let index = pick(row, true);
+    if (index < 0) index = pick(row, false);
+    if (index >= 0) {
+      used.add(index);
+      result[index].stock = row.stock;
+      result[index].missing = row.missing;
+    } else {
+      result.push({ sku: row.sku, name: row.name, quantity: row.needed ?? 0, batch: row.batch, stock: row.stock, missing: row.missing });
+    }
+  }
+  return result;
+}
+
+interface SetLookup {
+  /** Склад набору: артикул компонента → кількість; null – не набір. */
+  composition(sku: string): Array<{ sku: string; qty: number }> | null;
+}
+
+/** Порцій в одній одиниці товару (набір розгортається рекурсивно, страва = 1). */
+function portionsPerUnit(sku: string, lookup: SetLookup, seen = new Set<string>()): number {
+  const composition = lookup.composition(sku);
+  if (!composition || seen.has(sku)) return 1;
+  seen.add(sku);
+  const total = composition.reduce((sum, c) => sum + c.qty * portionsPerUnit(c.sku, lookup, seen), 0);
+  seen.delete(sku);
+  return total || 1;
+}
+
+export function computeTotals(items: NotificationDocumentItem[], lookup: SetLookup | null): NotificationDocumentTotals {
+  const hasGroups = items.some((i) => i.isGroup);
+  const top = items.filter((i) => (hasGroups ? i.isGroup : true));
+  const dishes = top.reduce((sum, i) => sum + i.quantity, 0);
+  const portions = lookup ? top.reduce((sum, i) => sum + i.quantity * (i.sku ? portionsPerUnit(i.sku, lookup) : 1), 0) : null;
+  return { positions: top.length, dishes, portions };
+}
+
+/** Склади наборів з таблиці products (з вкладеними наборами). */
+async function loadSetLookup(skus: string[]): Promise<SetLookup> {
+  const sets = new Map<string, Array<{ sku: string; qty: number }> | null>();
+  let pending = [...new Set(skus)];
+  for (let depth = 0; pending.length > 0 && depth < 5; depth++) {
+    const products = await prisma.product.findMany({ where: { sku: { in: pending } }, select: { sku: true, set: true } });
+    for (const sku of pending) sets.set(sku, null);
+    const next: string[] = [];
+    for (const p of products) {
+      const composition = asArray(p.set)
+        .map(asObject)
+        .map((c) => ({ sku: str(c.id) ?? '', qty: num(c.quantity) }))
+        .filter((c) => c.sku && c.qty > 0);
+      if (composition.length === 0) continue;
+      sets.set(p.sku, composition);
+      for (const c of composition) if (!sets.has(c.sku)) next.push(c.sku);
+    }
+    pending = [...new Set(next)];
+  }
+  return { composition: (sku) => sets.get(sku) ?? null };
 }
 
 const RELEASE_STATUS: Record<string, string> = {
@@ -242,13 +320,22 @@ export async function getNotificationDocument(logId: number): Promise<Notificati
     storageToId: null,
     comment: null,
     error,
-    shortage: shortage.rows,
+    hasShortage: shortage.rows.length > 0,
     errorSummary: shortage.summary,
     dilovodDocId: str(data.dilovodDocId) ?? str(data.dilovodId),
     items: [],
+    totals: { positions: 0, dishes: 0, portions: null },
   };
 
-  if (kind === 'release') return loadRelease(num(data.releaseId), base);
-  if (kind === 'movement') return loadMovement(num(data.draftId ?? data.docId), base);
-  return loadWriteOffAttempt(data, base);
+  const doc =
+    kind === 'release'
+      ? await loadRelease(num(data.releaseId), base)
+      : kind === 'movement'
+        ? await loadMovement(num(data.draftId ?? data.docId), base)
+        : await loadWriteOffAttempt(data, base);
+
+  const items = mergeShortage(doc.items, shortage.rows);
+  const skus = items.filter((i) => i.sku && (i.isGroup || !items.some((g) => g.isGroup))).map((i) => i.sku!);
+  const lookup = skus.length ? await loadSetLookup(skus).catch(() => null) : null;
+  return { ...doc, items, totals: computeTotals(items, lookup) };
 }

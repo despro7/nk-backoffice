@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-11-09 – Центр сповіщень: нестача в позиціях документа, дубль Raw JSON
+
+**Files:** `server/modules/Notifications/NotificationDocumentService.ts` (+ spec), `client/components/notifications/NotificationDocumentDrawer.tsx`, `shared/types/notifications.ts`, `client/components/ResultDrawer.tsx`
+
+- **Списання:** нестача у форматі списання (`арт / залишок / бракує`) тепер розбирається.
+- **Позиції документа:** «Залишок» і «Бракує» прямо в таблиці «Позиції» замість окремої таблиці; біля заголовка «(N поз. / M страв / K порцій)», як у складі комплекту картки товару.
+- **Деталі замовлення:** прибрано дубль «Raw JSON» (загальний блок `ResultDrawer` більше не малюється для `orderDetails`).
+
+**Документація:** `Docs/features/notification-centre.md` – дровер документа, `NotificationDocument`.
+
+---
+
 ## 2026-11-09 – Центр сповіщень: дровери замовлення й документа, «Запускали», налаштування вкладкою
 
 **Files:** `client/components/NotificationBell.tsx`, `client/components/notifications/{NotificationPanel,NotificationRow,NotificationAvatar,NotificationPrefsView,NotificationTelegramConnect,NotificationDocumentDrawer,NotificationDebugTools,useOrderDetailsDrawer}.ts(x)`, `client/hooks/useNotificationFeed.ts`, `client/pages/SettingsNotifications/notificationPlayground.ts`, `server/modules/Notifications/{NotificationDocumentService,NotificationFeedService,notificationFeed,NotificationPrefsService}.ts` (+ spec), `server/routes/{notifications,support-reports,orders}.ts`, `server/services/SupportReportScreenshotStore.ts`, `server/services/dilovod/DilovodAutoExportService.ts`, `shared/notifications/{feedPresentation,defaultRules}.ts`, `shared/types/notifications.ts`, `.gitignore`

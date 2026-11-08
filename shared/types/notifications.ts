@@ -96,6 +96,19 @@ export interface NotificationDocumentItem {
   batch: string | null;
   /** Рядок набору (комплект) – компоненти йдуть після нього. */
   isGroup?: boolean;
+  /** З помилки Діловода про нестачу: вільний залишок і скільки бракує. */
+  stock?: number | null;
+  missing?: number | null;
+}
+
+/** Підсумок позицій документа, як «Склад комплекту» в картці товару. */
+export interface NotificationDocumentTotals {
+  /** Рядків верхнього рівня (набори для комплектування). */
+  positions: number;
+  /** Сума кількостей верхнього рівня. */
+  dishes: number;
+  /** Порції з розгорнутими наборами; null – не вдалося порахувати. */
+  portions: number | null;
 }
 
 /** Позиція з помилки «Недостатня кількість» від Діловода. */
@@ -122,13 +135,14 @@ export interface NotificationDocument {
   comment: string | null;
   /** Причина, з якою Діловод не прийняв документ. */
   error: string | null;
-  /** Розібрані позиції з помилки про нестачу; порожньо – текст помилки іншого виду. */
-  shortage: NotificationShortageRow[];
+  /** Помилка розібрана як нестача: залишок і «бракує» – в рядках `items`. */
+  hasShortage: boolean;
   /** Перше речення помилки над таблицею нестачі («Документ не збережено. Недостатня кількість.»). */
   errorSummary: string | null;
   /** Є – документ можна відкрити в дровері Діловода. */
   dilovodDocId: string | null;
   items: NotificationDocumentItem[];
+  totals: NotificationDocumentTotals;
 }
 
 export interface NotificationFeedItem {
