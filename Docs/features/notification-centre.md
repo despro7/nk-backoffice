@@ -82,6 +82,23 @@
 - Debug-режим: тонкий футер з глобальними Read all / Hide all / Reset read; адміністратор бачить позначку «Без шаблону» на рядках без правила (веде в налаштування).
 - Опитування: закритий дропдаун – кожні 30 с лише лічильники (`limit=1`); відкритий – активна вкладка повністю.
 
+## Налаштування: `/settings/notifications`
+
+Сторінка «Центр сповіщень» у налаштуваннях (право `page.settings.notifications`, адміністратор має його завжди). API – `/api/notification-settings` (`server/routes/notification-settings.ts`, `NotificationSettingsService`).
+
+| Вкладка | Що робить |
+|---------|-----------|
+| Перегляд | Справжній дропдаун на реальних даних за 30 днів, «переглянути як роль» (`GET /preview-feed?role=`) |
+| Правила | Список за порядком: вмикання, ↑/↓, скільки з останніх 800 записів обробляє правило, позначка «стандартне» |
+| Тестер | Запис з журналу (пошук) або введений вручну → готовий рядок, змінні, які правила підходять і яке спрацювало; «Створити правило» з прикладу |
+| Джерела | Що пишеться в `meta_logs` за 90 днів (категорія + статус + заголовок, кількість), яке правило покриває останній запис, фільтр «Без правила» |
+| Словник | Фрази / regex, перевірка на довільному тексті |
+| Історія | Хто, коли, що змінив (було / стало), «Відкотити» |
+
+**Редактор правила** (drawer): умови збігу, вивід (тип, група, рівень, видимість, шаблони, кнопка), ланцюжок замін; праворуч живий перегляд рядків на реальних записах з оригіналом і змінними. «Зберегти» неактивне, поки правило має помилки або не обробляє жодного з останніх записів. Для стандартних – «Скинути до стандартного». Рушій той самий, що на сервері (`shared/notifications/ruleEngine.ts`), тож перегляд збігається з дропдауном.
+
+Історія: кожна зміна правила / словника пише `notification_config_revisions`; відкат повертає стан «було» (видалене відновлюється, створене видаляється) і сам записується в історію. Якщо відкат повертає стандартне правило до версії з коду, воно знову оновлюється автоматично.
+
 ## Права ролей
 
 Ключі `action.notify.<group>.<level>.<channel>`, `channel` = `app` | `tg`, у `role_permissions`.
@@ -96,4 +113,5 @@
 | Рушій | `shared/notifications/ruleEngine.ts` (+ spec), `shared/notifications/defaultRules.ts` |
 | Клієнт | `client/components/NotificationBell.tsx`, `client/components/notifications/*`, `client/hooks/useNotificationFeed.ts` |
 | Сервер | `server/modules/Notifications/{NotificationConfigService,NotificationFeedService,notificationFeed}.ts` (+ spec), `server/routes/notifications.ts` |
+| Налаштування | `client/pages/SettingsNotifications/**`, `client/services/NotificationSettingsService.ts`, `server/routes/notification-settings.ts`, `server/modules/Notifications/NotificationSettingsService.ts`, `shared/types/notificationSettings.ts`, `shared/notifications/feedPresentation.ts` |
 | БД | `notification_rules`, `notification_glossary`, `notification_config_revisions` |

@@ -36,6 +36,7 @@ import { salesdriveRouter } from './routes/salesdrive.js';
 import metaLogsRouter from './routes/meta-logs.js';
 import wordpressReceiptRoutes from './routes/wordpress-receipt.js';
 import notificationsRouter from './routes/notifications.js';
+import notificationSettingsRouter from './routes/notification-settings.js';
 import usersRoutes from './routes/users.js';
 import hrRoutes from './modules/Hr/HrController.js';
 import statRouter from './routes/stat.js';
@@ -195,6 +196,7 @@ export function createServer() {
   // Meta logs route for Dilovod export logging
   app.use("/api/meta-logs", metaLogsRouter);
   app.use("/api/notifications", notificationsRouter);
+  app.use("/api/notification-settings", notificationSettingsRouter);
 
   // Settings routes (все роуты в settings.ts, включая /logging и /toast)
   app.use("/api/settings", settingsRoutes);

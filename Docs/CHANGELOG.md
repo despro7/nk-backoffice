@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-11-08 – Центр сповіщень: playground у налаштуваннях
+
+**Files:** `client/pages/SettingsNotifications/**`, `client/services/NotificationSettingsService.ts`, `client/routes.config.tsx`, `server/routes/notification-settings.ts`, `server/index.ts`, `server/modules/Notifications/{NotificationSettingsService,notificationFeed}.ts`, `shared/notifications/feedPresentation.ts`, `shared/types/notificationSettings.ts`
+
+- **`/settings/notifications`:** перегляд дропдауну як будь-яка роль, список правил з порядком і покриттям, редактор правила з живою перевіркою на реальних записах, тестер (запис з журналу або вручну, трасування правил), каталог джерел `meta_logs` з позначкою «Без правила», словник, історія змін з відкатом.
+- **Безпечне редагування:** regex перевіряється на клієнті й сервері (синтаксис, вкладені квантифікатори), правило не зберегти, поки воно не спрацювало хоч на одному останньому записі; «Скинути до стандартного».
+- **API `/api/notification-settings`:** CRUD правил і словника, порядок, ревізії й відкат, джерела, сирі записи, `preview-feed`. Доступ: `page.settings.notifications`.
+
+**Документація:** `Docs/features/notification-centre.md` – розділ «Налаштування».
+
+---
+
 ## 2026-11-08 – Центр сповіщень: новий дропдаун з вкладками й аватарами
 
 **Files:** `client/components/NotificationBell.tsx`, `client/components/notifications/{NotificationPanel,NotificationRow,NotificationAvatar}.tsx`, `client/hooks/useNotificationFeed.ts`

@@ -34,6 +34,7 @@ const SettingsEquipment = lazyPage(() => import('./pages/SettingsEquipment'));
 const SettingsOrders = lazyPage(() => import('./pages/SettingsOrders'));
 const SettingsAdmin = lazyPage(() => import('./pages/SettingsAdmin'));
 const SettingsLlm = lazyPage(() => import('./pages/SettingsLlm'));
+const SettingsNotifications = lazyPage(() => import('./pages/SettingsNotifications'));
 const SettingsChatwootBot = lazyPage(() => import('./pages/SettingsChatwootBot'));
 const ChatwootBotStatistics = lazyPage(() => import('./pages/ChatwootBotStatistics'));
 const ChatwootBotKnowledge = lazyPage(() => import('./pages/ChatwootBotKnowledge'));
@@ -810,6 +811,18 @@ export const appRoutes: AppRoute[] = [
     parent: 'settings',
     order: 10,
     permission: { name: 'admin' },
+  },
+  {
+    path: '/settings/notifications',
+    component: SettingsNotifications,
+    title: 'Центр сповіщень',
+    pageTitle: 'Центр сповіщень | NK Backoffice',
+    navLabel: 'Сповіщення',
+    icon: <DynamicIcon name="bell-ring" size={20} className="max-w-full max-h-full" />,
+    inNav: true,
+    parent: 'settings',
+    order: 9.7,
+    permission: { name: 'notifications', label: 'Центр сповіщень (правила)' },
   },
   {
     path: '/settings/llm',
