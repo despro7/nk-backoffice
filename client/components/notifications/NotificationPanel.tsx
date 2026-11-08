@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Button, ScrollShadow, Tooltip } from '@heroui/react';
+import { ScrollShadow, Skeleton, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type {
   NotificationFeedCounts,
@@ -34,6 +34,8 @@ interface NotificationPanelProps extends NotificationRowHandlers {
   onOpenSettings?: () => void;
   /** Замінює список (напр. персональні налаштування під шестернею). */
   body?: ReactNode;
+  /** Відкрита вкладка налаштувань (шестерня) – жодна з вкладок стрічки не активна. */
+  settingsOpen?: boolean;
   title?: string;
   footer?: ReactNode;
   /** Висота списку. */
@@ -42,11 +44,11 @@ interface NotificationPanelProps extends NotificationRowHandlers {
 
 function SkeletonRow() {
   return (
-    <div className="grid grid-cols-[40px_1fr] gap-3 border-b border-default-100 px-5 py-4" aria-hidden>
-      <div className="h-10 w-10 rounded-xl bg-default-100" />
+    <div className="grid grid-cols-[40px_1fr] gap-3 border-b border-default-100 px-5 py-4 opacity-75" aria-hidden>
+      <Skeleton className="h-10 w-10 rounded-xl" />
       <div className="flex flex-col gap-2 pt-1">
-        <div className="h-2.5 w-3/4 rounded bg-default-100" />
-        <div className="h-2 w-2/5 rounded bg-default-100" />
+        <Skeleton className="h-2.5 w-3/4 rounded" />
+        <Skeleton className="h-2 w-2/5 rounded" />
       </div>
     </div>
   );
@@ -63,6 +65,7 @@ export function NotificationPanel({
   onOpenReport,
   onOpenSettings,
   body,
+  settingsOpen = false,
   title = 'Сповіщення',
   footer,
   listClassName = 'max-h-[560px]',
@@ -70,23 +73,24 @@ export function NotificationPanel({
 }: NotificationPanelProps) {
   return (
     <div className="flex w-full flex-col bg-white">
-      <div className="flex items-center justify-between gap-3 px-5 pb-1 pt-4">
+      <div className="flex items-center justify-between gap-3 px-4 pb-1 pt-2.5">
         <h3 className="text-lg font-semibold tracking-tight text-default-900">{title}</h3>
         {onOpenReport && (
           <button
             type="button"
             onClick={onOpenReport}
-            className="text-[13px] font-medium text-default-900 underline underline-offset-4 hover:text-default-600"
+            className="text-[13px] font-medium text-default-900 underline underline-offset-4 hover:text-default-600 flex items-center gap-1"
           >
-            Детальний звіт
+            <DynamicIcon name="square-arrow-out-up-right" size={12} />
+            <span>Детальний звіт</span>
           </button>
         )}
       </div>
 
-      {!body && (
+      {(
         <div className="flex items-center gap-1 border-b border-default-200 pl-5 pr-3" role="tablist">
           {TABS.map((t) => {
-            const active = t.id === tab;
+            const active = !settingsOpen && t.id === tab;
             const count = counts[t.id];
             const isErrors = t.id === 'errors';
             return (
@@ -101,7 +105,8 @@ export function NotificationPanel({
                 }`}
               >
                 {t.label}
-                {count > 0 && (t.id !== 'archive' || active) && (
+                {/* В архіві лічильник завжди великий (99+) – не показуємо. */}
+                {count > 0 && t.id !== 'archive' && (
                   <span
                     className={`inline-grid h-[18px] min-w-[18px] place-items-center rounded-[5px] px-1 text-[11px] font-semibold tabular-nums ${
                       active
@@ -122,15 +127,24 @@ export function NotificationPanel({
           <span className="flex-1" />
           {onOpenSettings && (
             <Tooltip content="Налаштування сповіщень" delay={400} closeDelay={0}>
-              <Button isIconOnly size="sm" variant="light" aria-label="Налаштування сповіщень" onPress={onOpenSettings}>
-                <DynamicIcon name="settings" size={18} className="text-default-500" />
-              </Button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={settingsOpen}
+                aria-label="Налаштування сповіщень"
+                onClick={onOpenSettings}
+                className={`-mb-px flex items-center border-b-2 px-2 pb-2.5 pt-3 transition-colors ${
+                  settingsOpen ? 'border-default-900 text-default-900' : 'border-transparent text-default-500 hover:text-default-800'
+                }`}
+              >
+                <DynamicIcon name="settings" size={18} />
+              </button>
             </Tooltip>
           )}
         </div>
       )}
 
-      <ScrollShadow className={`w-full ${listClassName}`} hideScrollBar>
+      <ScrollShadow className={`w-full scrollbar-thin-transparent ${listClassName}`} size={0}>
         {body ?? (
           loading && items.length === 0 ? (
             <>

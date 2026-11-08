@@ -3,7 +3,7 @@
  * Telegram opt-outs per group, sound. A user can only narrow what the role allows.
  */
 
-import { prisma } from '../../lib/utils.js';
+import { nowIso, userPrefsStore } from './notificationStores.js';
 import { hasPermission } from '../../../shared/constants/permissions.js';
 import {
   NOTIFICATION_GROUP_IDS,
@@ -15,6 +15,8 @@ import {
 } from '../../../shared/constants/notifications.js';
 import {
   DEFAULT_NOTIFICATION_USER_PREFS,
+  NOTIFICATION_TABS,
+  type NotificationTab,
   type NotificationUserPrefsData,
 } from '../../../shared/types/notifications.js';
 
@@ -26,6 +28,9 @@ export function sanitizePrefs(raw: unknown): NotificationUserPrefsData {
     mutedGroups: groups(obj.mutedGroups),
     mutedTgGroups: groups(obj.mutedTgGroups),
     sound: obj.sound === true,
+    defaultTab: NOTIFICATION_TABS.includes(obj.defaultTab as NotificationTab)
+      ? (obj.defaultTab as NotificationTab)
+      : DEFAULT_NOTIFICATION_USER_PREFS.defaultTab,
   };
 }
 
@@ -42,28 +47,27 @@ export class NotificationPrefsService {
   async get(userId: number): Promise<NotificationUserPrefsData> {
     const hit = this.cache.get(userId);
     if (hit && Date.now() - hit.at < 60_000) return hit.prefs;
-    const row = await prisma.notificationUserPrefs.findUnique({ where: { userId } });
+    const row = (await userPrefsStore.read()).find((r) => r.id === userId);
     const prefs = row ? sanitizePrefs(row.prefs) : { ...DEFAULT_NOTIFICATION_USER_PREFS };
     this.cache.set(userId, { at: Date.now(), prefs });
     return prefs;
   }
 
   async getMany(userIds: number[]): Promise<Map<number, NotificationUserPrefsData>> {
-    const rows = userIds.length
-      ? await prisma.notificationUserPrefs.findMany({ where: { userId: { in: userIds } } })
-      : [];
+    const wanted = new Set(userIds);
+    const rows = userIds.length ? (await userPrefsStore.read()).filter((r) => wanted.has(r.id)) : [];
     const map = new Map<number, NotificationUserPrefsData>();
     for (const id of userIds) map.set(id, { ...DEFAULT_NOTIFICATION_USER_PREFS });
-    for (const row of rows) map.set(row.userId, sanitizePrefs(row.prefs));
+    for (const row of rows) map.set(row.id, sanitizePrefs(row.prefs));
     return map;
   }
 
   async save(userId: number, raw: unknown): Promise<NotificationUserPrefsData> {
     const prefs = sanitizePrefs(raw);
-    await prisma.notificationUserPrefs.upsert({
-      where: { userId },
-      create: { userId, prefs: prefs as object },
-      update: { prefs: prefs as object },
+    await userPrefsStore.mutate((draft) => {
+      const row = draft.items.find((r) => r.id === userId);
+      if (row) Object.assign(row, { prefs, updatedAt: nowIso() });
+      else draft.items.push({ id: userId, prefs, updatedAt: nowIso() });
     });
     this.cache.set(userId, { at: Date.now(), prefs });
     return prefs;

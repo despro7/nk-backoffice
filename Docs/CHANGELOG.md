@@ -5,6 +5,36 @@
 
 ---
 
+## 2026-11-09 – Центр сповіщень: дровери замовлення й документа, «Запускали», налаштування вкладкою
+
+**Files:** `client/components/NotificationBell.tsx`, `client/components/notifications/{NotificationPanel,NotificationRow,NotificationAvatar,NotificationPrefsView,NotificationTelegramConnect,NotificationDocumentDrawer,NotificationDebugTools,useOrderDetailsDrawer}.ts(x)`, `client/hooks/useNotificationFeed.ts`, `client/pages/SettingsNotifications/notificationPlayground.ts`, `server/modules/Notifications/{NotificationDocumentService,NotificationFeedService,notificationFeed,NotificationPrefsService}.ts` (+ spec), `server/routes/{notifications,support-reports,orders}.ts`, `server/services/SupportReportScreenshotStore.ts`, `server/services/dilovod/DilovodAutoExportService.ts`, `shared/notifications/{feedPresentation,defaultRules}.ts`, `shared/types/notifications.ts`, `.gitignore`
+
+- **Дровери:** «Відкрити замовлення» відкриває деталі замовлення, як на «Стан замовлень». «Відкрити документ» – новий дровер документа (`GET /api/notifications/:id/document`): локальний запис комплектування / переміщення або спроба списання, помилка Діловода, позиції, кнопка «Документ у Діловоді». Нестача товару – таблицею, сира відповідь під спойлером.
+- **Мета рядка:** «дата • хто запускав • номер документа» без категорії; тултіп «Запускали» зі всіма запусками згорнутого рядка. Підписи: «Імʼя (авто)» для авто-експорту після зміни статусу (новий `initiatedBy = manual:by:<userId>`), «SalesDrive (API)», «Cron», «автоматично».
+- **Аватар** – сервіс транзакції: знак Діловода на блідо-жовтому, логотип SalesDrive.
+- **Вкладки:** налаштування – окрема вкладка (шестерня), інші не ховаються; стартова вкладка – остання в сесії або «Вкладка за замовчуванням» з налаштувань (типово «Мої»); у «Архіву» немає лічильника.
+- **Рядок:** `×N` і «Вирішено» в рядку заголовка; текст 2 рядки → 5 по кліку → «Повний текст» у дровері; основні кнопки primary; світліша мета без «№».
+- **Debug Mode:** блок унизу налаштувань (danger, з поясненнями), скидання «прочитано» з підтвердженням.
+- **Звіт користувача:** заголовок «Звіт про помилку від користувача …», кнопка «Відкрити скріншот» (адмін). Скріншот зберігається 30 днів у `storage/support-reports/` (каталог у `.gitignore`, на продакшні має переживати деплой).
+- **Виправлення:** дропдаун не закривається від скролу над тултіпом; дровер документа не перезавантажується по колу (`apiCall` нестабільний між рендерами); скелетон з відблиском.
+
+**Документація:** `Docs/features/notification-centre.md` – стрічка (згортання з архівом, ініціатори, документ), дропдаун, особисті налаштування, файли.
+
+---
+
+## 2026-11-09 – Центр сповіщень: конфіг у settings_base, очищення черги Telegram
+
+**Files:** `server/modules/Notifications/{jsonCollection,notificationStores}.ts` (+ spec), `server/modules/Notifications/{NotificationConfigService,NotificationSettingsService,NotificationPrefsService,NotificationTelegramService}.ts`, `prisma/schema.prisma`, `prisma/migrations/20261109120000_notification_config_to_settings_base`
+
+- **Менше таблиць:** правила, словник, особисті налаштування й привʼязки Telegram перенесено в `settings_base` (category `notifications`, JSON `{ nextId, items }`, запис під `SELECT … FOR UPDATE`). Таблиці `notification_rules`, `notification_glossary`, `notification_user_prefs`, `notification_telegram_links` видалено, дані перенесено міграцією.
+- Лишились таблиці `notification_config_revisions` (історія для відкату) і `notification_outbox` (черга Telegram).
+- **Очищення черги:** раз на 6 год видаляються відправлені старші за 7 днів і помилки старші за 30 днів.
+- API і UI без змін.
+
+**Документація:** `Docs/features/notification-centre.md` – новий розділ «Зберігання», оновлено згадки таблиць.
+
+---
+
 ## 2026-11-08 – Центр сповіщень: дублювання в Telegram
 
 **Files:** `server/modules/Notifications/{NotificationTelegramService,telegramDelivery}.ts` (+ spec), `server/modules/Notifications/NotificationFeedService.ts`, `server/routes/{notifications,notification-settings}.ts`, `server/index.ts`, `client/components/notifications/{NotificationTelegramConnect,NotificationPrefsView}.tsx`, `client/components/NotificationBell.tsx`, `client/pages/SettingsNotifications/{index.tsx,components/TelegramTab.tsx}`, `client/services/NotificationSettingsService.ts`, `shared/types/notificationSettings.ts`, `prisma/schema.prisma`, `prisma/migrations/20261108160000_notification_telegram`

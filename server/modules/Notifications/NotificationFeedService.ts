@@ -6,6 +6,7 @@
  * config version. Each poll only reads the light columns (id, status, readBy, hiddenBy).
  */
 
+import { detectDocumentKind } from './NotificationDocumentService.js';
 import { prisma } from '../../lib/utils.js';
 import { renderNotification } from '../../../shared/notifications/ruleEngine.js';
 import type { NotificationRuleDef } from '../../../shared/types/notificationRules.js';
@@ -19,6 +20,13 @@ import {
   type LogUserState,
   type PreparedLog,
 } from './notificationFeed.js';
+
+function docNumberOf(data: unknown): string | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+  const d = data as { docNumber?: unknown; internalDocNumber?: unknown };
+  const value = d.docNumber ?? d.internalDocNumber;
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
 
 export const FEED_WINDOW_DAYS = 30;
 const LIGHT_LIMIT = 600;
@@ -44,10 +52,12 @@ function parseRecipients(data: unknown): number[] | null {
   return recipients.map(Number).filter((n) => Number.isFinite(n));
 }
 
-/** userId із initiatedBy: "5" або "manual:user:<email>" (старий формат ручного експорту). */
+/** userId із initiatedBy: "5", "manual:by:5" (авто-дія після зміни статусу) або "manual:user:<email>" (старий формат). */
 export function parseInitiator(initiatedBy: string | null): { userId?: number; email?: string } {
   if (!initiatedBy) return {};
   if (/^\d+$/.test(initiatedBy)) return { userId: Number(initiatedBy) };
+  const auto = /^manual:by:(\d+)$/.exec(initiatedBy);
+  if (auto) return { userId: Number(auto[1]) };
   const m = /^manual:user:(.+@.+)$/.exec(initiatedBy);
   if (m) return { email: m[1] };
   return {};
@@ -141,6 +151,8 @@ export class NotificationFeedService {
           recipients: parseRecipients(row.data),
           actorUserId: user?.id ?? null,
           actorName,
+          docNumber: docNumberOf(row.data) ?? (rendered.vars.doc || null),
+          hasDocument: detectDocumentKind(row) !== null,
         },
       });
     });

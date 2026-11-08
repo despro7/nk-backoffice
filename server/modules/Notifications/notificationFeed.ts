@@ -15,7 +15,7 @@ import type {
   NotificationFeedItem,
   NotificationTab,
 } from '../../../shared/types/notifications.js';
-import { resolveSource, resolveVia } from '../../../shared/notifications/feedPresentation.js';
+import { resolveAttempt, resolveAvatarSource, resolveVia } from '../../../shared/notifications/feedPresentation.js';
 
 export { initialsOf, resolveSource, resolveVia } from '../../../shared/notifications/feedPresentation.js';
 
@@ -39,6 +39,10 @@ export interface PreparedLog {
   recipients: number[] | null;
   actorUserId: number | null;
   actorName: string | null;
+  /** Номер складського документа (data.docNumber / internalDocNumber / {{doc}} правила). */
+  docNumber: string | null;
+  /** Запис про складський документ – його можна відкрити в дровері. */
+  hasDocument: boolean;
 }
 
 /** Стан прочитання/архіву – змінюється часто, тому окремо від PreparedLog. */
@@ -82,6 +86,7 @@ export function canSee(log: PreparedLog, viewer: FeedViewer): { visible: boolean
 
 function toItem(log: PreparedLog, state: LogUserState, viewer: FeedViewer, addressed: boolean): NotificationFeedItem {
   const r = log.rendered;
+  const via = resolveVia(log.initiatedBy);
   return {
     id: log.id,
     ids: [log.id],
@@ -98,8 +103,11 @@ function toItem(log: PreparedLog, state: LogUserState, viewer: FeedViewer, addre
     mine: addressed || (log.actorUserId != null && log.actorUserId === viewer.userId),
     orderNumber: log.orderNumber,
     category: log.category,
-    source: resolveSource(log),
-    via: resolveVia(log.initiatedBy),
+    source: resolveAvatarSource(log),
+    via,
+    docNumber: log.orderNumber ?? log.docNumber,
+    attempts: [{ ...resolveAttempt(log), at: log.createdAt }],
+    hasDocument: log.hasDocument,
     action: r.actionLink && r.actionLabel ? { label: r.actionLabel, link: r.actionLink } : null,
     ruleId: r.ruleId,
     ruleName: viewer.isAdmin ? r.ruleName : null,
@@ -110,7 +118,9 @@ function dedupeKey(item: NotificationFeedItem): string {
   return [item.archived ?? '-', item.ruleId ?? '-', item.group, item.title, item.message, item.orderNumber ?? ''].join('\u0001');
 }
 
-/** Згортає однакові сповіщення в один рядок (найновіший зверху, лічильник повторів). */
+const MAX_ATTEMPTS = 20;
+
+/** Згортає однакові сповіщення в один рядок (найновіший зверху, лічильник повторів, усі запуски). */
 export function collapseRepeats(items: NotificationFeedItem[]): NotificationFeedItem[] {
   const byKey = new Map<string, NotificationFeedItem>();
   const out: NotificationFeedItem[] = [];
@@ -118,7 +128,7 @@ export function collapseRepeats(items: NotificationFeedItem[]): NotificationFeed
     const key = dedupeKey(item);
     const head = byKey.get(key);
     if (!head) {
-      const copy = { ...item, ids: [...item.ids] };
+      const copy = { ...item, ids: [...item.ids], attempts: [...item.attempts] };
       byKey.set(key, copy);
       out.push(copy);
       continue;
@@ -126,6 +136,8 @@ export function collapseRepeats(items: NotificationFeedItem[]): NotificationFeed
     head.ids.push(...item.ids);
     head.count += item.count;
     head.read = head.read && item.read;
+    head.mine = head.mine || item.mine;
+    if (head.attempts.length < MAX_ATTEMPTS) head.attempts.push(...item.attempts.slice(0, MAX_ATTEMPTS - head.attempts.length));
   }
   return out;
 }

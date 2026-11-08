@@ -22,6 +22,7 @@
  * PUT    /api/notifications/prefs      – save personal prefs
  * POST   /api/notifications/telegram/link – one-time deep link to the notifications bot
  * DELETE /api/notifications/telegram/link – disconnect own Telegram
+ * GET    /api/notifications/:id/document – складський документ сповіщення (локальний запис / спроба)
  */
 
 import { Router, Request, Response } from 'express';
@@ -36,6 +37,8 @@ import type {
 import { NOTIFICATION_TABS } from '../../shared/types/notifications.js';
 import { roleService } from '../services/RoleService.js';
 import { notificationFeedService } from '../modules/Notifications/NotificationFeedService.js';
+import { canSee } from '../modules/Notifications/notificationFeed.js';
+import { getNotificationDocument } from '../modules/Notifications/NotificationDocumentService.js';
 import { allowedGroups, notificationPrefsService } from '../modules/Notifications/NotificationPrefsService.js';
 import { notificationTelegramService } from '../modules/Notifications/NotificationTelegramService.js';
 import type { NotificationPrefsResponse } from '../../shared/types/notifications.js';
@@ -491,6 +494,26 @@ router.get('/feed', authenticateToken, async (req: Request, res: Response) => {
     res.json(response);
   } catch (err) {
     console.error('❌ [Notifications] GET /feed error:', err);
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
+  }
+});
+
+router.get('/:id/document', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const user = req.user!;
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ success: false, error: 'Некоректний id' });
+    const [log] = await notificationFeedService.prepareLogs([id]);
+    if (!log) return res.status(404).json({ success: false, error: 'Сповіщення не знайдено' });
+    const permissions = await roleService.getPermissionSet(user.role);
+    // Документ бачить той, хто бачить сповіщення (вимкнена група в особистих налаштуваннях не заважає).
+    const viewer = { userId: user.userId, isAdmin: user.role === 'admin', permissions, mutedGroups: [] };
+    if (!canSee(log, viewer).visible) return res.status(403).json({ success: false, error: 'Немає доступу' });
+    const document = await getNotificationDocument(id);
+    if (!document) return res.status(404).json({ success: false, error: 'Документ не знайдено' });
+    res.json({ success: true, data: document });
+  } catch (err) {
+    console.error('❌ [Notifications] GET /:id/document error:', err);
     res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' });
   }
 });

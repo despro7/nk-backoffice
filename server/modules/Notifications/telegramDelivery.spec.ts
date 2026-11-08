@@ -20,6 +20,8 @@ function log(p: Partial<PreparedLog> = {}, r: Partial<PreparedLog['rendered']> =
     recipients: null,
     actorUserId: null,
     actorName: null,
+    docNumber: null,
+    hasDocument: false,
     rendered: {
       ruleId: 3,
       ruleName: 'r',

@@ -1,5 +1,5 @@
 import { findMatchingRule, renderNotification } from '@shared/notifications/ruleEngine';
-import { resolveSource, resolveVia } from '@shared/notifications/feedPresentation';
+import { resolveAttempt, resolveAvatarSource, resolveVia } from '@shared/notifications/feedPresentation';
 import type {
   NotificationGlossaryEntry,
   NotificationRuleDef,
@@ -26,6 +26,10 @@ export function toSourceLog(raw: NotificationRawLog): NotificationSourceLog {
 /** Рядок дропдауну з сирого запису (як його побачить користувач). */
 export function previewItem(raw: NotificationRawLog, rendered: RenderedNotification): NotificationFeedItem {
   const recipients = (raw.data as { recipients?: unknown } | null)?.recipients;
+  const actor = { category: raw.category, actorUserId: raw.actorUserId, actorName: raw.actorName };
+  const via = resolveVia(raw.initiatedBy);
+  const data = (raw.data ?? {}) as { docNumber?: unknown; internalDocNumber?: unknown };
+  const docNumber = raw.orderNumber ?? (typeof (data.docNumber ?? data.internalDocNumber) === 'string' ? String(data.docNumber ?? data.internalDocNumber) : rendered.vars.doc || null);
   return {
     id: raw.id,
     ids: [raw.id],
@@ -42,8 +46,11 @@ export function previewItem(raw: NotificationRawLog, rendered: RenderedNotificat
     mine: false,
     orderNumber: raw.orderNumber,
     category: raw.category,
-    source: resolveSource({ category: raw.category, actorUserId: raw.actorUserId, actorName: raw.actorName }),
-    via: resolveVia(raw.initiatedBy),
+    source: resolveAvatarSource(actor),
+    via,
+    docNumber,
+    attempts: [{ ...resolveAttempt({ ...actor, initiatedBy: raw.initiatedBy }), at: raw.createdAt }],
+    hasDocument: false,
     action: rendered.actionLink && rendered.actionLabel ? { label: rendered.actionLabel, link: rendered.actionLink } : null,
     ruleId: rendered.ruleId,
     ruleName: rendered.ruleName,

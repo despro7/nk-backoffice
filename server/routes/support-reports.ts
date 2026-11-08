@@ -4,6 +4,11 @@ import { prisma, logServer } from '../lib/utils.js';
 import { supportReportSettingsService } from '../services/SupportReportSettingsService.js';
 import { telegramAlertService } from '../services/TelegramAlertService.js';
 import { ServerLogBuffer } from '../services/ServerLogBuffer.js';
+import {
+  findReportScreenshot,
+  saveReportScreenshot,
+  screenshotLink,
+} from '../services/SupportReportScreenshotStore.js';
 import type {
   SupportReportPayload,
   SupportReportMetadata,
@@ -75,6 +80,23 @@ function parseScreenshotBase64(base64?: string): Buffer | undefined {
     return undefined;
   }
 }
+
+/** Скріншот звіту – лише адміни (звіти користувачів бачать тільки вони). */
+router.get('/:id/screenshot', authenticateToken, async (req: Request, res: Response) => {
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Немає доступу' });
+  }
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ success: false, error: 'Некоректний id' });
+  }
+  const found = await findReportScreenshot(id);
+  if (!found) {
+    return res.status(404).json({ success: false, error: 'Скріншот не знайдено або вже видалено' });
+  }
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+  res.type(found.mime).sendFile(found.file);
+});
 
 /** Публічні ліміти для авторизованих користувачів */
 router.get('/config', authenticateToken, async (_req: Request, res: Response) => {
@@ -169,6 +191,24 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
     });
 
     lastSubmitByUser.set(userId, Date.now());
+
+    // Скріншот зберігаємо для кнопки «Відкрити скріншот» у сповіщенні (лише адміни, 30 днів).
+    if (screenshotBuffer) {
+      try {
+        await saveReportScreenshot(metaLog.id, screenshotBuffer);
+        await prisma.meta_logs.update({
+          where: { id: metaLog.id },
+          data: {
+            data: {
+              ...(metaLog.data as Record<string, unknown>),
+              screenshotLink: screenshotLink(metaLog.id),
+            },
+          },
+        });
+      } catch (storeError) {
+        logServer('support-reports: screenshot store failed (report saved)', storeError);
+      }
+    }
 
     try {
       await telegramAlertService.sendUserReport({

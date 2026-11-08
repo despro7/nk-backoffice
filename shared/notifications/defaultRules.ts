@@ -115,7 +115,7 @@ export const DEFAULT_NOTIFICATION_RULES: NotificationRuleDef[] = [
     match: { categories: ['dilovod'], statuses: ['error'], message: 'Недостатн' },
     output: {
       kind: 'alert', group: 'dilovod', visibility: 'show',
-      title: 'Не вистачає товару для замовлення №{{orderNumber}}',
+      title: 'Відвантаження №{{orderNumber}} не проведено: бракує товару',
       replacements: SHORTAGE_LINES,
     },
   }),
@@ -248,7 +248,10 @@ export const DEFAULT_NOTIFICATION_RULES: NotificationRuleDef[] = [
     match: { categories: ['user_report'] },
     output: {
       kind: 'task', group: 'system', level: 'info', visibility: 'show',
-      title: 'Звіт від користувача {{actor}}',
+      title: 'Звіт про помилку від користувача {{actor}}',
+      // Посилання є лише коли скріншот збережено (до 30 днів); інакше кнопки немає.
+      actionLink: '{{data.screenshotLink}}',
+      actionLabel: 'Відкрити скріншот',
     },
   }),
   rule({

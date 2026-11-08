@@ -1418,44 +1418,9 @@ model LlmUsageLog {
   @@map("llm_usage_log")
 }
 
-/// Центр сповіщень: правило класифікації й шаблону виводу для записів meta_logs.
-/// Перше увімкнене правило за position, що підійшло, перемагає.
-model NotificationRule {
-  id          Int      @id @default(autoincrement())
-  /// Стабільний ключ стандартного правила (для «Скинути до стандартного»); null – створене вручну.
-  key         String?  @unique @db.VarChar(64)
-  name        String   @db.VarChar(160)
-  enabled     Boolean  @default(true)
-  position    Int      @default(0)
-  /// NotificationRuleMatch (shared/types/notificationRules.ts)
-  match       Json
-  /// NotificationRuleOutput
-  output      Json
-  updatedById Int?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([position])
-  @@map("notification_rules")
-}
-
-/// Центр сповіщень: словник фраз, що застосовується після правил (напр. англ. → укр.).
-model NotificationGlossaryEntry {
-  id          Int      @id @default(autoincrement())
-  phrase      String   @db.VarChar(300)
-  replacement String   @db.VarChar(500)
-  isRegex     Boolean  @default(false)
-  enabled     Boolean  @default(true)
-  position    Int      @default(0)
-  updatedById Int?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([position])
-  @@map("notification_glossary")
-}
-
-/// Історія змін правил і словника (хто, коли, що було) для відкату.
+/// Центр сповіщень: історія змін правил і словника (хто, коли, що було) для відкату.
+/// Самі правила, словник, особисті налаштування й привʼязки Telegram лежать у settings_base
+/// (category `notifications`), див. server/modules/Notifications/notificationStores.ts.
 model NotificationConfigRevision {
   id        Int      @id @default(autoincrement())
   /// rule | glossary
@@ -1471,33 +1436,6 @@ model NotificationConfigRevision {
   @@index([entity, entityId])
   @@index([createdAt])
   @@map("notification_config_revisions")
-}
-
-/// Центр сповіщень: персональні налаштування користувача (шестерня в дропдауні).
-model NotificationUserPrefs {
-  userId    Int      @id
-  /// NotificationUserPrefsData (shared/types/notifications.ts)
-  prefs     Json
-  updatedAt DateTime @updatedAt
-
-  @@map("notification_user_prefs")
-}
-
-/// Центр сповіщень: привʼязка користувача до чату Telegram-бота сповіщень.
-model NotificationTelegramLink {
-  userId           Int       @id
-  /// null – ще не підключено (є лише код).
-  chatId           String?   @db.VarChar(32)
-  username         String?   @db.VarChar(64)
-  firstName        String?   @db.VarChar(128)
-  /// Одноразовий код для t.me/<bot>?start=<code>
-  linkCode         String?   @unique @db.VarChar(32)
-  linkCodeExpires  DateTime?
-  linkedAt         DateTime?
-  updatedAt        DateTime  @updatedAt
-
-  @@index([chatId])
-  @@map("notification_telegram_links")
 }
 
 /// Центр сповіщень: черга відправки в Telegram (повтори, антиспам).

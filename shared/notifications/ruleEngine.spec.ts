@@ -35,7 +35,7 @@ describe('ruleEngine: real meta_logs samples', () => {
       message: '[Авто] Помилка відвантаження замовлення 25727: Недостатня кількість:\n- Рис по-азійськи | арт: 03040 | потрібно: 2.000 шт | залишок: 1 шт | бракує: 1 шт',
     }));
     expect(out.ruleName).toBe('Не вистачає товару для відвантаження');
-    expect(out.title).toBe('Не вистачає товару для замовлення №25727');
+    expect(out.title).toBe('Відвантаження №25727 не проведено: бракує товару');
     expect(out.message).toBe('• Рис по-азійськи (арт. 03040): бракує 1 шт, є 1');
     expect(out.group).toBe('dilovod');
     expect(out.actionLink).toBe('/orders/25727');

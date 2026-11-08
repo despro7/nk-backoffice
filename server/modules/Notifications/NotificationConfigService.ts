@@ -1,10 +1,11 @@
 /**
- * Notification Centre config: rules + glossary from DB, cached in memory.
- * Seeds DEFAULT_NOTIFICATION_RULES / DEFAULT_NOTIFICATION_GLOSSARY when the tables are empty.
+ * Notification Centre config: rules + glossary from settings_base, cached in memory.
+ * Seeds DEFAULT_NOTIFICATION_RULES / DEFAULT_NOTIFICATION_GLOSSARY on first run.
  * `version` grows on every change so render caches can drop stale entries.
  */
 
 import { prisma } from '../../lib/utils.js';
+import { glossaryStore, nowIso, ruleStore } from './notificationStores.js';
 import {
   DEFAULT_NOTIFICATION_GLOSSARY,
   DEFAULT_NOTIFICATION_RULES,
@@ -70,14 +71,12 @@ export class NotificationConfigService {
 
   private async load(): Promise<NotificationConfigSnapshot> {
     await this.seedIfEmpty();
-    const [rules, glossary] = await Promise.all([
-      prisma.notificationRule.findMany({ orderBy: [{ position: 'asc' }, { id: 'asc' }] }),
-      prisma.notificationGlossaryEntry.findMany({ orderBy: [{ position: 'asc' }, { id: 'asc' }] }),
-    ]);
+    const [rules, glossary] = await Promise.all([ruleStore.read(), glossaryStore.read()]);
+    const byPosition = <T extends { id: number; position: number }>(a: T, b: T) => a.position - b.position || a.id - b.id;
     const next: NotificationConfigSnapshot = {
       version: this.version,
-      rules: rules.map(toRuleDef),
-      glossary: glossary.map((g) => ({
+      rules: [...rules].sort(byPosition).map(toRuleDef),
+      glossary: [...glossary].sort(byPosition).map((g) => ({
         id: g.id,
         phrase: g.phrase,
         replacement: g.replacement,
@@ -109,13 +108,9 @@ export class NotificationConfigService {
    */
   private async seedIfEmpty(): Promise<void> {
     if (this.defaultsSynced) return;
-    const [existing, glossaryCount] = await Promise.all([
-      prisma.notificationRule.findMany({ select: { id: true, key: true, updatedById: true } }),
-      prisma.notificationGlossaryEntry.count(),
-    ]);
-    const byKey = new Map(existing.filter((r) => r.key).map((r) => [r.key!, r]));
+    const firstRun = !(await ruleStore.exists());
     const deletedKeys = new Set<string>();
-    if (existing.length > 0) {
+    if (!firstRun) {
       const deletions = await prisma.notificationConfigRevision.findMany({
         where: { entity: 'rule', action: 'delete' },
         select: { before: true },
@@ -125,35 +120,37 @@ export class NotificationConfigService {
         if (typeof key === 'string') deletedKeys.add(key);
       }
     }
-    for (const def of DEFAULT_NOTIFICATION_RULES) {
-      if (!def.key) continue;
-      const data = {
-        name: def.name,
-        enabled: def.enabled,
-        position: def.position,
-        match: def.match as object,
-        output: def.output as object,
-      };
-      const row = byKey.get(def.key);
-      if (!row) {
-        if (deletedKeys.has(def.key)) continue;
-        await prisma.notificationRule.create({ data: { key: def.key, ...data } });
-      } else if (row.updatedById == null) {
-        await prisma.notificationRule.update({ where: { id: row.id }, data });
+    await ruleStore.mutate((draft) => {
+      const byKey = new Map(draft.items.filter((r) => r.key).map((r) => [r.key!, r]));
+      for (const def of DEFAULT_NOTIFICATION_RULES) {
+        if (!def.key) continue;
+        const data = { name: def.name, enabled: def.enabled, position: def.position, match: def.match, output: def.output };
+        const row = byKey.get(def.key);
+        if (!row) {
+          if (deletedKeys.has(def.key)) continue;
+          draft.items.push({ id: draft.allocateId(), key: def.key, ...data, updatedById: null, updatedAt: nowIso() });
+        } else if (row.updatedById == null && JSON.stringify(Object.values(data)) !== JSON.stringify([row.name, row.enabled, row.position, row.match, row.output])) {
+          Object.assign(row, data, { updatedAt: nowIso() });
+        }
       }
-    }
-    this.defaultsSynced = true;
-    if (glossaryCount === 0) {
-      await prisma.notificationGlossaryEntry.createMany({
-        data: DEFAULT_NOTIFICATION_GLOSSARY.map((g) => ({
-          phrase: g.phrase,
-          replacement: g.replacement,
-          isRegex: g.isRegex,
-          enabled: g.enabled,
-          position: g.position,
-        })),
+    });
+    if (!(await glossaryStore.exists())) {
+      await glossaryStore.mutate((draft) => {
+        for (const g of DEFAULT_NOTIFICATION_GLOSSARY) {
+          draft.items.push({
+            id: draft.allocateId(),
+            phrase: g.phrase,
+            replacement: g.replacement,
+            isRegex: g.isRegex,
+            enabled: g.enabled,
+            position: g.position,
+            updatedById: null,
+            updatedAt: nowIso(),
+          });
+        }
       });
     }
+    this.defaultsSynced = true;
   }
 }
 

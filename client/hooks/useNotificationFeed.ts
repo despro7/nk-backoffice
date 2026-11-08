@@ -7,6 +7,7 @@ import type {
   NotificationTab,
   NotificationUserPrefsData,
 } from '@shared/types/notifications';
+import { NOTIFICATION_TABS } from '@shared/types/notifications';
 import { playNotificationSound } from '@/components/notifications/notificationSound';
 import { useApi } from './useApi';
 
@@ -37,6 +38,19 @@ export interface UseNotificationFeedReturn {
   };
 }
 
+const TAB_STORAGE_KEY = 'notification-feed-tab';
+
+/** Остання вкладка в межах сесії браузера; null – ще не вибирали. */
+function readSavedTab(): NotificationTab | null {
+  try {
+    const saved = sessionStorage.getItem(TAB_STORAGE_KEY) as NotificationTab | null;
+    if (saved && NOTIFICATION_TABS.includes(saved)) return saved;
+  } catch {
+    // sessionStorage недоступний
+  }
+  return null;
+}
+
 /**
  * Notification Centre feed. When the dropdown is closed only counters are polled (limit=1);
  * when it is open the active tab is loaded in full.
@@ -48,7 +62,9 @@ export function useNotificationFeed(isOpen: boolean): UseNotificationFeedReturn 
     apiRef.current = apiCall;
   });
 
-  const [tab, setTabState] = useState<NotificationTab>('all');
+  // Перше відкриття за сесію – вкладка з особистих налаштувань (поки вони вантажаться – «Мої»).
+  const [tab, setTabState] = useState<NotificationTab>(() => readSavedTab() ?? 'mine');
+  const useDefaultTabRef = useRef(readSavedTab() === null);
   const [items, setItems] = useState<NotificationFeedItem[]>([]);
   const [counts, setCounts] = useState<NotificationFeedCounts>(EMPTY_COUNTS);
   const [loading, setLoading] = useState(false);
@@ -94,6 +110,10 @@ export function useNotificationFeed(isOpen: boolean): UseNotificationFeedReturn 
       const json: NotificationPrefsResponse = await res.json();
       soundRef.current = json.prefs.sound;
       setPrefs(json);
+      if (useDefaultTabRef.current) {
+        useDefaultTabRef.current = false;
+        setTabState(json.prefs.defaultTab);
+      }
     } catch {
       // optional
     }
@@ -130,7 +150,13 @@ export function useNotificationFeed(isOpen: boolean): UseNotificationFeedReturn 
   }, [isOpen, tab, fetchFeed]);
 
   const setTab = useCallback((next: NotificationTab) => {
+    useDefaultTabRef.current = false;
     setTabState(next);
+    try {
+      sessionStorage.setItem(TAB_STORAGE_KEY, next);
+    } catch {
+      // приватний режим – просто без запам'ятовування
+    }
     setItems([]);
     setLoadedTab(null);
   }, []);

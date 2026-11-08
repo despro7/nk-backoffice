@@ -1,12 +1,14 @@
+/* global AbortSignal */
 /**
  * Notification Centre → Telegram: a dedicated bot employees subscribe to.
  *
- * - Settings (bot token) in settings_base `notification_telegram`.
+ * - Settings (bot token) in settings_base `notification_telegram`; linked chats in `notification_telegram_links`.
  * - Linking: user gets a one-time deep link t.me/<bot>?start=<code>; the bot receives
  *   `/start <code>` through getUpdates polling and binds chat_id to the user. `/stop` unlinks.
  * - Dispatch: cursor over meta_logs.id → rule engine → audience (role matrix `.tg`, prefs,
  *   addressed) → notification_outbox (unique per log+user, 30-min anti-spam by fingerprint).
- * - Send: outbox rows are claimed atomically and sent with retries.
+ * - Send: outbox rows are claimed atomically and sent with retries. Old rows are cleaned up
+ *   (sent after 7 days, failed after 30).
  *
  * The worker runs outside development (or with NOTIFICATION_TG_WORKER=1), so a local
  * backoffice on the shared DB does not double-send.
@@ -17,6 +19,7 @@ import { prisma, logServer } from '../../lib/utils.js';
 import { roleService } from '../../services/RoleService.js';
 import { notificationFeedService } from './NotificationFeedService.js';
 import { notificationPrefsService } from './NotificationPrefsService.js';
+import { telegramLinkStore, type StoredTelegramLink } from './notificationStores.js';
 import {
   formatTelegramMessage,
   retryDelayMs,
@@ -38,6 +41,9 @@ const CATEGORY = 'notifications';
 const LINK_TTL_MS = 15 * 60 * 1000;
 const TICK_MS = 15_000;
 const API = 'https://api.telegram.org/bot';
+const OUTBOX_CLEANUP_EVERY_MS = 6 * 3600 * 1000;
+const OUTBOX_KEEP_SENT_DAYS = 7;
+const OUTBOX_KEEP_FAILED_DAYS = 30;
 
 export class NotificationTelegramError extends Error {
   constructor(message: string, public status = 400) {
@@ -60,6 +66,23 @@ async function writeSetting(key: string, value: string, description: string): Pr
     where: { key },
     create: { key, value, category: CATEGORY, description },
     update: { value },
+  });
+}
+
+async function linkOf(userId: number): Promise<StoredTelegramLink | undefined> {
+  return (await telegramLinkStore.read()).find((l) => l.id === userId);
+}
+
+async function linkedChats(): Promise<StoredTelegramLink[]> {
+  return (await telegramLinkStore.read()).filter((l) => l.chatId);
+}
+
+/** Повертає кількість видалених привʼязок. */
+async function removeLinks(predicate: (link: StoredTelegramLink) => boolean): Promise<number> {
+  return telegramLinkStore.mutate((draft) => {
+    const before = draft.items.length;
+    draft.items = draft.items.filter((l) => !predicate(l));
+    return before - draft.items.length;
   });
 }
 
@@ -118,7 +141,9 @@ export class NotificationTelegramService {
       next.botToken = token;
       next.botUsername = me.username ?? null;
       // Новий бот – старі привʼязки до чатів іншого бота недійсні.
-      if (current.botToken) await prisma.notificationTelegramLink.deleteMany({});
+      if (current.botToken) await telegramLinkStore.mutate((draft) => {
+        draft.items = [];
+      });
       // Без вебхука, бо приймаємо оновлення через getUpdates.
       await this.call(token, 'deleteWebhook').catch(() => undefined);
     }
@@ -129,9 +154,9 @@ export class NotificationTelegramService {
 
   async adminState(): Promise<NotificationTelegramAdminState> {
     const settings = await this.getSettings();
-    const links = await prisma.notificationTelegramLink.findMany({ where: { chatId: { not: null } }, orderBy: { linkedAt: 'desc' } });
+    const links = (await linkedChats()).sort((a, b) => (b.linkedAt ?? '').localeCompare(a.linkedAt ?? ''));
     const users = links.length
-      ? await prisma.user.findMany({ where: { id: { in: links.map((l) => l.userId) } }, select: { id: true, name: true, email: true, roleName: true } })
+      ? await prisma.user.findMany({ where: { id: { in: links.map((l) => l.id) } }, select: { id: true, name: true, email: true, roleName: true } })
       : [];
     const byId = new Map(users.map((u) => [u.id, u]));
     const since = new Date(Date.now() - 7 * 24 * 3600 * 1000);
@@ -149,11 +174,11 @@ export class NotificationTelegramService {
       botTokenMasked: maskToken(settings.botToken),
       workerActive: isTelegramWorkerEnabled(),
       links: links.map((l) => ({
-        userId: l.userId,
-        name: byId.get(l.userId)?.name || byId.get(l.userId)?.email || `#${l.userId}`,
-        roleName: byId.get(l.userId)?.roleName ?? null,
+        userId: l.id,
+        name: byId.get(l.id)?.name || byId.get(l.id)?.email || `#${l.id}`,
+        roleName: byId.get(l.id)?.roleName ?? null,
         telegramUsername: l.username,
-        linkedAt: l.linkedAt?.toISOString() ?? null,
+        linkedAt: l.linkedAt,
       })),
       stats: Object.fromEntries(stats.map((s) => [s.status, s._count._all])),
       lastErrors: lastErrors.map((e) => ({ ...e, createdAt: e.createdAt.toISOString() })),
@@ -164,7 +189,7 @@ export class NotificationTelegramService {
 
   async linkStatus(userId: number): Promise<{ configured: boolean; linked: boolean; username: string | null }> {
     const settings = await this.getSettings();
-    const link = await prisma.notificationTelegramLink.findUnique({ where: { userId } });
+    const link = await linkOf(userId);
     return {
       configured: Boolean(settings.botToken && settings.enabled && settings.botUsername),
       linked: Boolean(link?.chatId),
@@ -179,21 +204,21 @@ export class NotificationTelegramService {
     }
     const code = randomBytes(12).toString('hex');
     const expires = new Date(Date.now() + LINK_TTL_MS);
-    await prisma.notificationTelegramLink.upsert({
-      where: { userId },
-      create: { userId, linkCode: code, linkCodeExpires: expires },
-      update: { linkCode: code, linkCodeExpires: expires },
+    await telegramLinkStore.mutate((draft) => {
+      const row = draft.items.find((l) => l.id === userId);
+      if (row) Object.assign(row, { linkCode: code, linkCodeExpires: expires.toISOString() });
+      else draft.items.push({ id: userId, chatId: null, username: null, firstName: null, linkCode: code, linkCodeExpires: expires.toISOString(), linkedAt: null });
     });
     return { url: `https://t.me/${settings.botUsername}?start=${code}`, expiresAt: expires.toISOString() };
   }
 
   async unlink(userId: number): Promise<void> {
-    await prisma.notificationTelegramLink.deleteMany({ where: { userId } });
+    await removeLinks((l) => l.id === userId);
   }
 
   async sendTest(userId: number): Promise<void> {
     const settings = await this.getSettings();
-    const link = await prisma.notificationTelegramLink.findUnique({ where: { userId } });
+    const link = await linkOf(userId);
     if (!settings.botToken) throw new NotificationTelegramError('Бот не налаштований');
     if (!link?.chatId) throw new NotificationTelegramError('Ваш Telegram не підключено до бота сповіщень');
     await this.call(settings.botToken, 'sendMessage', {
@@ -224,6 +249,7 @@ export class NotificationTelegramService {
       await this.pollUpdates(settings.botToken).catch((err) => logServer('[NotificationTelegram] getUpdates failed', err));
       await this.dispatch();
       await this.sendPending(settings.botToken);
+      await this.cleanupOutbox();
     } catch (err) {
       logServer('[NotificationTelegram] tick failed', err);
     } finally {
@@ -246,30 +272,31 @@ export class NotificationTelegramService {
       const chatId = String(msg.chat.id);
       const [command, arg] = msg.text.trim().split(/\s+/, 2);
       if (command === '/start' && arg) {
-        const link = await prisma.notificationTelegramLink.findUnique({ where: { linkCode: arg } });
-        if (!link || !link.linkCodeExpires || link.linkCodeExpires < new Date()) {
-          await this.reply(token, chatId, 'Посилання застаріло. Відкрийте нове в бекофісі: дзвіночок → шестерня → «Підключити Telegram».');
-          continue;
-        }
-        // Один чат – один користувач.
-        await prisma.notificationTelegramLink.deleteMany({ where: { chatId, userId: { not: link.userId } } });
-        await prisma.notificationTelegramLink.update({
-          where: { userId: link.userId },
-          data: {
+        const linked = await telegramLinkStore.mutate((draft) => {
+          const link = draft.items.find((l) => l.linkCode === arg);
+          if (!link || !link.linkCodeExpires || new Date(link.linkCodeExpires) < new Date()) return false;
+          // Один чат – один користувач.
+          draft.items = draft.items.filter((l) => l.chatId !== chatId || l.id === link.id);
+          Object.assign(link, {
             chatId,
             username: msg.from?.username ?? null,
             firstName: msg.from?.first_name ?? null,
-            linkedAt: new Date(),
+            linkedAt: new Date().toISOString(),
             linkCode: null,
             linkCodeExpires: null,
-          },
+          });
+          return true;
         });
+        if (!linked) {
+          await this.reply(token, chatId, 'Посилання застаріло. Відкрийте нове в бекофісі: дзвіночок → шестерня → «Підключити Telegram».');
+          continue;
+        }
         await this.reply(token, chatId, '✅ Підключено. Сюди приходитимуть сповіщення бекофісу, дозволені вашою роллю. Вимкнути: /stop');
       } else if (command === '/start') {
         await this.reply(token, chatId, 'Щоб отримувати сповіщення, відкрийте посилання з бекофісу: дзвіночок → шестерня → «Підключити Telegram».');
       } else if (command === '/stop') {
-        const removed = await prisma.notificationTelegramLink.deleteMany({ where: { chatId } });
-        await this.reply(token, chatId, removed.count ? 'Сповіщення вимкнено.' : 'Цей чат не підключено.');
+        const removed = await removeLinks((l) => l.chatId === chatId);
+        await this.reply(token, chatId, removed ? 'Сповіщення вимкнено.' : 'Цей чат не підключено.');
       }
     }
     await writeSetting(OFFSET_KEY, String(updates[updates.length - 1].update_id + 1), 'Центр сповіщень: offset getUpdates');
@@ -280,16 +307,16 @@ export class NotificationTelegramService {
   }
 
   private async recipients(): Promise<TelegramRecipient[]> {
-    const links = await prisma.notificationTelegramLink.findMany({ where: { chatId: { not: null } } });
+    const links = await linkedChats();
     if (!links.length) return [];
     const users = await prisma.user.findMany({
-      where: { id: { in: links.map((l) => l.userId) }, isActive: true },
+      where: { id: { in: links.map((l) => l.id) }, isActive: true },
       select: { id: true, role: true },
     });
     const prefs = await notificationPrefsService.getMany(users.map((u) => u.id));
     const out: TelegramRecipient[] = [];
     for (const u of users) {
-      const link = links.find((l) => l.userId === u.id)!;
+      const link = links.find((l) => l.id === u.id)!;
       out.push({
         userId: u.id,
         role: u.role,
@@ -351,6 +378,25 @@ export class NotificationTelegramService {
     return queued;
   }
 
+  private lastCleanupAt = 0;
+
+  /** Раз на 6 год: відправлені й пропущені старші за 7 днів, помилки старші за 30 днів. */
+  async cleanupOutbox(force = false): Promise<number> {
+    if (!force && Date.now() - this.lastCleanupAt < OUTBOX_CLEANUP_EVERY_MS) return 0;
+    this.lastCleanupAt = Date.now();
+    const day = 24 * 3600 * 1000;
+    const res = await prisma.notificationOutbox.deleteMany({
+      where: {
+        OR: [
+          { status: { in: ['sent', 'skipped'] }, createdAt: { lt: new Date(Date.now() - OUTBOX_KEEP_SENT_DAYS * day) } },
+          { status: 'failed', createdAt: { lt: new Date(Date.now() - OUTBOX_KEEP_FAILED_DAYS * day) } },
+        ],
+      },
+    });
+    if (res.count) logServer(`[NotificationTelegram] outbox cleanup: removed ${res.count}`);
+    return res.count;
+  }
+
   async sendPending(token: string): Promise<number> {
     const rows = await prisma.notificationOutbox.findMany({
       where: { status: 'pending', nextAttemptAt: { lte: new Date() } },
@@ -386,7 +432,7 @@ export class NotificationTelegramService {
             nextAttemptAt: new Date(Date.now() + retryDelayMs(attempts)),
           },
         });
-        if (blocked) await prisma.notificationTelegramLink.deleteMany({ where: { chatId: p.chatId } });
+        if (blocked) await removeLinks((l) => l.chatId === p.chatId);
       }
       await new Promise((r) => setTimeout(r, 60));
     }

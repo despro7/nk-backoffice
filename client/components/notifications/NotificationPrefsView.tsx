@@ -1,17 +1,24 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Switch } from '@heroui/react';
-import { DynamicIcon } from 'lucide-react/dynamic';
 import { NOTIFICATION_GROUPS, type NotificationGroupId } from '@shared/constants/notifications';
-import type { NotificationPrefsResponse, NotificationUserPrefsData } from '@shared/types/notifications';
+import type { NotificationPrefsResponse, NotificationTab, NotificationUserPrefsData } from '@shared/types/notifications';
 import { playNotificationSound } from './notificationSound';
 
 interface NotificationPrefsViewProps {
   data: NotificationPrefsResponse | null;
   onChange: (prefs: NotificationUserPrefsData) => void;
-  onBack: () => void;
   /** Блок Telegram (підключення бота), якщо налаштовано. */
   telegramSlot?: ReactNode;
+  /** Інструменти debug-режиму – в самому низу. */
+  debugSlot?: ReactNode;
 }
+
+const TAB_OPTIONS: Array<{ id: NotificationTab; label: string }> = [
+  { id: 'all', label: 'Всі' },
+  { id: 'mine', label: 'Мої' },
+  { id: 'errors', label: 'Помилки' },
+  { id: 'archive', label: 'Архів' },
+];
 
 function Row({
   title,
@@ -39,7 +46,7 @@ function Row({
 
 const SECTION = 'mb-1 mt-4 text-[11px] font-semibold uppercase tracking-wider text-default-500';
 
-export function NotificationPrefsView({ data, onChange, onBack, telegramSlot }: NotificationPrefsViewProps) {
+export function NotificationPrefsView({ data, onChange, telegramSlot, debugSlot }: NotificationPrefsViewProps) {
   const [prefs, setPrefs] = useState<NotificationUserPrefsData | null>(data?.prefs ?? null);
   useEffect(() => setPrefs(data?.prefs ?? null), [data]);
 
@@ -58,10 +65,29 @@ export function NotificationPrefsView({ data, onChange, onBack, telegramSlot }: 
 
   return (
     <div className="px-5 pb-5">
-      <button type="button" onClick={onBack} className="flex items-center gap-1 pt-3 text-[13px] text-default-500 hover:text-default-800">
-        <DynamicIcon name="chevron-left" size={15} />
-        До сповіщень
-      </button>
+      <div className={SECTION}>Вкладка за замовчуванням</div>
+      <div className="flex items-center justify-between gap-3 border-b border-default-100 py-2.5">
+        <div className="min-w-0 text-xs text-default-500">З неї дзвіночок відкривається вперше за сесію, далі – остання вибрана</div>
+        <div className="flex shrink-0 rounded-lg bg-default-100 p-0.5" role="radiogroup" aria-label="Вкладка за замовчуванням">
+          {TAB_OPTIONS.map((t) => {
+            const active = prefs.defaultTab === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => update({ defaultTab: t.id })}
+                className={`rounded-md px-2 py-1 text-xs transition-colors ${
+                  active ? 'bg-white font-medium text-default-900 shadow-sm' : 'text-default-500 hover:text-default-800'
+                }`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <div className={SECTION}>Групи в дзвіночку</div>
       {NOTIFICATION_GROUPS.map((g) => {
@@ -109,6 +135,8 @@ export function NotificationPrefsView({ data, onChange, onBack, telegramSlot }: 
           )}
         </>
       )}
+
+      {debugSlot}
     </div>
   );
 }

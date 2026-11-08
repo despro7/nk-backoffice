@@ -24,6 +24,7 @@ import type {
 } from '../../../shared/types/notificationSettings.js';
 import { notificationConfigService } from './NotificationConfigService.js';
 import { notificationFeedService, parseInitiator } from './NotificationFeedService.js';
+import { glossaryStore, nowIso, ruleStore, type StoredGlossaryEntry, type StoredRule } from './notificationStores.js';
 
 export class NotificationSettingsError extends Error {
   constructor(message: string, public status = 400, public details?: string[]) {
@@ -84,9 +85,24 @@ export function sanitizeRuleInput(body: any): Omit<NotificationRuleDef, 'id' | '
   };
 }
 
-function ruleSnapshot(row: { id: number; key: string | null; name: string; enabled: boolean; position: number; match: unknown; output: unknown }) {
+function ruleSnapshot(row: StoredRule) {
   return { id: row.id, key: row.key, name: row.name, enabled: row.enabled, position: row.position, match: row.match, output: row.output };
 }
+
+function glossarySnapshot(row: StoredGlossaryEntry) {
+  return { id: row.id, phrase: row.phrase, replacement: row.replacement, isRegex: row.isRegex, enabled: row.enabled, position: row.position };
+}
+
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+
+function findOr404<T extends { id: number }>(items: T[], id: number, message: string): T {
+  const row = items.find((r) => r.id === id);
+  if (!row) throw new NotificationSettingsError(message, 404);
+  return row;
+}
+
+const RULE_NOT_FOUND = 'Правило не знайдено';
+const GLOSSARY_NOT_FOUND = 'Запис не знайдено';
 
 export class NotificationSettingsService {
   private async revision(entity: 'rule' | 'glossary', entityId: number | null, action: string, before: unknown, after: unknown, userId: number) {
@@ -117,76 +133,98 @@ export class NotificationSettingsService {
     if (errors.length) throw new NotificationSettingsError('Правило містить помилки', 400, errors);
   }
 
-  async createRule(body: unknown, userId: number, position?: number): Promise<NotificationRuleDef> {
-    const input = sanitizeRuleInput(body);
-    const last = await prisma.notificationRule.aggregate({ _max: { position: true } });
-    const pos = typeof position === 'number' ? position : (last._max.position ?? 0) + 10;
-    this.assertValid({ ...input, position: pos });
-    const row = await prisma.notificationRule.create({
-      data: { name: input.name, enabled: input.enabled, position: pos, match: input.match as object, output: input.output as object, updatedById: userId || null },
-    });
-    await this.revision('rule', row.id, 'create', null, ruleSnapshot(row), userId);
-    this.changed();
-    return (await this.listRules()).find((r) => r.id === row.id)!;
-  }
-
-  async updateRule(id: number, body: unknown, userId: number): Promise<NotificationRuleDef> {
-    const before = await prisma.notificationRule.findUnique({ where: { id } });
-    if (!before) throw new NotificationSettingsError('Правило не знайдено', 404);
-    const input = sanitizeRuleInput(body);
-    this.assertValid({ ...input, position: before.position });
-    const row = await prisma.notificationRule.update({
-      where: { id },
-      data: { name: input.name, enabled: input.enabled, match: input.match as object, output: input.output as object, updatedById: userId || -1 },
-    });
-    await this.revision('rule', id, 'update', ruleSnapshot(before), ruleSnapshot(row), userId);
-    this.changed();
+  private async ruleById(id: number): Promise<NotificationRuleDef> {
     return (await this.listRules()).find((r) => r.id === id)!;
   }
 
+  async createRule(body: unknown, userId: number, position?: number): Promise<NotificationRuleDef> {
+    const input = sanitizeRuleInput(body);
+    const row = await ruleStore.mutate((draft) => {
+      const last = draft.items.reduce((max, r) => Math.max(max, r.position), 0);
+      const pos = typeof position === 'number' ? position : last + 10;
+      this.assertValid({ ...input, position: pos });
+      const created: StoredRule = {
+        id: draft.allocateId(),
+        key: null,
+        name: input.name,
+        enabled: input.enabled,
+        position: pos,
+        match: input.match,
+        output: input.output,
+        updatedById: userId || -1,
+        updatedAt: nowIso(),
+      };
+      draft.items.push(created);
+      return created;
+    });
+    await this.revision('rule', row.id, 'create', null, ruleSnapshot(row), userId);
+    this.changed();
+    return this.ruleById(row.id);
+  }
+
+  async updateRule(id: number, body: unknown, userId: number): Promise<NotificationRuleDef> {
+    const input = sanitizeRuleInput(body);
+    const [before, after] = await ruleStore.mutate((draft) => {
+      const row = findOr404(draft.items, id, RULE_NOT_FOUND);
+      this.assertValid({ ...input, position: row.position });
+      const prev = clone(row);
+      Object.assign(row, { name: input.name, enabled: input.enabled, match: input.match, output: input.output, updatedById: userId || -1, updatedAt: nowIso() });
+      return [prev, clone(row)];
+    });
+    await this.revision('rule', id, 'update', ruleSnapshot(before), ruleSnapshot(after), userId);
+    this.changed();
+    return this.ruleById(id);
+  }
+
   async setRuleEnabled(id: number, enabled: boolean, userId: number): Promise<void> {
-    const before = await prisma.notificationRule.findUnique({ where: { id } });
-    if (!before) throw new NotificationSettingsError('Правило не знайдено', 404);
-    const row = await prisma.notificationRule.update({ where: { id }, data: { enabled, updatedById: userId || -1 } });
-    await this.revision('rule', id, 'update', ruleSnapshot(before), ruleSnapshot(row), userId);
+    const [before, after] = await ruleStore.mutate((draft) => {
+      const row = findOr404(draft.items, id, RULE_NOT_FOUND);
+      const prev = clone(row);
+      Object.assign(row, { enabled, updatedById: userId || -1, updatedAt: nowIso() });
+      return [prev, clone(row)];
+    });
+    await this.revision('rule', id, 'update', ruleSnapshot(before), ruleSnapshot(after), userId);
     this.changed();
   }
 
   async deleteRule(id: number, userId: number): Promise<void> {
-    const before = await prisma.notificationRule.findUnique({ where: { id } });
-    if (!before) throw new NotificationSettingsError('Правило не знайдено', 404);
-    await prisma.notificationRule.delete({ where: { id } });
+    const before = await ruleStore.mutate((draft) => {
+      const row = findOr404(draft.items, id, RULE_NOT_FOUND);
+      draft.items = draft.items.filter((r) => r.id !== id);
+      return row;
+    });
     await this.revision('rule', id, 'delete', ruleSnapshot(before), null, userId);
     this.changed();
   }
 
   async reorderRules(ids: number[], userId: number): Promise<void> {
-    const rows = await prisma.notificationRule.findMany({ select: { id: true, position: true } });
-    const known = new Set(rows.map((r) => r.id));
-    const ordered = ids.filter((id) => known.has(id));
-    const rest = rows.filter((r) => !ordered.includes(r.id)).sort((a, b) => a.position - b.position).map((r) => r.id);
-    const finalOrder = [...ordered, ...rest];
-    const before = rows.sort((a, b) => a.position - b.position).map((r) => r.id);
-    await prisma.$transaction(
-      finalOrder.map((id, index) => prisma.notificationRule.update({ where: { id }, data: { position: (index + 1) * 10 } })),
-    );
+    const [before, finalOrder] = await ruleStore.mutate((draft) => {
+      const sorted = [...draft.items].sort((a, b) => a.position - b.position || a.id - b.id);
+      const known = new Set(sorted.map((r) => r.id));
+      const ordered = ids.filter((id) => known.has(id));
+      const rest = sorted.filter((r) => !ordered.includes(r.id)).map((r) => r.id);
+      const order = [...ordered, ...rest];
+      const positions = new Map(order.map((id, index) => [id, (index + 1) * 10]));
+      for (const row of draft.items) row.position = positions.get(row.id)!;
+      return [sorted.map((r) => r.id), order];
+    });
     await this.revision('rule', null, 'reorder', { order: before }, { order: finalOrder }, userId);
     this.changed();
   }
 
   /** Повертає стандартне правило до версії з коду (і знову вмикає автооновлення). */
   async resetRule(id: number, userId: number): Promise<NotificationRuleDef> {
-    const before = await prisma.notificationRule.findUnique({ where: { id } });
-    if (!before) throw new NotificationSettingsError('Правило не знайдено', 404);
-    const def = DEFAULT_NOTIFICATION_RULES.find((r) => r.key && r.key === before.key);
-    if (!def) throw new NotificationSettingsError('Це правило не стандартне, скидати нема до чого');
-    const row = await prisma.notificationRule.update({
-      where: { id },
-      data: { name: def.name, enabled: def.enabled, match: def.match as object, output: def.output as object, updatedById: null },
+    const [before, after] = await ruleStore.mutate((draft) => {
+      const row = findOr404(draft.items, id, RULE_NOT_FOUND);
+      const def = DEFAULT_NOTIFICATION_RULES.find((r) => r.key && r.key === row.key);
+      if (!def) throw new NotificationSettingsError('Це правило не стандартне, скидати нема до чого');
+      const prev = clone(row);
+      Object.assign(row, { name: def.name, enabled: def.enabled, match: def.match, output: def.output, updatedById: null, updatedAt: nowIso() });
+      return [prev, clone(row)];
     });
-    await this.revision('rule', id, 'reset', ruleSnapshot(before), ruleSnapshot(row), userId);
+    await this.revision('rule', id, 'reset', ruleSnapshot(before), ruleSnapshot(after), userId);
     this.changed();
-    return (await this.listRules()).find((r) => r.id === id)!;
+    return this.ruleById(id);
   }
 
   // ── Glossary ───────────────────────────────────────────────────────────────
@@ -209,32 +247,37 @@ export class NotificationSettingsService {
 
   async createGlossary(body: unknown, userId: number) {
     const data = this.sanitizeGlossary(body);
-    const last = await prisma.notificationGlossaryEntry.aggregate({ _max: { position: true } });
-    const row = await prisma.notificationGlossaryEntry.create({
-      data: { ...data, position: (last._max.position ?? 0) + 10, updatedById: userId || null },
+    const row = await glossaryStore.mutate((draft) => {
+      const last = draft.items.reduce((max, g) => Math.max(max, g.position), 0);
+      const created: StoredGlossaryEntry = { id: draft.allocateId(), ...data, position: last + 10, updatedById: userId || null, updatedAt: nowIso() };
+      draft.items.push(created);
+      return created;
     });
-    await this.revision('glossary', row.id, 'create', null, row, userId);
+    await this.revision('glossary', row.id, 'create', null, glossarySnapshot(row), userId);
     this.changed();
-    return row;
+    return glossarySnapshot(row);
   }
 
   async updateGlossary(id: number, body: unknown, userId: number) {
-    const before = await prisma.notificationGlossaryEntry.findUnique({ where: { id } });
-    if (!before) throw new NotificationSettingsError('Запис не знайдено', 404);
-    const row = await prisma.notificationGlossaryEntry.update({
-      where: { id },
-      data: { ...this.sanitizeGlossary(body), updatedById: userId || null },
+    const data = this.sanitizeGlossary(body);
+    const [before, after] = await glossaryStore.mutate((draft) => {
+      const row = findOr404(draft.items, id, GLOSSARY_NOT_FOUND);
+      const prev = clone(row);
+      Object.assign(row, data, { updatedById: userId || null, updatedAt: nowIso() });
+      return [prev, clone(row)];
     });
-    await this.revision('glossary', id, 'update', before, row, userId);
+    await this.revision('glossary', id, 'update', glossarySnapshot(before), glossarySnapshot(after), userId);
     this.changed();
-    return row;
+    return glossarySnapshot(after);
   }
 
   async deleteGlossary(id: number, userId: number) {
-    const before = await prisma.notificationGlossaryEntry.findUnique({ where: { id } });
-    if (!before) throw new NotificationSettingsError('Запис не знайдено', 404);
-    await prisma.notificationGlossaryEntry.delete({ where: { id } });
-    await this.revision('glossary', id, 'delete', before, null, userId);
+    const before = await glossaryStore.mutate((draft) => {
+      const row = findOr404(draft.items, id, GLOSSARY_NOT_FOUND);
+      draft.items = draft.items.filter((g) => g.id !== id);
+      return row;
+    });
+    await this.revision('glossary', id, 'delete', glossarySnapshot(before), null, userId);
     this.changed();
   }
 
@@ -274,49 +317,55 @@ export class NotificationSettingsService {
         return;
       }
       if (rev.action === 'create') {
-        if (rev.entityId != null && (await prisma.notificationRule.findUnique({ where: { id: rev.entityId } }))) {
+        if (rev.entityId != null && (await ruleStore.read()).some((r) => r.id === rev.entityId)) {
           await this.deleteRule(rev.entityId, userId);
         }
         return;
       }
       if (!before) throw new NotificationSettingsError('Немає стану для відкату');
-      const existing = await prisma.notificationRule.findUnique({ where: { id: before.id } });
       const def = before.key ? DEFAULT_NOTIFICATION_RULES.find((r) => r.key === before.key) : undefined;
       // Повернули рівно до стандартної версії – правило знову оновлюється разом із кодом.
       const isDefault = !!def && JSON.stringify([def.name, def.enabled, def.match, def.output]) ===
         JSON.stringify([before.name, before.enabled, before.match, before.output]);
-      const data = { name: before.name, enabled: before.enabled, match: before.match, output: before.output, updatedById: isDefault ? null : userId || -1 };
-      if (existing) {
-        const row = await prisma.notificationRule.update({ where: { id: existing.id }, data });
-        await this.revision('rule', existing.id, 'revert', ruleSnapshot(existing), ruleSnapshot(row), userId);
-      } else {
-        const keyTaken = before.key ? await prisma.notificationRule.findUnique({ where: { key: before.key } }) : null;
-        const row = await prisma.notificationRule.create({
-          data: { ...data, key: keyTaken ? null : before.key ?? null, position: before.position ?? 0 },
-        });
-        await this.revision('rule', row.id, 'revert', null, ruleSnapshot(row), userId);
-      }
+      const data = { name: before.name, enabled: before.enabled, match: before.match, output: before.output, updatedById: isDefault ? null : userId || -1, updatedAt: nowIso() };
+      const [prev, after] = await ruleStore.mutate((draft) => {
+        const existing = draft.items.find((r) => r.id === before.id);
+        if (existing) {
+          const old = clone(existing);
+          Object.assign(existing, data);
+          return [old, clone(existing)] as const;
+        }
+        const keyTaken = before.key ? draft.items.some((r) => r.key === before.key) : false;
+        const created: StoredRule = { id: draft.allocateId(), key: keyTaken ? null : before.key ?? null, position: before.position ?? 0, ...data };
+        draft.items.push(created);
+        return [null, created] as const;
+      });
+      await this.revision('rule', after.id, 'revert', prev ? ruleSnapshot(prev) : null, ruleSnapshot(after), userId);
       this.changed();
       return;
     }
 
     // glossary
     if (rev.action === 'create') {
-      if (rev.entityId != null && (await prisma.notificationGlossaryEntry.findUnique({ where: { id: rev.entityId } }))) {
+      if (rev.entityId != null && (await glossaryStore.read()).some((g) => g.id === rev.entityId)) {
         await this.deleteGlossary(rev.entityId, userId);
       }
       return;
     }
     if (!before) throw new NotificationSettingsError('Немає стану для відкату');
-    const data = { phrase: before.phrase, replacement: before.replacement, isRegex: Boolean(before.isRegex), enabled: before.enabled !== false };
-    const existing = await prisma.notificationGlossaryEntry.findUnique({ where: { id: before.id } });
-    if (existing) {
-      const row = await prisma.notificationGlossaryEntry.update({ where: { id: existing.id }, data });
-      await this.revision('glossary', existing.id, 'revert', existing, row, userId);
-    } else {
-      const row = await prisma.notificationGlossaryEntry.create({ data: { ...data, position: before.position ?? 0 } });
-      await this.revision('glossary', row.id, 'revert', null, row, userId);
-    }
+    const data = { phrase: before.phrase, replacement: before.replacement, isRegex: Boolean(before.isRegex), enabled: before.enabled !== false, updatedById: userId || null, updatedAt: nowIso() };
+    const [prev, after] = await glossaryStore.mutate((draft) => {
+      const existing = draft.items.find((g) => g.id === before.id);
+      if (existing) {
+        const old = clone(existing);
+        Object.assign(existing, data);
+        return [old, clone(existing)] as const;
+      }
+      const created: StoredGlossaryEntry = { id: draft.allocateId(), position: before.position ?? 0, ...data };
+      draft.items.push(created);
+      return [null, created] as const;
+    });
+    await this.revision('glossary', after.id, 'revert', prev ? glossarySnapshot(prev) : null, glossarySnapshot(after), userId);
     this.changed();
   }
 

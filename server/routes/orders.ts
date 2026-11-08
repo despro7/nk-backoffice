@@ -1154,7 +1154,8 @@ router.put('/:id/status', authenticateToken, async (req, res) => {
           dilovodAutoExportService.processOrderStatusChange(
             orderId,
             nextStatus,
-            'manual'
+            // Автор зміни статусу – справжній ініціатор авто-експорту (у сповіщеннях «Ім'я (авто)»).
+            authUser?.userId && authUser.userId > 0 ? `manual:by:${authUser.userId}` : 'manual'
           )
         )
         .catch(err =>

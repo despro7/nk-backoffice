@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { BTN_PRIMARY_BLUE } from '@/lib/buttonStyles';
 import { Button } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { NotificationPrefsResponse } from '@shared/types/notifications';
@@ -85,7 +86,7 @@ export function NotificationTelegramConnect({ telegram, onRefresh }: Props) {
     <div className="flex flex-col gap-2 py-2">
       <Button
         size="sm"
-        color="primary"
+        className={BTN_PRIMARY_BLUE}
         startContent={<DynamicIcon name={busy ? 'loader-2' : 'send'} size={14} className={busy ? 'animate-spin' : ''} />}
         isDisabled={busy}
         onPress={connect}

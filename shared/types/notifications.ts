@@ -78,6 +78,59 @@ export type NotificationServiceId =
 /** null – активне; mine – архівовано користувачем; resolved – «Вирішено» адміністратором. */
 export type NotificationArchiveState = null | 'mine' | 'resolved';
 
+/** Один запуск дії, що створив запис журналу. */
+export interface NotificationAttempt {
+  /** Ім'я користувача, канал («SalesDrive») або «автоматично». */
+  label: string;
+  /** Для аватара в підказці: користувач або сервіс. */
+  source: NotificationSource;
+  at: string;
+}
+
+export type NotificationDocumentKind = 'release' | 'movement' | 'writeOff';
+
+export interface NotificationDocumentItem {
+  sku: string | null;
+  name: string;
+  quantity: number;
+  batch: string | null;
+  /** Рядок набору (комплект) – компоненти йдуть після нього. */
+  isGroup?: boolean;
+}
+
+/** Позиція з помилки «Недостатня кількість» від Діловода. */
+export interface NotificationShortageRow {
+  name: string;
+  sku: string | null;
+  batch: string | null;
+  needed: number | null;
+  stock: number | null;
+  missing: number | null;
+}
+
+/** GET /api/notifications/:id/document */
+export interface NotificationDocument {
+  kind: NotificationDocumentKind;
+  title: string;
+  docNumber: string | null;
+  localId: number | null;
+  status: string | null;
+  date: string | null;
+  authorName: string | null;
+  storageId: string | null;
+  storageToId: string | null;
+  comment: string | null;
+  /** Причина, з якою Діловод не прийняв документ. */
+  error: string | null;
+  /** Розібрані позиції з помилки про нестачу; порожньо – текст помилки іншого виду. */
+  shortage: NotificationShortageRow[];
+  /** Перше речення помилки над таблицею нестачі («Документ не збережено. Недостатня кількість.»). */
+  errorSummary: string | null;
+  /** Є – документ можна відкрити в дровері Діловода. */
+  dilovodDocId: string | null;
+  items: NotificationDocumentItem[];
+}
+
 export interface NotificationFeedItem {
   /** Найновіший meta_logs.id у групі однакових сповіщень. */
   id: number;
@@ -102,6 +155,12 @@ export interface NotificationFeedItem {
   source: NotificationSource;
   /** Канал виклику: cron / webhook / salesdrive / manual – для підпису «через …». */
   via: string | null;
+  /** Номер документа для рядка мета-даних: №замовлення або номер складського документа. */
+  docNumber: string | null;
+  /** Кожен запуск дії у згорнутих повторах, найновіший першим (до 20). */
+  attempts: NotificationAttempt[];
+  /** Сповіщення про складський документ: кнопка відкриває дровер документа. */
+  hasDocument: boolean;
   action: { label: string; link: string } | null;
   /** Правило, що сформувало рядок; null – «Без шаблону». */
   ruleId: number | null;
@@ -132,12 +191,15 @@ export interface NotificationUserPrefsData {
   mutedTgGroups: NotificationGroupId[];
   /** Звуковий сигнал при новому сповіщенні. */
   sound: boolean;
+  /** Вкладка, з якої дзвіночок відкривається вперше за сесію. */
+  defaultTab: NotificationTab;
 }
 
 export const DEFAULT_NOTIFICATION_USER_PREFS: NotificationUserPrefsData = {
   mutedGroups: [],
   mutedTgGroups: [],
   sound: false,
+  defaultTab: 'mine',
 };
 
 export interface NotificationPrefsResponse {

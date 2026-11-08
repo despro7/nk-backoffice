@@ -41,6 +41,7 @@ public/version.json
 
 # Локальні завантаження каталогу (зображення товарів)
 uploads/
+storage/
 
 # Локальний cloudflared (credentials-file з UUID)
 config/cloudflared/chatwoot-dev.yml

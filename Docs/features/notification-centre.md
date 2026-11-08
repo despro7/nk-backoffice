@@ -20,7 +20,7 @@
 
 ## Рушій правил
 
-Таблиця `notification_rules` (Prisma `NotificationRule`), порядок за `position`, **перше увімкнене правило, що підійшло, перемагає**.
+Ключ `notification_rules` у `settings_base` (JSON `{ nextId, items }`, див. «Зберігання»), порядок за `position`, **перше увімкнене правило, що підійшло, перемагає**.
 
 **Збіг (`match`)**: `categories`, `statuses`, regex по `title` / `message` / `initiatedBy` (регістр ігнорується), `dataHas` (шлях у `data`).
 Іменовані групи regex (`(?<sku>\S+)`) стають змінними шаблонів.
@@ -33,7 +33,7 @@
 
 Без правила: сирий текст, група з категорії, видимі лише `error` / `warning`, посилання з `data.link` або `/orders/<orderNumber>`.
 
-**Словник** (`notification_glossary`) застосовується після правил до всіх сповіщень: буквальна фраза або regex → заміна (англ. → укр., прибирання HTML).
+**Словник** (ключ `notification_glossary` у `settings_base`) застосовується після правил до всіх сповіщень: буквальна фраза або regex → заміна (англ. → укр., прибирання HTML).
 
 **Безпека regex**: синтаксис, прапорці, довжина ≤ 500, заборона вкладених квантифікаторів (`(a+)+`); вхідний текст обрізається до 4000 символів (`validatePattern`, `validateRule`).
 
@@ -41,7 +41,7 @@
 
 `shared/notifications/defaultRules.ts`, зібрані з реальних записів `meta_logs`: нестача товару (список позицій «• Назва (арт. X): бракує N шт, є M»), договір на іншого контрагента, `multithreadApiSession`, мапінг оплат, `cant set value of …`, `object locked`, переміщення / списання / комплектування, автофіналізація, штрих-коди, модерація специфікацій, звіти користувачів. Рутинні success Діловода і аудит (`Sale date changed`, `Shipment date confirmed`) приховані.
 
-Засів при порожній таблиці. Далі один раз на запуск сервера стандартні правила, яких ніхто не редагував (`updatedById = null`), оновлюються з коду, нові – додаються (крім видалених вручну, див. `notification_config_revisions`).
+Засів при першому запуску (ключа ще немає). Далі один раз на запуск сервера стандартні правила, яких ніхто не редагував (`updatedById = null`), оновлюються з коду, нові – додаються (крім видалених вручну, див. `notification_config_revisions`).
 
 ## Стрічка (API)
 
@@ -50,11 +50,11 @@
 | Вкладка | Що показує |
 |---------|-----------|
 | Всі | Видимі й не в архіві |
-| Мої | Адресні (`data.recipients` містить мене) + ініційовані мною (`initiatedBy = userId`) |
+| Мої | Адресні (`data.recipients` містить мене) + ініційовані мною (`initiatedBy` = мій userId або `manual:by:<userId>`); згорнутий рядок – мій, якщо я запускав хоч одну копію |
 | Помилки | `level` = `error` або `warning` |
 | Архів | Архівовані мною (`hiddenBy[userId]`) і «Вирішено» адміністратором (`hiddenBy._all`) |
 
-`counts.all|mine|errors` – непрочитані, `counts.archive` – загальна кількість. Вікно: 30 днів, до 600 записів.
+`counts.all|mine|errors` – непрочитані, `counts.archive` – загальна кількість (у дропдауні не показується). Вікно: 30 днів, до 600 записів.
 
 Видимість для користувача:
 
@@ -63,24 +63,50 @@
 3. адресні (`data.recipients`) – лише адресатам, **незалежно від матриці ролі**;
 4. інші – право ролі `action.notify.<group>.<level>.app` (адміністратор бачить усе).
 
-Однакові сповіщення (правило + група + текст + замовлення) згортаються в один рядок з лічильником `×N`; рядок непрочитаний, поки непрочитана хоч одна копія.
+Однакові сповіщення (стан архіву + правило + група + текст + замовлення) згортаються в один рядок з лічильником `×N`, без часового вікна; рядок непрочитаний, поки непрочитана хоч одна копія. Через стан архіву незаархівована копія і «Вирішено» – різні рядки; копія, закрита «Вирішено», приєднується до вже вирішених, а «Архівовано вами» лишається окремим рядком.
+
+Елемент стрічки несе `source` (аватар: сервіс транзакції – Діловод, SalesDrive, склад…; користувач лише для категорій без сервісу, напр. `user_report`), `docNumber` (номер замовлення або складського документа), `attempts` (хто запускав, нові зверху, до 20) і `hasDocument`.
 
 Дії (тіло `{ ids: number[] }`): `PUT /read`, `PUT /archive` (також позначає прочитаним), `PUT /unarchive`, `PUT /resolve` (адмін, ховає для всіх).
 
 Продуктивність: рендер не залежить від користувача, тож відрендерені записи кешуються за `meta_logs.id` і версією конфігу. Кожне опитування читає лише `id`, `readBy`, `hiddenBy`; важкий `data` – тільки для нових записів.
 
-Ініціатор: `initiatedBy` = userId (ручний експорт раніше писав `manual:user:<email>`, такі записи зіставляються за email).
+Ініціатор (`resolveAttempt` у `shared/notifications/feedPresentation.ts`):
+
+| `initiatedBy` | Підпис | Аватар |
+|---------------|--------|--------|
+| userId (`manual:user:<email>` у старих записах, зіставляється за email) | Імʼя | ініціали |
+| `manual:by:<userId>` – авто-експорт після зміни статусу в бекофісі | «Імʼя (авто)» | ініціали автора |
+| `manual` – старі записи зміни статусу без автора | «Зміна статусу (авто)» | іконка комплектації |
+| `salesdrive:webhook` | «SalesDrive (API)» | логотип SalesDrive |
+| `cron:*` | «Cron» | годинник |
+| `webhook:*` | «Webhook» | іконка вебхука |
+| порожньо | «автоматично» | сервіс сповіщення |
+
+Дедуплікація авто-експорту (`DilovodAutoExportService`) вважає ручним будь-який `manual*`, тож вебхук SalesDrive після зміни статусу в бекофісі повторно не запускає експорт.
+
+`GET /api/notifications/:id/document` → `NotificationDocument` (`NotificationDocumentService`): тип за записом журналу (`releaseId` – комплектування, `draftId` / `docId` переміщення – переміщення, `WriteOff export failed` – списання), локальний запис з позиціями й партіями або, для списання, спроба відправки з payload. Помилка Діловода розгортається з JSON (`readableError`); «Недостатня кількість» розбирається в рядки `shortage` (назва, артикул, партія, потрібно, залишок, бракує) і `errorSummary`. Доступ – як до самого сповіщення.
 
 ## Дропдаун (дзвіночок)
 
 `client/components/NotificationBell.tsx` + `client/components/notifications/{NotificationPanel,NotificationRow,NotificationAvatar}.tsx`, дані – `client/hooks/useNotificationFeed.ts`.
 
 - Хедер: «Сповіщення» і посилання «Детальний звіт» (`/reports/meta-logs`). Масового «Позначити все прочитаним» для користувачів немає.
-- Вкладки з лічильниками непрочитаних; у «Помилках» лічильник червоний.
-- Рядок: аватар (ініціали користувача або іконка сервісу) з точкою рівня (задача – синя), заголовок, `×N` для повторів, мета «хто · коли · група · через … · №замовлення», текст обрізано до 2 рядків.
-- Дії: основна кнопка (`action`), «Вирішено» для адміністратора (лише `alert`), «Показати лог» **лише в debug-режимі**. При наведенні: «Позначити прочитаним», «В архів» / «Повернути з архіву». Клік по рядку позначає прочитаним.
-- Debug-режим: тонкий футер з глобальними Read all / Hide all / Reset read; адміністратор бачить позначку «Без шаблону» на рядках без правила (веде в налаштування).
-- Опитування: закритий дропдаун – кожні 30 с лише лічильники (`limit=1`); відкритий – активна вкладка повністю.
+- Вкладки з лічильниками непрочитаних (у «Помилках» червоний, в «Архіві» лічильника немає) і шестерня-вкладка з налаштуваннями; інші вкладки при цьому лишаються видимими.
+- Стартова вкладка: остання відкрита в цій сесії браузера (`sessionStorage`), інакше «Вкладка за замовчуванням» з особистих налаштувань (типово «Мої»).
+- Рядок: аватар сервісу (Діловод – жовтий знак на блідо-жовтому, SalesDrive – логотип) з точкою рівня, заголовок, `×N` (жовтий, круглий), «Вирішено» / «Архівовано вами» в рядку заголовка.
+- Мета: «дата • хто запускав • номер документа». При повторах біля імені іконка, тултіп «Запускали» – аватар, підпис і дата кожного запуску. Категорія не показується (видно з аватара).
+- Текст: 2 рядки; клік розгортає до 5; якщо й цього мало – «Повний текст» відкриває дровер.
+- Основна кнопка (primary):
+  - «Відкрити замовлення» (експорт у Діловод) – дровер деталей замовлення, як на «Стан замовлень»;
+  - «Відкрити документ» – дровер документа (`NotificationDocumentDrawer`): дата, автор, склад(и), помилка Діловода (нестача – таблицею «Бракує на складі», сира відповідь під спойлером), коментар, позиції; «Документ у Діловоді», якщо він там є;
+  - посилання `/api/...` (скріншот звіту) – нова вкладка.
+- Інші дії: «Вирішено» для адміністратора (лише `alert`), «Показати лог» **лише в debug-режимі**. При наведенні: «Позначити прочитаним», «В архів» / «Повернути з архіву». Клік по рядку позначає прочитаним.
+- Debug-режим: блок «Debug Mode» внизу вкладки налаштувань (кольори danger, з поясненнями): offset, Read all / Hide all для всіх, «Скинути мої позначки прочитано» з підтвердженням. Адміністратор бачить позначку «Без шаблону» на рядках без правила.
+- Дропдаун не закривається від скролу сторінки (`shouldCloseOnScroll={false}`), інакше скрол над тултіпом його закривав.
+- Опитування: закритий дропдаун – кожні 30 с лише лічильники (`limit=1`); відкритий – активна вкладка повністю. Скелетон завантаження з відблиском.
+
+**Звіт про помилку від користувача:** заголовок «Звіт про помилку від користувача {{actor}}», кнопка «Відкрити скріншот» (`GET /api/support-reports/:id/screenshot`, лише адмін). Скріншот зберігається в `storage/support-reports/` 30 днів (`SupportReportScreenshotStore`, очищення раз на 6 год). На продакшні `storage/` має переживати деплой, як `uploads/`.
 
 ## Налаштування: `/settings/notifications`
 
@@ -107,8 +133,9 @@
 
 ## Персональні налаштування (шестерня)
 
-Шестерня біля вкладок відкриває налаштування в самому дропдауні (`NotificationPrefsView`), зберігаються в `notification_user_prefs` (`GET/PUT /api/notifications/prefs`):
+Шестерня біля вкладок відкриває налаштування в самому дропдауні (`NotificationPrefsView`), зберігаються в ключі `notification_user_prefs` у `settings_base` (`GET/PUT /api/notifications/prefs`):
 
+- **Вкладка за замовчуванням:** з якої відкривається дзвіночок у новій сесії (типово «Мої»).
 - **Групи в дзвіночку:** вимкнути можна лише ті, що дозволяє роль; заборонені роллю показані неактивними. Адресних сповіщень не стосується.
 - **Звук:** короткий сигнал (Web Audio), коли зростає кількість непрочитаних під час опитування.
 - **Telegram:** підключення бота й вимкнення груп для Telegram (див. «Telegram»).
@@ -120,7 +147,7 @@
 
 **Налаштування** (адмін, вкладка «Telegram» у `/settings/notifications`): токен з @BotFather (перевіряється `getMe`, зберігається в `settings_base.notification_telegram`, у UI маскований), перемикач «Розсилка увімкнена», «Надіслати собі тест», список підключених з відключенням, статистика outbox за 7 днів і останні помилки. Новий токен скидає всі привʼязки.
 
-**Підключення працівника:** дзвіночок → шестерня → «Підключити Telegram» → одноразове посилання `t.me/<bot>?start=<code>` (15 хв). Бот отримує `/start <code>` через `getUpdates` і привʼязує `chat_id` (`notification_telegram_links`). `/stop` у боті – відключення. Після підключення в шестерні можна вимкнути окремі групи для Telegram.
+**Підключення працівника:** дзвіночок → шестерня → «Підключити Telegram» → одноразове посилання `t.me/<bot>?start=<code>` (15 хв). Бот отримує `/start <code>` через `getUpdates` і привʼязує `chat_id` (ключ `notification_telegram_links` у `settings_base`). `/stop` у боті – відключення. Після підключення в шестерні можна вимкнути окремі групи для Telegram.
 
 **Хто отримує:** запис видимий (правило не «Лише журнал») і
 
@@ -141,8 +168,21 @@
 | Константи | `shared/constants/notifications.ts` |
 | Типи | `shared/types/notificationRules.ts`, `shared/types/notifications.ts` |
 | Рушій | `shared/notifications/ruleEngine.ts` (+ spec), `shared/notifications/defaultRules.ts` |
-| Клієнт | `client/components/NotificationBell.tsx`, `client/components/notifications/*`, `client/hooks/useNotificationFeed.ts` |
-| Сервер | `server/modules/Notifications/{NotificationConfigService,NotificationFeedService,notificationFeed}.ts` (+ spec), `server/routes/notifications.ts` |
+| Клієнт | `client/components/NotificationBell.tsx`, `client/components/notifications/*` (у т.ч. `NotificationDocumentDrawer`, `NotificationDebugTools`, `useOrderDetailsDrawer`), `client/hooks/useNotificationFeed.ts` |
+| Сервер | `server/modules/Notifications/{NotificationConfigService,NotificationFeedService,notificationFeed,NotificationDocumentService}.ts` (+ spec), `server/routes/notifications.ts` |
+| Скріншоти звітів | `server/services/SupportReportScreenshotStore.ts`, `server/routes/support-reports.ts` |
 | Налаштування | `client/pages/SettingsNotifications/**`, `client/services/NotificationSettingsService.ts`, `server/routes/notification-settings.ts`, `server/modules/Notifications/NotificationSettingsService.ts`, `shared/types/notificationSettings.ts`, `shared/notifications/feedPresentation.ts` |
 | Telegram | `server/modules/Notifications/{NotificationTelegramService,telegramDelivery}.ts`, `client/components/notifications/NotificationTelegramConnect.tsx`, `client/pages/SettingsNotifications/components/TelegramTab.tsx` |
-| БД | `notification_rules`, `notification_glossary`, `notification_config_revisions`, `notification_user_prefs`, `notification_telegram_links`, `notification_outbox` |
+| БД | таблиці `notification_config_revisions`, `notification_outbox`; ключі `settings_base` (category `notifications`): `notification_rules`, `notification_glossary`, `notification_user_prefs`, `notification_telegram_links`, `notification_telegram`, курсор і offset Telegram |
+
+## Зберігання
+
+Окремі таблиці лише там, де вони потрібні:
+
+- `notification_outbox` – черга Telegram: росте постійно, рядки атомарно забираються воркером, антиспам рахується запитом. Очищення раз на 6 год: `sent` / `skipped` старші за 7 днів, `failed` старші за 30 днів (`NotificationTelegramService.cleanupOutbox`).
+- `notification_config_revisions` – історія змін правил і словника для відкату. Росте лише при редагуванні.
+
+Решта – малі списки, що рідко змінюються, у `settings_base` як JSON `{ "nextId": N, "items": [...] }` (`server/modules/Notifications/jsonCollection.ts`, ключі в `notificationStores.ts`). Запис іде під блокуванням рядка (`SELECT … FOR UPDATE` у транзакції), тож два адміни чи два інстанси не перезаписують зміни одне одного. `nextId` не повторює id видалених записів (на них посилаються ревізії). Для `notification_user_prefs` і `notification_telegram_links` `id` = `userId`.
+
+Перенесення з таблиць: міграція `20261109120000_notification_config_to_settings_base` (JSON збирається як текст, бо в MariaDB JSON-колонки – LONGTEXT).
+
