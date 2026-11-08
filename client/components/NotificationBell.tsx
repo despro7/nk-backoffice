@@ -1,262 +1,52 @@
-import { useState, useCallback, useRef } from 'react';
-import {
-  Button,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-  ScrollShadow,
-  Chip,
-} from '@heroui/react';
+import { useCallback, useRef, useState } from 'react';
+import { Popover, PopoverContent, PopoverTrigger } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import type { AppNotification, NotificationSeverity } from '../../shared/types/notifications';
-import { useNotifications } from '../hooks/useNotifications';
+import type { NotificationFeedItem } from '@shared/types/notifications';
+import { useNotificationFeed } from '../hooks/useNotificationFeed';
 import { useDebug } from '../contexts/debug-context';
 import { useRolePreview } from '../contexts/role-preview-context';
+import { NotificationPanel } from './notifications/NotificationPanel';
 import ResultDrawer from './ResultDrawer';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const SEVERITY_CONFIG: Record<
-  NotificationSeverity,
-  { icon: string; chipColor: 'danger' | 'warning' | 'primary' | 'success'; dotClass: string; rowClass: string }
-> = {
-  error:   { icon: 'alert-circle',   chipColor: 'danger',  dotClass: 'bg-danger',   rowClass: 'border-l-danger-300   bg-danger-50/80'   },
-  warning: { icon: 'alert-triangle', chipColor: 'warning', dotClass: 'bg-warning',  rowClass: 'border-l-warning-300  bg-warning-50/80'  },
-  info:    { icon: 'info',           chipColor: 'primary', dotClass: 'bg-primary',  rowClass: 'border-l-primary-300  bg-primary-50/80'  },
-  success: { icon: 'check-circle',   chipColor: 'success', dotClass: 'bg-success',  rowClass: 'border-l-success-300  bg-success-50/80'  },
-};
-
-function formatRelativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1)  return 'щойно';
-  if (mins < 60) return `${mins} хв тому`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24)  return `${hrs} год тому`;
-  const days = Math.floor(hrs / 24);
-  return `${days} дн тому`;
-}
-
-// ─── Category / title translations ────────────────────────────────────────────
-
-const TITLE_LABELS: Record<string, string> = {
-  // Manual export (dilovod.ts)
-	'Export failed':                                           				'Помилка експорту замовлення в Діловод',
-  'Dilovod export result':                                          'Експорт замовлення в Діловод',
-  'Dilovod shipment export result':                                 'Відвантаження замовлення в Діловод',
-  // DilovodExportBuilder
-  'Експорт замовлення заблоковано - немає товарів для відправки':   'Експорт заблоковано — немає товарів',
-  // DilovodAutoExportService
-  'Auto export result (saleOrder)':                                 'Авто-експорт замовлення',
-  'Auto export error (saleOrder)':                                  'Помилка авто-експорту замовлення',
-  'Auto shipment export result (sale)':                             'Авто-відвантаження замовлення',
-  'Auto shipment error (sale)':                                     'Помилка авто-відвантаження',
-  // Product sync errors
-  'Товар без ціни':                                                 'Товар без ціни',
-  'Товар без штрих-коду':                                           'Товар без штрих-коду',
-  'Невірні дані товару':                                           'Невірні дані товару',
-  'Помилка бази даних':                                            'Помилка бази даних',
-  'Помилка валідації':                                             'Помилка валідації',
-  'Помилка синхронізації товару':                                  'Помилка синхронізації товару',
-  'Помилка синхронізації':                                         'Помилка синхронізації',
-};
-
-const CATEGORY_LABELS: Record<string, string> = {
-  'dilovod':     		'Діловод',
-  'dilovod-export': 'Експорт у Діловод',
-  'orders_sync': 		'Синхронізація замовлень',
-  'webhook':     		'Webhook',
-  'cron':        		'Планове завдання',
-  'sync':        		'Синхронізація',
-  'system':      		'Система',
-  'manual':      		'Ручна дія',
-  'product_sync': 		'Синхронізація товарів',
-  'user_report': 		'Звіт користувача',
-  'support_report': 	'Налаштування звітів',
-  'default':     		'Загальне',
-  'catalog_spec':		'Специфікація товару',
-};
-
-function translateTitle(notification: AppNotification): string {
-  if (notification.title && TITLE_LABELS[notification.title]) {
-    return TITLE_LABELS[notification.title];
-  }
-  return notification.title || 'Лог';
-}
-
-function translateCategory(category: string): string {
-  return CATEGORY_LABELS[category] ?? category;
-}
-
-// ─── NotificationRow ──────────────────────────────────────────────────────────
-
-interface NotificationRowProps {
-  notification: AppNotification;
-  onMarkRead: (id: number) => void;
-  onOpenLog: (n: AppNotification) => void;
-  /** Перехід за внутрішнім посиланням сповіщення (напр. картка товару). */
-  onOpenLink?: (n: AppNotification) => void;
-  isAdmin?: boolean;
-  onResolve?: (id: number) => void;
-}
-
-function NotificationRow({ notification, onMarkRead, onOpenLog, onOpenLink, isAdmin, onResolve }: NotificationRowProps) {
-  const cfg = SEVERITY_CONFIG[notification.severity];
-
-  return (
-    <div
-      className={`
-        relative flex flex-col border-l-3 rounded-lg
-        ${cfg.rowClass}
-        ${notification.read ? 'opacity-60' : ''}
-      `}
-    >
-      {/* Header */}
-      <div className="flex gap-3 px-3 pt-3 pb-2">
-        {/* Severity icon */}
-        <div className="flex-shrink-0 mt-0.5">
-          <DynamicIcon name={cfg.icon as any} size={16} className={`text-${cfg.chipColor}`} />
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2 mb-1">
-            <p className="text-sm font-semibold text-gray-900 leading-tight">
-              {translateTitle(notification)}
-            </p>
-            <span className="text-[11px] text-gray-400 flex-shrink-0">
-              {formatRelativeTime(notification.createdAt)}
-            </span>
-          </div>
-          <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-wrap break-words">
-            {notification.message}
-          </p>
-					{notification.orderNumber && (
-						<span className="text-xs">
-							Замовлення: <span className="font-medium text-gray-600">{notification.orderNumber}</span>
-						</span>
-					)}
-					<div className="flex items-center gap-2 mt-2 flex-wrap">
-						{notification.tag && (
-							<Chip size="sm" variant="flat" color={cfg.chipColor} className="h-4 text-[10px] px-1">
-								{notification.tag}
-							</Chip>
-						)}
-            {notification.category && (
-              <Chip size="sm" variant="flat" color="default" className="h-4 text-[10px] px-1">
-                {translateCategory(notification.category)}
-              </Chip>
-            )}
-          </div>
-        </div>
-
-        {/* Unread dot */}
-        {!notification.read && (
-          <span className={`absolute top-2 right-2 w-2 h-2 rounded-full flex-shrink-0 ${cfg.dotClass}`} />
-        )}
-      </div>
-
-      {/* Footer: кнопки по краях */}
-      <div className="flex items-center justify-between pl-10 pr-3 py-2 border-t border-black/5">
-        {notification.link && onOpenLink ? (
-          <button
-            onClick={() => { onOpenLink(notification); if (!notification.read) onMarkRead(notification.id); }}
-            className="flex items-center gap-1 text-[11px] text-primary hover:text-primary-600 transition-colors"
-          >
-            <DynamicIcon name="arrow-up-right" size={11} />
-            Відкрити
-          </button>
-        ) : (
-          <button
-            onClick={() => { onOpenLog(notification); if (!notification.read) onMarkRead(notification.id); }}
-            className="flex items-center gap-1 text-[11px] text-primary hover:text-primary-600 transition-colors"
-          >
-            <DynamicIcon name="external-link" size={11} />
-            Показати лог
-          </button>
-        )}
-        {!notification.read && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onMarkRead(notification.id); }}
-            title="Позначити прочитаним"
-            className={`flex items-center gap-1 text-[11px] text-${cfg.chipColor} hover:opacity-70 transition-opacity`}
-          >
-            <DynamicIcon name="check" size={11} />
-            Прочитано
-          </button>
-        )}
-        {isAdmin && onResolve && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onResolve(notification.id); }}
-            title="Вирішено — сховати для всіх"
-            className="flex items-center gap-1 text-[11px] text-success-600 bg-success-50 hover:bg-success-100 px-2 py-0.5 rounded-full transition-colors border border-success-200"
-          >
-            <DynamicIcon name="check-check" size={11} />
-            Вирішено
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // ─── DebugFooter ──────────────────────────────────────────────────────────────
 
 interface DebugFooterProps {
-  clearAll: () => Promise<void>;
-  markAllReadGlobal: (offset?: number) => Promise<{ markedCount: number; skipped: number } | null>;
-  hideAllGlobal: (offset?: number) => Promise<{ hiddenCount: number; skipped: number } | null>;
+  debug: ReturnType<typeof useNotificationFeed>['debug'];
 }
 
-function DebugFooter({ clearAll, markAllReadGlobal, hideAllGlobal }: DebugFooterProps) {
+function DebugFooter({ debug }: DebugFooterProps) {
   const offsetRef = useRef<HTMLInputElement>(null);
   const [result, setResult] = useState<string | null>(null);
+  const offset = () => parseInt(offsetRef.current?.value || '0') || 0;
+  const run = async (fn: () => Promise<string | null>) => setResult(await fn());
 
-  const getOffset = () => parseInt(offsetRef.current?.value || '0') || 0;
-
-  const handleReadGlobal = useCallback(async () => {
-    const res = await markAllReadGlobal(getOffset());
-    if (res) setResult(`✓ read: ${res.markedCount}, skip: ${res.skipped}`);
-  }, [markAllReadGlobal]);
-
-  const handleHideGlobal = useCallback(async () => {
-    const res = await hideAllGlobal(getOffset());
-    if (res) setResult(`✓ hidden: ${res.hiddenCount}, skip: ${res.skipped}`);
-  }, [hideAllGlobal]);
-
+  const btn = 'flex h-full items-center gap-0.5 border-l border-orange-200 bg-orange-50 px-1.5 text-[11px] text-orange-600 transition-colors hover:bg-orange-100';
   return (
-    <div className="flex items-center gap-1 flex-wrap justify-end">
-      {result && <span className="text-[10px] text-green-600">{result}</span>}
-      {/* Offset input + глобальні дії */}
-      <div className="flex items-center gap-0.5 border border-orange-200 rounded-md overflow-hidden h-6">
+    <div className="flex flex-wrap items-center justify-end gap-1.5 border-t border-orange-200 bg-orange-50/50 px-4 py-2">
+      {result && <span className="text-[10px] text-success-600">✓ {result}</span>}
+      <div className="flex h-6 items-center overflow-hidden rounded-md border border-orange-200">
         <input
           ref={offsetRef}
+          id="notification-debug-offset"
           type="number"
           min={0}
           defaultValue={0}
-          className="w-10 text-[11px] text-center bg-white outline-none px-1 h-full"
-          title="offset — пропустити N найновіших"
+          className="h-full w-10 bg-white px-1 text-center text-[11px] outline-none"
+          title="offset – пропустити N найновіших"
         />
-        <button
-          className="flex items-center gap-0.5 px-1.5 h-full bg-orange-50 hover:bg-orange-100 text-orange-500 text-[11px] transition-colors border-l border-orange-200"
-          onClick={handleReadGlobal}
-          title="Позначити прочитаними для всіх (з offset)"
-        >
+        <button type="button" className={btn} onClick={() => run(() => debug.readAllGlobal(offset()))} title="Позначити прочитаними для всіх (з offset)">
           <DynamicIcon name="check-check" size={11} />
           Read all
         </button>
-        <button
-          className="flex items-center gap-0.5 px-1.5 h-full bg-orange-50 hover:bg-orange-100 text-orange-500 text-[11px] transition-colors border-l border-orange-200"
-          onClick={handleHideGlobal}
-          title="Сховати для всіх (з offset)"
-        >
+        <button type="button" className={btn} onClick={() => run(() => debug.hideAllGlobal(offset()))} title="Сховати для всіх (з offset)">
           <DynamicIcon name="eye-off" size={11} />
           Hide all
         </button>
       </div>
       <button
-        className="flex items-center gap-0.5 px-1.5 h-6 rounded-md bg-orange-50 hover:bg-orange-100 text-orange-400 text-[11px] transition-colors"
-        onClick={() => clearAll()}
+        type="button"
+        className="flex h-6 items-center gap-0.5 rounded-md bg-orange-50 px-1.5 text-[11px] text-orange-600 transition-colors hover:bg-orange-100"
+        onClick={() => run(debug.resetOwnRead)}
         title="Скинути всі власні read-позначки"
       >
         <DynamicIcon name="rotate-ccw" size={11} />
@@ -273,153 +63,94 @@ interface NotificationBellProps {
   size?: 'default' | 'sm';
 }
 
-export function NotificationBell({ onNavigate: _onNavigate, size = 'default' }: NotificationBellProps) {
+export function NotificationBell({ onNavigate, size = 'default' }: NotificationBellProps) {
   const iconSize = size === 'sm' ? 22 : 24;
   const [isOpen, setIsOpen] = useState(false);
-  const [drawerNotification, setDrawerNotification] = useState<AppNotification | null>(null);
+  const [drawerItem, setDrawerItem] = useState<NotificationFeedItem | null>(null);
   const [drawerLog, setDrawerLog] = useState<any[] | null>(null);
-  const { notifications, unreadCount, markRead, markAllRead, markAllReadGlobal, hideAll, hideAllGlobal, hideOneGlobal, clearAll, refresh } = useNotifications();
+  const feed = useNotificationFeed(isOpen);
   const { isDebugMode } = useDebug();
   const { isAdminView: isAdmin } = useRolePreview();
+  const unread = feed.counts.all;
 
-  const handleOpenChange = useCallback((open: boolean) => {
-    setIsOpen(open);
-    if (open) refresh();
-  }, [refresh]);
-
-  const handleMarkRead = useCallback((id: number) => {
-    markRead(id);
-  }, [markRead]);
-
-  const handleMarkAllRead = useCallback(() => {
-    markAllRead();
-  }, [markAllRead]);
-
-  const handleClearAll = useCallback(() => {
-    hideAll();
-  }, [hideAll]);
-
-  const handleResolve = useCallback((id: number) => {
-    hideOneGlobal(id);
-  }, [hideOneGlobal]);
-
-  const handleOpenLog = useCallback(async (n: AppNotification) => {
+  const navigate = useCallback((href: string) => {
     setIsOpen(false);
-    setDrawerNotification(n);
-    setDrawerLog(null); // показуємо drawer одразу, лог підвантажиться
+    onNavigate?.(href);
+  }, [onNavigate]);
+
+  const handleOpen = useCallback((item: NotificationFeedItem) => {
+    if (!item.action) return;
+    feed.markRead(item);
+    navigate(item.action.link);
+  }, [feed, navigate]);
+
+  const handleShowLog = useCallback(async (item: NotificationFeedItem) => {
+    setIsOpen(false);
+    feed.markRead(item);
+    setDrawerItem(item);
+    setDrawerLog(null);
     try {
-      const res = await fetch(`/api/meta-logs/${n.id}`);
+      const res = await fetch(`/api/meta-logs/${item.id}`);
       const data = await res.json();
-      if (data && !data.error) {
-        setDrawerLog([data]);
-      }
+      if (data && !data.error) setDrawerLog([data]);
     } catch {
-      // fallback — залишаємо drawerLog = null, drawer покаже що є
+      // drawer shows what it has
     }
-  }, []);
+  }, [feed]);
 
   return (
     <>
-    <Popover
-      isOpen={isOpen}
-      onOpenChange={handleOpenChange}
-      placement="bottom-end"
-      offset={8}
-      showArrow={false}
-    >
-      <PopoverTrigger>
-        <button
-          type="button"
-          aria-label={`Сповіщення${unreadCount > 0 ? `, ${unreadCount} непрочитаних` : ''}`}
-          className={`relative flex items-center justify-center rounded-sm transition-all duration-200 bg-neutral-100 text-neutral-600
-            ${size === 'sm' ? 'p-1.5' : 'p-2'}`}>
-          <DynamicIcon name="bell" size={iconSize} strokeWidth={2} />
-          {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-danger text-white text-[10px] font-bold leading-[18px] text-center">
-              {unreadCount > 99 ? '99+' : unreadCount}
-            </span>
-          )}
-        </button>
-      </PopoverTrigger>
-
-      <PopoverContent className="p-0 w-[400px] shadow-xl rounded-xl overflow-hidden border border-gray-200">
-        {/* Header */}
-        <div className="flex items-center justify-between w-full px-4 py-3 border-b border-gray-100 bg-white">
-          <div className="flex items-center gap-2">
-            <DynamicIcon name="bell" size={16} className="text-gray-500" />
-            <span className="text-sm font-semibold text-gray-800">Сповіщення</span>
-            {unreadCount > 0 && (
-              <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-danger text-white text-[10px] font-bold">
-                {unreadCount}
+      <Popover isOpen={isOpen} onOpenChange={setIsOpen} placement="bottom-end" offset={8} showArrow={false}>
+        <PopoverTrigger>
+          <button
+            type="button"
+            aria-label={`Сповіщення${unread > 0 ? `, ${unread} непрочитаних` : ''}`}
+            className={`relative flex items-center justify-center rounded-sm bg-neutral-100 text-neutral-600 transition-all duration-200 ${size === 'sm' ? 'p-1.5' : 'p-2'}`}
+          >
+            <DynamicIcon name="bell" size={iconSize} strokeWidth={2} />
+            {unread > 0 && (
+              <span className="absolute -right-1 -top-1 h-[18px] min-w-[18px] rounded-full bg-danger px-1 text-center text-[10px] font-bold leading-[18px] text-white">
+                {unread > 99 ? '99+' : unread}
               </span>
             )}
-          </div>
-          <div className="flex items-center gap-1">
-            <Button
-              size="sm"
-              variant="flat"
-              color="default"
-              className="text-xs text-gray-800 bg-amber-200 border-1 border-amber-600/15 h-7 px-2 min-w-0 gap-1"
-              startContent={<DynamicIcon name="file-text" className="w-3 h-3" />}
-              onPress={() => { setIsOpen(false); _onNavigate?.('/reports/meta-logs'); }}
-            >
-              Детальний звіт
-            </Button>
-          </div>
-        </div>
+          </button>
+        </PopoverTrigger>
 
-        {/* List */}
-        <ScrollShadow className="max-h-[460px] w-full" hideScrollBar>
-          {notifications.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-gray-400 gap-3">
-              <DynamicIcon name="bell-off" size={36} strokeWidth={1.5} />
-              <p className="text-sm">Немає нових сповіщень</p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2 p-4">
-              {notifications.map((n) => (
-                <NotificationRow
-                  key={n.id}
-                  notification={n}
-                  onMarkRead={handleMarkRead}
-                  onOpenLog={handleOpenLog}
-                  onOpenLink={(item) => {
-                    if (!item.link) return;
-                    setIsOpen(false);
-                    _onNavigate?.(item.link);
-                  }}
-                  isAdmin={isAdmin}
-                  onResolve={handleResolve}
-                />
-              ))}
-            </div>
-          )}
-        </ScrollShadow>
+        <PopoverContent className="w-[440px] max-w-[calc(100vw-24px)] overflow-hidden rounded-2xl border border-default-200 p-0 shadow-xl">
+          <NotificationPanel
+            items={feed.items}
+            counts={feed.counts}
+            tab={feed.tab}
+            onTabChange={feed.setTab}
+            loading={feed.initialLoading}
+            isAdmin={isAdmin}
+            showRuleHints={isAdmin && isDebugMode}
+            onOpenReport={() => navigate('/reports/meta-logs')}
+            onOpen={handleOpen}
+            onMarkRead={feed.markRead}
+            onArchive={feed.archive}
+            onUnarchive={feed.unarchive}
+            onResolve={feed.resolve}
+            onShowLog={isDebugMode ? handleShowLog : undefined}
+            onEditRule={(item) => navigate(`/settings/notifications?log=${item.id}`)}
+            footer={isDebugMode ? <DebugFooter debug={feed.debug} /> : null}
+          />
+        </PopoverContent>
+      </Popover>
 
-        {/* Footer */}
-        {(notifications.length > 0 || isDebugMode) && (
-          <div className="w-full px-4 py-2.5 border-t border-gray-100 bg-gray-50 flex flex-col items-center justify-between gap-2">
-            <span className="text-xs text-gray-400 shrink-0">
-              {notifications.length > 0
-                ? unreadCount > 0
-                  ? `${unreadCount} непрочитаних із ${notifications.length}`
-                  : `Усі ${notifications.length} прочитані`
-                : ''}
-            </span>
-            {isDebugMode && <DebugFooter clearAll={clearAll} markAllReadGlobal={markAllReadGlobal} hideAllGlobal={hideAllGlobal} />}
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
-
-    {/* ResultDrawer — поза Popover щоб не закривався при відкритті */}
-    <ResultDrawer
-      isOpen={drawerNotification !== null}
-      onOpenChange={(open) => { if (!open) { setDrawerNotification(null); setDrawerLog(null); } }}
-      result={drawerLog ?? (drawerNotification ? [drawerNotification] : null)}
-      title={drawerNotification ? translateTitle(drawerNotification) : ''}
-      type="logs"
-    />
+      {/* ResultDrawer поза Popover, щоб він не закривався при відкритті */}
+      <ResultDrawer
+        isOpen={drawerItem !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDrawerItem(null);
+            setDrawerLog(null);
+          }
+        }}
+        result={drawerLog ?? (drawerItem ? [drawerItem] : null)}
+        title={drawerItem?.title ?? ''}
+        type="logs"
+      />
     </>
   );
 }

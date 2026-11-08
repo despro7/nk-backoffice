@@ -71,6 +71,17 @@
 
 Ініціатор: `initiatedBy` = userId (ручний експорт раніше писав `manual:user:<email>`, такі записи зіставляються за email).
 
+## Дропдаун (дзвіночок)
+
+`client/components/NotificationBell.tsx` + `client/components/notifications/{NotificationPanel,NotificationRow,NotificationAvatar}.tsx`, дані – `client/hooks/useNotificationFeed.ts`.
+
+- Хедер: «Сповіщення» і посилання «Детальний звіт» (`/reports/meta-logs`). Масового «Позначити все прочитаним» для користувачів немає.
+- Вкладки з лічильниками непрочитаних; у «Помилках» лічильник червоний.
+- Рядок: аватар (ініціали користувача або іконка сервісу) з точкою рівня (задача – синя), заголовок, `×N` для повторів, мета «хто · коли · група · через … · №замовлення», текст обрізано до 2 рядків.
+- Дії: основна кнопка (`action`), «Вирішено» для адміністратора (лише `alert`), «Показати лог» **лише в debug-режимі**. При наведенні: «Позначити прочитаним», «В архів» / «Повернути з архіву». Клік по рядку позначає прочитаним.
+- Debug-режим: тонкий футер з глобальними Read all / Hide all / Reset read; адміністратор бачить позначку «Без шаблону» на рядках без правила (веде в налаштування).
+- Опитування: закритий дропдаун – кожні 30 с лише лічильники (`limit=1`); відкритий – активна вкладка повністю.
+
 ## Права ролей
 
 Ключі `action.notify.<group>.<level>.<channel>`, `channel` = `app` | `tg`, у `role_permissions`.
@@ -83,5 +94,6 @@
 | Константи | `shared/constants/notifications.ts` |
 | Типи | `shared/types/notificationRules.ts`, `shared/types/notifications.ts` |
 | Рушій | `shared/notifications/ruleEngine.ts` (+ spec), `shared/notifications/defaultRules.ts` |
+| Клієнт | `client/components/NotificationBell.tsx`, `client/components/notifications/*`, `client/hooks/useNotificationFeed.ts` |
 | Сервер | `server/modules/Notifications/{NotificationConfigService,NotificationFeedService,notificationFeed}.ts` (+ spec), `server/routes/notifications.ts` |
 | БД | `notification_rules`, `notification_glossary`, `notification_config_revisions` |

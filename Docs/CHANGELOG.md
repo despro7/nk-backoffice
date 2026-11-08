@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-11-08 – Центр сповіщень: новий дропдаун з вкладками й аватарами
+
+**Files:** `client/components/NotificationBell.tsx`, `client/components/notifications/{NotificationPanel,NotificationRow,NotificationAvatar}.tsx`, `client/hooks/useNotificationFeed.ts`
+
+- **Редизайн дзвіночка:** вкладки «Всі / Мої / Помилки / Архів» з лічильниками, аватар джерела (ініціали користувача або іконка сервісу) з точкою рівня, повтори згорнуті в `×N`, текст обрізано до 2 рядків, непрочитані підсвічені.
+- **Дії:** основна кнопка за посиланням правила, «Вирішено» для адміністратора, «Прочитано» і «В архів» при наведенні; «Показати лог» і глобальні debug-дії лише в debug-режимі. Кнопку «Позначити все прочитаним» прибрано.
+- **Опитування:** при закритому дропдауні лише лічильники.
+
+**Документація:** `Docs/features/notification-centre.md` – розділ «Дропдаун».
+
+---
+
 ## 2026-11-08 – Центр сповіщень: рушій правил, стрічка з вкладками, права ролей
 
 **Files:** `shared/constants/notifications.ts`, `shared/types/{notificationRules,notifications}.ts`, `shared/notifications/{ruleEngine,defaultRules}.ts` (+ spec), `server/modules/Notifications/{NotificationConfigService,NotificationFeedService,notificationFeed}.ts` (+ spec), `server/routes/notifications.ts`, `server/routes/dilovod.ts`, `server/modules/Warehouse/WriteOffController.ts`, `prisma/schema.prisma`, `prisma/migrations/20261108120000_notification_rules`
