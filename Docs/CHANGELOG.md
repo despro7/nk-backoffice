@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-11-14 – Варки, фаза 3c: факт виходу, прийом на склад ГП, закриття
+
+**Files:** `shared/utils/productionBatchOutput.ts` (+ spec), `shared/types/production.ts`, `server/modules/Production/ProductionBatchService.ts`, `server/routes/production.ts`, `client/pages/Production/useProductionBatches.ts`, `client/pages/Production/Batches/BatchPage.tsx`, `client/pages/Production/components/{BatchOutput,BatchStepPanels,BatchLinesTable}.tsx`
+
+- **Факт виходу:** порції на ГП, брак, на пробу, брак термоналіпок, порцій у коробці, коробки (рахуються автоматично), піддони, коментар; «Усього зварено» проти плану. По сировині й пакуванню – залишок після варки, «Лишити на ВП» / «Повернути на СП», витрачено і відхилення від плану (> 5% підсвічується). Незавершені етапи – попередження. Підпис → «Факт виходу».
+- **Прийом на склад ГП:** підпис з коментарем → «Прийнято на склад ГП». **Закриття** варки з підтвердженням → лише перегляд.
+- **Відкликання** підписів факту виходу і прийому на ГП – варка повертається на крок назад, дані факту лишаються.
+- Збереження кроків швидше: оновлюються лише змінені рядки, тайм-аут транзакцій 20 с (раніше підпис факту падав через віддалену БД).
+- Таймлайн: лінія доходить до наступної події, автор і дата світліші.
+- Міграцій немає.
+
+**Документація:** `Docs/plans/production-techcards.md` – крок 3c.
+
+---
+
 ## 2026-11-14 – Варки, фаза 3b: видача сировини, прийом на виробництво, готування
 
 **Files:** `shared/utils/productionBatchIssue.ts` (+ spec), `shared/types/production.ts`, `server/modules/Production/ProductionBatchService.ts`, `server/routes/production.ts`, `server/services/dilovod/DilovodService.ts`, `client/pages/Production/useProductionBatches.ts`, `client/pages/Production/Batches/BatchPage.tsx`, `client/pages/Production/components/{BatchLinesTable,BatchStepPanels,BatchStagesGantt,BatchDatePicker}.tsx`

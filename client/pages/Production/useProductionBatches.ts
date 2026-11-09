@@ -6,6 +6,7 @@ import type {
   ProductionBatchDetailDto,
   ProductionBatchIssueInput,
   ProductionBatchListItemDto,
+  ProductionBatchOutputInput,
   ProductionBatchStageInput,
   ProductionBatchStatus,
   ProductionBatchUpdatePlanInput,
@@ -148,6 +149,19 @@ export function useProductionBatchActions() {
           body: {},
         }),
       ),
+    saveOutput: async (id: number, input: ProductionBatchOutputInput) =>
+      apply(await request<ProductionBatchDetailDto>(`/api/production/batches/${id}/output`, { method: 'PUT', body: input })),
+    signOutput: async (id: number, input: ProductionBatchOutputInput) =>
+      apply(await request<ProductionBatchDetailDto>(`/api/production/batches/${id}/output/sign`, { method: 'POST', body: input })),
+    acceptFinished: async (id: number, comment: string) =>
+      apply(
+        await request<ProductionBatchDetailDto>(`/api/production/batches/${id}/accept-finished`, {
+          method: 'POST',
+          body: { comment },
+        }),
+      ),
+    close: async (id: number) =>
+      apply(await request<ProductionBatchDetailDto>(`/api/production/batches/${id}/close`, { method: 'POST', body: {} })),
     revokeSignature: async (id: number, signatureId: number, comment: string) =>
       apply(
         await request<ProductionBatchDetailDto>(`/api/production/batches/${id}/signatures/${signatureId}/revoke`, {

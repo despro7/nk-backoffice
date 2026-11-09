@@ -244,7 +244,7 @@ export interface ProductionBatchLineDto {
   shortageComment: string | null;
   consumedQty: number | null;
   leftoverQty: number | null;
-  leftoverAction: 'keep_vp' | 'return_sp' | null;
+  leftoverAction: ProductionBatchLeftoverAction | null;
   note: string | null;
 }
 
@@ -300,8 +300,25 @@ export interface ProductionBatchListItemDto {
   createdAt: string;
 }
 
+/** Факт виходу варки (крок 5), порції і тара. */
+export interface ProductionBatchFact {
+  /** Порцій прийнято на ГП */
+  portionsGood: number | null;
+  portionsReject: number | null;
+  portionsSample: number | null;
+  /** Брак термоналіпок, шт */
+  labelRejects: number | null;
+  portionsPerBox: number | null;
+  boxes: number | null;
+  pallets: number | null;
+  comment: string | null;
+}
+
+export type ProductionBatchLeftoverAction = 'keep_vp' | 'return_sp';
+
 export interface ProductionBatchDetailDto extends ProductionBatchListItemDto {
   specVersion: number | null;
+  fact: ProductionBatchFact | null;
   comment: string | null;
   cancelledAt: string | null;
   cancelledByName: string | null;
@@ -347,4 +364,17 @@ export interface ProductionBatchStageInput {
   /** Фактичний час (ISO); лише для PATCH етапу. null – прибрати */
   startedAt?: string | null;
   finishedAt?: string | null;
+}
+
+export interface ProductionBatchOutputLineInput {
+  id: number;
+  /** Залишок після варки, одиниця видачі; витрачено = видано − залишок */
+  leftoverQty?: number | null;
+  leftoverAction?: ProductionBatchLeftoverAction | null;
+  note?: string | null;
+}
+
+export interface ProductionBatchOutputInput {
+  fact?: Partial<ProductionBatchFact>;
+  lines?: ProductionBatchOutputLineInput[];
 }

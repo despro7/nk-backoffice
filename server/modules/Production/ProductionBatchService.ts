@@ -1,8 +1,8 @@
 /**
  * Варки (фаза 3 техкарт): створення з затвердженої версії техкарти, знімок рецепту, планові кількості,
  * зміна плану і скасування до прийому на виробництво; видача сировини (знімок залишків, нестача з
- * коментарем, підпис), прийом на виробництво (підпис), готування (старт / фініш етапів).
- * Факт виходу, склад ГП і закриття – наступні кроки фази.
+ * коментарем, підпис), прийом на виробництво (підпис), готування (старт / фініш етапів), факт виходу (порції, тара,
+ * залишки по рядках, підпис), прийом на склад ГП (підпис), закриття. Підписи відкликаються на крок назад.
  */
 import { Prisma, type ProductionBatch } from '@prisma/client';
 import { prisma } from '../../lib/utils.js';
@@ -12,6 +12,7 @@ import {
   type ProductionBatchCreateInput,
   type ProductionBatchDetailDto,
   type ProductionBatchIssueInput,
+  type ProductionBatchOutputInput,
   type ProductionBatchLineDto,
   type ProductionBatchListItemDto,
   type ProductionBatchSignatureStep,
@@ -30,6 +31,14 @@ import {
   planBatchLines,
 } from '../../../shared/utils/productionBatchPlan.js';
 import { issueSignErrors, isIssueShortage, normalizeIssueInput } from '../../../shared/utils/productionBatchIssue.js';
+import {
+  EMPTY_FACT,
+  consumedQty,
+  factBoxes,
+  normalizeFact,
+  normalizeOutputLineInput,
+  outputSignErrors,
+} from '../../../shared/utils/productionBatchOutput.js';
 import { dilovodService } from '../../services/dilovod/DilovodService.js';
 import { productsCatalogService } from '../Products/ProductsCatalogService.js';
 import { productionSettingsService } from './ProductionSettingsService.js';
@@ -48,7 +57,13 @@ const CANCELLABLE: readonly ProductionBatchStatus[] = ['draft', 'issued'];
 const SIGNATURE_FLOW: Partial<Record<ProductionBatchSignatureStep, { status: ProductionBatchStatus; back: ProductionBatchStatus }>> = {
   issued: { status: 'issued', back: 'draft' },
   accepted: { status: 'accepted', back: 'issued' },
+  // Без жодного старту етапу – назад у «Прийнято» (див. revokeSignature)
+  output: { status: 'output', back: 'cooking' },
+  finished: { status: 'finished', back: 'output' },
 };
+
+/** Факт виходу вносять після прийому на виробництво (етапи – попередження, не блокування). */
+const OUTPUT_EDITABLE: readonly ProductionBatchStatus[] = ['accepted', 'cooking'];
 
 export interface BatchActor {
   userId: number | null;
@@ -72,6 +87,9 @@ function stageTimeOrThrow(value: unknown, what: string): Date | null {
   if (date.getTime() > Date.now() + CLOCK_SKEW_MS) throw new ProductionBatchError(`Час ${what} етапу не може бути в майбутньому`);
   return date;
 }
+
+/** Інтерактивні транзакції кроків: кілька десятків рядків через віддалену БД не вкладаються в типові 5 с. */
+const STEP_TX = { timeout: 20_000, maxWait: 10_000 } as const;
 
 const BATCH_INCLUDE = {
   good: { select: { name: true, sku: true } },
@@ -211,6 +229,7 @@ class ProductionBatchService {
     return {
       ...listItemDto(row, names),
       specVersion: row.specVersion,
+      fact: row.factJson ? normalizeFact(row.factJson) : null,
       comment: row.comment,
       cancelledAt: row.cancelledAt?.toISOString() ?? null,
       cancelledByName: row.cancelledById != null ? names.get(row.cancelledById) ?? null : null,
@@ -482,15 +501,20 @@ class ProductionBatchService {
   private async applyIssueInput(
     tx: Prisma.TransactionClient,
     batchId: number,
-    lineIds: Set<number>,
+    lines: Array<{ id: number; stockActual: number | null; issuedQty: number | null; issueNote: string | null; shortageComment: string | null }>,
     input: ProductionBatchIssueInput | undefined,
   ): Promise<void> {
+    const byId = new Map(lines.map((l) => [l.id, l]));
     const items = Array.isArray(input?.lines) ? input.lines : [];
     for (const raw of items) {
       const line = normalizeIssueInput(raw);
-      if (!line || !lineIds.has(line.id)) continue;
+      const current = line ? byId.get(line.id) : undefined;
+      if (!line || !current) continue;
       const { id, ...data } = line;
-      const patch = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
+      // Лише змінені поля: кожен запит через віддалену БД коштує часу транзакції
+      const patch = Object.fromEntries(
+        Object.entries(data).filter(([k, v]) => v !== undefined && v !== current[k as keyof typeof current]),
+      );
       if (Object.keys(patch).length === 0) continue;
       await tx.productionBatchLine.update({ where: { id, batchId }, data: patch });
     }
@@ -499,7 +523,7 @@ class ProductionBatchService {
   /** Чернетка видачі: фактичні залишки, видано, примітки (без підпису). */
   async saveIssue(id: number, input: ProductionBatchIssueInput): Promise<ProductionBatchDetailDto> {
     const row = await this.requireStatus(id, ['draft'], 'Видачу можна змінити лише до підтвердження');
-    await prisma.$transaction((tx) => this.applyIssueInput(tx, id, new Set(row.lines.map((l) => l.id)), input));
+    await prisma.$transaction((tx) => this.applyIssueInput(tx, id, row.lines, input), STEP_TX);
     return this.getDetail(id);
   }
 
@@ -509,7 +533,7 @@ class ProductionBatchService {
     if (actor.userId == null) throw new ProductionBatchError('Підпис потребує користувача', 403);
     const userName = (await this.userName(actor.userId)) ?? `#${actor.userId}`;
     await prisma.$transaction(async (tx) => {
-      await this.applyIssueInput(tx, id, new Set(row.lines.map((l) => l.id)), input);
+      await this.applyIssueInput(tx, id, row.lines, input);
       const lines = await tx.productionBatchLine.findMany({ where: { batchId: id } });
       const typed = lines.map((l) => ({ ...l, kind: l.kind === 'packaging' ? ('packaging' as const) : ('raw' as const) }));
       const errors = issueSignErrors(typed);
@@ -522,7 +546,7 @@ class ProductionBatchService {
       await tx.productionBatchEvent.create({
         data: { batchId: id, type: 'issued', userId: actor.userId, userName, payloadJson: { shortages } },
       });
-    });
+    }, STEP_TX);
     return this.getDetail(id);
   }
 
@@ -682,7 +706,10 @@ class ProductionBatchService {
     if (!text) throw new ProductionBatchError('Вкажіть причину відкликання');
     const row = await prisma.productionBatch.findUnique({
       where: { id },
-      include: { signatures: { where: { revokedAt: null }, orderBy: { signedAt: 'desc' } } },
+      include: {
+        signatures: { where: { revokedAt: null }, orderBy: { signedAt: 'desc' } },
+        stages: { select: { startedAt: true } },
+      },
     });
     if (!row) throw new ProductionBatchError('Варку не знайдено', 404);
     const sig = row.signatures.find((s) => s.id === signatureId);
@@ -695,13 +722,14 @@ class ProductionBatchService {
     if (!(actor.canRevokeAny || (actor.userId != null && actor.userId === sig.userId))) {
       throw new ProductionBatchError('Відкликати можна лише власний підпис', 403);
     }
+    const back = flow.back === 'cooking' && !row.stages.some((st) => st.startedAt) ? 'accepted' : flow.back;
     const userName = await this.userName(actor.userId);
     await prisma.$transaction([
       prisma.productionBatchSignature.update({
         where: { id: sig.id },
         data: { revokedAt: new Date(), revokedById: actor.userId, revokeComment: text },
       }),
-      prisma.productionBatch.update({ where: { id }, data: { status: flow.back } }),
+      prisma.productionBatch.update({ where: { id }, data: { status: back } }),
       prisma.productionBatchEvent.create({
         data: {
           batchId: id,
@@ -711,6 +739,124 @@ class ProductionBatchService {
           payloadJson: { step: sig.step, signer: sig.userName, comment: text },
         },
       }),
+    ]);
+    return this.getDetail(id);
+  }
+
+  /** Факт із JSON варки; «Порцій у коробці» за замовчуванням – з техкарти. */
+  private factOf(row: { factJson: Prisma.JsonValue; snapshotJson: Prisma.JsonValue }) {
+    const snapshot = row.snapshotJson as unknown as ProductionBatchSnapshot;
+    const base = { ...EMPTY_FACT, portionsPerBox: snapshot?.payload?.portionsPerBox ?? null };
+    return row.factJson ? normalizeFact(row.factJson, base) : base;
+  }
+
+  private async applyOutputInput(
+    tx: Prisma.TransactionClient,
+    row: Awaited<ReturnType<ProductionBatchService['requireStatus']>>,
+    input: ProductionBatchOutputInput | undefined,
+  ) {
+    const fact = input?.fact ? normalizeFact(input.fact, this.factOf(row)) : this.factOf(row);
+    await tx.productionBatch.update({
+      where: { id: row.id },
+      data: { factJson: fact as unknown as Prisma.InputJsonValue },
+    });
+    const byId = new Map(row.lines.map((l) => [l.id, l]));
+    for (const raw of Array.isArray(input?.lines) ? input.lines : []) {
+      const patch = normalizeOutputLineInput(raw);
+      const line = patch ? byId.get(patch.id) : undefined;
+      if (!patch || !line) continue;
+      const leftoverQty = patch.leftoverQty !== undefined ? patch.leftoverQty : line.leftoverQty;
+      const leftoverAction = patch.leftoverAction !== undefined ? patch.leftoverAction : line.leftoverAction;
+      const note = patch.note !== undefined ? patch.note : line.note;
+      if (leftoverQty === line.leftoverQty && leftoverAction === line.leftoverAction && note === line.note) continue;
+      const typed = { ...line, kind: line.kind === 'packaging' ? ('packaging' as const) : ('raw' as const) };
+      await tx.productionBatchLine.update({
+        where: { id: line.id },
+        data: {
+          leftoverQty,
+          consumedQty: consumedQty(typed, leftoverQty),
+          leftoverAction,
+          note,
+        },
+      });
+    }
+    return fact;
+  }
+
+  /** Чернетка факту виходу (без підпису). */
+  async saveOutput(id: number, input: ProductionBatchOutputInput): Promise<ProductionBatchDetailDto> {
+    const row = await this.requireStatus(id, OUTPUT_EDITABLE, 'Факт виходу вносять після прийому на виробництво');
+    await prisma.$transaction((tx) => this.applyOutputInput(tx, row, input), STEP_TX);
+    return this.getDetail(id);
+  }
+
+  /** «Підтверджую факт виходу»: порожній залишок = 0, коробки за замовчуванням, підпис → «Факт виходу». */
+  async signOutput(id: number, input: ProductionBatchOutputInput, actor: BatchActor): Promise<ProductionBatchDetailDto> {
+    const row = await this.requireStatus(id, OUTPUT_EDITABLE, 'Факт виходу вносять після прийому на виробництво');
+    if (actor.userId == null) throw new ProductionBatchError('Підпис потребує користувача', 403);
+    const userName = (await this.userName(actor.userId)) ?? `#${actor.userId}`;
+    await prisma.$transaction(async (tx) => {
+      let fact = await this.applyOutputInput(tx, row, input);
+      const lines = await tx.productionBatchLine.findMany({ where: { batchId: id } });
+      const typed = lines.map((l) => ({ ...l, kind: l.kind === 'packaging' ? ('packaging' as const) : ('raw' as const) }));
+      const errors = outputSignErrors(fact, typed);
+      if (errors.length > 0) throw new ProductionBatchError(errors.join('; '));
+      // Порожній залишок = 0, витрачено = видано (одним запитом)
+      await tx.$executeRaw`UPDATE production_batch_lines SET leftoverQty = 0, consumedQty = issuedQty WHERE batchId = ${id} AND leftoverQty IS NULL`;
+      if (fact.boxes == null) {
+        fact = { ...fact, boxes: factBoxes(fact.portionsGood, fact.portionsPerBox) };
+      }
+      const unfinished = row.stages.filter((st) => !st.finishedAt).length;
+      await tx.productionBatch.update({
+        where: { id },
+        data: { status: 'output', factJson: fact as unknown as Prisma.InputJsonValue },
+      });
+      await tx.productionBatchSignature.create({
+        data: { batchId: id, step: 'output', userId: actor.userId as number, userName, roleLabel: actor.roleLabel ?? null },
+      });
+      await tx.productionBatchEvent.create({
+        data: {
+          batchId: id,
+          type: 'output',
+          userId: actor.userId,
+          userName,
+          payloadJson: {
+            portionsGood: fact.portionsGood,
+            portionsReject: fact.portionsReject,
+            portionsSample: fact.portionsSample,
+            unfinishedStages: unfinished,
+          },
+        },
+      });
+    }, STEP_TX);
+    return this.getDetail(id);
+  }
+
+  /** Прийом продукції на склад ГП: підпис → «Прийнято на склад ГП». */
+  async acceptFinished(id: number, comment: unknown, actor: BatchActor): Promise<ProductionBatchDetailDto> {
+    await this.requireStatus(id, ['output'], 'На склад ГП приймають після підпису факту виходу');
+    if (actor.userId == null) throw new ProductionBatchError('Підпис потребує користувача', 403);
+    const userName = (await this.userName(actor.userId)) ?? `#${actor.userId}`;
+    const text = textOrNull(comment);
+    await prisma.$transaction([
+      prisma.productionBatch.update({ where: { id }, data: { status: 'finished' } }),
+      prisma.productionBatchSignature.create({
+        data: { batchId: id, step: 'finished', userId: actor.userId, userName, roleLabel: actor.roleLabel ?? null },
+      }),
+      prisma.productionBatchEvent.create({
+        data: { batchId: id, type: 'finished', userId: actor.userId, userName, payloadJson: text ? { comment: text } : Prisma.DbNull },
+      }),
+    ]);
+    return this.getDetail(id);
+  }
+
+  /** Закрити варку після прийому на ГП: далі лише перегляд. */
+  async close(id: number, userId: number | null): Promise<ProductionBatchDetailDto> {
+    await this.requireStatus(id, ['finished'], 'Закрити можна лише варку, прийняту на склад ГП');
+    const userName = await this.userName(userId);
+    await prisma.$transaction([
+      prisma.productionBatch.update({ where: { id }, data: { status: 'closed', closedAt: new Date() } }),
+      prisma.productionBatchEvent.create({ data: { batchId: id, type: 'closed', userId, userName } }),
     ]);
     return this.getDetail(id);
   }

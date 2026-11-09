@@ -20,7 +20,7 @@ import { formatDateTime } from './techCardUi';
 type BatchActions = ReturnType<typeof useProductionBatchActions>;
 
 /** Виконати дію з тостом помилки; true – успіх. */
-async function run(action: () => Promise<unknown>, success?: string, failure = 'Не вдалося виконати дію'): Promise<boolean> {
+export async function run(action: () => Promise<unknown>, success?: string, failure = 'Не вдалося виконати дію'): Promise<boolean> {
   try {
     await action();
     if (success) ToastService.show({ title: success, color: 'success' });
@@ -31,7 +31,7 @@ async function run(action: () => Promise<unknown>, success?: string, failure = '
   }
 }
 
-function BusyIcon({ busy, icon }: { busy: boolean; icon: string }) {
+export function BusyIcon({ busy, icon }: { busy: boolean; icon: string }) {
   return <DynamicIcon name={(busy ? 'loader-2' : icon) as never} size={14} className={busy ? 'animate-spin' : ''} />;
 }
 

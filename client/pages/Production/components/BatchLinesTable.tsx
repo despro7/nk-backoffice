@@ -27,7 +27,7 @@ interface IssueDraftRow {
 
 const EMPTY_ROW: IssueDraftRow = { stockActual: '', issuedQty: '', issueNote: '', shortageComment: '' };
 
-function toText(value: number | null): string {
+export function toText(value: number | null): string {
   return value == null ? '' : String(value).replace('.', ',');
 }
 

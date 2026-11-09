@@ -18,6 +18,15 @@ import { useProductionBatch, useProductionBatchActions } from '../useProductionB
 import { BATCH_STEPS, BatchStatusChip, formatBatchDate } from '../components/batchUi';
 import { BatchLinesTable, useIssueDraft, type BatchLinesMode, type IssueDraft } from '../components/BatchLinesTable';
 import { AcceptStepPanel, CookingStepPanel, IssueStepPanel, SignatureLine } from '../components/BatchStepPanels';
+import {
+  CloseStepPanel,
+  FactSummary,
+  FinishedStepPanel,
+  OutputLinesTable,
+  OutputStepPanel,
+  useOutputDraft,
+  type OutputDraft,
+} from '../components/BatchOutput';
 import { cn } from '@/lib/utils';
 import { BatchStagesGantt } from '../components/BatchStagesGantt';
 import { formatDateTime } from '../components/techCardUi';
@@ -41,6 +50,8 @@ function Section({ className, icon, title, aside, children }: { className?: stri
 const STEP_LABEL: Record<string, string> = {
   issued: 'Видача сировини',
   accepted: 'Прийом на виробництво',
+  output: 'Факт виходу',
+  finished: 'Прийом на склад ГП',
 };
 
 function eventText(e: ProductionBatchEventDto): string {
@@ -77,6 +88,14 @@ function eventText(e: ProductionBatchEventDto): string {
       const at = (v: unknown) => (typeof v === 'string' && v ? formatDateTime(v) : '–');
       return `Етап «${String(p.stage ?? '')}»: час змінено (${at(p.startedAt)} – ${at(p.finishedAt)})`;
     }
+    case 'output':
+      return `Факт виходу: ${p.portionsGood ?? '–'} порцій на ГП${Number(p.portionsReject) > 0 ? `, брак ${p.portionsReject}` : ''}${
+        Number(p.unfinishedStages) > 0 ? ` (незавершених етапів: ${p.unfinishedStages})` : ''
+      }`;
+    case 'finished':
+      return `Прийнято на склад ГП${p.comment ? `: ${String(p.comment)}` : ''}`;
+    case 'closed':
+      return 'Варку закрито';
     case 'signatureRevoked':
       return `Підпис «${STEP_LABEL[String(p.step)] ?? String(p.step)}» відкликано: ${String(p.comment ?? '')}`;
     default:
@@ -93,7 +112,7 @@ function Timeline({ events }: { events: ProductionBatchEventDto[] }) {
       {ordered.map((e, idx) => (
         <li key={e.id} className="relative flex gap-2.5 pb-3 last:pb-0">
           {idx < ordered.length - 1 && (
-            <span className="absolute top-3.5 bottom-0 left-[3.5px] w-px bg-default-200" aria-hidden />
+            <span className="absolute top-3.5 -bottom-1.5 left-[3.5px] w-px bg-default-200" aria-hidden />
           )}
           <span
             className={cn(
@@ -103,7 +122,7 @@ function Timeline({ events }: { events: ProductionBatchEventDto[] }) {
           />
           <div className="min-w-0">
             <p className="text-sm text-default-800">{eventText(e)}</p>
-            <p className="text-xs text-default-500">
+            <p className="text-xs text-default-400">
               {[e.userName, formatDateTime(e.at)].filter(Boolean).join(', ')}
             </p>
           </div>
@@ -193,23 +212,35 @@ function PlanStep({ batch, canEdit }: { batch: ProductionBatchDetailDto; canEdit
   );
 }
 
-/** Крок, дія якого очікується зараз: видача з чернетки, прийом після видачі, готування до факту виходу. */
-function actionStepIndex(status: ProductionBatchStatus): number {
-  if (status === 'cancelled') return -1;
-  if (status === 'cooking') return BATCH_STEPS.findIndex((s) => s.status === 'cooking');
-  return Math.min(BATCH_STEPS.findIndex((s) => s.status === status) + 1, BATCH_STEPS.length - 1);
+/**
+ * Крок, дія якого очікується зараз: видача з чернетки, прийом після видачі, готування після прийому
+ * (без етапів – одразу факт виходу), факт виходу під час готування, далі склад ГП і закриття.
+ */
+function actionStepIndex(batch: ProductionBatchDetailDto): number {
+  const idx = (status: ProductionBatchStatus) => BATCH_STEPS.findIndex((s) => s.status === status);
+  switch (batch.status) {
+    case 'cancelled':
+      return -1;
+    case 'closed':
+      return BATCH_STEPS.length;
+    case 'accepted':
+      return batch.stages.length > 0 ? idx('cooking') : idx('output');
+    default:
+      return idx(batch.status) + 1;
+  }
 }
 
 interface StepperProps {
   batch: ProductionBatchDetailDto;
   draft: IssueDraft;
+  outputDraft: OutputDraft;
   userId: number | null;
-  can: { create: boolean; issue: boolean; accept: boolean; cook: boolean; revokeAny: boolean };
+  can: { create: boolean; issue: boolean; accept: boolean; cook: boolean; acceptFinished: boolean; revokeAny: boolean };
 }
 
 /** Вертикальний степер: пройдені кроки (з підписами), поточний (з діями), майбутні. */
-function Stepper({ batch, draft, userId, can }: StepperProps) {
-  const actionIdx = actionStepIndex(batch.status);
+function Stepper({ batch, draft, outputDraft, userId, can }: StepperProps) {
+  const actionIdx = actionStepIndex(batch);
   const activeSignatures = batch.signatures.filter((s) => !s.revokedAt);
   const lastSignature = activeSignatures[activeSignatures.length - 1] ?? null;
 
@@ -223,16 +254,31 @@ function Stepper({ batch, draft, userId, can }: StepperProps) {
         </div>
       ) : null;
     }
+    // Готування лишається відкритим, поки не підписано факт виходу
+    if (status === 'cooking' && (batch.status === 'accepted' || batch.status === 'cooking') && batch.stages.length > 0) {
+      return (
+        <div className="mt-3">
+          <CookingStepPanel batch={batch} canCook={can.cook} />
+        </div>
+      );
+    }
     if (done) {
       const sig = activeSignatures.find((x) => x.step === status);
-      if (sig) {
-        const revocable =
-          lastSignature?.id === sig.id &&
-          batch.status === status &&
-          (can.revokeAny || (userId != null && sig.userId === userId));
-        return <SignatureLine batch={batch} signature={sig} canRevoke={revocable} />;
-      }
-      return null;
+      const revocable =
+        sig != null &&
+        batch.status !== 'closed' &&
+        lastSignature?.id === sig.id &&
+        batch.status === status &&
+        (can.revokeAny || (userId != null && sig.userId === userId));
+      return (
+        <>
+          {sig && <SignatureLine batch={batch} signature={sig} canRevoke={revocable} />}
+          {status === 'output' && <FactSummary batch={batch} />}
+          {status === 'closed' && batch.closedAt && (
+            <p className="mt-1.5 text-xs text-default-500">{formatDateTime(batch.closedAt)}</p>
+          )}
+        </>
+      );
     }
     if (!current) return null;
     switch (status) {
@@ -252,14 +298,26 @@ function Stepper({ batch, draft, userId, can }: StepperProps) {
         ) : (
           waiting('Очікує прийому на виробництво.')
         );
-      case 'cooking':
-        return (
+      case 'output':
+        return can.accept ? (
           <div className="mt-3">
-            <CookingStepPanel batch={batch} canCook={can.cook} />
+            <OutputStepPanel batch={batch} draft={outputDraft} />
           </div>
+        ) : (
+          waiting('Очікує факту виходу.')
         );
+      case 'finished':
+        return can.acceptFinished ? (
+          <div className="mt-3">
+            <FinishedStepPanel batch={batch} />
+          </div>
+        ) : (
+          waiting('Очікує прийому на склад ГП.')
+        );
+      case 'closed':
+        return can.create ? <CloseStepPanel batch={batch} /> : waiting('Очікує закриття.');
       default:
-        return waiting('Форма цього кроку буде в наступному оновленні.');
+        return null;
     }
   };
 
@@ -310,6 +368,7 @@ export default function BatchPage() {
     issue: hasPermission(PERMISSIONS.ACTION_PRODUCTION_BATCHES_ISSUE),
     accept: hasPermission(PERMISSIONS.ACTION_PRODUCTION_BATCHES_ACCEPT_PRODUCTION),
     cook: hasPermission(PERMISSIONS.ACTION_PRODUCTION_BATCHES_COOK),
+    acceptFinished: hasPermission(PERMISSIONS.ACTION_PRODUCTION_BATCHES_ACCEPT_FINISHED),
     revokeAny: hasPermission(PERMISSIONS.ACTION_PRODUCTION_BATCHES_REVOKE_ANY),
   };
   const canCreate = can.create;
@@ -343,6 +402,10 @@ export default function BatchPage() {
 
   const lines = useMemo(() => data?.lines ?? [], [data?.lines]);
   const draft = useIssueDraft(lines);
+  const outputDraft = useOutputDraft(data);
+  // Факт по рядках: редагування – під час готування, перегляд – після підпису факту виходу
+  const outputEditable = can.accept && (data?.status === 'accepted' || data?.status === 'cooking');
+  const outputView = data != null && ['output', 'finished', 'closed'].includes(data.status);
   const raw = lines.filter((l) => l.kind === 'raw');
   const packaging = lines.filter((l) => l.kind === 'packaging');
   const linesMode: BatchLinesMode = !data
@@ -409,17 +472,25 @@ export default function BatchPage() {
             )}
             <Card className="rounded-lg shadow-none">
               <CardBody className="p-4">
-                <Stepper batch={data} draft={draft} userId={typeof user?.id === 'number' ? user.id : null} can={can} />
+                <Stepper batch={data} draft={draft} outputDraft={outputDraft} userId={typeof user?.id === 'number' ? user.id : null} can={can} />
               </CardBody>
             </Card>
             <Card className="rounded-lg shadow-none">
               <CardBody className="flex flex-col gap-5 p-4">
                 <Section icon="list" title="Сировина" aside={`на ${data.plannedPortions} порцій`}>
-                  <BatchLinesTable kind="raw" lines={raw} mode={linesMode} draft={draft} />
+                  {outputEditable || outputView ? (
+                    <OutputLinesTable kind="raw" lines={raw} draft={outputEditable ? outputDraft : null} />
+                  ) : (
+                    <BatchLinesTable kind="raw" lines={raw} mode={linesMode} draft={draft} />
+                  )}
                 </Section>
                 {packaging.length > 0 && (
                   <Section icon="package" title="Пакування" className="pt-3">
-                    <BatchLinesTable kind="packaging" lines={packaging} mode={linesMode} draft={draft} />
+                    {outputEditable || outputView ? (
+                      <OutputLinesTable kind="packaging" lines={packaging} draft={outputEditable ? outputDraft : null} />
+                    ) : (
+                      <BatchLinesTable kind="packaging" lines={packaging} mode={linesMode} draft={draft} />
+                    )}
                   </Section>
                 )}
                 {data.stages.length > 0 && (
