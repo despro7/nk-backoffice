@@ -17,6 +17,7 @@ export type PermissionGroup =
   | 'actions.products'
   | 'actions.integrations'
   | 'actions.hr'
+  | 'actions.production'
   | 'actions.chatwoot';
 
 export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
@@ -33,6 +34,7 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   'actions.products': 'Операції з товарами',
   'actions.integrations': 'Dilovod / SalesDrive',
   'actions.hr': 'Персонал',
+  'actions.production': 'Виробництво',
   'actions.chatwoot': 'Чат-бот',
 };
 
@@ -49,6 +51,7 @@ const ACTION_UI_GROUP: Record<string, PermissionGroup> = {
   salesdrive: 'actions.integrations',
   lal: 'actions.integrations',
   hr: 'actions.hr',
+  production: 'actions.production',
   chatwoot: 'actions.chatwoot',
 };
 
@@ -281,6 +284,13 @@ export const PERMISSION_SEEDS: Array<{ key: PermissionKey; seed: SeedGrant }> = 
   { key: actionKey('hr', 'employment.change-pay-rate'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
 
   { key: pageKey('production', 'techcards'), seed: min(ROLES.STOREKEEPER) },
+  { key: pageKey('production', 'batches'), seed: min(ROLES.STOREKEEPER) },
+  { key: actionKey('production', 'batches.create'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
+  { key: actionKey('production', 'batches.issue'), seed: only(ROLES.ADMIN, ROLES.BOSS, ROLES.STOREKEEPER) },
+  { key: actionKey('production', 'batches.acceptProduction'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
+  { key: actionKey('production', 'batches.cook'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
+  { key: actionKey('production', 'batches.acceptFinished'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
+  { key: actionKey('production', 'batches.revokeAny'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
 
   { key: pageKey('settings', 'orderAssembly'), seed: min(ROLES.STOREKEEPER) },
   { key: pageKey('settings', 'equipment'), seed: only(ROLES.ADMIN, ROLES.BOSS, ROLES.STOREKEEPER) },
@@ -391,6 +401,13 @@ export const PERMISSIONS = {
   ACTION_HR_EMPLOYMENT_CHANGE_EMPLOYER: actionKey('hr', 'employment.change-employer'),
   ACTION_HR_EMPLOYMENT_CHANGE_PAY_RATE: actionKey('hr', 'employment.change-pay-rate'),
   PAGE_PRODUCTION_TECHCARDS: pageKey('production', 'techcards'),
+  PAGE_PRODUCTION_BATCHES: pageKey('production', 'batches'),
+  ACTION_PRODUCTION_BATCHES_CREATE: actionKey('production', 'batches.create'),
+  ACTION_PRODUCTION_BATCHES_ISSUE: actionKey('production', 'batches.issue'),
+  ACTION_PRODUCTION_BATCHES_ACCEPT_PRODUCTION: actionKey('production', 'batches.acceptProduction'),
+  ACTION_PRODUCTION_BATCHES_COOK: actionKey('production', 'batches.cook'),
+  ACTION_PRODUCTION_BATCHES_ACCEPT_FINISHED: actionKey('production', 'batches.acceptFinished'),
+  ACTION_PRODUCTION_BATCHES_REVOKE_ANY: actionKey('production', 'batches.revokeAny'),
   PAGE_SETTINGS_ORDER_ASSEMBLY: pageKey('settings', 'orderAssembly'),
   PAGE_SETTINGS_EQUIPMENT: pageKey('settings', 'equipment'),
   PAGE_SETTINGS_ORDERS: pageKey('settings', 'orders'),

@@ -604,6 +604,7 @@ model CatalogGood {
   specVersions         CatalogSpecVersion[]
   techCardDraft        TechCardDraft?
   techCardVersions     TechCardVersion[]
+  productionBatches    ProductionBatch[]
   labels               CatalogProductLabel[]
   portionLabelTemplate CatalogLabelTemplate?      @relation("PortionLabelTemplate", fields: [portionLabelTemplateId], references: [id], onDelete: SetNull)
   boxLabelTemplate     CatalogLabelTemplate?      @relation("BoxLabelTemplate", fields: [boxLabelTemplateId], references: [id], onDelete: SetNull)
@@ -824,6 +825,141 @@ model TechCardDraft {
 
   @@index([status])
   @@map("tech_card_drafts")
+}
+
+/// Варка (фаза 3 техкарт): внутрішній документ виробництва. Фіксує версію техкарти і знімок рецепту.
+model ProductionBatch {
+  id              Int       @id @default(autoincrement())
+  /// ВР-YMMDD-N (одна цифра року, N у межах планового дня по всіх товарах)
+  number          String    @unique @db.VarChar(24)
+  goodId          String    @db.VarChar(32)
+  techCardVersion Int
+  specVersion     Int?
+  /// Знімок рецепту на момент створення: { payload: TechCardPayload, specQty, lossFormula, components }
+  snapshotJson    Json
+  plannedPortions Int
+  /// Плановий день варки (дата без часу, Київ)
+  plannedDate     DateTime  @db.Date
+  /// draft | issued | accepted | cooking | output | finished | closed | cancelled
+  status          String    @default("draft") @db.VarChar(16)
+  /// Факт виходу (крок 5): порції, брак, на пробу, коробки тощо
+  factJson        Json?
+  comment         String?   @db.Text
+  createdById     Int?
+  cancelledAt     DateTime?
+  cancelledById   Int?
+  cancelReason    String?   @db.Text
+  closedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  good       CatalogGood                @relation(fields: [goodId], references: [id], onDelete: Restrict)
+  lines      ProductionBatchLine[]
+  stages     ProductionBatchStage[]
+  signatures ProductionBatchSignature[]
+  events     ProductionBatchEvent[]
+
+  @@index([goodId])
+  @@index([status])
+  @@index([plannedDate])
+  @@map("production_batches")
+}
+
+/// Рядок варки: сировина (рядок специфікації) або пакування.
+model ProductionBatchLine {
+  id              Int       @id @default(autoincrement())
+  batchId         Int
+  /// raw | packaging
+  kind            String    @db.VarChar(16)
+  sortOrder       Int       @default(0)
+  goodId          String    @db.VarChar(32)
+  /// rowKey рядка специфікації (сировина)
+  rowKey          String?   @db.VarChar(64)
+  name            String    @db.VarChar(255)
+  unitId          String?   @db.VarChar(32)
+  unitName        String?   @db.VarChar(32)
+  /// Планова кількість на варку в одиниці рядка (сировина – нетто)
+  plannedQty      Float
+  /// Маса нетто / брутто на варку, кг (сировина з відомою масою)
+  plannedNetKg    Float?
+  plannedGrossKg  Float?
+  lossesJson      Json?
+  /// Крок 2: знімок облікових залишків СП / ВП і фактичний залишок
+  stockRawSnap    Float?
+  stockProdSnap   Float?
+  stockSnapAt     DateTime?
+  stockActual     Float?
+  issuedQty       Float?
+  issueNote       String?   @db.Text
+  shortageComment String?   @db.Text
+  /// Крок 5: витрачено, залишок і що з ним робити (keep_vp | return_sp)
+  consumedQty     Float?
+  leftoverQty     Float?
+  leftoverAction  String?   @db.VarChar(16)
+  note            String?   @db.Text
+
+  batch ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId])
+  @@map("production_batch_lines")
+}
+
+/// Етап варки з техкарти: план і фактичні відмітки (крок 4).
+model ProductionBatchStage {
+  id                 Int       @id @default(autoincrement())
+  batchId            Int
+  stageKey           String    @db.VarChar(64)
+  sortOrder          Int       @default(0)
+  name               String    @db.VarChar(255)
+  plannedOffsetMin   Int?
+  plannedDurationMin Int?
+  startedAt          DateTime?
+  startedById        Int?
+  finishedAt         DateTime?
+  finishedById       Int?
+  actualTemp         String?   @db.VarChar(64)
+  comment            String?   @db.Text
+
+  batch ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId])
+  @@map("production_batch_stages")
+}
+
+/// Підпис кроку варки; відкликаний підпис лишається в історії.
+model ProductionBatchSignature {
+  id            Int       @id @default(autoincrement())
+  batchId       Int
+  /// issued | accepted | output | finished
+  step          String    @db.VarChar(16)
+  userId        Int
+  userName      String    @db.VarChar(255)
+  roleLabel     String?   @db.VarChar(128)
+  signedAt      DateTime  @default(now())
+  revokedAt     DateTime?
+  revokedById   Int?
+  revokeComment String?   @db.Text
+
+  batch ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId])
+  @@map("production_batch_signatures")
+}
+
+/// Таймлайн варки: кожна дія з автором і часом.
+model ProductionBatchEvent {
+  id          Int      @id @default(autoincrement())
+  batchId     Int
+  type        String   @db.VarChar(32)
+  userId      Int?
+  userName    String?  @db.VarChar(255)
+  at          DateTime @default(now())
+  payloadJson Json?
+
+  batch ProductionBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId, at])
+  @@map("production_batch_events")
 }
 
 model CatalogProductLabelDraft {

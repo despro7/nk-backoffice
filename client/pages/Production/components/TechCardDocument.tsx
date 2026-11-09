@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type MutableRefObject, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { buildTechCardPdfRecipe } from '../techCardExport/techCardPdfRecipe';
+import { TechCardBatchesTab } from './TechCardBatchesTab';
 import { hasDerivedRows } from '@shared/utils/catalogQtyFormula';
 import {
   Button,
@@ -717,7 +718,7 @@ export function TechCardDocument({
         />
       </div>
       {tab === 'versions' && <VersionsTab data={data} overlayZ={overlayZ} />}
-      {tab === 'batches' && <p className="text-sm text-default-500">Варок за цією техкартою ще немає.</p>}
+      {tab === 'batches' && <TechCardBatchesTab data={data} overlayZ={overlayZ} />}
     </>
   );
 

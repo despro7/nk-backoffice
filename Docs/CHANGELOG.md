@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-11-13 – Варки, фаза 3a: модель, створення, список і сторінка варки
+
+**Files:** `prisma/schema.prisma`, `prisma/migrations/20261113120000_production_batches/`, `shared/types/production.ts`, `shared/utils/productionBatchPlan.ts` (+ spec), `shared/constants/permissions.ts`, `server/modules/Production/{ProductionBatchService,TechCardService}.ts`, `server/routes/production.ts`, `client/routes.config.tsx`, `client/pages/Production/{useProductionBatches.ts,Batches/index.tsx,Batches/BatchPage.tsx,TechCards/index.tsx}`, `client/pages/Production/components/{batchUi,BatchDatePicker,NewBatchModal,TechCardBatchesTab,TechCardDocument}.tsx`
+
+- **Модель варки:** `production_batches` (номер `ВР-YMMDD-N` за плановим днем, версії техкарти й специфікації, знімок рецепту, план порцій і день, стан), рядки сировини й пакування з плановими кількостями, етапи, підписи, події (таймлайн). Варка створюється лише з затвердженої версії техкарти і не змінюється від пізніших правок техкарти.
+- **Планові кількості:** сировина – масштаб на порції, похідні рядки – за формулою (b на варку), брутто – за формулою втрат; пакування «на порцію» × порції, «на коробку» × коробки (вгору за «Порцій у коробці»).
+- **Права:** перегляд варок (`page.production.batches`) і дії `action.production.batches.*` – створення, видача, прийом на виробництво й факт виходу, етапи готування, прийом на склад ГП, відкликання будь-якого підпису. Початково: перегляд – Комірник і вище, видача – Комірник і Директор, решта – Директор; ролі для кроків призначаються в правах доступу.
+- **UI:** «Виробництво → Варки» (пошук, стан, плановий день), сторінка варки (кроки 1–7, план сировини й пакування, етапи, таймлайн, скасування з причиною до прийому на виробництво), у техкарті – вкладка «Варки» з «Нова варка» (план порцій за замовчуванням – «Порцій на варку» техкарти), у списку техкарт – колонка «Остання варка». План порцій, день і коментар змінюються лише в чернетці варки; планові кількості перераховуються. Дати – HeroUI DatePicker (українська локаль).
+
+**Документація:** `Docs/plans/production-techcards.md` – фаза 3, крок 3a.
+
+---
+
 ## 2026-11-12 – Техкарти, фаза 2d: повна техкарта в PDF, Drawer і мобільний вигляд
 
 **Files:** `client/pages/Production/techCardExport/{TechCardPdfDocument.tsx,techCardPdfExport.ts,techCardPdfRecipe.ts}`, `client/pages/Production/components/{TechCardComposition,TechCardDocument,TechCardDrawer,TechCardEditor,DurationHmField,useTechCardEditGuard}.ts(x)`, `client/pages/Production/TechCards/TechCardPage.tsx`, `client/pages/Production/components/{TechCardRecipeView,techCardRecipe}.ts(x)`, `server/modules/Production/TechCardService.ts`, `client/pages/Products/components/{DescriptionEditor,productDrawer/BomQtyFormulaPopover,productDrawer/BomSection}.tsx`, `client/pages/Products/ProductsUtils.ts`, `client/components/ui/DurationMinutesField.tsx`, `shared/utils/stageHtmlBlocks.ts` (+ spec), `shared/types/{catalog,production}.ts`, `shared/utils/catalogQtyFormula.ts`

@@ -1,4 +1,4 @@
-import type { CatalogDictItemDto, CatalogGoodDetailDto } from './catalog.js';
+import type { CatalogDictItemDto, CatalogGoodDetailDto, CatalogQtyFormula } from './catalog.js';
 import type { CatalogSpecStateDto } from './catalogSpec.js';
 
 /** Частка втрат одного типу в рядку специфікації (напр. «Очистка» 32%). */
@@ -129,6 +129,8 @@ export interface TechCardListItemDto {
   stagesCount: number;
   /** Остання зміна техкарти (версія або чернетка) */
   updatedAt: string | null;
+  /** Остання нескасована варка товару */
+  lastBatch: { number: string; plannedDate: string; status: ProductionBatchStatus } | null;
 }
 
 export interface TechCardVersionDto {
@@ -166,7 +168,158 @@ export interface TechCardDetailDto {
   draft: TechCardDraftDto | null;
   /** Формула брутто з урахуванням перевизначення в техкарті */
   lossFormula: CatalogLossFormula;
-  /** Назви товарів пакування з версії і чернетки */
   /** Товари пакування: назва, артикул, вага з каталогу (кг) */
   goodNames: Record<string, { name: string; sku: string | null; weight?: number | null }>;
+}
+
+// ── Варки (фаза 3) ──────────────────────────────────────────────────────────
+
+/** Стан варки: кроки 1–7 і скасування. */
+export const PRODUCTION_BATCH_STATUSES = [
+  'draft',
+  'issued',
+  'accepted',
+  'cooking',
+  'output',
+  'finished',
+  'closed',
+  'cancelled',
+] as const;
+export type ProductionBatchStatus = (typeof PRODUCTION_BATCH_STATUSES)[number];
+
+export const PRODUCTION_BATCH_STATUS_LABELS: Record<ProductionBatchStatus, string> = {
+  draft: 'Чернетка',
+  issued: 'Сировину видано',
+  accepted: 'Прийнято на виробництво',
+  cooking: 'Готування',
+  output: 'Факт виходу',
+  finished: 'Прийнято на склад ГП',
+  closed: 'Закрито',
+  cancelled: 'Скасовано',
+};
+
+/** Рядок специфікації у знімку варки (для розрахунку планових кількостей). */
+export interface ProductionBatchSnapshotComponent {
+  rowKey: string | null;
+  componentGoodId: string;
+  name: string;
+  note: string | null;
+  qty: number;
+  unitId: string | null;
+  componentWeight: number | null;
+  cookingLossPercent: number;
+  losses: CatalogLossEntry[] | null;
+  qtyFormula: CatalogQtyFormula | null;
+}
+
+/** Знімок рецепту, зафіксований у варці на момент створення. */
+export interface ProductionBatchSnapshot {
+  payload: TechCardPayload;
+  specQty: number;
+  lossFormula: CatalogLossFormula;
+  components: ProductionBatchSnapshotComponent[];
+  /** Товари пакування: назва, одиниця, вага (кг) */
+  packagingGoods: Record<string, { name: string; unitId: string | null; weight: number | null }>;
+}
+
+export type ProductionBatchLineKind = 'raw' | 'packaging';
+
+export interface ProductionBatchLineDto {
+  id: number;
+  kind: ProductionBatchLineKind;
+  goodId: string;
+  rowKey: string | null;
+  name: string;
+  unitName: string | null;
+  plannedQty: number;
+  plannedNetKg: number | null;
+  plannedGrossKg: number | null;
+  losses: CatalogLossEntry[] | null;
+  stockRawSnap: number | null;
+  stockProdSnap: number | null;
+  stockSnapAt: string | null;
+  stockActual: number | null;
+  issuedQty: number | null;
+  issueNote: string | null;
+  shortageComment: string | null;
+  consumedQty: number | null;
+  leftoverQty: number | null;
+  leftoverAction: 'keep_vp' | 'return_sp' | null;
+  note: string | null;
+}
+
+export interface ProductionBatchStageDto {
+  id: number;
+  stageKey: string;
+  name: string;
+  plannedOffsetMin: number | null;
+  plannedDurationMin: number | null;
+  startedAt: string | null;
+  startedByName: string | null;
+  finishedAt: string | null;
+  finishedByName: string | null;
+  actualTemp: string | null;
+  comment: string | null;
+}
+
+export interface ProductionBatchSignatureDto {
+  id: number;
+  step: string;
+  userName: string;
+  roleLabel: string | null;
+  signedAt: string;
+  revokedAt: string | null;
+  revokedByName: string | null;
+  revokeComment: string | null;
+}
+
+export interface ProductionBatchEventDto {
+  id: number;
+  type: string;
+  userName: string | null;
+  at: string;
+  payload: Record<string, unknown> | null;
+}
+
+export interface ProductionBatchListItemDto {
+  id: number;
+  number: string;
+  goodId: string;
+  goodName: string;
+  goodSku: string | null;
+  plannedPortions: number;
+  /** YYYY-MM-DD */
+  plannedDate: string;
+  status: ProductionBatchStatus;
+  techCardVersion: number;
+  createdByName: string | null;
+  createdAt: string;
+}
+
+export interface ProductionBatchDetailDto extends ProductionBatchListItemDto {
+  specVersion: number | null;
+  comment: string | null;
+  cancelledAt: string | null;
+  cancelledByName: string | null;
+  cancelReason: string | null;
+  closedAt: string | null;
+  snapshot: ProductionBatchSnapshot;
+  lines: ProductionBatchLineDto[];
+  stages: ProductionBatchStageDto[];
+  signatures: ProductionBatchSignatureDto[];
+  events: ProductionBatchEventDto[];
+}
+
+export interface ProductionBatchCreateInput {
+  goodId: string;
+  plannedPortions: number;
+  /** YYYY-MM-DD */
+  plannedDate: string;
+  comment?: string | null;
+}
+
+export interface ProductionBatchUpdatePlanInput {
+  plannedPortions?: number;
+  plannedDate?: string;
+  comment?: string | null;
 }

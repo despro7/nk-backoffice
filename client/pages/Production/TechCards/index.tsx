@@ -14,9 +14,10 @@ import {
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { useNavigate } from 'react-router-dom';
-import type { TechCardStatus } from '@shared/types/production';
+import { PRODUCTION_BATCH_STATUS_LABELS, type TechCardStatus } from '@shared/types/production';
 import { useTechCards } from '../useTechCards';
 import { SpecDraftChip, TECH_CARD_STATUS_META, TechCardStatusChip, formatDateTime } from '../components/techCardUi';
+import { formatBatchDate } from '../components/batchUi';
 
 const TABLE_CLASS_NAMES = {
   wrapper: 'p-0 shadow-none',
@@ -99,6 +100,7 @@ export default function TechCardsPage() {
                 <TableColumn key="status">Техкарта</TableColumn>
                 <TableColumn key="stages" className="text-right">Етапів</TableColumn>
                 <TableColumn key="updatedAt">Змінено</TableColumn>
+                <TableColumn key="lastBatch">Остання варка</TableColumn>
               </TableHeader>
               <TableBody>
                 {filtered.map((item, index) => (
@@ -130,6 +132,19 @@ export default function TechCardsPage() {
                     <TableCell className="text-right tabular-nums">{item.stagesCount || '–'}</TableCell>
                     <TableCell className="tabular-nums text-sm text-default-500">
                       {formatDateTime(item.updatedAt)}
+                    </TableCell>
+                    <TableCell>
+                      {item.lastBatch ? (
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-mono text-xs">{item.lastBatch.number}</span>
+                          <span className="text-xs text-default-500">
+                            {formatBatchDate(item.lastBatch.plannedDate)} ·{' '}
+                            {PRODUCTION_BATCH_STATUS_LABELS[item.lastBatch.status]}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-default-400">–</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

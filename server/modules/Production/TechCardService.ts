@@ -37,6 +37,7 @@ import { hasDerivedRows, recalcDerivedRows } from '../../../shared/utils/catalog
 import { specContentFromDetail } from '../../../shared/utils/catalogSpecContent.js';
 import { productsCatalogService } from '../Products/ProductsCatalogService.js';
 import { productionSettingsService } from './ProductionSettingsService.js';
+import { productionBatchService } from './ProductionBatchService.js';
 
 export class TechCardError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -177,6 +178,7 @@ class TechCardService {
         })
       : [];
     const currentByGood = new Map(currentRows.map((r) => [r.goodId, r]));
+    const lastBatch = await productionBatchService.lastByGood(goodIds);
 
     return goods.map((g) => {
       const current = currentByGood.get(g.id) ?? null;
@@ -196,6 +198,7 @@ class TechCardService {
         status: resolveStatus(current != null, draft),
         stagesCount: payload.stages.length,
         updatedAt: updatedAt?.toISOString() ?? null,
+        lastBatch: lastBatch.get(g.id) ?? null,
       };
     });
   }

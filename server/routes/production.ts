@@ -6,10 +6,12 @@
  * GET /techcards, /techcards/:goodId, /techcards/:goodId/versions – page.production.techcards
  * PUT|DELETE /techcards/:goodId/draft, POST /techcards/:goodId/submit – + action.products.editSpec
  * POST /techcards/:goodId/approve|reject – + action.products.approveSpec (pair with the spec draft)
+ * GET /batches, /batches/:id – page.production.batches
+ * POST /batches, PATCH /batches/:id, POST /batches/:id/cancel – + action.production.batches.create
  */
 
 import { Router, type Request, type Response } from 'express';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requirePermission } from '../middleware/auth.js';
 import { sendInsufficientRole } from '../middleware/requirePermission.js';
 import { roleService } from '../services/RoleService.js';
 import { PERMISSIONS, pageKey } from '../../shared/constants/permissions.js';
@@ -19,15 +21,25 @@ import {
 } from '../modules/Production/ProductionSettingsService.js';
 import { CatalogSpecError } from '../modules/Products/CatalogSpecService.js';
 import { TechCardError, techCardService } from '../modules/Production/TechCardService.js';
+import { ProductionBatchError, productionBatchService } from '../modules/Production/ProductionBatchService.js';
 
 const router = Router();
 const SETTINGS_PAGE_KEY = pageKey('settings', 'production');
 const TECHCARDS_PAGE_KEY = pageKey('production', 'techcards');
+const BATCHES_PAGE_KEY = pageKey('production', 'batches');
+
+// Дії варок (кроки реєструються тут, щоб усі з'явились у правах ролей; кроки 2–7 – у наступних фазах)
+const batchCreate = requirePermission('production', 'batches.create', 'Створювати і скасовувати варки');
+requirePermission('production', 'batches.issue', 'Видавати сировину на варку');
+requirePermission('production', 'batches.acceptProduction', 'Приймати на виробництво і вносити факт виходу');
+requirePermission('production', 'batches.cook', 'Відмічати етапи готування');
+requirePermission('production', 'batches.acceptFinished', 'Приймати продукцію варки на склад ГП');
+requirePermission('production', 'batches.revokeAny', 'Відкликати будь-який підпис варки');
 
 router.use(authenticateToken);
 
 function sendError(res: Response, err: unknown) {
-  if (err instanceof ProductionSettingsError || err instanceof TechCardError) {
+  if (err instanceof ProductionSettingsError || err instanceof TechCardError || err instanceof ProductionBatchError) {
     return res.status(err.status).json({ success: false, error: err.message });
   }
   if (err instanceof CatalogSpecError) {
@@ -148,6 +160,62 @@ router.post('/techcards/:goodId/reject', async (req: Request, res: Response) => 
   try {
     const reason = typeof req.body?.reason === 'string' ? req.body.reason : '';
     res.json({ success: true, data: await techCardService.reject(req.params.goodId, reason, userId(req)) });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// ── Варки ────────────────────────────────────────────────────────────────────
+
+async function canViewBatches(req: Request, res: Response): Promise<boolean> {
+  if (await roleService.hasPermission(req.user!.role, BATCHES_PAGE_KEY)) return true;
+  sendInsufficientRole(res, 'Немає доступу до варок', { permissionKey: BATCHES_PAGE_KEY });
+  return false;
+}
+
+function batchId(req: Request): number {
+  const id = Number(req.params.id);
+  return Number.isInteger(id) && id > 0 ? id : 0;
+}
+
+router.get('/batches', async (req: Request, res: Response) => {
+  if (!(await canViewBatches(req, res))) return;
+  try {
+    res.json({ success: true, data: await productionBatchService.list(req.query) });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+router.get('/batches/:id', async (req: Request, res: Response) => {
+  if (!(await canViewBatches(req, res))) return;
+  try {
+    res.json({ success: true, data: await productionBatchService.getDetail(batchId(req)) });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+router.post('/batches', batchCreate, async (req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: await productionBatchService.create(req.body ?? {}, userId(req)) });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+router.patch('/batches/:id', batchCreate, async (req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: await productionBatchService.updatePlan(batchId(req), req.body ?? {}, userId(req)) });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+router.post('/batches/:id/cancel', batchCreate, async (req: Request, res: Response) => {
+  try {
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason : '';
+    res.json({ success: true, data: await productionBatchService.cancel(batchId(req), reason, userId(req)) });
   } catch (err) {
     sendError(res, err);
   }

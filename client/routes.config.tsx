@@ -45,6 +45,8 @@ const SettingsLabelTemplates = lazyPage(() => import('./pages/SettingsLabelTempl
 const SettingsProduction = lazyPage(() => import('./pages/SettingsProduction'));
 const TechCardsPage = lazyPage(() => import('./pages/Production/TechCards'));
 const TechCardPage = lazyPage(() => import('./pages/Production/TechCards/TechCardPage'));
+const BatchesPage = lazyPage(() => import('./pages/Production/Batches'));
+const BatchPage = lazyPage(() => import('./pages/Production/Batches/BatchPage'));
 const SettingsDilovod = lazyPage(() => import('./pages/SettingsDilovod'));
 const SettingsDirectoriesCache = lazyPage(() => import('./pages/SettingsDirectoriesCache'));
 const SettingsWarehouseMovement = lazyPage(() => import('./pages/SettingsWarehouseMovement'));
@@ -531,6 +533,30 @@ export const appRoutes: AppRoute[] = [
     inNav: false,
     parent: 'production',
     permission: { name: 'techcards', label: 'Техкарти' },
+    hasOwnTitle: true,
+  },
+  {
+    path: '/production/batches',
+    component: BatchesPage,
+    title: 'Варки',
+    pageTitle: 'Варки | NK Backoffice',
+    navLabel: 'Варки',
+    icon: <DynamicIcon name="cooking-pot" size={16} />,
+    inNav: true,
+    parent: 'production',
+    order: 1,
+    permission: { name: 'batches', label: 'Варки' },
+  },
+  {
+    path: '/production/batches/:id',
+    component: BatchPage,
+    title: 'Варка',
+    pageTitle: 'Варка | NK Backoffice',
+    navLabel: 'Варка',
+    icon: null,
+    inNav: false,
+    parent: 'production',
+    permission: { name: 'batches', label: 'Варки' },
     hasOwnTitle: true,
   },
   {
