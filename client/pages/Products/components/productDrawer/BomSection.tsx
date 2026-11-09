@@ -108,7 +108,7 @@ interface BomSectionProps {
   lossTypes: ProductionLossType[];
   /** Формула складання типів втрат у брутто */
   lossFormula: CatalogLossFormula;
-  /** «Розрахунок на N порцій» з техкарти (похідні рядки) */
+  /** «Порцій на варку» (N) з техкарти (похідні рядки) */
   batchPortions: number;
 }
 

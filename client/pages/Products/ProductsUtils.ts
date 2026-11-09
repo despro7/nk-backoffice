@@ -958,6 +958,8 @@ export type TechCardRow = {
   massKgRecipe: number | null;
   massKgNetTotal: number | null;
   massKgGrossTotal: number | null;
+  /** Ключ рядка специфікації (секції складу за етапами техкарти) */
+  rowKey: string | null;
   /** Похідний рядок: кількість на варку за формулою `k · x + b`, а не масштабом */
   derived: { k: number; b: number; sourceName: string; batchQtyDisplay: string } | null;
 };
@@ -1168,6 +1170,7 @@ export function buildTechCardRows(
         massKgRecipe: netRecipe,
         massKgNetTotal: netTotal,
         massKgGrossTotal: grossTotal,
+        rowKey: c.rowKey ?? null,
         derived:
           formula && batchQty != null
             ? {

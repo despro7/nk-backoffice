@@ -2,6 +2,7 @@ import { pdf, Font } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
 import type { TechCardResult } from '@/pages/Products/ProductsUtils';
 import { TechCardPdfDocument } from './TechCardPdfDocument';
+import type { TechCardPdfRecipe } from './techCardPdfRecipe';
 import { buildTechCardFileName } from './techCardExportShared';
 
 let fontsRegistered = false;
@@ -22,10 +23,11 @@ async function renderTechCardPdfBlob(
   productName: string,
   specQty: number,
   portions: number,
-  techCard: TechCardResult
+  techCard: TechCardResult,
+  recipe?: TechCardPdfRecipe | null
 ): Promise<Blob> {
   ensureTechCardPdfFonts();
-  return pdf(TechCardPdfDocument({ productName, specQty, portions, techCard })).toBlob();
+  return pdf(TechCardPdfDocument({ productName, specQty, portions, techCard, recipe })).toBlob();
 }
 
 function printPdfInBrowser(blob: Blob): void {
@@ -46,9 +48,10 @@ export async function exportTechCardPdf(
   productName: string,
   specQty: number,
   portions: number,
-  techCard: TechCardResult
+  techCard: TechCardResult,
+  recipe?: TechCardPdfRecipe | null
 ): Promise<void> {
-  const blob = await renderTechCardPdfBlob(productName, specQty, portions, techCard);
+  const blob = await renderTechCardPdfBlob(productName, specQty, portions, techCard, recipe);
   saveAs(blob, buildTechCardFileName(productName, 'pdf'));
 }
 
@@ -56,8 +59,9 @@ export async function printTechCardPdf(
   productName: string,
   specQty: number,
   portions: number,
-  techCard: TechCardResult
+  techCard: TechCardResult,
+  recipe?: TechCardPdfRecipe | null
 ): Promise<void> {
-  const blob = await renderTechCardPdfBlob(productName, specQty, portions, techCard);
+  const blob = await renderTechCardPdfBlob(productName, specQty, portions, techCard, recipe);
   printPdfInBrowser(blob);
 }

@@ -21,7 +21,7 @@ interface BomQtyFormulaPopoverProps {
   rows: BomRow[];
   units: UnitLike[];
   specQty: number;
-  /** «Розрахунок на N порцій» з техкарти */
+  /** «Порцій на варку» (N) з техкарти */
   batchPortions: number;
   isReadOnly: boolean;
   onChange: (formula: CatalogQtyFormula | null) => void;
@@ -204,7 +204,7 @@ export function BomQtyFormulaPopover({
             <div className="flex flex-col gap-1.5 rounded-md bg-default-100 px-2.5 py-2">
               {source && sourceBatchInRowUnits != null && (
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs text-default-500" title="N – «Розрахунок на N порцій» у техкарті">
+                  <span className="text-xs text-default-500" title="«Порцій на варку» з техкарти">
                     На {fmt(n, 0)} порцій
                   </span>
                   <span className="text-right tabular-nums">

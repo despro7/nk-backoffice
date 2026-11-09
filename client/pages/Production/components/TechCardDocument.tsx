@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { buildTechCardPdfRecipe } from '../techCardExport/techCardPdfRecipe';
 import { hasDerivedRows } from '@shared/utils/catalogQtyFormula';
 import {
   Button,
@@ -41,7 +42,10 @@ import {
 import { buildSpecRowOptions } from './techCardRecipe';
 import { SpecDraftChip, TechCardStatusChip, formatDateTime } from './techCardUi';
 
-type TabKey = 'card' | 'versions' | 'batches';
+export type TechCardTabKey = 'card' | 'versions' | 'batches';
+type TabKey = TechCardTabKey;
+/** Як виглядає панель дій: рядок у документі, окремий блок під карткою (сторінка), у футері Drawer */
+type FooterVariant = 'inline' | 'card' | 'bare';
 export type TechCardContext = 'page' | 'drawer';
 
 const VERSION_SOURCE_LABELS: Record<TechCardVersionSource, string> = {
@@ -83,11 +87,30 @@ function TabTitle({ icon, children }: { icon: IconName; children: string }) {
 
 /** Рядок метаданих техкарти: статус, версії, артикул. */
 export function TechCardMeta({ data }: { data: TechCardDetailDto }) {
+  // Хто й коли востаннє зберіг поточний стан: чернетку, інакше чинну версію (статус – у чипі поруч)
+  const saved = data.draft
+    ? { by: data.draft.lastEditedByName ?? data.draft.authorName, at: data.draft.updatedAt }
+    : data.current
+      ? { by: data.current.approvedByName ?? data.current.authorName, at: data.current.approvedAt ?? data.current.createdAt }
+      : null;
   return (
-    <div className="flex flex-wrap items-center gap-2 text-xs text-default-500">
-      <TechCardStatusChip status={data.status} />
-      {data.spec.draft && <SpecDraftChip status={data.spec.draft.status} />}
-      <span>{data.current ? `Техкарта v${data.current.version}` : 'Версій техкарти ще немає'}</span>
+    // Мобільні: один рядок без переносу, прокручується всередині себе
+    <div className="scrollbar-hide -mt-1.5 flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap text-xs font-normal text-default-500 md:flex-wrap">
+      <span className="shrink-0">
+        <TechCardStatusChip status={data.status} />
+      </span>
+      {data.spec.draft && (
+        <span className="shrink-0">
+          <SpecDraftChip status={data.spec.draft.status} />
+        </span>
+      )}
+      {saved && <span>{[saved.by, formatDateTime(saved.at)].filter(Boolean).join(', ')}</span>}
+      {data.current && (
+        <>
+          <span>·</span>
+          <span>Техкарта v{data.current.version}</span>
+        </>
+      )}
       <span>·</span>
       <span>
         {data.spec.currentVersion != null ? `Специфікація v${data.spec.currentVersion}` : 'Специфікація без версії'}
@@ -102,9 +125,64 @@ export function TechCardMeta({ data }: { data: TechCardDetailDto }) {
   );
 }
 
-function VersionsTab({ data }: { data: TechCardDetailDto }) {
+function VersionsTab({ data, overlayZ }: { data: TechCardDetailDto; overlayZ?: string }) {
   const { versions, loading, error } = useTechCardVersions(data.goodId, true);
+  const { hasPermission } = useRoleAccess();
+  const canEdit = hasPermission(PERMISSIONS.ACTION_PRODUCTS_EDIT_SPEC);
+  const actions = useTechCardActions(data.goodId);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   const spec = data.spec.current;
+  const draft = data.draft;
+
+  const discard = async () => {
+    setDiscarding(true);
+    try {
+      await actions.discardDraft();
+      ToastService.show({ title: 'Чернетку видалено', color: 'success' });
+      setConfirmDiscard(false);
+    } catch (err) {
+      ToastService.show({
+        title: 'Не вдалося видалити чернетку',
+        description: err instanceof Error ? err.message : undefined,
+        color: 'danger',
+      });
+    } finally {
+      setDiscarding(false);
+    }
+  };
+
+  // Чернетка – віртуальна версія над затвердженими
+  const draftRow = draft ? (
+    <TableRow key="draft">
+      <TableCell>
+        <span className="inline-flex items-center gap-1">
+          <TechCardStatusChip status={draft.status} />
+          {canEdit && (
+            <Button
+              size="sm"
+              variant="light"
+              color="danger"
+              isIconOnly
+              className="h-7 w-7 min-w-7"
+              aria-label="Видалити чернетку"
+              title="Видалити чернетку"
+              onPress={() => setConfirmDiscard(true)}
+            >
+              <DynamicIcon name="trash-2" size={14} />
+            </Button>
+          )}
+        </span>
+      </TableCell>
+      <TableCell className="tabular-nums">
+        {data.spec.draft ? 'чернетка' : data.spec.currentVersion != null ? `v${data.spec.currentVersion}` : '–'}
+      </TableCell>
+      <TableCell>Backoffice</TableCell>
+      <TableCell>{draft.lastEditedByName ?? draft.authorName ?? '–'}</TableCell>
+      <TableCell className="tabular-nums">{formatDateTime(draft.updatedAt)}</TableCell>
+      <TableCell className="text-default-500">{draft.rejectReason || draft.comment || '–'}</TableCell>
+    </TableRow>
+  ) : null;
   return (
     <div className="space-y-4">
       {spec && (
@@ -114,7 +192,8 @@ function VersionsTab({ data }: { data: TechCardDetailDto }) {
         </p>
       )}
       {error && <p className="text-sm text-danger">{error}</p>}
-      <Table aria-label="Версії техкарти" removeWrapper classNames={TABLE_CLASS_NAMES}>
+      <div className="-mx-1 overflow-x-auto px-1">
+      <Table aria-label="Версії техкарти" removeWrapper classNames={{ ...TABLE_CLASS_NAMES, table: 'min-w-[640px]' }}>
         <TableHeader>
           <TableColumn>Версія</TableColumn>
           <TableColumn>Специфікація</TableColumn>
@@ -123,8 +202,10 @@ function VersionsTab({ data }: { data: TechCardDetailDto }) {
           <TableColumn>Дата</TableColumn>
           <TableColumn>Коментар</TableColumn>
         </TableHeader>
-        <TableBody isLoading={loading} emptyContent={loading ? ' ' : 'Затверджених версій техкарти ще немає'}>
-          {versions.map((v) => (
+        <TableBody isLoading={loading} emptyContent={loading ? ' ' : 'Версій техкарти ще немає'}>
+          {[
+            ...(draftRow ? [draftRow] : []),
+            ...versions.map((v) => (
             <TableRow key={v.version}>
               <TableCell className="tabular-nums font-medium">v{v.version}</TableCell>
               <TableCell className="tabular-nums">{v.specVersion != null ? `v${v.specVersion}` : '–'}</TableCell>
@@ -133,9 +214,23 @@ function VersionsTab({ data }: { data: TechCardDetailDto }) {
               <TableCell className="tabular-nums">{formatDateTime(v.approvedAt ?? v.createdAt)}</TableCell>
               <TableCell className="text-default-500">{v.comment || '–'}</TableCell>
             </TableRow>
-          ))}
+            )),
+          ]}
         </TableBody>
       </Table>
+      </div>
+      <BaseModal
+        isOpen={confirmDiscard}
+        title="Видалити чернетку"
+        message={<p className="text-sm">Чернетку техкарти буде видалено. Чинна версія не зміниться.</p>}
+        confirmText="Видалити"
+        confirmColor="danger"
+        cancelText="Скасувати"
+        confirmLoading={discarding}
+        overlayZClassName={overlayZ}
+        onConfirm={() => void discard()}
+        onCancel={() => setConfirmDiscard(false)}
+      />
     </div>
   );
 }
@@ -150,7 +245,7 @@ function ModerationBar({
   busy,
   onEdit,
   onAction,
-  detached = false,
+  variant = 'inline',
 }: {
   data: TechCardDetailDto;
   canEdit: boolean;
@@ -158,15 +253,13 @@ function ModerationBar({
   busy: boolean;
   onEdit: () => void;
   onAction: (kind: Exclude<ModalKind, null> | 'approve') => void;
-  /** Окремий блок під карткою (сторінка), а не рядок усередині документа (Drawer) */
-  detached?: boolean;
+  variant?: FooterVariant;
 }) {
   const draft = data.draft;
   const specPending = data.spec.draft?.status === 'pending';
   let text: ReactNode = null;
-  if (draft?.status === 'editing') {
-    text = `Чернетка${draft.lastEditedByName ? `: ${draft.lastEditedByName}` : ''}, ${formatDateTime(draft.updatedAt)}. Ще не подана на затвердження.`;
-  } else if (draft?.status === 'pending') {
+  // Стан чернетки, автор і дата – у шапці; тут лише коментар подання / причина відхилення
+  if (draft?.status === 'pending') {
     text = `На затвердженні${draft.comment ? `: «${draft.comment}»` : ''}${specPending ? ' (разом зі специфікацією)' : ''}.`;
   } else if (draft?.status === 'rejected') {
     text = `Відхилено${draft.rejectReason ? `: «${draft.rejectReason}»` : ''}.`;
@@ -197,23 +290,31 @@ function ModerationBar({
       </Button>,
     );
   }
-  if (canEdit && draft) {
-    buttons.push(
-      <Button key="discard" size="sm" variant="light" color="danger" startContent={<DynamicIcon name="trash-2" size={14} />} isDisabled={busy} onPress={() => onAction('discard')}>
+  const discard =
+    canEdit && draft ? (
+      <Button variant="light" color="danger" startContent={<DynamicIcon name="trash-2" size={14} />} isDisabled={busy} onPress={() => onAction('discard')}>
         Видалити чернетку
-      </Button>,
-    );
-  }
-  if (!text && buttons.length === 0) return null;
+      </Button>
+    ) : null;
+  if (!text && buttons.length === 0 && !discard) return null;
 
   return (
     <div
-      className={`flex flex-wrap items-center justify-end gap-x-3 gap-y-2 ${
-        detached ? 'rounded-lg bg-content1 px-4 py-3' : 'border-t border-default-200/60 pt-4'
+      className={`flex flex-wrap items-end justify-end gap-x-3 gap-y-2 ${
+        variant === 'card'
+          ? 'rounded-lg bg-content1 px-4 py-3'
+          : variant === 'inline'
+            ? 'border-t border-default-200/60 pt-4'
+            : ''
       }`}
     >
-      {text && <p className="mr-auto text-sm text-default-600">{text}</p>}
-      <div className="flex flex-wrap justify-end gap-2">{buttons}</div>
+      {/* Видалення – ліворуч, окремо від основних дій; стан чернетки – дрібно над кнопками праворуч */}
+      {/* На мобільних видалення – у вкладці «Версії / Історія» */}
+      {discard && <div className="mr-auto hidden md:block">{discard}</div>}
+      <div className="flex min-w-0 flex-col items-end gap-1.5">
+        {text && <p className="text-right text-xs text-default-500">{text}</p>}
+        {buttons.length > 0 && <div className="flex flex-wrap justify-end gap-2">{buttons}</div>}
+      </div>
     </div>
   );
 }
@@ -223,12 +324,14 @@ function CardTab({
   context,
   overlayZ,
   footerTarget,
+  footerVariant = 'card',
 }: {
   data: TechCardDetailDto;
   context: TechCardContext;
   overlayZ?: string;
-  /** Куди винести панель дій (під карткою на сторінці); null – усередині документа */
+  /** Куди винести панель дій (під карткою на сторінці, футер Drawer); null – усередині документа */
   footerTarget?: HTMLElement | null;
+  footerVariant?: Exclude<FooterVariant, 'inline'>;
 }) {
   const { settings } = useProductionSettings();
   const { hasPermission } = useRoleAccess();
@@ -251,6 +354,18 @@ function CardTab({
     () => buildSpecRowOptions(specComponents, data.units, specQty),
     [specComponents, data.units, specQty],
   );
+  // Друк – те, що видно: редагований рецепт, інакше чернетка, інакше чинна версія
+  const pdfRecipe = useMemo(() => {
+    const payload = editing?.payload ?? savedPayload;
+    return buildTechCardPdfRecipe({
+      data,
+      payload,
+      rows,
+      isDraft: editing != null || data.draft != null,
+      lossFormula: payload.lossFormula ?? settings.lossFormula,
+      goodNames: editing?.names ?? data.goodNames,
+    });
+  }, [data, editing, savedPayload, rows, settings.lossFormula]);
 
   const run = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -330,8 +445,15 @@ function CardTab({
           specQty={data.good.specQty}
           lossFormula={editing ? (editing.payload.lossFormula ?? settings.lossFormula) : data.lossFormula}
           lossTypes={settings.lossTypes}
-          key={editing ? editing.payload.batchPortions : savedPayload.batchPortions}
+          key={editing ? 'editing' : `view-${savedPayload.batchPortions}`}
           batchPortions={editing ? editing.payload.batchPortions : savedPayload.batchPortions}
+          pdfRecipe={pdfRecipe}
+          onBatchPortionsChange={
+            editing
+              ? (batchPortions) =>
+                  setEditing((prev) => (prev ? { ...prev, payload: { ...prev.payload, batchPortions } } : prev))
+              : undefined
+          }
         />
       </Section>
 
@@ -375,8 +497,12 @@ function CardTab({
       {renderFooter(
         editing ? (
           <div
-            className={`flex flex-col gap-3 rounded-lg bg-content1 px-4 py-3 md:flex-row md:items-center ${
-              footerTarget ? '' : 'mt-4 border border-default-200'
+            className={`flex flex-col gap-3 md:flex-row md:items-center ${
+              !footerTarget
+                ? 'mt-4 rounded-lg border border-default-200 bg-content1 px-4 py-3'
+                : footerVariant === 'card'
+                  ? 'rounded-lg bg-content1 px-4 py-3'
+                  : ''
             }`}
           >
             <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -413,7 +539,7 @@ function CardTab({
             canApprove={canApprove}
             busy={busy}
             onEdit={() => setEditing({ payload: savedPayload, names: data.goodNames })}
-            detached={footerTarget != null}
+            variant={footerTarget ? footerVariant : 'inline'}
             onAction={(kind) => {
               if (kind === 'approve') void run('Техкарту затверджено', () => actions.approve());
               else {
@@ -476,17 +602,56 @@ function CardTab({
 }
 
 /** Документ техкарти: вкладки «Техкарта», «Версії / Історія», «Варки». Спільний для сторінки і Drawer. */
+/** Вкладки техкарти в шапці Drawer – як у картці товару (на всю ширину). */
+export function TechCardDrawerTabs({ tab, onChange }: { tab: TabKey; onChange: (tab: TabKey) => void }) {
+  return (
+    <Tabs
+      size="md"
+      fullWidth
+      color="primary"
+      aria-label="Розділи техкарти"
+      selectedKey={tab}
+      onSelectionChange={(key) => onChange(String(key) as TabKey)}
+    >
+      {TAB_ITEMS.map((item) => (
+        <Tab
+          key={item.key}
+          title={
+            <div className="flex items-center gap-2">
+              <DynamicIcon name={item.icon} size={14} />
+              <span>{item.title}</span>
+            </div>
+          }
+        />
+      ))}
+    </Tabs>
+  );
+}
+
+const TAB_ITEMS: Array<{ key: TabKey; icon: IconName; title: string }> = [
+  { key: 'card', icon: 'file-text', title: 'Техкарта' },
+  { key: 'versions', icon: 'history', title: 'Версії / Історія' },
+  { key: 'batches', icon: 'cooking-pot', title: 'Варки' },
+];
+
 export function TechCardDocument({
   data,
   context = 'page',
   overlayZ,
+  tab: controlledTab,
+  footerTarget: externalFooter,
 }: {
   data: TechCardDetailDto;
   context?: TechCardContext;
   /** z-index модалок поверх вкладеного Drawer */
   overlayZ?: string;
+  /** Вкладка ззовні (Drawer тримає вкладки в шапці); без неї документ показує свої вкладки */
+  tab?: TabKey;
+  /** Футер Drawer для панелі дій */
+  footerTarget?: HTMLElement | null;
 }) {
-  const [tab, setTab] = useState<TabKey>('card');
+  const [ownTab, setTab] = useState<TabKey>('card');
+  const tab = controlledTab ?? ownTab;
   // На сторінці панель дій стоїть під карткою, як і вкладки над нею
   const [footerEl, setFooterEl] = useState<HTMLDivElement | null>(null);
   const body = (
@@ -496,13 +661,16 @@ export function TechCardDocument({
           data={data}
           context={context}
           overlayZ={overlayZ}
-          footerTarget={context === 'page' ? footerEl : null}
+          footerTarget={context === 'page' ? footerEl : (externalFooter ?? null)}
+          footerVariant={context === 'page' ? 'card' : 'bare'}
         />
       )}
-      {tab === 'versions' && <VersionsTab data={data} />}
+      {tab === 'versions' && <VersionsTab data={data} overlayZ={overlayZ} />}
       {tab === 'batches' && <p className="text-sm text-default-500">Варок за цією техкартою ще немає.</p>}
     </>
   );
+
+  if (controlledTab) return <div className="flex flex-col gap-4 pt-4">{body}</div>;
 
   return (
     <div className="flex flex-col gap-4">

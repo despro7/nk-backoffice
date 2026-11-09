@@ -28,6 +28,12 @@ interface DescriptionEditorProps {
   isDisabled?: boolean;
   /** Tailwind min-height для області редактора */
   minHeightClass?: string;
+  /**
+   * Формат абзацу: `select` – список «Параграф / Заголовок 2–6»;
+   * `simple` – дві кнопки P і H (один рівень заголовка, `simpleHeadingLevel`)
+   */
+  blockFormat?: 'select' | 'simple';
+  simpleHeadingLevel?: EditorHeadingLevel;
 }
 
 const EDITOR_SURFACE_CLASS =
@@ -41,6 +47,8 @@ export function DescriptionEditor({
   onChange,
   isDisabled,
   minHeightClass = 'min-h-[88px]',
+  blockFormat = 'select',
+  simpleHeadingLevel = 3,
 }: DescriptionEditorProps) {
   const [showSource, setShowSource] = useState(false);
   const [sourceText, setSourceText] = useState('');
@@ -187,39 +195,69 @@ export function DescriptionEditor({
 
           <Divider orientation="vertical" className="mx-1 h-5" />
 
-          <Select
-            aria-label="Формат абзацу"
-            size="sm"
-            variant="flat"
-            isDisabled={fmtDisabled}
-            selectedKeys={[activeHeadingKey]}
-            onSelectionChange={setHeadingFormat}
-            disallowEmptySelection
-            className="w-[148px]"
-            classNames={{
-              trigger:
-                'h-8 min-h-8 bg-transparent shadow-none data-[hover=true]:bg-default-100 px-2',
-              value: 'text-xs',
-              popoverContent: 'min-w-[220px]',
-            }}
-            renderValue={() => (
-              <span
-                className={
-                  activeHeadingKey === 'paragraph'
-                    ? 'text-xs'
-                    : activeHeadingOption.itemClassName
-                }
-              >
-                {activeHeadingOption.label}
-              </span>
-            )}
-          >
-            {EDITOR_HEADING_OPTIONS.map((option) => (
-              <SelectItem key={option.key} textValue={option.label}>
-                <span className={option.itemClassName ?? 'text-sm'}>{option.label}</span>
-              </SelectItem>
-            ))}
-          </Select>
+          {blockFormat === 'simple' ? (
+            <>
+              <EditorToolbarTooltip content="Параграф">
+                <Button
+                  isIconOnly
+                  size="sm"
+                  variant={activeHeadingKey === 'paragraph' ? 'flat' : 'light'}
+                  aria-label="Параграф"
+                  isDisabled={fmtDisabled}
+                  onPress={() => editor?.chain().focus().setParagraph().run()}
+                >
+                  {/* letter-p у встановленій версії lucide немає; pilcrow – знак абзацу */}
+                  <DynamicIcon name="pilcrow" size={14} />
+                </Button>
+              </EditorToolbarTooltip>
+              <EditorToolbarTooltip content="Заголовок">
+                <Button
+                  isIconOnly
+                  size="sm"
+                  variant={activeHeadingKey === String(simpleHeadingLevel) ? 'flat' : 'light'}
+                  aria-label="Заголовок"
+                  isDisabled={fmtDisabled}
+                  onPress={() => editor?.chain().focus().setHeading({ level: simpleHeadingLevel }).run()}
+                >
+                  <DynamicIcon name={`heading-${simpleHeadingLevel}`} size={14} />
+                </Button>
+              </EditorToolbarTooltip>
+            </>
+          ) : (
+            <Select
+              aria-label="Формат абзацу"
+              size="sm"
+              variant="flat"
+              isDisabled={fmtDisabled}
+              selectedKeys={[activeHeadingKey]}
+              onSelectionChange={setHeadingFormat}
+              disallowEmptySelection
+              className="w-[148px]"
+              classNames={{
+                trigger:
+                  'h-8 min-h-8 bg-transparent shadow-none data-[hover=true]:bg-default-100 px-2',
+                value: 'text-xs',
+                popoverContent: 'min-w-[220px]',
+              }}
+              renderValue={() => (
+                <span
+                  className={
+                    activeHeadingKey === 'paragraph'
+                      ? 'text-xs'
+                      : activeHeadingOption.itemClassName
+                  }
+                >
+                  {activeHeadingOption.label}
+                </span>
+              )}
+            >
+              {EDITOR_HEADING_OPTIONS.map((option) => (
+                <SelectItem key={option.key} textValue={option.label}>
+                  <span className={option.itemClassName ?? 'text-sm'}>{option.label}</span>
+                </SelectItem>
+              ))}
+            </Select>
+          )}
 
           <Divider orientation="vertical" className="mx-1 h-5" />
 

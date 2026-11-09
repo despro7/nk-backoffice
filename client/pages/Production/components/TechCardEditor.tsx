@@ -12,7 +12,7 @@ import {
 import { DragDropContext, Draggable, Droppable, type DropResult } from '@hello-pangea/dnd';
 import { DynamicIcon, type IconName } from 'lucide-react/dynamic';
 import { NumberInputFromNumber } from '@/components/NumberInput';
-import { DurationMinutesField } from '@/components/ui/DurationMinutesField';
+import { DurationHmField } from './DurationHmField';
 import { DescriptionEditor } from '@/pages/Products/components/DescriptionEditor';
 import type {
   CatalogLossFormula,
@@ -24,7 +24,6 @@ import type {
   TechCardStage,
 } from '@shared/types/production';
 import { newRowKey } from '@shared/utils/catalogRowKey';
-import { normalizeBatchPortions } from '@shared/utils/catalogQtyFormula';
 import { PACKAGING_BASIS_LABELS, TechCardCoverageNotice } from './TechCardRecipeView';
 import { fractionKg, formatGrams, stageOutputsKg, type SpecRowOption } from './techCardRecipe';
 
@@ -233,14 +232,12 @@ function StageCard({ stage, index, previous, rows, takenRowKeys, outputKg, dragH
             ))}
           </Select>
         </Field>
-        <DurationMinutesField
-          compact
+        <DurationHmField
           label="Тривалість"
           minutes={stage.durationMin ?? 0}
           onMinutesChange={(m) => set('durationMin', m > 0 ? m : null)}
         />
-        <DurationMinutesField
-          compact
+        <DurationHmField
           label="Старт від початку варки"
           minutes={stage.offsetMin ?? 0}
           onMinutesChange={(m) => set('offsetMin', m > 0 ? m : null)}
@@ -292,7 +289,11 @@ function StageCard({ stage, index, previous, rows, takenRowKeys, outputKg, dragH
 
       <div className="flex flex-col gap-1">
         <span className="text-xs text-default-500">Опис техпроцесу</span>
-        <DescriptionEditor value={stage.description ?? ''} onChange={(html) => set('description', textOrNull(html))} />
+        <DescriptionEditor
+          value={stage.description ?? ''}
+          blockFormat="simple"
+          onChange={(html) => set('description', textOrNull(html))}
+        />
       </div>
     </div>
   );
@@ -590,25 +591,16 @@ export function TechCardEditor({
               ]}
             </Select>
           </Field>
-          <Field label="Розрахунок на N порцій" hint={hasDerivedRows ? 'для похідних рядків' : null}>
-            <NumberInputFromNumber
-              size="md"
-              aria-label="Розрахунок на N порцій"
-              value={payload.batchPortions}
-              min={1}
-              decimalPlaces={0}
-              classNames={INPUT_CLASS}
-              onChange={(v) => set('batchPortions', normalizeBatchPortions(v))}
-            />
-          </Field>
         </div>
         {hasDerivedRows && (
           <p className="text-xs text-default-500">
-            Похідні рядки специфікації (кількість за формулою k · x + b) рахуються на це число порцій. Якщо його змінити,
+            Похідні рядки специфікації (кількість за формулою) рахуються на «Порцій на варку» зі складу. Якщо його змінити,
             кількість цих рядків перерахується в специфікації під час затвердження техкарти.
           </p>
         )}
       </Section>
+
+      <Divider className="bg-transparent" />
     </div>
   );
 }

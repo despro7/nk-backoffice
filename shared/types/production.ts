@@ -95,7 +95,7 @@ export interface TechCardPayload {
   portionsPerBox: number | null;
   /** Перевизначення глобальної формули брутто; null – глобальна */
   lossFormula: CatalogLossFormula | null;
-  /** «Розрахунок на N порцій»: N для похідних рядків специфікації (кількість на порцію = на варку / N) */
+  /** «Порцій на варку» (N): N для похідних рядків специфікації (кількість на порцію = на варку / N) */
   batchPortions: number;
 }
 

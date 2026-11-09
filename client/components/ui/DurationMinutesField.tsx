@@ -40,8 +40,6 @@ interface DurationMinutesFieldProps {
   description?: string;
   minutes: number;
   onMinutesChange: (minutes: number) => void;
-  /** Компактний вигляд: size sm, рамка, маленька сіра мітка над полем */
-  compact?: boolean;
 }
 
 export function DurationMinutesField({
@@ -49,7 +47,6 @@ export function DurationMinutesField({
   description,
   minutes,
   onMinutesChange,
-  compact = false,
 }: DurationMinutesFieldProps) {
   const safeMinutes = Math.max(0, minutes || 0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -80,41 +77,23 @@ export function DurationMinutesField({
   }, [safeMinutes, unit]);
 
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      {compact && (
-        <span className="text-xs text-default-500">
-          {label}
-          {(safeMinutes <= 0 || hint) && (
-            <span className="text-default-400">
-              {safeMinutes <= 0 ? ' · 0 – вимкнено' : ` ${hint}`}
-            </span>
-          )}
-        </span>
-      )}
+    <div className="flex flex-col gap-1">
       <Input
         ref={inputRef}
         type="number"
         min={0}
         step={unit === 'minutes' ? 1 : 0.5}
-        label={compact ? undefined : label}
-        aria-label={compact ? label : undefined}
-        labelPlacement={compact ? undefined : 'outside'}
-        size={compact ? 'md' : undefined}
+        label={label}
+        labelPlacement="outside"
         value={draft}
         onValueChange={(value) => {
           setDraft(value);
           onMinutesChange(parseDisplayValue(value, unit));
         }}
-        description={
-          compact
-            ? description
-            : hint
-              ? `${description ?? ''}${description ? ' · ' : ''}${hint}`
-              : description
-        }
+        description={hint ? `${description ?? ''}${description ? ' · ' : ''}${hint}` : description}
         classNames={{
           label: 'font-normal',
-          inputWrapper: compact ? 'pr-0 border-1 border-default-200' : 'pr-0',
+          inputWrapper: 'pr-0',
         }}
         endContent={
           <Select
@@ -124,9 +103,7 @@ export function DurationMinutesField({
             size="sm"
             variant="flat"
             classNames={{
-              trigger: compact
-                ? 'min-h-9 h-9 bg-transparent shadow-none px-2 data-[hover=true]:bg-transparent'
-                : 'min-h-9 h-9 bg-transparent shadow-none px-2',
+              trigger: 'min-h-9 h-9 bg-transparent shadow-none px-2',
               value: 'text-sm',
             }}
             onSelectionChange={(keys) => {

@@ -14,6 +14,8 @@ import {
   TableHeader,
   TableRow,
 } from '@heroui/react';
+import { normalizeBatchPortions } from '@shared/utils/catalogQtyFormula';
+import type { TechCardPdfRecipe } from '../techCardExport/techCardPdfRecipe';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { NumberInput } from '@/components/NumberInput';
 import { ToastService } from '@/services/ToastService';
@@ -64,8 +66,15 @@ interface TechCardCompositionProps {
   specQty: number | null;
   lossFormula: CatalogLossFormula;
   lossTypes: ProductionLossType[];
-  /** «Розрахунок на N порцій» техкарти – початкове значення «Порцій на варку» */
+  /** «Порцій на варку» (N) техкарти – початкове значення «Порцій на варку» */
   batchPortions?: number;
+  /** Етапи, пакування, дозування для PDF; без нього PDF містить лише склад */
+  pdfRecipe?: TechCardPdfRecipe | null;
+  /**
+   * Режим редагування: «Порцій на варку» – це N техкарти (зберігається в чернетці).
+   * Без нього поле – калькулятор перегляду без збереження.
+   */
+  onBatchPortionsChange?: (portions: number) => void;
 }
 
 /** «Склад» техкарти: рядки специфікації, перерахунок на N порцій, експорт і друк. */
@@ -77,6 +86,8 @@ export function TechCardComposition({
   lossFormula,
   lossTypes,
   batchPortions = DEFAULT_PORTIONS,
+  pdfRecipe = null,
+  onBatchPortionsChange,
 }: TechCardCompositionProps) {
   const [portions, setPortions] = useState(String(batchPortions));
   const [massPrecision, setMassPrecision] = useState<TechCardMassPrecision>('auto');
@@ -116,7 +127,7 @@ export function TechCardComposition({
     setPrinting(true);
     try {
       const { printTechCardPdf } = await import('../techCardExport/techCardPdfExport');
-      await printTechCardPdf(productName, safeSpecQty, safePortions, techCard);
+      await printTechCardPdf(productName, safeSpecQty, safePortions, techCard, pdfRecipe);
     } catch (err) {
       ToastService.show({
         title: 'Помилка друку',
@@ -133,7 +144,7 @@ export function TechCardComposition({
     try {
       if (format === 'pdf') {
         const { exportTechCardPdf } = await import('../techCardExport/techCardPdfExport');
-        await exportTechCardPdf(productName, safeSpecQty, safePortions, techCard);
+        await exportTechCardPdf(productName, safeSpecQty, safePortions, techCard, pdfRecipe);
       } else {
         const { exportTechCardExcel } = await import('../techCardExport/techCardExcelExport');
         await exportTechCardExcel(productName, safeSpecQty, safePortions, techCard);
@@ -151,21 +162,26 @@ export function TechCardComposition({
 
   return (
     <section className="space-y-3">
-      <div className="flex flex-wrap items-end gap-3">
+      {/* Мобільні: поля і кнопки ділять ширину порівну; з md – як раніше */}
+      <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
+        <div className="flex gap-3">
         <NumberInput
           label="Порцій на варку"
           value={portions}
           min={1}
           decimalPlaces={0}
-          className="w-44"
-          onValueChange={setPortions}
-          classNames={{ input: 'text-lg font-semibold leading-none' }}
+          className="min-w-0 flex-1 md:w-44 md:flex-none"
+          classNames={{ input: 'text-lg font-semibold leading-none translate-y-[3px]', inputWrapper: 'border-1 border-default-200' }}
+          onValueChange={(v) => {
+            setPortions(v);
+            if (onBatchPortionsChange && Number(v) >= 1) onBatchPortionsChange(normalizeBatchPortions(v));
+          }}
         />
         <Select
           label="Точність маси"
           aria-label="Точність маси нетто / брутто"
           selectedKeys={new Set([String(massPrecision)])}
-          className="w-36"
+          classNames={{ base: 'min-w-0 flex-1 md:w-36 md:flex-none', trigger: 'bg-content1 data-[open=true]:bg-content2 data-[hover=true]:bg-content2 border-1 border-default-200' }}
           onSelectionChange={(keys) => {
             const key = Array.from(keys)[0];
             if (key != null) setMassPrecision(parseMassPrecision(String(key)));
@@ -175,10 +191,12 @@ export function TechCardComposition({
             <SelectItem key={String(option.key)}>{option.label}</SelectItem>
           ))}
         </Select>
-        <div className="ml-auto flex flex-wrap gap-2">
+        </div>
+        <div className="flex gap-2 md:ml-auto">
           <Dropdown placement="bottom-end" classNames={{ content: 'min-w-20' }}>
             <DropdownTrigger>
               <Button
+                className="flex-1 md:flex-none"
                 variant="flat"
                 color="success"
                 isDisabled={exporting || isEmpty}
@@ -208,6 +226,7 @@ export function TechCardComposition({
             </DropdownMenu>
           </Dropdown>
           <Button
+            className="flex-1 md:flex-none"
             color="primary"
             isDisabled={printing || exporting || isEmpty}
             startContent={
@@ -225,11 +244,13 @@ export function TechCardComposition({
       </div>
 
       <p className="text-xs text-default-500">
-        Специфікація розрахована на {safeSpecQty.toLocaleString('uk-UA')} шт. Формула брутто:{' '}
+        Формула брутто:{' '}
         {lossFormula === 'sequential' ? 'послідовна' : 'адитивна'}.
       </p>
 
-      <Table aria-label="Склад техкарти" removeWrapper classNames={TABLE_CLASS_NAMES}>
+      {/* Таблиця прокручується всередині себе, не розпирає макет на вузьких екранах */}
+      <div className="-mx-1 overflow-x-auto px-1">
+      <Table aria-label="Склад техкарти" removeWrapper classNames={{ ...TABLE_CLASS_NAMES, table: 'min-w-[560px]', tr: 'border-b border-default-200/70 last:border-b-0' }}>
         <TableHeader>
           <TableColumn>Інгредієнт</TableColumn>
           <TableColumn className="text-right">Вага за рецептом</TableColumn>
@@ -286,6 +307,7 @@ export function TechCardComposition({
           ]}
         </TableBody>
       </Table>
+      </div>
 
       {techCard.nonMassCount > 0 && (
         <p className="text-xs text-default-500">

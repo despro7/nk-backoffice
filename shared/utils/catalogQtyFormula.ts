@@ -3,7 +3,7 @@
  * де `x` – нетто рядка-джерела на всю варку, перераховане в одиниці похідного рядка
  * (55 кг картоплі → 55 000 мл для рядка в мл), `k` – безрозмірне співвідношення,
  * `b` – константа на всю варку в одиниці рядка. У специфікацію (і Dilovod) іде кількість
- * на `specQty` порцій: `(k · x(N) + b) / N · specQty`, `N` – «Розрахунок на N порцій» техкарти.
+ * на `specQty` порцій: `(k · x(N) + b) / N · specQty`, `N` – «Порцій на варку» (N) техкарти.
  * Формула зберігається лише локально, джерело – за `rowKey`.
  */
 import type { CatalogQtyFormula } from '../types/catalog.js';
@@ -56,7 +56,7 @@ export function qtyFormulaKey(raw: unknown): string | null {
   return f ? `${f.sourceRowKey}:${f.k}:${f.b}` : null;
 }
 
-/** «Розрахунок на N порцій»: ціле ≥ 1, інакше значення за замовчуванням. */
+/** «Порцій на варку» (N): ціле ≥ 1, інакше значення за замовчуванням. */
 export function normalizeBatchPortions(value: unknown): number {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n) || n < 1) return DEFAULT_BATCH_PORTIONS;

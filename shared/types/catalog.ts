@@ -260,7 +260,7 @@ export interface CatalogGoodDetailDto extends CatalogGoodDto {
   barcodes: CatalogGoodBarcodeDto[];
   images: CatalogGoodImageDto[];
   stock: CatalogStockDto | null;
-  /** «Розрахунок на N порцій» з техкарти (чернетка, інакше чинна версія) – для похідних рядків специфікації */
+  /** «Порцій на варку» (N) з техкарти (чернетка, інакше чинна версія) – для похідних рядків специфікації */
   batchPortions?: number;
   /** Етапи й дозування техкарти (та сама версія) – приблизна маса порції за дозуванням; null – дозування немає */
   techCardDosing?: { stages: TechCardStage[]; dosing: TechCardDosingFraction[] } | null;
