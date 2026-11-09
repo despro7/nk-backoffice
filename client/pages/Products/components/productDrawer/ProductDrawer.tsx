@@ -148,8 +148,8 @@ import { useAuth } from '@/contexts/auth-context';
 import { hasSpecFieldsChanged } from '@shared/utils/catalogProductFieldAccess';
 import type { CatalogSpecDraftDto, CatalogSpecStateDto } from '@shared/types/catalogSpec';
 
-const TechCardModal = lazy(() =>
-  import('./TechCardModal').then((module) => ({ default: module.TechCardModal }))
+const TechCardDrawer = lazy(() =>
+  import('@/pages/Production/components/TechCardDrawer').then((module) => ({ default: module.TechCardDrawer }))
 );
 
 type InspectViewTab = 'summary' | 'raw';
@@ -235,6 +235,7 @@ export function ProductDrawer({
   const canEditSpec = hasPermission(PERMISSIONS.ACTION_PRODUCTS_EDIT_SPEC);
   const canViewAudit = hasPermission(PERMISSIONS.ACTION_PRODUCTS_VIEW_AUDIT);
   const canApproveSpec = hasPermission(PERMISSIONS.ACTION_PRODUCTS_APPROVE_SPEC);
+  const canViewTechCards = hasPermission(PERMISSIONS.PAGE_PRODUCTION_TECHCARDS);
   const { user: authUser } = useAuth();
   const currentUserId = authUser?.id != null ? Number(authUser.id) : null;
   const isTrashed = isEdit && detail?.parentId === CATALOG_TRASH_ID;
@@ -1776,7 +1777,9 @@ export function ProductDrawer({
                             lossTypes={productionSettings.lossTypes}
                             lossFormula={productionSettings.lossFormula}
                             specQtySuspicious={specQtySuspicious}
-                            onOpenTechCard={() => setTechCardOpen(true)}
+                            onOpenTechCard={
+                              isEdit && detail?.id && canViewTechCards ? () => setTechCardOpen(true) : undefined
+                            }
                             onFormChange={setForm}
                             onBomQueryChange={setBomQuery}
                             onAddComponent={(hit) => {
@@ -2193,16 +2196,12 @@ export function ProductDrawer({
           readOnly={readOnly}
         />
       )}
-      {showBom && isGood && techCardOpen && (
+      {showBom && isGood && techCardOpen && detail?.id && (
         <Suspense fallback={null}>
-          <TechCardModal
-            isOpen
-            productName={form.name.trim() || detail?.name || 'Товар'}
-            components={components}
-            units={units}
-            specQty={form.specQty}
+          <TechCardDrawer
+            goodId={detail.id}
+            stackLevel={stackLevel + 1}
             onClose={() => setTechCardOpen(false)}
-            overlayZClassName={overlayZ}
           />
         </Suspense>
       )}

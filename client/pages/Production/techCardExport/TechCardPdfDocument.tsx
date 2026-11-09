@@ -1,6 +1,6 @@
 import { Document, Page, StyleSheet, Text, View } from '@react-pdf/renderer';
-import type { TechCardResult } from '../../ProductsUtils';
-import { formatTechCardMassKg } from '../../ProductsUtils';
+import type { TechCardResult } from '@/pages/Products/ProductsUtils';
+import { formatTechCardMassKg } from '@/pages/Products/ProductsUtils';
 import { pluralize } from '@/lib/formatUtils';
 
 const styles = StyleSheet.create({

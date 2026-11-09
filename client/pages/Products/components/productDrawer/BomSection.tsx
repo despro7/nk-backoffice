@@ -81,7 +81,8 @@ interface BomSectionProps {
   bomWeightExpected: ExpectedBomWeight | null;
   autoGrossKg: number | null;
   specQtySuspicious: boolean;
-  onOpenTechCard: () => void;
+  /** Відкрити техкарту (Drawer); без колбеку кнопки немає (новий товар, немає права) */
+  onOpenTechCard?: () => void;
   onFormChange: (updater: (prev: DrawerForm) => DrawerForm) => void;
   onBomQueryChange: (q: string) => void;
   onAddComponent: (hit: CatalogSearchHit) => void;
@@ -716,18 +717,19 @@ export function BomSection({
               />
               <span className="text-sm text-default-500">шт.</span>
               
-              <Button
-                size="sm"
-                variant="flat"
-                color="primary"
-                data-btn-tone="primary-blue-flat"
-                className="h-8 min-w-6 gap-1 text-sm"
-                isDisabled={components.length === 0 || isSpecReadOnly}
-                startContent={<DynamicIcon name="file-text" size={14} />}
-                onPress={onOpenTechCard}
-              >
-                Техкарта
-              </Button>
+              {onOpenTechCard && (
+                <Button
+                  size="sm"
+                  variant="flat"
+                  color="primary"
+                  data-btn-tone="primary-blue-flat"
+                  className="h-8 min-w-6 gap-1 text-sm"
+                  startContent={<DynamicIcon name="file-text" size={14} />}
+                  onPress={onOpenTechCard}
+                >
+                  Техкарта
+                </Button>
+              )}
             </div>
           )}
         </div>

@@ -380,10 +380,6 @@ client/pages/Products/
       BomSection.tsx            # специфікація / склад; сортування, DnD, втрати %, техкарта
       bomSectionSort.ts         # сортування колонок + reorder рядків BOM
       UsedInSection.tsx         # зворотний BOM (де використовується інгредієнт / продукція)
-      TechCardModal.tsx         # модалка техкарти (PDF / Excel / друк)
-      techCardPdfExport.ts      # експорт / друк PDF (@react-pdf/renderer)
-      techCardExcelExport.ts    # експорт Excel
-      TechCardPdfDocument.tsx   # layout PDF техкарти
       PricesSection.tsx
       BarcodesSection.tsx
       RequisitesSection.tsx
@@ -422,7 +418,7 @@ client/pages/Products/
   - **Продукція** — колонка **% втрат** (`cookingLossPercent`, локально). При наведенні на `%` – іконка `split`, клік відкриває `BomLossSplitPopover`: типи втрат (Select з довідника) і % кожного. З розбивкою поле read-only і показує суму, суфікс – завжди `split`; для послідовної формули Popover показує ефективний %. Довідник і формула – `useProductionSettings` (`GET /api/production/settings`), налаштування – `/settings/production`. Підсвітка підозрілої qty (`isSuspiciousBomIngredientQty`); кнопка переносу тексту з дужок назви в примітку (`extractParenthesizedTextFromName`).
   - **Продукція** — сортування колонок (назва, втрати, qty, од. вим.) + опційне **ручне сортування** перетягуванням (`bomSectionSort.ts`, `@hello-pangea/dnd`); адаптивний layout рядків BOM на вузьких екранах.
   - **Ціни** — опційне **ручне сортування** рядків (`pricesSectionSort.ts`, `@hello-pangea/dnd`).
-  - **Продукція** — **«Друк техкарти»** → `TechCardModal`: розрахунок на N порцій, нетто/брутто з урахуванням втрат, експорт PDF/Excel, друк (`buildTechCardRows` у `ProductsUtils.ts`).
+  - **Продукція** – кнопка **«Техкарта»** (лише збережений товар і право `page.production.techcards`) відкриває `TechCardDrawer` з модуля «Виробництво» (`client/pages/Production/`): склад за чинною специфікацією, розрахунок на N порцій, втрати за типами, PDF / Excel / друк (`buildTechCardRows` у `ProductsUtils.ts`). Показує збережені дані, не незбережені правки картки. Див. `Docs/plans/production-techcards.md`.
   - **Товарні набори** — «Склад комплекту»; qty `StepperInput`; **без** примітки та втрат (`note: null` у save).
   - **Підрахунок у заголовку складу:** `N поз. / X страв / Y порцій`. **Страви** = сума `qty` прямих позицій; **порції** = рекурсивно через вкладені набори (`catalogKitPortions`, `componentNestedPortionCount` з detail/search). Рецептура страви не розгортається.
   - **Військова ціна** набору: `основа − 5 × Y порцій` (`expectedMilitaryPrice` / `withSyncedDerivedPrices`), не від кількості страв.

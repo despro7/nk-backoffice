@@ -9,6 +9,7 @@ export type PermissionGroup =
   | 'pages.reports'
   | 'pages.accounting'
   | 'pages.hr'
+  | 'pages.production'
   | 'pages.settings'
   | 'pages.chatwoot'
   | 'actions.users'
@@ -24,6 +25,7 @@ export const PERMISSION_GROUP_LABELS: Record<PermissionGroup, string> = {
   'pages.reports': 'Звіти',
   'pages.accounting': 'Бухгалтерія',
   'pages.hr': 'Персонал',
+  'pages.production': 'Виробництво',
   'pages.settings': 'Налаштування',
   'pages.chatwoot': 'Чат-бот',
   'actions.users': 'Користувачі та адміністрування',
@@ -278,6 +280,8 @@ export const PERMISSION_SEEDS: Array<{ key: PermissionKey; seed: SeedGrant }> = 
   { key: actionKey('hr', 'employment.change-employer'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
   { key: actionKey('hr', 'employment.change-pay-rate'), seed: only(ROLES.ADMIN, ROLES.BOSS) },
 
+  { key: pageKey('production', 'techcards'), seed: min(ROLES.STOREKEEPER) },
+
   { key: pageKey('settings', 'orderAssembly'), seed: min(ROLES.STOREKEEPER) },
   { key: pageKey('settings', 'equipment'), seed: only(ROLES.ADMIN, ROLES.BOSS, ROLES.STOREKEEPER) },
   { key: pageKey('settings', 'orders'), seed: only(ROLES.ADMIN) },
@@ -386,6 +390,7 @@ export const PERMISSIONS = {
   ACTION_HR_EMPLOYMENT_CHANGE_GROUP: actionKey('hr', 'employment.change-group'),
   ACTION_HR_EMPLOYMENT_CHANGE_EMPLOYER: actionKey('hr', 'employment.change-employer'),
   ACTION_HR_EMPLOYMENT_CHANGE_PAY_RATE: actionKey('hr', 'employment.change-pay-rate'),
+  PAGE_PRODUCTION_TECHCARDS: pageKey('production', 'techcards'),
   PAGE_SETTINGS_ORDER_ASSEMBLY: pageKey('settings', 'orderAssembly'),
   PAGE_SETTINGS_EQUIPMENT: pageKey('settings', 'equipment'),
   PAGE_SETTINGS_ORDERS: pageKey('settings', 'orders'),

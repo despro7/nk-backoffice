@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-11-11 – Техкарти, фаза 2a: розділ «Виробництво», сторінка і Drawer техкарти
+
+**Files:** `client/pages/Production/{useTechCards.ts,TechCards/index.tsx,TechCards/TechCardPage.tsx,components/{TechCardDocument,TechCardComposition,TechCardDrawer,techCardUi}.tsx}`, `client/pages/Production/techCardExport/*` (перенесено з `Products/components/productDrawer/`), `client/pages/Products/components/productDrawer/{ProductDrawer,BomSection}.tsx`, `TechCardModal.tsx` (видалено), `client/pages/Products/ProductsUtils.ts`, `client/routes.config.tsx`, `server/modules/Production/TechCardService.ts`, `server/routes/production.ts`, `shared/types/production.ts`, `shared/utils/techCardPayload.ts` (+ spec), `shared/constants/permissions.ts`, `prisma/schema.prisma`, `prisma/migrations/20261111120000_tech_cards/`
+
+- **Меню «Виробництво → Техкарти»** (`/production/techcards`): готова продукція (без наборів і архіву) зі статусом техкарти (немає / чернетка / на затвердженні / відхилено / затверджена), версіями специфікації й техкарти, чіпом чернетки специфікації; пошук і фільтр статусу.
+- **Техкарта** (`/production/techcards/:goodId` і Drawer з кнопки «Техкарта» в картці товару): вкладки «Техкарта» (склад за чинною специфікацією з розбивкою втрат за типами, розрахунок на N порцій, PDF / Excel / друк; етапи, пакування, примітки), «Версії / Історія», «Варки». `TechCardModal` замінено Drawer, кнопка – лише для збереженого товару.
+- **Дані:** `tech_card_versions`, `tech_card_drafts` (рецепт поверх специфікації, `TechCardPayload`). API: `GET /api/production/techcards`, `/:goodId`, `/:goodId/versions`.
+- **Право** `page.production.techcards` (група «Виробництво»): Комірник і вище.
+- Порожня маса в техкарті – «–» замість довгого тире.
+
+**Документація:** `Docs/plans/production-techcards.md` – крок 2a, права, модель; `Docs/features/products-catalog-2.0.md` – кнопка «Техкарта» → `TechCardDrawer`.
+
+---
+
 ## 2026-11-10 – Техкарти, фаза 1: розбивка втрат за типами
 
 **Files:** `client/pages/Products/components/productDrawer/{BomSection,BomLossSplitPopover,ProductDrawer,TechCardModal,productDrawerTypes,productDrawerUtils}.ts(x)`, `client/pages/Products/ProductsUtils.ts`, `client/pages/Products/components/audit/CatalogAuditEntry.tsx`, `client/pages/SettingsProduction.tsx`, `client/components/ui/CardRadio.tsx`, `client/pages/ChatwootBotSettings/tabs/TopicsTab.tsx`, `client/hooks/useProductionSettings.ts`, `client/routes.config.tsx`, `server/modules/Production/ProductionSettingsService.ts`, `server/routes/production.ts`, `server/index.ts`, `server/lib/jsonCollection.ts` (перенесено з `Notifications/`, + spec), `server/modules/Products/{CatalogSpecService,ProductsCatalogService,ProductsLocalSync,CatalogGoodAuditService,ProductsTypes,catalogTpGoods}.ts`, `server/modules/Storefront/StorefrontDescriptionBuilder.ts`, `shared/types/{production,catalog,catalogSpec,catalogAudit,storefront}.ts`, `shared/utils/{catalogLoss,catalogSpecContent,catalogGoodAuditDiff,catalogGoodAuditFormat,catalogProductFieldAccess,storefrontDescription}.ts` (+ spec), `shared/constants/permissions.ts`, `prisma/schema.prisma`, `prisma/migrations/20261110120000_catalog_component_losses/`

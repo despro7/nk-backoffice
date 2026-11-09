@@ -1,6 +1,6 @@
 import { pdf, Font } from '@react-pdf/renderer';
 import { saveAs } from 'file-saver';
-import type { TechCardResult } from '../../ProductsUtils';
+import type { TechCardResult } from '@/pages/Products/ProductsUtils';
 import { TechCardPdfDocument } from './TechCardPdfDocument';
 import { buildTechCardFileName } from './techCardExportShared';
 

@@ -9,7 +9,7 @@
 | Фаза | Опис | Статус |
 |------|------|--------|
 | 1 | Розбивка втрат у специфікації, довідник типів, дві формули брутто | ✅ |
-| 2 | Техкарти: розділ, версії, спільна чернетка зі специфікацією, етапи, пакування, дозування, друк | ⏳ |
+| 2 | Техкарти: розділ, версії, спільна чернетка зі специфікацією, етапи, пакування, дозування, друк | ⏳ 2a ✅ |
 | 3 | Варки: життєвий цикл, залишки СП/ВП, підписи, таймлайн, факт виходу, акт, сповіщення | ⏳ |
 | 4 | Документи Dilovod і собівартість (окремий план) | ⏳ |
 
@@ -67,6 +67,23 @@
 
 **Друк (PDF):** склад, пакування, етапи з таймінгами, рецепт, вихід, дозування; без цифр конкретної варки.
 
+### Крок 2a – реалізовано (перегляд)
+
+- **Таблиці:** `tech_card_versions` (`goodId`, `version`, `specVersion`, `payloadJson`, `source` ui | auto | rollback,
+  затвердження) і `tech_card_drafts` (одна на товар, `status` editing | pending | rejected). Окремої таблиці `TechCard`
+  немає: поточна версія = max(`version`), перевизначення формули брутто – у `payloadJson.lossFormula`.
+- **Payload** (`TechCardPayload`, `shared/types/production.ts`; читання – `normalizeTechCardPayload`): `stages`, `packaging`,
+  `dosing`, `notes`, `portionsPerBox`, `lossFormula`.
+- **API** (`page.production.techcards`): `GET /api/production/techcards` (готова продукція без наборів і папок «Архів – …»),
+  `GET /api/production/techcards/:goodId` (товар, стан специфікації, одиниці, версія, чернетка, ефективна формула),
+  `GET /api/production/techcards/:goodId/versions`.
+- **UI:** «Виробництво → Техкарти» (`/production/techcards`: пошук, фільтр статусу), сторінка `/production/techcards/:goodId`,
+  той самий `TechCardDocument` у `TechCardDrawer` з картки товару (`TechCardModal` видалено, експорт перенесено в
+  `client/pages/Production/techCardExport/`). Вкладки «Техкарта» (склад за чинною специфікацією, втрати за типами,
+  розрахунок на N, PDF / Excel / друк; етапи, пакування, примітки – перегляд), «Версії / Історія», «Варки» (порожньо).
+- **Право** `page.production.techcards`: Комірник і вище (міграція `20261111120000_tech_cards`).
+- `rowKey` рядків специфікації перенесено в 2b (потрібен етапам і дозуванню).
+
 ## Фаза 3 – Варка
 
 Внутрішній документ (не Dilovod). Номер `ВР-YMMDD-N` (одна цифра року, N у межах дня по всіх товарах), напр.
@@ -99,7 +116,7 @@
 | Право | Що дає | За замовчуванням |
 |-------|--------|------------------|
 | `page.settings.production` | Типи втрат, формула | Адмін, Директор (фаза 1) |
-| `techcards.view` | Перегляд техкарт і варок | |
+| `page.production.techcards` | Перегляд техкарт (і варок) | Комірник і вище |
 | `techcards.edit` | Рецепт, етапи, пакування | Той, хто редагує специфікацію |
 | `techcards.approve` | Затвердження пари специфікація + техкарта | Директор |
 | `batches.create` | Створення / скасування варки | Директор |
@@ -114,7 +131,6 @@
 ```prisma
 // CatalogGoodComponent (+ у componentsJson): qtyMode "perPortion" | "derived", qtyFormulaJson { sourceRowNum, k, b }
 
-model TechCard          { goodId @unique, currentVersion, lossFormula? }
 model TechCardDraft     { goodId @unique, baseVersion, payloadJson, status, authorId, lastEditedById } // у парі з CatalogSpecDraft
 model TechCardVersion   { goodId, version, specVersion, payloadJson /* stages, packaging, dosing, notes, portionsPerBox */,
                           approvedById, approvedAt  @@unique([goodId, version]) }

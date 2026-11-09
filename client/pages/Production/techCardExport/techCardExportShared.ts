@@ -1,4 +1,4 @@
-import type { TechCardMassPrecision } from '../../ProductsUtils';
+import type { TechCardMassPrecision } from '@/pages/Products/ProductsUtils';
 
 export function buildTechCardFileName(productName: string, extension: string): string {
   const safeName = productName

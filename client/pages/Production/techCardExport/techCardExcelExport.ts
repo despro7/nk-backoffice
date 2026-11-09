@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import { pluralize } from '@/lib/formatUtils';
-import type { TechCardResult } from '../../ProductsUtils';
+import type { TechCardResult } from '@/pages/Products/ProductsUtils';
 import { buildTechCardFileName, techCardExcelMassNumberFormat } from './techCardExportShared';
 
 const EXCEL_COL_COUNT = 5;

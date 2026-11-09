@@ -3,7 +3,7 @@ import {
   type CatalogLossEntry,
   type CatalogLossFormula,
 } from '@shared/types/production';
-import { grossFromNet, resolveCookingLossPercent } from '@shared/utils/catalogLoss';
+import { grossFromNet, normalizeLossEntries, resolveCookingLossPercent } from '@shared/utils/catalogLoss';
 import {
   bomRowGrossKg,
   massUnitToKgFactor,
@@ -949,6 +949,8 @@ export type TechCardRow = {
   nameDisplay: string;
   recipeDisplay: string;
   lossDisplay: string;
+  /** Розбивка втрат за типами; null – без розбивки */
+  losses: CatalogLossEntry[] | null;
   netDisplay: string;
   grossDisplay: string;
   massKgRecipe: number | null;
@@ -1020,12 +1022,12 @@ export function formatTechCardIngredientName(name: string, note?: string | null)
   return trimmedName ? `${trimmedName} (${trimmedNote})` : `(${trimmedNote})`;
 }
 
-/** Маса в кг для техкарти; без маси — «—». */
+/** Маса в кг для техкарти; без маси – «–». */
 export function formatTechCardMassKg(
   kg: number | null,
   precision: TechCardMassPrecision = 'auto'
 ): string {
-  if (kg == null || !Number.isFinite(kg)) return '—';
+  if (kg == null || !Number.isFinite(kg)) return '–';
   if (precision === 'auto') {
     const rounded = Math.round(kg * 1000) / 1000;
     const text = rounded.toLocaleString('uk-UA', { maximumFractionDigits: 3 });
@@ -1134,6 +1136,7 @@ export function buildTechCardRows(
         nameDisplay: formatTechCardIngredientName(c.componentName, c.note),
         recipeDisplay: formatBomQtyDisplay(recipeQty, unitName),
         lossDisplay: formatTechCardLossPercent(loss),
+        losses: normalizeLossEntries(c.losses),
         netDisplay: formatTechCardMassKg(netTotal, massPrecision),
         grossDisplay: formatTechCardMassKg(grossTotal, massPrecision),
         massKgRecipe: netRecipe,

@@ -602,6 +602,8 @@ model CatalogGood {
   labelDrafts          CatalogProductLabelDraft[]
   specDraft            CatalogSpecDraft?
   specVersions         CatalogSpecVersion[]
+  techCardDraft        TechCardDraft?
+  techCardVersions     TechCardVersion[]
   labels               CatalogProductLabel[]
   portionLabelTemplate CatalogLabelTemplate?      @relation("PortionLabelTemplate", fields: [portionLabelTemplateId], references: [id], onDelete: SetNull)
   boxLabelTemplate     CatalogLabelTemplate?      @relation("BoxLabelTemplate", fields: [boxLabelTemplateId], references: [id], onDelete: SetNull)
@@ -771,6 +773,53 @@ model CatalogSpecVersion {
 
   @@unique([goodId, version])
   @@map("catalog_spec_versions")
+}
+
+/// Техкарта: затверджена версія рецепту (етапи, пакування, дозування, примітки), привʼязана до версії специфікації.
+/// Поточна версія = max(version). Склад (інгредієнти) – у специфікації, тут лише посилання на її версію.
+model TechCardVersion {
+  id           Int       @id @default(autoincrement())
+  goodId       String    @db.VarChar(32)
+  version      Int
+  /// Версія CatalogSpecVersion, з якою затверджено цю версію техкарти
+  specVersion  Int?
+  /// TechCardPayload (shared/types/production.ts)
+  payloadJson  Json
+  /// ui | auto (нова версія специфікації без змін рецепту) | rollback
+  source       String    @default("ui") @db.VarChar(16)
+  comment      String?   @db.Text
+  authorId     Int?
+  approvedById Int?
+  approvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  good CatalogGood @relation(fields: [goodId], references: [id], onDelete: Cascade)
+
+  @@unique([goodId, version])
+  @@map("tech_card_versions")
+}
+
+/// Чернетка техкарти. Подається на затвердження в парі з CatalogSpecDraft того самого товару.
+model TechCardDraft {
+  id             Int       @id @default(autoincrement())
+  goodId         String    @unique @db.VarChar(32)
+  /// Версія техкарти, від якої почали чернетку; null – першої версії ще немає
+  baseVersion    Int?
+  payloadJson    Json
+  status         String    @default("editing") @db.VarChar(16) // editing | pending | rejected
+  comment        String?   @db.Text
+  authorId       Int?
+  lastEditedById Int?
+  reviewedById   Int?
+  reviewedAt     DateTime?
+  rejectReason   String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  good CatalogGood @relation(fields: [goodId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("tech_card_drafts")
 }
 
 model CatalogProductLabelDraft {

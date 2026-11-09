@@ -43,6 +43,8 @@ const SettingsStorefront = lazyPage(() => import('./pages/SettingsStorefront'));
 const SettingsUsers = lazyPage(() => import('./pages/Settings/Users'));
 const SettingsLabelTemplates = lazyPage(() => import('./pages/SettingsLabelTemplates'));
 const SettingsProduction = lazyPage(() => import('./pages/SettingsProduction'));
+const TechCardsPage = lazyPage(() => import('./pages/Production/TechCards'));
+const TechCardPage = lazyPage(() => import('./pages/Production/TechCards/TechCardPage'));
 const SettingsDilovod = lazyPage(() => import('./pages/SettingsDilovod'));
 const SettingsDirectoriesCache = lazyPage(() => import('./pages/SettingsDirectoriesCache'));
 const SettingsWarehouseMovement = lazyPage(() => import('./pages/SettingsWarehouseMovement'));
@@ -500,6 +502,36 @@ export const appRoutes: AppRoute[] = [
     parent: 'accounting',
     order: 1,
     permission: { name: 'bankStatements' },
+  },
+  {
+    path: '/production/techcards',
+    component: TechCardsPage,
+    title: 'Техкарти',
+    pageTitle: 'Техкарти | NK Backoffice',
+    navLabel: 'Техкарти',
+    icon: <DynamicIcon name="file-text" size={16} />,
+    inNav: true,
+    parent: 'production',
+    order: 0,
+    groupMeta: {
+      label: 'Виробництво',
+      icon: <DynamicIcon name="factory" size={20} />,
+      order: 3.5,
+      navBadge: { label: 'NEW', color: 'danger', until: '2026-12-31' },
+    },
+    permission: { name: 'techcards', label: 'Техкарти' },
+  },
+  {
+    path: '/production/techcards/:goodId',
+    component: TechCardPage,
+    title: 'Техкарта',
+    pageTitle: 'Техкарта | NK Backoffice',
+    navLabel: 'Техкарта',
+    icon: null,
+    inNav: false,
+    parent: 'production',
+    permission: { name: 'techcards', label: 'Техкарти' },
+    hasOwnTitle: true,
   },
   {
     path: '/hr/timesheet',
