@@ -7,7 +7,7 @@
 
 ## 2026-11-14 – Варки, фаза 3b: видача сировини, прийом на виробництво, готування
 
-**Files:** `shared/utils/productionBatchIssue.ts` (+ spec), `shared/types/production.ts`, `server/modules/Production/ProductionBatchService.ts`, `server/routes/production.ts`, `server/services/dilovod/DilovodService.ts`, `client/pages/Production/useProductionBatches.ts`, `client/pages/Production/Batches/BatchPage.tsx`, `client/pages/Production/components/{BatchLinesTable,BatchStepPanels,BatchStagesGantt,BatchStagesProgress,BatchDatePicker}.tsx`
+**Files:** `shared/utils/productionBatchIssue.ts` (+ spec), `shared/types/production.ts`, `server/modules/Production/ProductionBatchService.ts`, `server/routes/production.ts`, `server/services/dilovod/DilovodService.ts`, `client/pages/Production/useProductionBatches.ts`, `client/pages/Production/Batches/BatchPage.tsx`, `client/pages/Production/components/{BatchLinesTable,BatchStepPanels,BatchStagesGantt,BatchDatePicker}.tsx`
 
 - **Видача сировини** (право «Видавати сировину»): «Оновити залишки» бере живі залишки СП / ВП з Dilovod лише для товарів варки; таблиця – план видачі (сировина в кг брутто, пакування в шт), облік СП + ВП, фактичний залишок, видано, примітка; «Видано = план». Залишку не вистачає – попередження; видано менше плану – обовʼязкова причина нестачі. «Підтвердити видачу» – підпис → «Сировину видано».
 - **Прийом на виробництво:** список нестач з поясненнями, коментар, підпис → «Прийнято на виробництво».
