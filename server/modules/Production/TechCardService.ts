@@ -13,7 +13,7 @@
 import type { Prisma, TechCardDraft, TechCardVersion } from '@prisma/client';
 import { logServer, prisma } from '../../lib/utils.js';
 import { auditLogService } from '../../services/AuditLogService.js';
-import { CATALOG_ACC_POLICY_GOOD } from '../../../shared/types/catalog.js';
+import { CATALOG_ACC_POLICY_GOOD, type CatalogGoodComponentDto } from '../../../shared/types/catalog.js';
 import type {
   TechCardDetailDto,
   TechCardDraftDto,
@@ -28,9 +28,13 @@ import type { TechCardPayload } from '../../../shared/types/production.js';
 import { isArchiveFolderName } from '../../../shared/utils/storefrontDescription.js';
 import { getFinishedProductsFolderIds } from '../Products/catalogFinishedProductsFolder.js';
 import {
+  CatalogSpecError,
   catalogSpecService,
   type CatalogSpecVersionCreatedEvent,
 } from '../Products/CatalogSpecService.js';
+import { CATALOG_SPEC_ERROR_CODES } from '../../../shared/types/catalogSpec.js';
+import { hasDerivedRows, recalcDerivedRows } from '../../../shared/utils/catalogQtyFormula.js';
+import { specContentFromDetail } from '../../../shared/utils/catalogSpecContent.js';
 import { productsCatalogService } from '../Products/ProductsCatalogService.js';
 import { productionSettingsService } from './ProductionSettingsService.js';
 
@@ -331,6 +335,8 @@ class TechCardService {
     const draft = await prisma.techCardDraft.findUnique({ where: { goodId } });
     if (!draft) throw new TechCardError('Чернетку не знайдено', 404);
     if (draft.status !== 'pending') throw new TechCardError('Чернетку ще не подано на затвердження');
+    const payload = normalizeTechCardPayload(draft.payloadJson);
+    await this.syncDerivedRows(goodId, payload.batchPortions, userId);
 
     const specDraft = await prisma.catalogSpecDraft.findUnique({ where: { goodId }, select: { status: true } });
     if (specDraft?.status === 'pending') {
@@ -340,7 +346,7 @@ class TechCardService {
     const specVersion = await catalogSpecService.currentVersion(goodId);
     const version = await this.createVersion({
       goodId,
-      payload: normalizeTechCardPayload(draft.payloadJson),
+      payload,
       specVersion,
       source: 'ui',
       comment: draft.comment,
@@ -350,6 +356,36 @@ class TechCardService {
     await prisma.techCardDraft.delete({ where: { goodId } }).catch(() => undefined);
     await this.audit(goodId, 'approved', userId, { version, specVersion, comment: draft.comment });
     return this.getDetail(goodId);
+  }
+
+  /**
+   * Похідні рядки специфікації рахуються на N порцій техкарти. Якщо з новим N їхня кількість інша,
+   * перераховані рядки йдуть у чернетку специфікації пари (вона затверджується разом із техкартою).
+   */
+  private async syncDerivedRows(goodId: string, batchPortions: number, userId: number | null): Promise<void> {
+    const state = await catalogSpecService.getState(goodId);
+    const pending = state.draft?.status === 'pending' ? state.draft : null;
+    let base: { specQty: number | null; components: CatalogGoodComponentDto[] } | null = pending;
+    if (!base) {
+      const good = await productsCatalogService.getGoodDetail(goodId, { livePull: false });
+      base = good ? { specQty: good.specQty, components: good.components } : null;
+    }
+    if (!base || !hasDerivedRows(base.components)) return;
+    const { units } = await productsCatalogService.getDictionaries();
+    const next = recalcDerivedRows(base.components, units, base.specQty, batchPortions);
+    if (next === base.components) return;
+    const note = `Перерахунок похідних рядків на ${batchPortions} порцій (техкарта)`;
+    try {
+      await catalogSpecService.saveDraft(
+        goodId,
+        specContentFromDetail({ specQty: base.specQty, components: next }),
+        pending?.comment ? `${pending.comment}\n${note}` : note,
+        userId,
+      );
+    } catch (err) {
+      if (err instanceof CatalogSpecError && err.code === CATALOG_SPEC_ERROR_CODES.NO_CHANGES) return;
+      throw err;
+    }
   }
 
   async reject(goodId: string, reason: string, userId: number | null): Promise<TechCardDetailDto> {

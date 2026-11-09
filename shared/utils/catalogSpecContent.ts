@@ -2,6 +2,7 @@ import type { CatalogGoodAuditPayload, CatalogGoodAuditSnapshot } from '../types
 import type { CatalogSpecComponent, CatalogSpecContent, CatalogSpecContentDetail } from '../types/catalogSpec.js';
 import { diffCatalogGoodSnapshots } from './catalogGoodAuditDiff.js';
 import { lossEntriesKey, normalizeLossEntries, resolveCookingLossPercent } from './catalogLoss.js';
+import { normalizeQtyFormula, qtyFormulaKey } from './catalogQtyFormula.js';
 
 const EPS = 1e-9;
 
@@ -18,7 +19,10 @@ export function normalizeCookingLoss(value: unknown): number {
 }
 
 function componentSignature(
-  row: Pick<CatalogSpecComponent, 'componentGoodId' | 'qty' | 'unitId' | 'note' | 'cookingLossPercent' | 'losses'>,
+  row: Pick<
+    CatalogSpecComponent,
+    'componentGoodId' | 'qty' | 'unitId' | 'note' | 'cookingLossPercent' | 'losses' | 'qtyFormula'
+  >,
 ): string {
   return JSON.stringify([
     row.componentGoodId,
@@ -27,6 +31,7 @@ function componentSignature(
     (row.note ?? '').trim() || null,
     resolveCookingLossPercent(row.losses, row.cookingLossPercent),
     lossEntriesKey(row.losses),
+    qtyFormulaKey(row.qtyFormula),
   ]);
 }
 
@@ -59,6 +64,7 @@ export function specContentFromDetail(detail: CatalogSpecContentDetail): Catalog
       cookingLossPercent: resolveCookingLossPercent(c.losses, c.cookingLossPercent),
       losses: normalizeLossEntries(c.losses),
       rowKey: c.rowKey ?? null,
+      qtyFormula: normalizeQtyFormula(c.qtyFormula),
     })),
   };
 }

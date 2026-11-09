@@ -5,7 +5,9 @@
 
 import { Prisma, type PrismaClient } from '@prisma/client';
 import type { CatalogLossEntry } from '../../../shared/types/production.js';
+import type { CatalogQtyFormula } from '../../../shared/types/catalog.js';
 import { assignRowKeys } from '../../../shared/utils/catalogRowKey.js';
+import { normalizeQtyFormula } from '../../../shared/utils/catalogQtyFormula.js';
 import { normalizeLossEntries, sumLossPercent } from '../../../shared/utils/catalogLoss.js';
 import { prisma, logServer } from '../../lib/utils.js';
 import { LocalSyncGoodPayload } from './ProductsTypes.js';
@@ -260,6 +262,7 @@ export class ProductsLocalSync {
       cookingLossPercent?: number | null;
       losses?: CatalogLossEntry[] | null;
       rowKey?: string | null;
+      qtyFormula?: CatalogQtyFormula | null;
     }>
   ): Promise<void> {
     // Примітки: Dilovod SoT (remark). Якщо payload.note === undefined — зберігаємо попереднє
@@ -276,6 +279,7 @@ export class ProductsLocalSync {
         cookingLossPercent: true,
         lossesJson: true,
         rowKey: true,
+        qtyFormulaJson: true,
       },
     });
     const noteByRow = new Map(
@@ -324,6 +328,19 @@ export class ProductsLocalSync {
 
     // Ключ рядка: з payload; інакше той самий рядок за Dilovod rowID / rowNum (sync, перестановка)
     const rowKeys = assignRowKeys(components, existingRows);
+    // Похідна кількість: з payload; undefined (sync з Dilovod) – попередня того самого рядка (за rowKey).
+    // Формула без джерела в новому наборі рядків відкидається.
+    const formulaByKey = new Map(
+      existingRows
+        .filter((r) => r.rowKey)
+        .map((r) => [r.rowKey as string, normalizeQtyFormula(r.qtyFormulaJson)] as const)
+    );
+    const keySet = new Set(rowKeys);
+    const qtyFormulas = components.map((c, idx) => {
+      const formula =
+        c.qtyFormula !== undefined ? normalizeQtyFormula(c.qtyFormula) : formulaByKey.get(rowKeys[idx]) ?? null;
+      return formula && formula.sourceRowKey !== rowKeys[idx] && keySet.has(formula.sourceRowKey) ? formula : null;
+    });
 
     // Гарантуємо унікальний rowNum у межах parent (unique parentGoodId+rowNum)
     await tx.catalogGoodComponent.createMany({
@@ -375,6 +392,9 @@ export class ProductsLocalSync {
           cookingLossPercent,
           lossesJson: losses ? (losses as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           rowKey: rowKeys[idx],
+          qtyFormulaJson: qtyFormulas[idx]
+            ? (qtyFormulas[idx] as unknown as Prisma.InputJsonValue)
+            : Prisma.DbNull,
         };
       }),
     });

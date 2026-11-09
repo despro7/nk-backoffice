@@ -1,5 +1,5 @@
 import type { CatalogLossEntry } from './production.js';
-import type { CatalogGoodComponentDto } from './catalog.js';
+import type { CatalogGoodComponentDto, CatalogQtyFormula } from './catalog.js';
 
 /** Звідки взялась версія специфікації. */
 export const CATALOG_SPEC_VERSION_SOURCES = ['initial', 'ui', 'dilovod', 'rollback'] as const;
@@ -28,6 +28,8 @@ export interface CatalogSpecComponent {
   losses?: CatalogLossEntry[] | null;
   /** Стабільний ключ рядка (фаза 2b техкарт); відсутній у старих версіях */
   rowKey?: string | null;
+  /** Похідна кількість (фаза 2c техкарт); відсутня в старих версіях */
+  qtyFormula?: CatalogQtyFormula | null;
 }
 
 export interface CatalogSpecContent {
@@ -108,6 +110,7 @@ export interface CatalogSpecDraftInput {
     cookingLossPercent?: number | null;
     losses?: CatalogLossEntry[] | null;
     rowKey?: string | null;
+    qtyFormula?: CatalogQtyFormula | null;
   }>;
   comment: string;
 }

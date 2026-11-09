@@ -64,6 +64,8 @@ interface TechCardCompositionProps {
   specQty: number | null;
   lossFormula: CatalogLossFormula;
   lossTypes: ProductionLossType[];
+  /** «Розрахунок на N порцій» техкарти – початкове значення «Порцій на варку» */
+  batchPortions?: number;
 }
 
 /** «Склад» техкарти: рядки специфікації, перерахунок на N порцій, експорт і друк. */
@@ -74,8 +76,9 @@ export function TechCardComposition({
   specQty,
   lossFormula,
   lossTypes,
+  batchPortions = DEFAULT_PORTIONS,
 }: TechCardCompositionProps) {
-  const [portions, setPortions] = useState(String(DEFAULT_PORTIONS));
+  const [portions, setPortions] = useState(String(batchPortions));
   const [massPrecision, setMassPrecision] = useState<TechCardMassPrecision>('auto');
   const [exporting, setExporting] = useState(false);
   const [printing, setPrinting] = useState(false);
@@ -95,6 +98,8 @@ export function TechCardComposition({
           note: c.note,
           cookingLossPercent: c.cookingLossPercent,
           losses: c.losses,
+          rowKey: c.rowKey,
+          qtyFormula: c.qtyFormula,
         })),
         units,
         safeSpecQty,
@@ -238,7 +243,19 @@ export function TechCardComposition({
               const split = formatLossSplit(row.losses, typeNames);
               return (
                 <TableRow key={`${idx}-${row.name}`}>
-                  <TableCell>{row.nameDisplay}</TableCell>
+                  <TableCell>
+                    <span className="inline-flex items-center gap-1.5">
+                      {row.nameDisplay}
+                      {row.derived && (
+                        <span
+                          className="inline-flex text-default-400"
+                          title={`На варку: ${row.derived.k.toLocaleString('uk-UA')} × ${row.derived.sourceName} + ${row.derived.b.toLocaleString('uk-UA')} = ${row.derived.batchQtyDisplay}`}
+                        >
+                          <DynamicIcon name="sigma" size={13} />
+                        </span>
+                      )}
+                    </span>
+                  </TableCell>
                   <TableCell className="tabular-nums text-right">{row.recipeDisplay}</TableCell>
                   <TableCell className="tabular-nums text-right text-default-500">
                     <span>{row.lossDisplay}</span>

@@ -3,6 +3,7 @@
  */
 
 import type { CatalogLossEntry } from '../../../shared/types/production.js';
+import type { CatalogQtyFormula } from '../../../shared/types/catalog.js';
 import type {
   CatalogCreateGoodInput,
   CatalogGoodBarcodeDto,
@@ -123,6 +124,8 @@ export interface LocalSyncGoodPayload {
     losses?: CatalogLossEntry[] | null;
     /** Локально: ключ рядка; undefined – зберегти попередній (sync з Dilovod) */
     rowKey?: string | null;
+    /** Локально: похідна кількість; undefined – зберегти попередню (sync з Dilovod) */
+    qtyFormula?: CatalogQtyFormula | null;
   }>;
   prices?: Array<{ priceType: string; price: number; currency?: string | null }>;
   barcodes?: Array<{

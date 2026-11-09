@@ -2,7 +2,7 @@
  * Shared types for Products 2.0 catalog domain (`catalog_*` + /api/catalog).
  */
 
-import type { CatalogLossEntry } from './production.js';
+import type { CatalogLossEntry, TechCardDosingFraction, TechCardStage } from './production.js';
 
 import type { ProductNutritionJson, StorefrontDescriptionDoc } from './storefront.js';
 import type { CatalogStockBranch } from '../utils/catalogStock.js';
@@ -178,6 +178,15 @@ export interface CatalogGoodUsedInDto {
 
 export type CatalogGoodUsedInScope = 'products' | 'kits';
 
+/** Похідна кількість рядка специфікації: кількість на варку = k · x + b (x – нетто джерела на варку, кг). */
+export interface CatalogQtyFormula {
+  /** rowKey рядка-джерела цієї ж специфікації */
+  sourceRowKey: string;
+  k: number;
+  /** Константа на всю варку, в одиниці похідного рядка */
+  b: number;
+}
+
 export interface CatalogGoodComponentDto {
   id?: number;
   parentGoodId: string;
@@ -207,6 +216,8 @@ export interface CatalogGoodComponentDto {
   losses?: CatalogLossEntry[] | null;
   /** Локально: стабільний ключ рядка (етапи техкарти) */
   rowKey?: string | null;
+  /** Локально: похідна кількість `k · x + b` від іншого рядка; null – кількість на порцію */
+  qtyFormula?: CatalogQtyFormula | null;
   /** Батьківська папка компонента в каталозі (для групування складу комплекту) */
   componentCategoryName?: string | null;
 }
@@ -249,6 +260,10 @@ export interface CatalogGoodDetailDto extends CatalogGoodDto {
   barcodes: CatalogGoodBarcodeDto[];
   images: CatalogGoodImageDto[];
   stock: CatalogStockDto | null;
+  /** «Розрахунок на N порцій» з техкарти (чернетка, інакше чинна версія) – для похідних рядків специфікації */
+  batchPortions?: number;
+  /** Етапи й дозування техкарти (та сама версія) – приблизна маса порції за дозуванням; null – дозування немає */
+  techCardDosing?: { stages: TechCardStage[]; dosing: TechCardDosingFraction[] } | null;
 }
 
 export interface CatalogUnitDto {
@@ -303,6 +318,7 @@ export interface CatalogCreateGoodInput {
     cookingLossPercent?: number | null;
     losses?: CatalogLossEntry[] | null;
     rowKey?: string | null;
+    qtyFormula?: CatalogQtyFormula | null;
   }>;
   prices?: Array<{ priceType: string; price: number; currency?: string | null }>;
   barcodes?: Array<{
@@ -344,6 +360,7 @@ export interface CatalogUpdateGoodInput {
     cookingLossPercent?: number | null;
     losses?: CatalogLossEntry[] | null;
     rowKey?: string | null;
+    qtyFormula?: CatalogQtyFormula | null;
   }>;
   prices?: Array<{ priceType: string; price: number; currency?: string | null }>;
   barcodes?: Array<{

@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-11-12 – Техкарти, фаза 2c: похідні кількості в специфікації
+
+**Files:** `shared/utils/catalogQtyFormula.ts` (+ spec), `shared/types/{catalog,catalogSpec,production}.ts`, `shared/utils/{catalogSpecContent,techCardPayload}.ts`, `server/modules/Products/{CatalogSpecService,ProductsCatalogService,ProductsLocalSync,ProductsTypes,catalogTpGoods}.ts`, `server/modules/Production/TechCardService.ts`, `client/pages/Products/components/productDrawer/{BomQtyFormulaPopover,BomSection,ProductDrawer,productDrawerTypes,productDrawerUtils}.ts(x)`, `client/pages/Products/ProductsUtils.ts` (+ spec), `client/pages/Production/components/{TechCardComposition,TechCardDocument,TechCardEditor,techCardRecipe}.ts(x)`, `prisma/schema.prisma`, `prisma/migrations/20261112120000_catalog_component_qty_formula/`
+
+- **Кількість за формулою:** у полі «Кількість» рядка специфікації іконка Σ відкриває Popover: інгредієнт-джерело, `k` (у скільки разів більше за джерело) і `b` (постійна добавка на всю варку). На варку = k × джерело + b, джерело перераховується в одиниці рядка (г, кг, л, мл або вага штуки). У специфікацію й Dilovod іде кількість на порцію: на варку / N. Рядок з формулою перераховується сам; без джерела – помилка, зберегти не можна.
+- **N порцій** – поле «Розрахунок на N порцій» у техкарті (розділ «Розрахунок», за замовчуванням 1000). Якщо N змінено, похідні рядки перераховуються в чернетці специфікації під час затвердження техкарти.
+- **Склад техкарти:** «Порцій на варку» стартує з N; похідний рядок рахується за формулою (b не множиться на порції), біля назви – Σ з підказкою.
+- Формула зберігається локально (`catalog_good_components.qtyFormulaJson`, `componentsJson` чернеток і версій) і переживає sync з Dilovod за `rowKey`; формула без джерела відкидається.
+- **«Очікувана вага» під «Маса нетто»** для продукції – сума фракцій дозування техкарти на порцію (з виходом етапів); без дозування підказка не показується. Для наборів – «Приблизно … кг», як раніше.
+
+**Документація:** `Docs/plans/production-techcards.md` – крок 2c.
+
+---
+
 ## 2026-11-11 – Техкарти, фаза 2b: ключ рядка специфікації, редагування і затвердження техкарти
 
 **Files:** `shared/utils/{catalogRowKey,techCardPayload}.ts` (+ spec), `shared/types/{production,catalog,catalogSpec}.ts`, `shared/utils/catalogSpecContent.ts`, `server/modules/Products/{CatalogSpecService,ProductsCatalogService,ProductsLocalSync,ProductsTypes,catalogTpGoods}.ts`, `server/modules/Production/TechCardService.ts`, `server/routes/production.ts`, `client/pages/Production/{useTechCards.ts,components/{TechCardDocument,TechCardEditor,TechCardRecipeView,TechCardDrawer,techCardRecipe}.ts(x)}`, `client/pages/Production/TechCards/TechCardPage.tsx`, `client/pages/Products/components/productDrawer/{BomSection,ProductDrawer,productDrawerTypes}.ts(x)`, `client/pages/Products/ProductsUtils.ts` (+ spec), `client/components/ui/DurationMinutesField.tsx`, `prisma/schema.prisma`, `prisma/migrations/20261111130000_catalog_component_row_key/`

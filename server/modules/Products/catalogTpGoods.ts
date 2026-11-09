@@ -4,6 +4,7 @@
 
 import { randomBytes } from 'crypto';
 import type { CatalogLossEntry } from '../../../shared/types/production.js';
+import type { CatalogQtyFormula } from '../../../shared/types/catalog.js';
 import type { DilovodTpGoodsRow } from './ProductsTypes.js';
 import { productsDilovodGateway } from './ProductsDilovodGateway.js';
 
@@ -19,6 +20,8 @@ export type CatalogComponentSaveInput = {
   losses?: CatalogLossEntry[] | null;
   /** Локально: стабільний ключ рядка */
   rowKey?: string | null;
+  /** Локально: похідна кількість */
+  qtyFormula?: CatalogQtyFormula | null;
 };
 
 export type CatalogComponentRowRef = {

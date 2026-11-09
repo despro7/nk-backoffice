@@ -25,6 +25,7 @@ import {
   resolveCookingLossPercent,
 } from '../../../shared/utils/catalogLoss.js';
 import { assignRowKeys, isRowKey } from '../../../shared/utils/catalogRowKey.js';
+import { normalizeQtyFormula } from '../../../shared/utils/catalogQtyFormula.js';
 import { catalogGoodAuditService } from './CatalogGoodAuditService.js';
 import { productsCatalogService } from './ProductsCatalogService.js';
 import type { NotificationDirectEventId } from '../../../shared/constants/notifications.js';
@@ -72,6 +73,7 @@ function parseComponents(raw: unknown): CatalogSpecComponent[] {
       cookingLossPercent: resolveCookingLossPercent(r.losses, r.cookingLossPercent),
       losses: normalizeLossEntries(r.losses),
       rowKey: isRowKey(r.rowKey) ? r.rowKey : null,
+      qtyFormula: normalizeQtyFormula(r.qtyFormula),
     }))
     .filter((r) => r.componentGoodId);
 }
@@ -172,6 +174,7 @@ export class CatalogSpecService {
         cookingLossPercent: resolveCookingLossPercent(c.lossesJson, c.cookingLossPercent),
         losses: normalizeLossEntries(c.lossesJson),
         rowKey: c.rowKey ?? null,
+        qtyFormula: normalizeQtyFormula(c.qtyFormulaJson),
       })),
     };
   }
@@ -212,6 +215,7 @@ export class CatalogSpecService {
             cookingLossPercent: resolveCookingLossPercent(c.losses, c.cookingLossPercent),
             losses: normalizeLossEntries(c.losses),
             rowKey: isRowKey(c.rowKey) ? c.rowKey : null,
+            qtyFormula: normalizeQtyFormula(c.qtyFormula),
           };
         }),
     };
@@ -253,6 +257,7 @@ export class CatalogSpecService {
         cookingLossPercent: c.cookingLossPercent,
         lossesJson: c.losses ?? null,
         rowKey: rowKeys[idx],
+        qtyFormulaJson: c.qtyFormula ?? null,
       })),
     );
   }
@@ -649,6 +654,7 @@ export class CatalogSpecService {
             cookingLossPercent: c.cookingLossPercent,
             losses: c.losses ?? null,
             rowKey: c.rowKey ?? null,
+            qtyFormula: c.qtyFormula ?? null,
           })),
           ...(content.specQty != null ? { specQty: content.specQty } : {}),
         }),

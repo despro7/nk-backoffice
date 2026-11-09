@@ -36,6 +36,7 @@ import {
   hasComponentWeight,
   showMissingWeightBadge,
   type DrawerDirtyFieldKey,
+  parseSpecQtyInput,
 } from './productDrawerUtils';
 
 function fieldLabel(text: string, dirty?: boolean) {
@@ -48,6 +49,7 @@ function fieldLabel(text: string, dirty?: boolean) {
 }
 import { RowDeleteButton } from './RowDeleteButton';
 import { BomLossSplitPopover, hasLossSplit } from './BomLossSplitPopover';
+import { BomQtyFormulaPopover, bomQtyFormulaError } from './BomQtyFormulaPopover';
 import type { CatalogLossFormula, ProductionLossType } from '@shared/types/production';
 import {
   BOM_MANUAL_SORT,
@@ -81,6 +83,8 @@ interface BomSectionProps {
   rowDeleteConfirm: { kind: RowDeleteKind; idx: number } | null;
   bomWeightExpected: ExpectedBomWeight | null;
   autoGrossKg: number | null;
+  /** Маса порції за дозуванням техкарти; null – дозування не задано (для продукції «Приблизно» не показуємо) */
+  dosingNetKg: number | null;
   specQtySuspicious: boolean;
   /** Відкрити техкарту (Drawer); без колбеку кнопки немає (новий товар, немає права) */
   onOpenTechCard?: () => void;
@@ -104,6 +108,8 @@ interface BomSectionProps {
   lossTypes: ProductionLossType[];
   /** Формула складання типів втрат у брутто */
   lossFormula: CatalogLossFormula;
+  /** «Розрахунок на N порцій» з техкарти (похідні рядки) */
+  batchPortions: number;
 }
 
 function BomRowWeightHint({
@@ -181,6 +187,7 @@ export function BomSection({
   rowDeleteConfirm,
   bomWeightExpected,
   autoGrossKg,
+  dosingNetKg,
   specQtySuspicious,
   onOpenTechCard,
   onFormChange,
@@ -199,6 +206,7 @@ export function BomSection({
   moderationSlot,
   lossTypes,
   lossFormula,
+  batchPortions,
 }: BomSectionProps) {
   const packCols = isAdmin ? (isKit ? '3' : '4') : isKit ? '2' : '3';
   const isSpecReadOnly = isReadOnly || !canEditSpec;
@@ -236,6 +244,7 @@ export function BomSection({
     dragHandleProps?: HTMLAttributes<HTMLElement>
   ) => {
     const { row: c, originalIdx: idx } = entry;
+    const qtyFormulaError = !isKit ? bomQtyFormulaError(c, components, units) : null;
     const qtySuspicious =
       !isKit &&
       isSuspiciousBomIngredientQty(
@@ -486,9 +495,9 @@ export function BomSection({
                 aria-label="Кількість"
                 value={c.qty || 0}
                 min={0}
-                decimalPlaces={3}
-                isInvalid={c.qty <= 0}
-                isReadOnly={isSpecReadOnly}
+                decimalPlaces={c.qtyFormula ? 6 : 3}
+                isInvalid={c.qty <= 0 || qtyFormulaError != null}
+                isReadOnly={isSpecReadOnly || c.qtyFormula != null}
                 color={qtySuspicious ? 'danger' : 'default'}
                 classNames={{
                   inputWrapper: `border-1 ${
@@ -508,6 +517,21 @@ export function BomSection({
                   },
                 }}
                 trimTrailingZeros
+                endContent={
+                  <BomQtyFormulaPopover
+                    row={c}
+                    rows={components}
+                    units={units}
+                    specQty={parseSpecQtyInput(form.specQty)}
+                    batchPortions={batchPortions}
+                    isReadOnly={isSpecReadOnly}
+                    onChange={(qtyFormula) =>
+                      onComponentsChange((prev) =>
+                        prev.map((row, i) => (i === idx ? { ...row, qtyFormula } : row))
+                      )
+                    }
+                  />
+                }
                 onChange={(qty) =>
                   onComponentsChange((prev) =>
                     prev.map((row, i) => (i === idx ? { ...row, qty } : row))
@@ -624,6 +648,15 @@ export function BomSection({
               <span className="block text-xs text-warning-700/90 px-3">
                 У деяких позицій не вказано вагу
               </span>
+            ) : isGood ? (
+              dosingNetKg != null && dosingNetKg > 0.001 ? (
+                <span
+                  className="block text-xs text-warning-700/90 px-3"
+                  title="За дозуванням техкарти: сума фракцій на порцію"
+                >
+                  Очікувана вага {formatWeightKg(dosingNetKg, 2)} кг
+                </span>
+              ) : null
             ) : autoGrossKg != null && autoGrossKg > 0.01 ? (
               <span className="block text-xs text-warning-700/90 px-3">
                 Приблизно {formatWeightKg(autoGrossKg, 2)} кг

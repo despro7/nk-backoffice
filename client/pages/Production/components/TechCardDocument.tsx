@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { hasDerivedRows } from '@shared/utils/catalogQtyFormula';
 import {
   Button,
   Card,
@@ -329,6 +330,8 @@ function CardTab({
           specQty={data.good.specQty}
           lossFormula={editing ? (editing.payload.lossFormula ?? settings.lossFormula) : data.lossFormula}
           lossTypes={settings.lossTypes}
+          key={editing ? editing.payload.batchPortions : savedPayload.batchPortions}
+          batchPortions={editing ? editing.payload.batchPortions : savedPayload.batchPortions}
         />
       </Section>
 
@@ -340,6 +343,7 @@ function CardTab({
           rows={rows}
           goodNames={editing.names}
           globalFormula={settings.lossFormula}
+          hasDerivedRows={hasDerivedRows(specComponents)}
           onChange={(payload) => setEditing((prev) => (prev ? { ...prev, payload } : prev))}
           onGoodNamesChange={(names) => setEditing((prev) => (prev ? { ...prev, names } : prev))}
         />

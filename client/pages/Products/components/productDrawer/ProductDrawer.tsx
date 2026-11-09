@@ -1,5 +1,13 @@
 import { useProductionSettings } from '@/hooks/useProductionSettings';
 import { normalizeLossEntries } from '@shared/utils/catalogLoss';
+import { EMPTY_TECH_CARD_PAYLOAD } from '@shared/types/production';
+import { buildSpecRowOptions, fractionKg, stageOutputsKg } from '@/pages/Production/components/techCardRecipe';
+import {
+  DEFAULT_BATCH_PORTIONS,
+  normalizeQtyFormula,
+  qtyFormulaSourceError,
+  recalcDerivedRows,
+} from '@shared/utils/catalogQtyFormula';
 import {
   lazy,
   Suspense,
@@ -687,6 +695,7 @@ export function ProductDrawer({
           cookingLossPercent: c.cookingLossPercent ?? 0,
           losses: c.losses ?? null,
           rowKey: c.rowKey ?? null,
+          qtyFormula: c.qtyFormula ?? null,
         };
       });
       const nextPrices = detail.prices.map((p) => ({
@@ -1022,6 +1031,7 @@ export function ProductDrawer({
               cookingLossPercent: isKit ? undefined : c.cookingLossPercent,
               losses: isKit ? undefined : normalizeLossEntries(c.losses),
               rowKey: c.rowKey ?? undefined,
+              qtyFormula: isKit ? undefined : normalizeQtyFormula(c.qtyFormula),
             }))
           : [],
         prices: prices.map((p) => ({
@@ -1219,6 +1229,7 @@ export function ProductDrawer({
           cookingLossPercent: c.cookingLossPercent ?? 0,
           losses: c.losses ?? null,
           rowKey: c.rowKey ?? null,
+          qtyFormula: c.qtyFormula ?? null,
         };
       }),
     );
@@ -1478,6 +1489,12 @@ export function ProductDrawer({
       ),
     [dictionaries.units]
   );
+  const batchPortions = detail?.batchPortions ?? DEFAULT_BATCH_PORTIONS;
+  // Похідні рядки специфікації: кількість на порцію з формули (k · x + b на N порцій техкарти)
+  useEffect(() => {
+    if (!showBom || isKit) return;
+    setComponents((prev) => recalcDerivedRows(prev, units, parseSpecQtyInput(form.specQty), batchPortions));
+  }, [components, showBom, isKit, units, form.specQty, batchPortions]);
   /** Одиниця залишків СП / ВП: збережена одиниця товару (залишки в Dilovod у ній) */
   const stockUnitName = resolveUnitName(detail?.mainUnitId, dictionaries.units);
   const priceTypes = useMemo(
@@ -1510,6 +1527,33 @@ export function ProductDrawer({
         : false,
     [isGood, components, units, form.specQty]
   );
+  // Приблизна маса порції за дозуванням техкарти (сума фракцій); без дозування – не показуємо
+  const dosingNetKg = useMemo(() => {
+    const recipe = detail?.techCardDosing;
+    if (!isGood || !recipe || recipe.dosing.length === 0) return null;
+    const rows = buildSpecRowOptions(
+      components.map((c) => ({
+        componentGoodId: c.componentGoodId,
+        componentName: c.componentName,
+        qty: c.qty,
+        unitId: c.unitId,
+        componentWeight: c.componentWeight,
+        note: c.note,
+        rowKey: c.rowKey ?? null,
+      })),
+      units,
+      parseSpecQtyInput(form.specQty),
+    );
+    const payload = { ...EMPTY_TECH_CARD_PAYLOAD, stages: recipe.stages, dosing: recipe.dosing };
+    const stageOut = stageOutputsKg(payload, rows);
+    let total = 0;
+    for (const fraction of recipe.dosing) {
+      const kg = fractionKg(fraction, rows, stageOut);
+      if (kg == null) return null;
+      total += kg;
+    }
+    return total > 0 ? total : null;
+  }, [detail?.techCardDosing, isGood, components, units, form.specQty]);
   const autoGrossKg = useMemo(() => {
     if (!showBom || !components.length) return null;
     const rows = buildTechCardRows(
@@ -1530,7 +1574,10 @@ export function ProductDrawer({
     );
     return rows.totalGrossMassKg;
   }, [showBom, components, units, form.specQty, isKit, productionSettings.lossFormula]);
-  const requiredFieldsOk = requiredPricesOk && !packageRatioInvalid && !weightInvalid;
+  // Похідний рядок без джерела (видалено / теж похідне / без маси) не зберігаємо
+  const qtyFormulasOk =
+    !showBom || isKit || components.every((c) => qtyFormulaSourceError(c, components, units) == null);
+  const requiredFieldsOk = requiredPricesOk && !packageRatioInvalid && !weightInvalid && qtyFormulasOk;
   const nameHasWeight = catalogNameContainsWeight(form.name);
 
   const patchKitComponents = (updater: (prev: BomRow[]) => BomRow[]) => {
@@ -1777,7 +1824,9 @@ export function ProductDrawer({
                             rowDeleteConfirm={rowDeleteConfirm}
                             bomWeightExpected={bomWeightExpected}
                             autoGrossKg={autoGrossKg}
+                            dosingNetKg={dosingNetKg}
                             lossTypes={productionSettings.lossTypes}
+                            batchPortions={batchPortions}
                             lossFormula={productionSettings.lossFormula}
                             specQtySuspicious={specQtySuspicious}
                             onOpenTechCard={

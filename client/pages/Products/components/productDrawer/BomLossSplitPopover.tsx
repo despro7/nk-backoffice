@@ -80,7 +80,7 @@ export function BomLossSplitPopover({
   }
 
   return (
-    <Popover placement="bottom" isOpen={isOpen} onOpenChange={setIsOpen}>
+    <Popover placement="bottom" isOpen={isOpen} onOpenChange={setIsOpen} shouldCloseOnScroll={false}>
       <PopoverTrigger>
         <button
           type="button"
@@ -175,7 +175,7 @@ export function BomLossSplitPopover({
             <Button
               size="sm"
               variant="light"
-              className="self-start h-7 px-2 text-default-600"
+              className="self-start min-w-0 h-7 px-2.5 gap-1 text-default-600"
               isDisabled={freeTypes.length === 0}
               startContent={<DynamicIcon name="plus" size={14} />}
               onPress={addEntry}

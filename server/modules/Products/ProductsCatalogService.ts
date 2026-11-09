@@ -8,6 +8,8 @@ import { prisma, logServer } from '../../lib/utils.js';
 import type { CatalogLossEntry } from '../../../shared/types/production.js';
 import { normalizeLossEntries, resolveCookingLossPercent } from '../../../shared/utils/catalogLoss.js';
 import { isRowKey } from '../../../shared/utils/catalogRowKey.js';
+import { DEFAULT_BATCH_PORTIONS, normalizeQtyFormula } from '../../../shared/utils/catalogQtyFormula.js';
+import { normalizeTechCardPayload } from '../../../shared/utils/techCardPayload.js';
 import { isRebatchSku } from '../../../shared/types/warehouseRelease.js';
 import {
   CATALOG_ACC_POLICY_GOOD,
@@ -220,6 +222,31 @@ const catalogListInclude = {
     select: { fileName: true },
   },
 };
+
+/**
+ * Дані техкарти для картки товару: N («Розрахунок на N порцій») і дозування.
+ * Чернетка в парі зі специфікацією, інакше остання версія.
+ */
+async function techCardForGood(
+  goodId: string,
+): Promise<Pick<CatalogGoodDetailDto, 'batchPortions' | 'techCardDosing'>> {
+  const draft = await prisma.techCardDraft.findUnique({ where: { goodId }, select: { payloadJson: true } });
+  const raw =
+    draft?.payloadJson ??
+    (
+      await prisma.techCardVersion.findFirst({
+        where: { goodId },
+        orderBy: { version: 'desc' },
+        select: { payloadJson: true },
+      })
+    )?.payloadJson;
+  if (!raw) return { batchPortions: DEFAULT_BATCH_PORTIONS, techCardDosing: null };
+  const payload = normalizeTechCardPayload(raw);
+  return {
+    batchPortions: payload.batchPortions,
+    techCardDosing: payload.dosing.length > 0 ? { stages: payload.stages, dosing: payload.dosing } : null,
+  };
+}
 
 export class ProductsCatalogService {
   /**
@@ -1341,6 +1368,7 @@ export class ProductsCatalogService {
       cookingLossPercent: resolveCookingLossPercent(row.losses, row.cookingLossPercent),
       losses: normalizeLossEntries(row.losses),
       ...(isRowKey(row.rowKey) ? { rowKey: row.rowKey } : {}),
+      ...(row.qtyFormula !== undefined ? { qtyFormula: normalizeQtyFormula(row.qtyFormula) } : {}),
     }));
   }
 
@@ -1373,6 +1401,8 @@ export class ProductsCatalogService {
       /** Сирий JSON з БД (`lossesJson`) */
       lossesJson?: unknown;
       rowKey?: string | null;
+      /** Сирий JSON з БД (`qtyFormulaJson`) */
+      qtyFormulaJson?: unknown;
     }>,
   ): Promise<CatalogGoodComponentDto[]> {
     const componentIds = [...new Set(rows.map((c) => c.componentGoodId))];
@@ -1416,6 +1446,7 @@ export class ProductsCatalogService {
         cookingLossPercent: resolveCookingLossPercent(c.lossesJson, c.cookingLossPercent),
         losses: normalizeLossEntries(c.lossesJson),
         rowKey: c.rowKey ?? null,
+        qtyFormula: normalizeQtyFormula(c.qtyFormulaJson),
       };
     });
   }
@@ -1494,6 +1525,7 @@ export class ProductsCatalogService {
       })),
       images,
       stock,
+      ...(row.isGroup ? {} : await techCardForGood(row.id)),
     };
   }
 
@@ -1558,6 +1590,7 @@ export class ProductsCatalogService {
       cookingLossPercent: resolveCookingLossPercent(c.losses, c.cookingLossPercent),
       losses: normalizeLossEntries(c.losses),
       rowKey: isRowKey(c.rowKey) ? c.rowKey : null,
+      qtyFormula: normalizeQtyFormula(c.qtyFormula),
     }));
     const { tpGoods, componentsWithRowIds } = !isGroup && hasComponents
       ? await resolveTpGoodsForSave({
@@ -1688,6 +1721,7 @@ export class ProductsCatalogService {
             cookingLossPercent?: number;
             lossesJson?: Prisma.InputJsonValue | typeof Prisma.DbNull;
             rowKey?: string;
+            qtyFormulaJson?: Prisma.InputJsonValue | typeof Prisma.DbNull;
           } = {};
           if (c.note != null && String(c.note).trim()) {
             patch.note = String(c.note).trim();
@@ -1699,6 +1733,10 @@ export class ProductsCatalogService {
           }
           if (isRowKey(c.rowKey)) {
             patch.rowKey = c.rowKey;
+          }
+          if (c.qtyFormula !== undefined) {
+            const formula = normalizeQtyFormula(c.qtyFormula);
+            patch.qtyFormulaJson = formula ? (formula as unknown as Prisma.InputJsonValue) : Prisma.DbNull;
           }
           if (Object.keys(patch).length === 0) continue;
           await prisma.catalogGoodComponent.updateMany({
@@ -1753,6 +1791,7 @@ export class ProductsCatalogService {
       cookingLossPercent: c.cookingLossPercent ?? 0,
       losses: c.losses ?? null,
       rowKey: c.rowKey ?? null,
+      qtyFormula: c.qtyFormula ?? null,
     }));
     const componentInputs: CatalogComponentSaveInput[] = components.map((c) => ({
       componentGoodId: c.componentGoodId,
@@ -1766,6 +1805,7 @@ export class ProductsCatalogService {
       ),
       losses: normalizeLossEntries('losses' in c ? c.losses : null),
       rowKey: 'rowKey' in c && isRowKey(c.rowKey) ? c.rowKey : null,
+      qtyFormula: normalizeQtyFormula('qtyFormula' in c ? c.qtyFormula : null),
     }));
     const hasComponents = !isGroup && components.length > 0;
     const accPolicyId = isGroup
@@ -2049,6 +2089,7 @@ export class ProductsCatalogService {
             cookingLossPercent?: number;
             lossesJson?: Prisma.InputJsonValue | typeof Prisma.DbNull;
             rowKey?: string;
+            qtyFormulaJson?: Prisma.InputJsonValue | typeof Prisma.DbNull;
           } = {};
           if (c.note !== undefined) {
             patch.note = c.note?.trim() || null;
@@ -2060,6 +2101,10 @@ export class ProductsCatalogService {
           }
           if (isRowKey(c.rowKey)) {
             patch.rowKey = c.rowKey;
+          }
+          if (c.qtyFormula !== undefined) {
+            const formula = normalizeQtyFormula(c.qtyFormula);
+            patch.qtyFormulaJson = formula ? (formula as unknown as Prisma.InputJsonValue) : Prisma.DbNull;
           }
           if (Object.keys(patch).length === 0) continue;
           await prisma.catalogGoodComponent.updateMany({

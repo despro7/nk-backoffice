@@ -11,7 +11,9 @@ export interface SpecRowOption {
 }
 
 export function buildSpecRowOptions(
-  components: CatalogGoodComponentDto[],
+  components: Array<
+    Pick<CatalogGoodComponentDto, 'componentGoodId' | 'componentName' | 'qty' | 'unitId' | 'componentWeight' | 'note' | 'rowKey'>
+  >,
   units: CatalogDictItemDto[],
   specQty: number | null,
 ): SpecRowOption[] {

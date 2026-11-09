@@ -6,6 +6,7 @@ import {
   type TechCardStage,
 } from '../types/production.js';
 import { isCatalogLossFormula } from './catalogLoss.js';
+import { normalizeBatchPortions } from './catalogQtyFormula.js';
 
 type Obj = Record<string, unknown>;
 
@@ -111,6 +112,7 @@ export function normalizeTechCardPayload(raw: unknown): TechCardPayload {
     notes: str(obj.notes),
     portionsPerBox: portionsPerBox != null && portionsPerBox > 0 ? Math.round(portionsPerBox) : null,
     lossFormula: isCatalogLossFormula(obj.lossFormula) ? obj.lossFormula : null,
+    batchPortions: normalizeBatchPortions(obj.batchPortions),
   };
 }
 

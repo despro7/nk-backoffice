@@ -673,6 +673,8 @@ model CatalogGoodComponent {
   lossesJson         Json?
   /// Локально: стабільний ключ рядка (uuid) для етапів техкарти; переживає сортування, чернетки і sync з Dilovod
   rowKey             String?  @db.VarChar(64)
+  /// Локально: похідна кількість { sourceRowKey, k, b }: на варку = k · нетто джерела (кг) + b; null – кількість на порцію
+  qtyFormulaJson     Json?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

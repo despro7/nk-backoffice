@@ -1,4 +1,5 @@
 import { lossEntriesKey } from '@shared/utils/catalogLoss';
+import { qtyFormulaKey } from '@shared/utils/catalogQtyFormula';
 import { parseNumberInput } from '@/lib/numberInput';
 import type { CatalogGoodImageDto } from '@shared/types/catalog';
 import type { CatalogGoodDetailDto, DrawerMode } from '../../ProductsTypes';
@@ -67,6 +68,7 @@ type ComparableBomRow = {
   note: string;
   cookingLossPercent: number;
   losses: string | null;
+  qtyFormula: string | null;
 };
 
 type ComparableImageRow = {
@@ -94,6 +96,7 @@ function mapComparableComponents(components: BomRow[]): ComparableBomRow[] {
     note: row.note,
     cookingLossPercent: row.cookingLossPercent,
     losses: lossEntriesKey(row.losses),
+    qtyFormula: qtyFormulaKey(row.qtyFormula),
   }));
 }
 

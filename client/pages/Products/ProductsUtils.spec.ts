@@ -279,6 +279,22 @@ describe('buildTechCardRows', () => {
     expect(sequential.rows[0]?.massKgGrossTotal).toBeCloseTo(0.1 / 0.64);
   });
 
+  it('похідний рядок: k × джерело + b, b не масштабується', () => {
+    const potato = { componentName: 'Картопля', qty: 55, unitId: 'g', componentWeight: null, rowKey: 'aaaaaaaa-1' };
+    const water = {
+      componentName: 'Вода',
+      qty: 74.5,
+      unitId: 'g',
+      componentWeight: null,
+      rowKey: 'aaaaaaaa-2',
+      qtyFormula: { sourceRowKey: 'aaaaaaaa-1', k: 1.3, b: 3000 },
+    };
+    // 100 порцій: картопля 5,5 кг = 5500 г; 5500 × 1,3 + 3000 = 10 150 г = 10,15 кг
+    const result = buildTechCardRows([potato, water], units, 1, 100);
+    expect(result.rows[1]?.massKgNetTotal).toBeCloseTo(10.15);
+    expect(result.rows[1]?.derived?.k).toBe(1.3);
+  });
+
   it('форматує масу з фіксованою точністю', () => {
     const result = buildTechCardRows(
       [{ componentName: "М'ясо", qty: 100, unitId: 'g', componentWeight: null, cookingLossPercent: 10 }],

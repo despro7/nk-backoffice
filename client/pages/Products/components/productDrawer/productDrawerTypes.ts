@@ -1,4 +1,5 @@
 import type { CatalogLossEntry } from '@shared/types/production';
+import type { CatalogQtyFormula } from '@shared/types/catalog';
 import type { IconName } from 'lucide-react/dynamic';
 import type { ProductNutritionJson } from '@shared/types/storefront';
 import type {
@@ -78,6 +79,8 @@ export interface BomRow {
   losses?: CatalogLossEntry[] | null;
   /** Стабільний ключ рядка (етапи техкарти); новий рядок – новий ключ */
   rowKey?: string | null;
+  /** Похідна кількість `k · x + b` від іншого рядка; null – кількість на порцію */
+  qtyFormula?: CatalogQtyFormula | null;
   /** Батьківська папка компонента в каталозі */
   componentCategoryName?: string | null;
 }

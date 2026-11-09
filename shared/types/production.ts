@@ -95,6 +95,8 @@ export interface TechCardPayload {
   portionsPerBox: number | null;
   /** Перевизначення глобальної формули брутто; null – глобальна */
   lossFormula: CatalogLossFormula | null;
+  /** «Розрахунок на N порцій»: N для похідних рядків специфікації (кількість на порцію = на варку / N) */
+  batchPortions: number;
 }
 
 export const EMPTY_TECH_CARD_PAYLOAD: TechCardPayload = {
@@ -104,6 +106,7 @@ export const EMPTY_TECH_CARD_PAYLOAD: TechCardPayload = {
   notes: null,
   portionsPerBox: null,
   lossFormula: null,
+  batchPortions: 1000,
 };
 
 /** none – техкарти ще немає; editing / pending / rejected – стан чернетки; approved – є версія без чернетки. */

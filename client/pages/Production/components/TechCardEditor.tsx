@@ -24,6 +24,7 @@ import type {
   TechCardStage,
 } from '@shared/types/production';
 import { newRowKey } from '@shared/utils/catalogRowKey';
+import { normalizeBatchPortions } from '@shared/utils/catalogQtyFormula';
 import { PACKAGING_BASIS_LABELS, TechCardCoverageNotice } from './TechCardRecipeView';
 import { fractionKg, formatGrams, stageOutputsKg, type SpecRowOption } from './techCardRecipe';
 
@@ -302,12 +303,22 @@ interface TechCardEditorProps {
   rows: SpecRowOption[];
   goodNames: GoodNames;
   globalFormula: CatalogLossFormula;
+  /** У специфікації є похідні рядки (рахуються на N порцій) */
+  hasDerivedRows?: boolean;
   onChange: (next: TechCardPayload) => void;
   onGoodNamesChange: (next: GoodNames) => void;
 }
 
 /** Редагування рецепту: етапи, пакування, дозування, примітки, формула брутто. */
-export function TechCardEditor({ payload, rows, goodNames, globalFormula, onChange, onGoodNamesChange }: TechCardEditorProps) {
+export function TechCardEditor({
+  payload,
+  rows,
+  goodNames,
+  globalFormula,
+  hasDerivedRows = false,
+  onChange,
+  onGoodNamesChange,
+}: TechCardEditorProps) {
   const set = <K extends keyof TechCardPayload>(key: K, value: TechCardPayload[K]) => onChange({ ...payload, [key]: value });
   const stageOut = stageOutputsKg(payload, rows);
 
@@ -559,24 +570,44 @@ export function TechCardEditor({ payload, rows, goodNames, globalFormula, onChan
 
       <Divider className="bg-default-200/60" />
 
-      <Section icon="sigma" title="Формула брутто">
-        <Select
-          size="md"
-          aria-label="Формула брутто"
-          className="max-w-xs"
-          classNames={SELECT_CLASS}
-          selectedKeys={[payload.lossFormula ?? GLOBAL]}
-          onSelectionChange={(keys) => {
-            const key = String(Array.from(keys)[0] ?? GLOBAL);
-            set('lossFormula', key === 'additive' || key === 'sequential' ? key : null);
-          }}
-        >
-          {[
-            <SelectItem key={GLOBAL}>{`Як у налаштуваннях (${FORMULA_LABELS[globalFormula]})`}</SelectItem>,
-            <SelectItem key="additive">Адитивна</SelectItem>,
-            <SelectItem key="sequential">Послідовна</SelectItem>,
-          ]}
-        </Select>
+      <Section icon="calculator" title="Розрахунок">
+        <div className="grid grid-cols-1 gap-x-4 gap-y-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <Field label="Формула брутто">
+            <Select
+              size="md"
+              aria-label="Формула брутто"
+              classNames={SELECT_CLASS}
+              selectedKeys={[payload.lossFormula ?? GLOBAL]}
+              onSelectionChange={(keys) => {
+                const key = String(Array.from(keys)[0] ?? GLOBAL);
+                set('lossFormula', key === 'additive' || key === 'sequential' ? key : null);
+              }}
+            >
+              {[
+                <SelectItem key={GLOBAL}>{`Як у налаштуваннях (${FORMULA_LABELS[globalFormula]})`}</SelectItem>,
+                <SelectItem key="additive">Адитивна</SelectItem>,
+                <SelectItem key="sequential">Послідовна</SelectItem>,
+              ]}
+            </Select>
+          </Field>
+          <Field label="Розрахунок на N порцій" hint={hasDerivedRows ? 'для похідних рядків' : null}>
+            <NumberInputFromNumber
+              size="md"
+              aria-label="Розрахунок на N порцій"
+              value={payload.batchPortions}
+              min={1}
+              decimalPlaces={0}
+              classNames={INPUT_CLASS}
+              onChange={(v) => set('batchPortions', normalizeBatchPortions(v))}
+            />
+          </Field>
+        </div>
+        {hasDerivedRows && (
+          <p className="text-xs text-default-500">
+            Похідні рядки специфікації (кількість за формулою k · x + b) рахуються на це число порцій. Якщо його змінити,
+            кількість цих рядків перерахується в специфікації під час затвердження техкарти.
+          </p>
+        )}
       </Section>
     </div>
   );

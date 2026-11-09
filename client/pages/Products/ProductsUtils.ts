@@ -4,6 +4,8 @@ import {
   type CatalogLossFormula,
 } from '@shared/types/production';
 import { effectiveLossPercent, grossFromNet, normalizeLossEntries } from '@shared/utils/catalogLoss';
+import { derivedBatchQty, kgPerRowUnit, normalizeQtyFormula } from '@shared/utils/catalogQtyFormula';
+import type { CatalogQtyFormula } from '@shared/types/catalog';
 import {
   bomRowGrossKg,
   massUnitToKgFactor,
@@ -956,6 +958,8 @@ export type TechCardRow = {
   massKgRecipe: number | null;
   massKgNetTotal: number | null;
   massKgGrossTotal: number | null;
+  /** Похідний рядок: кількість на варку за формулою `k · x + b`, а не масштабом */
+  derived: { k: number; b: number; sourceName: string; batchQtyDisplay: string } | null;
 };
 
 export type TechCardMassPrecision = 'auto' | 0 | 1 | 2 | 3;
@@ -1083,6 +1087,8 @@ export function buildTechCardRows(
     note?: string | null;
     cookingLossPercent?: number | null;
     losses?: CatalogLossEntry[] | null;
+    rowKey?: string | null;
+    qtyFormula?: CatalogQtyFormula | null;
   }>,
   units: Array<{ id: string; name: string; code?: string | null }>,
   specQty: number,
@@ -1103,6 +1109,15 @@ export function buildTechCardRows(
   let hasGrossMass = false;
   let nonMassCount = 0;
 
+  // Нетто звичайних рядків на варку – джерела для похідних (k · x + b, де b – на всю варку)
+  const scaledNetByKey = new Map<string, number>();
+  for (const c of components) {
+    if (!c.rowKey || normalizeQtyFormula(c.qtyFormula)) continue;
+    const kg = bomRowGrossKg({ qty: c.qty, unitId: c.unitId, componentWeight: c.componentWeight }, unitById);
+    if (kg != null) scaledNetByKey.set(c.rowKey, kg * scale);
+  }
+  const nameByKey = new Map(components.filter((c) => c.rowKey).map((c) => [c.rowKey as string, c.componentName]));
+
   const rows: TechCardRow[] = components
     .filter((c) => Number(c.qty) > 0)
     .map((c) => {
@@ -1114,7 +1129,17 @@ export function buildTechCardRows(
         { qty: recipeQty, unitId: c.unitId, componentWeight: c.componentWeight },
         unitById
       );
-      const netTotal = netRecipe != null ? netRecipe * scale : null;
+      const formula = normalizeQtyFormula(c.qtyFormula);
+      const sourceNet = formula ? scaledNetByKey.get(formula.sourceRowKey) : undefined;
+      const rowKg = formula ? kgPerRowUnit(c, units) : null;
+      const batchQty =
+        formula && sourceNet != null && rowKg != null ? derivedBatchQty(formula, sourceNet / rowKg) : null;
+      const netTotal =
+        batchQty != null
+          ? bomRowGrossKg({ qty: batchQty, unitId: c.unitId, componentWeight: c.componentWeight }, unitById)
+          : netRecipe != null
+            ? netRecipe * scale
+            : null;
       const grossTotal = netTotal != null ? grossFromNet(netTotal, c, lossFormula) : netTotal;
 
       if (netRecipe != null) {
@@ -1143,6 +1168,15 @@ export function buildTechCardRows(
         massKgRecipe: netRecipe,
         massKgNetTotal: netTotal,
         massKgGrossTotal: grossTotal,
+        derived:
+          formula && batchQty != null
+            ? {
+                k: formula.k,
+                b: formula.b,
+                sourceName: nameByKey.get(formula.sourceRowKey) ?? '',
+                batchQtyDisplay: formatBomQtyDisplay(batchQty, unitName),
+              }
+            : null,
       };
     });
 
