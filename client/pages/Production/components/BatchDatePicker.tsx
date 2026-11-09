@@ -1,5 +1,12 @@
 import { DatePicker } from '@heroui/react';
-import { parseDate, type DateValue } from '@internationalized/date';
+import {
+  getLocalTimeZone,
+  now,
+  parseAbsoluteToLocal,
+  parseDate,
+  type DateValue,
+  type ZonedDateTime,
+} from '@internationalized/date';
 import { I18nProvider } from '@react-aria/i18n';
 
 function toDateValue(value: string | null | undefined): DateValue | null {
@@ -39,6 +46,57 @@ export function BatchDatePicker({ value, onChange, label, ariaLabel, className, 
         showMonthAndYearPickers
         selectorButtonPlacement="end"
         isRequired={isRequired}
+        className={className}
+      />
+    </I18nProvider>
+  );
+}
+
+function toZoned(value: string | null | undefined): ZonedDateTime | null {
+  if (!value) return null;
+  try {
+    return parseAbsoluteToLocal(value);
+  } catch {
+    return null;
+  }
+}
+
+interface BatchDateTimePickerProps {
+  /** ISO або порожньо */
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+  className?: string;
+  isRequired?: boolean;
+  isInvalid?: boolean;
+  errorMessage?: string;
+}
+
+/** Дата і час (до хвилини) у локальному поясі, не пізніше «зараз»; значення – ISO. */
+export function BatchDateTimePicker({
+  value,
+  onChange,
+  label,
+  className,
+  isRequired,
+  isInvalid,
+  errorMessage,
+}: BatchDateTimePickerProps) {
+  return (
+    <I18nProvider locale="uk-UA">
+      <DatePicker
+        label={label}
+        value={toZoned(value)}
+        onChange={(date) => onChange(date ? date.toDate().toISOString() : '')}
+        granularity="minute"
+        hourCycle={24}
+        hideTimeZone
+        showMonthAndYearPickers
+        maxValue={now(getLocalTimeZone())}
+        selectorButtonPlacement="end"
+        isRequired={isRequired}
+        isInvalid={isInvalid}
+        errorMessage={errorMessage}
         className={className}
       />
     </I18nProvider>

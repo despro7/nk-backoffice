@@ -8,6 +8,10 @@
  * POST /techcards/:goodId/approve|reject – + action.products.approveSpec (pair with the spec draft)
  * GET /batches, /batches/:id – page.production.batches
  * POST /batches, PATCH /batches/:id, POST /batches/:id/cancel – + action.production.batches.create
+ * POST /batches/:id/stock/refresh, PUT /batches/:id/issue, POST /batches/:id/issue/sign – + batches.issue
+ * POST /batches/:id/accept-production – + batches.acceptProduction
+ * POST|PATCH /batches/:id/stages/:stageId[/start|/finish|/undo] – + batches.cook
+ * POST /batches/:id/signatures/:sigId/revoke – page; власний підпис або batches.revokeAny
  */
 
 import { Router, type Request, type Response } from 'express';
@@ -21,18 +25,22 @@ import {
 } from '../modules/Production/ProductionSettingsService.js';
 import { CatalogSpecError } from '../modules/Products/CatalogSpecService.js';
 import { TechCardError, techCardService } from '../modules/Production/TechCardService.js';
-import { ProductionBatchError, productionBatchService } from '../modules/Production/ProductionBatchService.js';
+import { ProductionBatchError, productionBatchService, type BatchActor } from '../modules/Production/ProductionBatchService.js';
 
 const router = Router();
 const SETTINGS_PAGE_KEY = pageKey('settings', 'production');
 const TECHCARDS_PAGE_KEY = pageKey('production', 'techcards');
 const BATCHES_PAGE_KEY = pageKey('production', 'batches');
 
-// Дії варок (кроки реєструються тут, щоб усі з'явились у правах ролей; кроки 2–7 – у наступних фазах)
+// Дії варок (кроки реєструються тут, щоб усі з'явились у правах ролей; факт виходу і склад ГП – наступний крок)
 const batchCreate = requirePermission('production', 'batches.create', 'Створювати і скасовувати варки');
-requirePermission('production', 'batches.issue', 'Видавати сировину на варку');
-requirePermission('production', 'batches.acceptProduction', 'Приймати на виробництво і вносити факт виходу');
-requirePermission('production', 'batches.cook', 'Відмічати етапи готування');
+const batchIssue = requirePermission('production', 'batches.issue', 'Видавати сировину на варку');
+const batchAcceptProduction = requirePermission(
+  'production',
+  'batches.acceptProduction',
+  'Приймати на виробництво і вносити факт виходу',
+);
+const batchCook = requirePermission('production', 'batches.cook', 'Відмічати етапи готування');
 requirePermission('production', 'batches.acceptFinished', 'Приймати продукцію варки на склад ГП');
 requirePermission('production', 'batches.revokeAny', 'Відкликати будь-який підпис варки');
 
@@ -216,6 +224,107 @@ router.post('/batches/:id/cancel', batchCreate, async (req: Request, res: Respon
   try {
     const reason = typeof req.body?.reason === 'string' ? req.body.reason : '';
     res.json({ success: true, data: await productionBatchService.cancel(batchId(req), reason, userId(req)) });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+function stageId(req: Request): number {
+  const id = Number(req.params.stageId);
+  return Number.isInteger(id) && id > 0 ? id : 0;
+}
+
+async function batchActor(req: Request): Promise<BatchActor> {
+  return {
+    userId: userId(req),
+    roleLabel: req.user?.roleName || req.user?.role || null,
+    canRevokeAny: await roleService.hasPermission(req.user!.role, PERMISSIONS.ACTION_PRODUCTION_BATCHES_REVOKE_ANY),
+  };
+}
+
+router.post('/batches/:id/stock/refresh', batchIssue, async (req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: await productionBatchService.refreshStock(batchId(req), userId(req)) });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+router.put('/batches/:id/issue', batchIssue, async (req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: await productionBatchService.saveIssue(batchId(req), req.body ?? {}) });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+router.post('/batches/:id/issue/sign', batchIssue, async (req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: await productionBatchService.signIssue(batchId(req), req.body ?? {}, await batchActor(req)) });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+router.post('/batches/:id/accept-production', batchAcceptProduction, async (req: Request, res: Response) => {
+  try {
+    res.json({
+      success: true,
+      data: await productionBatchService.acceptProduction(batchId(req), req.body?.comment, await batchActor(req)),
+    });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+router.post('/batches/:id/stages/:stageId/start', batchCook, async (req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: await productionBatchService.startStage(batchId(req), stageId(req), userId(req)) });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+router.post('/batches/:id/stages/:stageId/finish', batchCook, async (req: Request, res: Response) => {
+  try {
+    res.json({
+      success: true,
+      data: await productionBatchService.finishStage(batchId(req), stageId(req), req.body ?? {}, userId(req)),
+    });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+router.patch('/batches/:id/stages/:stageId', batchCook, async (req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: await productionBatchService.updateStage(batchId(req), stageId(req), req.body ?? {}, userId(req)) });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+router.post('/batches/:id/stages/:stageId/undo', batchCook, async (req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: await productionBatchService.undoStage(batchId(req), stageId(req), userId(req)) });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+router.post('/batches/:id/signatures/:sigId/revoke', async (req: Request, res: Response) => {
+  if (!(await canViewBatches(req, res))) return;
+  try {
+    const sigId = Number(req.params.sigId);
+    res.json({
+      success: true,
+      data: await productionBatchService.revokeSignature(
+        batchId(req),
+        Number.isInteger(sigId) ? sigId : 0,
+        req.body?.comment,
+        await batchActor(req),
+      ),
+    });
   } catch (err) {
     sendError(res, err);
   }

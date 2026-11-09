@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-11-14 – Варки, фаза 3b: видача сировини, прийом на виробництво, готування
+
+**Files:** `shared/utils/productionBatchIssue.ts` (+ spec), `shared/types/production.ts`, `server/modules/Production/ProductionBatchService.ts`, `server/routes/production.ts`, `server/services/dilovod/DilovodService.ts`, `client/pages/Production/useProductionBatches.ts`, `client/pages/Production/Batches/BatchPage.tsx`, `client/pages/Production/components/{BatchLinesTable,BatchStepPanels,BatchStagesGantt,BatchStagesProgress,BatchDatePicker}.tsx`
+
+- **Видача сировини** (право «Видавати сировину»): «Оновити залишки» бере живі залишки СП / ВП з Dilovod лише для товарів варки; таблиця – план видачі (сировина в кг брутто, пакування в шт), облік СП + ВП, фактичний залишок, видано, примітка; «Видано = план». Залишку не вистачає – попередження; видано менше плану – обовʼязкова причина нестачі. «Підтвердити видачу» – підпис → «Сировину видано».
+- **Прийом на виробництво:** список нестач з поясненнями, коментар, підпис → «Прийнято на виробництво».
+- **Готування:** «Старт» / «Фініш» етапів з температурою й коментарем, відміна відмітки, ручне введення фактичного часу початку й завершення (оформлення заднім числом).
+- **Відкликання підпису:** останній підпис, поки наступний крок не почався; свій – автор, будь-який – право «Відкликати будь-який підпис»; з причиною, варка повертається на крок назад.
+- **Етапи** на сторінці варки – діаграма Ганта: план (зсув і тривалість) і факт від старту варки, лінія «Зараз», етап довше за план підсвічується. Таймлайн – хронологічно, з усіма новими подіями.
+- Міграцій немає.
+
+**Документація:** `Docs/plans/production-techcards.md` – крок 3b.
+
+---
+
 ## 2026-11-13 – Варки, фаза 3a: модель, створення, список і сторінка варки
 
 **Files:** `prisma/schema.prisma`, `prisma/migrations/20261113120000_production_batches/`, `shared/types/production.ts`, `shared/utils/productionBatchPlan.ts` (+ spec), `shared/constants/permissions.ts`, `server/modules/Production/{ProductionBatchService,TechCardService}.ts`, `server/routes/production.ts`, `client/routes.config.tsx`, `client/pages/Production/{useProductionBatches.ts,Batches/index.tsx,Batches/BatchPage.tsx,TechCards/index.tsx}`, `client/pages/Production/components/{batchUi,BatchDatePicker,NewBatchModal,TechCardBatchesTab,TechCardDocument}.tsx`

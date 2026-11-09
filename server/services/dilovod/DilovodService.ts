@@ -1061,6 +1061,26 @@ export class DilovodService {
     }
   }
 
+  /**
+   * Живі залишки СП / ВП лише для вказаних товарів (видача сировини на варку).
+   * Інгредієнти з цього набору заодно оновлюються в каталозі; пакування – лише у відповіді.
+   */
+  async fetchStockForGoods(goodIds: string[]): Promise<Map<string, { rawStock: number; productionStock: number }>> {
+    const ids = [...new Set(goodIds.filter(Boolean))];
+    if (ids.length === 0) return new Map();
+    const rows = await this.apiClient.getStockBalanceByGoodIds(
+      ids,
+      INGREDIENT_STOCK_STORAGE_IDS,
+      await resolveCatalogStockFirmId(),
+    );
+    const totals = aggregateIngredientStockRows(rows);
+    const idSet = new Set(ids);
+    const ingredients = (await listIngredientGoodsForStock()).filter((g) => idSet.has(g.id));
+    const result = await applyIngredientStockChanges(diffIngredientStock(ingredients, totals));
+    if (result.errors.length > 0) console.warn('⚠️ [Dilovod] Залишки варки: помилки запису в каталог', result.errors);
+    return totals;
+  }
+
   // ===== ТЕСТОВІ ФУНКЦІЇ =====
 
   // Тест підключення до Dilovod

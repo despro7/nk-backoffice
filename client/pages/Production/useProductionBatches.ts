@@ -4,7 +4,9 @@ import { useApi } from '@/hooks/useApi';
 import type {
   ProductionBatchCreateInput,
   ProductionBatchDetailDto,
+  ProductionBatchIssueInput,
   ProductionBatchListItemDto,
+  ProductionBatchStageInput,
   ProductionBatchStatus,
   ProductionBatchUpdatePlanInput,
 } from '@shared/types/production';
@@ -78,7 +80,7 @@ export function useProductionBatch(id: number | null) {
   return { data: query.data ?? null, loading: query.isLoading, error: errorText(query.error) };
 }
 
-/** Створення, зміна плану, скасування; оновлює кеш варки, списки варок і техкарт. */
+/** Дії варки (план, скасування, видача, прийом, етапи, підписи); оновлює кеш варки, списки варок і техкарт. */
 export function useProductionBatchActions() {
   const request = useRequest();
   const queryClient = useQueryClient();
@@ -103,6 +105,54 @@ export function useProductionBatchActions() {
         await request<ProductionBatchDetailDto>(`/api/production/batches/${id}/cancel`, {
           method: 'POST',
           body: { reason },
+        }),
+      ),
+    refreshStock: async (id: number) =>
+      apply(await request<ProductionBatchDetailDto>(`/api/production/batches/${id}/stock/refresh`, { method: 'POST', body: {} })),
+    saveIssue: async (id: number, input: ProductionBatchIssueInput) =>
+      apply(await request<ProductionBatchDetailDto>(`/api/production/batches/${id}/issue`, { method: 'PUT', body: input })),
+    signIssue: async (id: number, input: ProductionBatchIssueInput) =>
+      apply(await request<ProductionBatchDetailDto>(`/api/production/batches/${id}/issue/sign`, { method: 'POST', body: input })),
+    acceptProduction: async (id: number, comment: string) =>
+      apply(
+        await request<ProductionBatchDetailDto>(`/api/production/batches/${id}/accept-production`, {
+          method: 'POST',
+          body: { comment },
+        }),
+      ),
+    startStage: async (id: number, stageId: number) =>
+      apply(
+        await request<ProductionBatchDetailDto>(`/api/production/batches/${id}/stages/${stageId}/start`, {
+          method: 'POST',
+          body: {},
+        }),
+      ),
+    finishStage: async (id: number, stageId: number, input: ProductionBatchStageInput) =>
+      apply(
+        await request<ProductionBatchDetailDto>(`/api/production/batches/${id}/stages/${stageId}/finish`, {
+          method: 'POST',
+          body: input,
+        }),
+      ),
+    updateStage: async (id: number, stageId: number, input: ProductionBatchStageInput) =>
+      apply(
+        await request<ProductionBatchDetailDto>(`/api/production/batches/${id}/stages/${stageId}`, {
+          method: 'PATCH',
+          body: input,
+        }),
+      ),
+    undoStage: async (id: number, stageId: number) =>
+      apply(
+        await request<ProductionBatchDetailDto>(`/api/production/batches/${id}/stages/${stageId}/undo`, {
+          method: 'POST',
+          body: {},
+        }),
+      ),
+    revokeSignature: async (id: number, signatureId: number, comment: string) =>
+      apply(
+        await request<ProductionBatchDetailDto>(`/api/production/batches/${id}/signatures/${signatureId}/revoke`, {
+          method: 'POST',
+          body: { comment },
         }),
       ),
   };

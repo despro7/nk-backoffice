@@ -1,21 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import {
-  Button,
-  Card,
-  CardBody,
-  Spinner,
-  Table,
-  TableBody,
-  TableCell,
-  TableColumn,
-  TableHeader,
-  TableRow,
-  Textarea,
-} from '@heroui/react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Button, Card, CardBody, Spinner, Textarea } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { Link, useParams } from 'react-router-dom';
 import { BaseModal } from '@/components/modals/BaseModal';
 import { NumberInputFromNumber } from '@/components/NumberInput';
+import { useAuth } from '@/contexts/auth-context';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { ToastService } from '@/services/ToastService';
 import { PERMISSIONS } from '@shared/constants/permissions';
@@ -23,24 +12,20 @@ import {
   PRODUCTION_BATCH_STATUS_LABELS,
   type ProductionBatchDetailDto,
   type ProductionBatchEventDto,
-  type ProductionBatchLineDto,
+  type ProductionBatchStatus,
 } from '@shared/types/production';
 import { useProductionBatch, useProductionBatchActions } from '../useProductionBatches';
-import { BATCH_STEPS, BatchStatusChip, formatBatchDate, formatQty } from '../components/batchUi';
+import { BATCH_STEPS, BatchStatusChip, formatBatchDate } from '../components/batchUi';
+import { BatchLinesTable, useIssueDraft, type BatchLinesMode, type IssueDraft } from '../components/BatchLinesTable';
+import { AcceptStepPanel, CookingStepPanel, IssueStepPanel, SignatureLine } from '../components/BatchStepPanels';
+import { cn } from '@/lib/utils';
+import { BatchStagesGantt } from '../components/BatchStagesGantt';
 import { formatDateTime } from '../components/techCardUi';
-import { formatMinutes } from '../components/techCardRecipe';
 import { BatchDatePicker } from '../components/BatchDatePicker';
 
-const TABLE_CLASS_NAMES = {
-  table: 'min-w-[520px]',
-  th: 'bg-default-100 text-default-600 text-xs font-semibold first:rounded-l-md last:rounded-r-md',
-  td: 'text-sm py-2 align-top',
-  tr: 'border-b border-default-200/70 last:border-b-0',
-};
-
-function Section({ icon, title, aside, children }: { icon: string; title: string; aside?: ReactNode; children: ReactNode }) {
+function Section({ className, icon, title, aside, children }: { className?: string; icon: string; title: string; aside?: ReactNode; children: ReactNode }) {
   return (
-    <section className="space-y-3">
+    <section className={cn('space-y-3', className)}>
       <div className="flex items-center gap-2">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-default-900">
           <DynamicIcon name={icon as never} size={16} className="text-default-500" />
@@ -53,59 +38,10 @@ function Section({ icon, title, aside, children }: { icon: string; title: string
   );
 }
 
-function qtyWithUnit(line: ProductionBatchLineDto): string {
-  return `${formatQty(line.plannedQty)}${line.unitName ? ` ${line.unitName}` : ''}`;
-}
-
-function RawLinesTable({ lines }: { lines: ProductionBatchLineDto[] }) {
-  return (
-    <div className="-mx-1 overflow-x-auto px-1">
-      <Table aria-label="Сировина варки" removeWrapper classNames={TABLE_CLASS_NAMES}>
-        <TableHeader>
-          <TableColumn>Інгредієнт</TableColumn>
-          <TableColumn className="text-right">План</TableColumn>
-          <TableColumn className="text-right">Нетто</TableColumn>
-          <TableColumn className="text-right">Брутто</TableColumn>
-        </TableHeader>
-        <TableBody emptyContent="Немає сировини">
-          {lines.map((l) => (
-            <TableRow key={l.id}>
-              <TableCell>{l.name}</TableCell>
-              <TableCell className="text-right tabular-nums">{qtyWithUnit(l)}</TableCell>
-              <TableCell className="text-right tabular-nums">
-                {l.plannedNetKg != null ? `${formatQty(l.plannedNetKg)} кг` : '–'}
-              </TableCell>
-              <TableCell className="text-right font-medium tabular-nums">
-                {l.plannedGrossKg != null ? `${formatQty(l.plannedGrossKg)} кг` : '–'}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  );
-}
-
-function PackagingLinesTable({ lines }: { lines: ProductionBatchLineDto[] }) {
-  return (
-    <div className="-mx-1 overflow-x-auto px-1">
-      <Table aria-label="Пакування варки" removeWrapper classNames={{ ...TABLE_CLASS_NAMES, table: 'min-w-[360px]' }}>
-        <TableHeader>
-          <TableColumn>Матеріал</TableColumn>
-          <TableColumn className="text-right">План</TableColumn>
-        </TableHeader>
-        <TableBody>
-          {lines.map((l) => (
-            <TableRow key={l.id}>
-              <TableCell>{l.name}</TableCell>
-              <TableCell className="text-right tabular-nums">{qtyWithUnit(l)}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  );
-}
+const STEP_LABEL: Record<string, string> = {
+  issued: 'Видача сировини',
+  accepted: 'Прийом на виробництво',
+};
 
 function eventText(e: ProductionBatchEventDto): string {
   const p = (e.payload ?? {}) as Record<string, unknown>;
@@ -125,6 +61,24 @@ function eventText(e: ProductionBatchEventDto): string {
     }
     case 'cancelled':
       return `Варку скасовано: ${String(p.reason ?? '')}`;
+    case 'stockRefreshed':
+      return 'Облікові залишки оновлено з Dilovod';
+    case 'issued':
+      return Number(p.shortages) > 0 ? `Сировину видано, нестача: ${p.shortages} поз.` : 'Сировину видано';
+    case 'accepted':
+      return `Прийнято на виробництво${p.comment ? `: ${String(p.comment)}` : ''}`;
+    case 'stageStarted':
+      return `Етап «${String(p.stage ?? '')}» розпочато`;
+    case 'stageFinished':
+      return `Етап «${String(p.stage ?? '')}» завершено${p.actualTemp ? `, t ${String(p.actualTemp)}` : ''}`;
+    case 'stageUndone':
+      return `Етап «${String(p.stage ?? '')}»: відмінено ${p.what === 'finish' ? 'фініш' : 'старт'}`;
+    case 'stageTimeEdited': {
+      const at = (v: unknown) => (typeof v === 'string' && v ? formatDateTime(v) : '–');
+      return `Етап «${String(p.stage ?? '')}»: час змінено (${at(p.startedAt)} – ${at(p.finishedAt)})`;
+    }
+    case 'signatureRevoked':
+      return `Підпис «${STEP_LABEL[String(p.step)] ?? String(p.step)}» відкликано: ${String(p.comment ?? '')}`;
     default:
       return e.type;
   }
@@ -132,11 +86,21 @@ function eventText(e: ProductionBatchEventDto): string {
 
 function Timeline({ events }: { events: ProductionBatchEventDto[] }) {
   if (events.length === 0) return <p className="text-sm text-default-500">Подій ще немає.</p>;
+  // Хронологічно: історія варки читається згори вниз, як кроки; найновіша подія внизу і виділена.
+  const ordered = [...events].sort((a, b) => a.at.localeCompare(b.at) || a.id - b.id);
   return (
-    <ol className="flex flex-col gap-3">
-      {events.map((e) => (
-        <li key={e.id} className="flex gap-2.5">
-          <span className="mt-1.5 size-2 shrink-0 rounded-full bg-default-300" />
+    <ol className="flex flex-col">
+      {ordered.map((e, idx) => (
+        <li key={e.id} className="relative flex gap-2.5 pb-3 last:pb-0">
+          {idx < ordered.length - 1 && (
+            <span className="absolute top-3.5 bottom-0 left-[3.5px] w-px bg-default-200" aria-hidden />
+          )}
+          <span
+            className={cn(
+              'relative mt-1.5 size-2 shrink-0 rounded-full',
+              idx === ordered.length - 1 ? 'bg-primary ring-4 ring-primary/15' : 'bg-default-300',
+            )}
+          />
           <div className="min-w-0">
             <p className="text-sm text-default-800">{eventText(e)}</p>
             <p className="text-xs text-default-500">
@@ -229,14 +193,81 @@ function PlanStep({ batch, canEdit }: { batch: ProductionBatchDetailDto; canEdit
   );
 }
 
-/** Вертикальний степер: пройдені кроки, поточний (з формою), майбутні. */
-function Stepper({ batch, canEdit }: { batch: ProductionBatchDetailDto; canEdit: boolean }) {
-  const currentIdx = batch.status === 'cancelled' ? -1 : BATCH_STEPS.findIndex((s) => s.status === batch.status);
+/** Крок, дія якого очікується зараз: видача з чернетки, прийом після видачі, готування до факту виходу. */
+function actionStepIndex(status: ProductionBatchStatus): number {
+  if (status === 'cancelled') return -1;
+  if (status === 'cooking') return BATCH_STEPS.findIndex((s) => s.status === 'cooking');
+  return Math.min(BATCH_STEPS.findIndex((s) => s.status === status) + 1, BATCH_STEPS.length - 1);
+}
+
+interface StepperProps {
+  batch: ProductionBatchDetailDto;
+  draft: IssueDraft;
+  userId: number | null;
+  can: { create: boolean; issue: boolean; accept: boolean; cook: boolean; revokeAny: boolean };
+}
+
+/** Вертикальний степер: пройдені кроки (з підписами), поточний (з діями), майбутні. */
+function Stepper({ batch, draft, userId, can }: StepperProps) {
+  const actionIdx = actionStepIndex(batch.status);
+  const activeSignatures = batch.signatures.filter((s) => !s.revokedAt);
+  const lastSignature = activeSignatures[activeSignatures.length - 1] ?? null;
+
+  const waiting = (text: string) => <p className="mt-2 text-xs text-default-400">{text}</p>;
+
+  const body = (status: ProductionBatchStatus, current: boolean, done: boolean) => {
+    if (status === 'draft') {
+      return batch.status === 'draft' ? (
+        <div className="mt-3">
+          <PlanStep batch={batch} canEdit={can.create} />
+        </div>
+      ) : null;
+    }
+    if (done) {
+      const sig = activeSignatures.find((x) => x.step === status);
+      if (sig) {
+        const revocable =
+          lastSignature?.id === sig.id &&
+          batch.status === status &&
+          (can.revokeAny || (userId != null && sig.userId === userId));
+        return <SignatureLine batch={batch} signature={sig} canRevoke={revocable} />;
+      }
+      return null;
+    }
+    if (!current) return null;
+    switch (status) {
+      case 'issued':
+        return can.issue ? (
+          <div className="mt-3">
+            <IssueStepPanel batch={batch} draft={draft} />
+          </div>
+        ) : (
+          waiting('Очікує видачі комірником.')
+        );
+      case 'accepted':
+        return can.accept ? (
+          <div className="mt-3">
+            <AcceptStepPanel batch={batch} />
+          </div>
+        ) : (
+          waiting('Очікує прийому на виробництво.')
+        );
+      case 'cooking':
+        return (
+          <div className="mt-3">
+            <CookingStepPanel batch={batch} canCook={can.cook} />
+          </div>
+        );
+      default:
+        return waiting('Форма цього кроку буде в наступному оновленні.');
+    }
+  };
+
   return (
     <ol className="flex flex-col">
       {BATCH_STEPS.map((step, idx) => {
-        const done = currentIdx > idx;
-        const current = currentIdx === idx;
+        const done = actionIdx > idx;
+        const current = actionIdx === idx;
         return (
           <li key={step.status} className="relative flex gap-3 pb-5 last:pb-0">
             {idx < BATCH_STEPS.length - 1 && (
@@ -258,14 +289,7 @@ function Stepper({ batch, canEdit }: { batch: ProductionBatchDetailDto; canEdit:
                 {PRODUCTION_BATCH_STATUS_LABELS[step.status]}
               </p>
               <p className="text-xs text-default-500">{step.hint}</p>
-              {current && step.status === 'draft' && (
-                <div className="mt-3">
-                  <PlanStep batch={batch} canEdit={canEdit} />
-                </div>
-              )}
-              {current && step.status !== 'draft' && (
-                <p className="mt-2 text-xs text-default-400">Форма цього кроку буде в наступному оновленні.</p>
-              )}
+              {body(step.status, current, done)}
             </div>
           </li>
         );
@@ -280,7 +304,15 @@ export default function BatchPage() {
   const batchId = Number(id);
   const { data, loading, error } = useProductionBatch(Number.isInteger(batchId) ? batchId : null);
   const { hasPermission } = useRoleAccess();
-  const canCreate = hasPermission(PERMISSIONS.ACTION_PRODUCTION_BATCHES_CREATE);
+  const { user } = useAuth();
+  const can = {
+    create: hasPermission(PERMISSIONS.ACTION_PRODUCTION_BATCHES_CREATE),
+    issue: hasPermission(PERMISSIONS.ACTION_PRODUCTION_BATCHES_ISSUE),
+    accept: hasPermission(PERMISSIONS.ACTION_PRODUCTION_BATCHES_ACCEPT_PRODUCTION),
+    cook: hasPermission(PERMISSIONS.ACTION_PRODUCTION_BATCHES_COOK),
+    revokeAny: hasPermission(PERMISSIONS.ACTION_PRODUCTION_BATCHES_REVOKE_ANY),
+  };
+  const canCreate = can.create;
   const actions = useProductionBatchActions();
   const [cancelOpen, setCancelOpen] = useState(false);
   const [reason, setReason] = useState('');
@@ -309,8 +341,21 @@ export default function BatchPage() {
     }
   };
 
-  const raw = data?.lines.filter((l) => l.kind === 'raw') ?? [];
-  const packaging = data?.lines.filter((l) => l.kind === 'packaging') ?? [];
+  const lines = useMemo(() => data?.lines ?? [], [data?.lines]);
+  const draft = useIssueDraft(lines);
+  const raw = lines.filter((l) => l.kind === 'raw');
+  const packaging = lines.filter((l) => l.kind === 'packaging');
+  const linesMode: BatchLinesMode = !data
+    ? 'plan'
+    : data.status === 'draft'
+      ? can.issue
+        ? 'issue'
+        : 'plan'
+      : data.status === 'cancelled'
+        ? lines.some((l) => l.issuedQty != null)
+          ? 'issued'
+          : 'plan'
+        : 'issued';
   const canCancel = canCreate && (data?.status === 'draft' || data?.status === 'issued');
 
   return (
@@ -364,38 +409,22 @@ export default function BatchPage() {
             )}
             <Card className="rounded-lg shadow-none">
               <CardBody className="p-4">
-                <Stepper batch={data} canEdit={canCreate} />
+                <Stepper batch={data} draft={draft} userId={typeof user?.id === 'number' ? user.id : null} can={can} />
               </CardBody>
             </Card>
             <Card className="rounded-lg shadow-none">
               <CardBody className="flex flex-col gap-5 p-4">
                 <Section icon="list" title="Сировина" aside={`на ${data.plannedPortions} порцій`}>
-                  <RawLinesTable lines={raw} />
+                  <BatchLinesTable kind="raw" lines={raw} mode={linesMode} draft={draft} />
                 </Section>
                 {packaging.length > 0 && (
-                  <Section icon="package" title="Пакування">
-                    <PackagingLinesTable lines={packaging} />
+                  <Section icon="package" title="Пакування" className="pt-3">
+                    <BatchLinesTable kind="packaging" lines={packaging} mode={linesMode} draft={draft} />
                   </Section>
                 )}
                 {data.stages.length > 0 && (
-                  <Section icon="list-ordered" title="Етапи">
-                    <ol className="flex flex-col gap-1.5">
-                      {data.stages.map((s, idx) => (
-                        <li key={s.id} className="flex flex-wrap items-baseline gap-x-2 text-sm">
-                          <span className="font-medium text-default-900">
-                            {idx + 1}. {s.name}
-                          </span>
-                          <span className="text-xs text-default-500">
-                            {[
-                              s.plannedOffsetMin ? `старт +${formatMinutes(s.plannedOffsetMin)}` : null,
-                              s.plannedDurationMin ? formatMinutes(s.plannedDurationMin) : null,
-                            ]
-                              .filter(Boolean)
-                              .join(' · ')}
-                          </span>
-                        </li>
-                      ))}
-                    </ol>
+                  <Section icon="list-ordered" title="Етапи" className="pt-4">
+                    <BatchStagesGantt stages={data.stages} />
                   </Section>
                 )}
               </CardBody>

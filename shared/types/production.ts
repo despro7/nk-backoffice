@@ -262,9 +262,13 @@ export interface ProductionBatchStageDto {
   comment: string | null;
 }
 
+/** Кроки з підписом: видача сировини, прийом на виробництво (далі – факт виходу, склад ГП). */
+export type ProductionBatchSignatureStep = 'issued' | 'accepted' | 'output' | 'finished';
+
 export interface ProductionBatchSignatureDto {
   id: number;
   step: string;
+  userId: number;
   userName: string;
   roleLabel: string | null;
   signedAt: string;
@@ -322,4 +326,25 @@ export interface ProductionBatchUpdatePlanInput {
   plannedPortions?: number;
   plannedDate?: string;
   comment?: string | null;
+}
+
+export interface ProductionBatchIssueLineInput {
+  id: number;
+  /** Фактичний залишок на СП, одиниця видачі */
+  stockActual?: number | null;
+  issuedQty?: number | null;
+  issueNote?: string | null;
+  shortageComment?: string | null;
+}
+
+export interface ProductionBatchIssueInput {
+  lines: ProductionBatchIssueLineInput[];
+}
+
+export interface ProductionBatchStageInput {
+  actualTemp?: string | null;
+  comment?: string | null;
+  /** Фактичний час (ISO); лише для PATCH етапу. null – прибрати */
+  startedAt?: string | null;
+  finishedAt?: string | null;
 }
