@@ -2,12 +2,16 @@ import { Button, Card, CardBody, Spinner } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { Link, useParams } from 'react-router-dom';
 import { useTechCard } from '../useTechCards';
+import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
 import { TechCardDocument, TechCardMeta } from '../components/TechCardDocument';
+import { useTechCardEditGuard } from '../components/useTechCardEditGuard';
 
 /** Сторінка техкарти `/production/techcards/:goodId`. */
 export default function TechCardPage() {
   const { goodId = '' } = useParams<{ goodId: string }>();
   const { data, loading, error } = useTechCard(goodId || null);
+  // Незбережений рецепт: перехід зі сторінки чи перезавантаження – через модалку
+  const { editGuard, guard } = useTechCardEditGuard();
 
   return (
     <div className="space-y-4">
@@ -31,7 +35,7 @@ export default function TechCardPage() {
       </div>
 
       {data ? (
-        <TechCardDocument data={data} />
+        <TechCardDocument data={data} editGuard={editGuard} />
       ) : (
         <Card className="shadow-none rounded-lg">
           <CardBody className="p-4">
@@ -44,6 +48,7 @@ export default function TechCardPage() {
           </CardBody>
         </Card>
       )}
+      <UnsavedChangesModal {...guard.modalProps} />
     </div>
   );
 }

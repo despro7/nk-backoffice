@@ -76,6 +76,26 @@ export function fractionKg(
   return fraction.rowKeys.length + fraction.stageKeys.length > 0 ? total : null;
 }
 
+/**
+ * Вага пакування на порцію: матеріали з базою «на порцію» і вагою в каталозі (пакет).
+ * Матеріали «на коробку» і без ваги (наліпка) не враховуються.
+ */
+export function packagingPortionKg(
+  payload: Pick<TechCardPayload, 'packaging'>,
+  goodNames: Record<string, { name: string; weight?: number | null }>,
+): { kg: number; counted: string[] } {
+  let kg = 0;
+  const counted: string[] = [];
+  for (const row of payload.packaging) {
+    if (row.basis !== 'portion') continue;
+    const weight = goodNames[row.goodId]?.weight;
+    if (weight == null || !Number.isFinite(weight) || weight <= 0 || !(row.qty > 0)) continue;
+    kg += weight * row.qty;
+    counted.push(goodNames[row.goodId]?.name ?? row.goodId);
+  }
+  return { kg, counted };
+}
+
 export function formatGrams(kg: number | null): string {
   if (kg == null || !Number.isFinite(kg)) return '–';
   const grams = Math.round(kg * 10000) / 10;

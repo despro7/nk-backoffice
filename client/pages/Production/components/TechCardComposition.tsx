@@ -250,7 +250,7 @@ export function TechCardComposition({
 
       {/* Таблиця прокручується всередині себе, не розпирає макет на вузьких екранах */}
       <div className="-mx-1 overflow-x-auto px-1">
-      <Table aria-label="Склад техкарти" removeWrapper classNames={{ ...TABLE_CLASS_NAMES, table: 'min-w-[560px]', tr: 'border-b border-default-200/70 last:border-b-0' }}>
+      <Table aria-label="Склад техкарти" removeWrapper classNames={{ ...TABLE_CLASS_NAMES, table: 'min-w-[560px]' }}>
         <TableHeader>
           <TableColumn>Інгредієнт</TableColumn>
           <TableColumn className="text-right">Вага за рецептом</TableColumn>
@@ -263,7 +263,7 @@ export function TechCardComposition({
             ...techCard.rows.map((row, idx) => {
               const split = formatLossSplit(row.losses, typeNames);
               return (
-                <TableRow key={`${idx}-${row.name}`}>
+                <TableRow key={`${idx}-${row.name}`} className={idx === techCard.rows.length - 1 ? undefined : 'border-b border-default-200/70'}>
                   <TableCell>
                     <span className="inline-flex items-center gap-1.5">
                       {row.nameDisplay}

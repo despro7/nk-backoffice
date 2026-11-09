@@ -337,6 +337,15 @@ export function TechCardPdfDocument({ productName, specQty, portions, techCard, 
                   {recipe.dosingTotal ?? '–'}
                 </Text>
               </View>
+              {recipe.dosingWithPackaging && (
+                <View style={styles.row}>
+                  <Text style={[styles.cell, { width: '22%' }, styles.totalText]}>З пакуванням</Text>
+                  <Text style={[styles.cell, { width: '58%' }, styles.label]}>+ {recipe.dosingWithPackaging.materials}</Text>
+                  <Text style={[styles.cell, { width: '20%' }, styles.right, styles.totalText]}>
+                    {recipe.dosingWithPackaging.total}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
         )}

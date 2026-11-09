@@ -94,6 +94,8 @@ interface SearchHit {
   id: string;
   name: string;
   sku: string | null;
+  /** Вага з каталогу, кг */
+  weight: number | null;
 }
 
 /** Пошук матеріалу пакування в каталозі. */
@@ -119,7 +121,7 @@ function PackagingGoodPicker({ onPick }: { onPick: (hit: SearchHit) => void }) {
           setItems(
             rows
               .filter((r: { isGroup?: boolean }) => !r.isGroup)
-              .map((r: SearchHit) => ({ id: r.id, name: r.name, sku: r.sku ?? null })),
+              .map((r: SearchHit) => ({ id: r.id, name: r.name, sku: r.sku ?? null, weight: r.weight ?? null })),
           );
         })
         .catch(() => !cancelled && setItems([]))
@@ -482,7 +484,7 @@ export function TechCardEditor({
         ))}
         <PackagingGoodPicker
           onPick={(hit) => {
-            onGoodNamesChange({ ...goodNames, [hit.id]: { name: hit.name, sku: hit.sku } });
+            onGoodNamesChange({ ...goodNames, [hit.id]: { name: hit.name, sku: hit.sku, weight: hit.weight } });
             set('packaging', [...payload.packaging, { goodId: hit.id, qty: 1, basis: 'portion', note: null }]);
           }}
         />

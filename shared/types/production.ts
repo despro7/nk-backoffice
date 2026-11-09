@@ -167,5 +167,6 @@ export interface TechCardDetailDto {
   /** Формула брутто з урахуванням перевизначення в техкарті */
   lossFormula: CatalogLossFormula;
   /** Назви товарів пакування з версії і чернетки */
-  goodNames: Record<string, { name: string; sku: string | null }>;
+  /** Товари пакування: назва, артикул, вага з каталогу (кг) */
+  goodNames: Record<string, { name: string; sku: string | null; weight?: number | null }>;
 }

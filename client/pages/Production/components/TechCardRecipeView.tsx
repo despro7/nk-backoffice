@@ -2,7 +2,14 @@ import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from 
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { TechCardDetailDto, TechCardPayload } from '@shared/types/production';
 import { techCardCoverage } from '@shared/utils/techCardPayload';
-import { fractionKg, formatGrams, formatMinutes, stageOutputsKg, type SpecRowOption } from './techCardRecipe';
+import {
+  fractionKg,
+  formatGrams,
+  formatMinutes,
+  packagingPortionKg,
+  stageOutputsKg,
+  type SpecRowOption,
+} from './techCardRecipe';
 
 const TABLE_CLASS_NAMES = {
   th: 'bg-default-100 text-default-600 text-xs font-semibold first:rounded-l-md last:rounded-r-md',
@@ -112,9 +119,6 @@ export function TechCardPackagingView({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      {payload.portionsPerBox != null && (
-        <p className="text-sm text-default-600">Порцій у коробці: {payload.portionsPerBox}</p>
-      )}
       {payload.packaging.length === 0 ? (
         <Empty>Пакування ще не задано.</Empty>
       ) : (
@@ -141,13 +145,22 @@ export function TechCardPackagingView({
   );
 }
 
-export function TechCardDosingView({ payload, rows }: { payload: TechCardPayload; rows: SpecRowOption[] }) {
+export function TechCardDosingView({
+  payload,
+  rows,
+  goodNames,
+}: {
+  payload: TechCardPayload;
+  rows: SpecRowOption[];
+  goodNames?: TechCardDetailDto['goodNames'];
+}) {
   if (payload.dosing.length === 0) return <Empty>Фракції дозування ще не задано.</Empty>;
   const nameByKey = new Map(rows.map((r) => [r.rowKey, r.name]));
   const stageOut = stageOutputsKg(payload, rows);
   const stageName = new Map(payload.stages.map((st, idx) => [st.key, `${idx + 1}. ${st.name}`]));
   const masses = payload.dosing.map((d) => fractionKg(d, rows, stageOut));
   const total = masses.every((m) => m != null) ? masses.reduce<number>((sum, m) => sum + (m ?? 0), 0) : null;
+  const pack = packagingPortionKg(payload, goodNames ?? {});
 
   return (
     <Table aria-label="Дозування" removeWrapper classNames={TABLE_CLASS_NAMES}>
@@ -172,6 +185,17 @@ export function TechCardDosingView({ payload, rows }: { payload: TechCardPayload
             <TableCell>{''}</TableCell>
             <TableCell className="text-right font-semibold tabular-nums">{formatGrams(total)}</TableCell>
           </TableRow>,
+          ...(pack.kg > 0
+            ? [
+                <TableRow key="with-pack">
+                  <TableCell className="font-semibold">З пакуванням</TableCell>
+                  <TableCell className="text-default-500">+ {pack.counted.join(', ')}</TableCell>
+                  <TableCell className="text-right font-semibold tabular-nums">
+                    {formatGrams(total != null ? total + pack.kg : null)}
+                  </TableCell>
+                </TableRow>,
+              ]
+            : []),
         ]}
       </TableBody>
     </Table>

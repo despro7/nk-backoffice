@@ -225,7 +225,7 @@ class TechCardService {
       ...new Set([...(currentDto?.payload.packaging ?? []), ...(draftDtoValue?.payload.packaging ?? [])].map((p) => p.goodId)),
     ];
     const packagingGoods = packagingIds.length
-      ? await prisma.catalogGood.findMany({ where: { id: { in: packagingIds } }, select: { id: true, name: true, sku: true } })
+      ? await prisma.catalogGood.findMany({ where: { id: { in: packagingIds } }, select: { id: true, name: true, sku: true, weight: true } })
       : [];
 
     return {
@@ -237,7 +237,9 @@ class TechCardService {
       current: currentDto,
       draft: draftDtoValue,
       lossFormula: override ?? settings.lossFormula,
-      goodNames: Object.fromEntries(packagingGoods.map((g) => [g.id, { name: g.name, sku: g.sku }])),
+      goodNames: Object.fromEntries(
+        packagingGoods.map((g) => [g.id, { name: g.name, sku: g.sku, weight: g.weight ?? null }]),
+      ),
     };
   }
 

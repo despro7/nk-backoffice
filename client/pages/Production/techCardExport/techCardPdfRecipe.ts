@@ -4,6 +4,7 @@ import {
   formatGrams,
   formatMinutes,
   fractionKg,
+  packagingPortionKg,
   stageOutputsKg,
   type SpecRowOption,
 } from '../components/techCardRecipe';
@@ -36,6 +37,8 @@ export interface TechCardPdfRecipe {
   portionsPerBox: number | null;
   dosing: Array<{ name: string; composition: string; mass: string }>;
   dosingTotal: string | null;
+  /** Разом із пакуванням «на порцію» з вагою (пакет); null – такого пакування немає */
+  dosingWithPackaging: { total: string; materials: string } | null;
   notes: string | null;
   /** Секції складу: рядки за етапами, далі прямо в дозування, далі нерозподілені; порожньо – без секцій */
   compositionSections: Array<{ title: string; rowKeys: string[] }>;
@@ -110,10 +113,12 @@ export function buildTechCardPdfRecipe(input: {
   });
 
   const masses = payload.dosing.map((d) => fractionKg(d, rows, stageOut));
-  const dosingTotal =
+  const dosingKg =
     masses.length > 0 && masses.every((m) => m != null)
-      ? formatGrams(masses.reduce<number>((sum, m) => sum + (m ?? 0), 0))
+      ? masses.reduce<number>((sum, m) => sum + (m ?? 0), 0)
       : null;
+  const dosingTotal = dosingKg != null ? formatGrams(dosingKg) : null;
+  const pack = packagingPortionKg(payload, goodNames);
 
   return {
     sku: data.good.sku ?? null,
@@ -139,6 +144,10 @@ export function buildTechCardPdfRecipe(input: {
       mass: formatGrams(masses[idx]),
     })),
     dosingTotal,
+    dosingWithPackaging:
+      pack.kg > 0 && dosingKg != null
+        ? { total: formatGrams(dosingKg + pack.kg), materials: pack.counted.join(', ') }
+        : null,
     notes: payload.notes?.trim() || null,
     compositionSections: buildCompositionSections(payload, rows),
   };

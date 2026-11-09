@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type MutableRefObject, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { buildTechCardPdfRecipe } from '../techCardExport/techCardPdfRecipe';
 import { hasDerivedRows } from '@shared/utils/catalogQtyFormula';
@@ -46,6 +46,15 @@ export type TechCardTabKey = 'card' | 'versions' | 'batches';
 type TabKey = TechCardTabKey;
 /** Як виглядає панель дій: рядок у документі, окремий блок під карткою (сторінка), у футері Drawer */
 type FooterVariant = 'inline' | 'card' | 'bare';
+
+/** Зв'язок редактора з guard незбережених змін (Drawer, сторінка). */
+export interface TechCardEditGuard {
+  onDirtyChange: (dirty: boolean) => void;
+  /** Збереження чернетки з guard-модалки; кидає помилку, якщо не вдалось */
+  saveRef: MutableRefObject<(() => Promise<void>) | null>;
+  /** Дія, що відкидає редагування (кнопка «Скасувати»): за наявності змін – через ту саму модалку */
+  confirmDiscard: (action: () => void) => void;
+}
 export type TechCardContext = 'page' | 'drawer';
 
 const VERSION_SOURCE_LABELS: Record<TechCardVersionSource, string> = {
@@ -325,6 +334,8 @@ function CardTab({
   overlayZ,
   footerTarget,
   footerVariant = 'card',
+  active = true,
+  editGuard,
 }: {
   data: TechCardDetailDto;
   context: TechCardContext;
@@ -332,13 +343,19 @@ function CardTab({
   /** Куди винести панель дій (під карткою на сторінці, футер Drawer); null – усередині документа */
   footerTarget?: HTMLElement | null;
   footerVariant?: Exclude<FooterVariant, 'inline'>;
+  /** Вкладка видима; прихована лишається змонтованою, щоб не губити редагування */
+  active?: boolean;
+  editGuard?: TechCardEditGuard;
 }) {
   const { settings } = useProductionSettings();
   const { hasPermission } = useRoleAccess();
   const canEdit = hasPermission(PERMISSIONS.ACTION_PRODUCTS_EDIT_SPEC);
   const canApprove = hasPermission(PERMISSIONS.ACTION_PRODUCTS_APPROVE_SPEC);
   const actions = useTechCardActions(data.goodId);
-  const renderFooter = (node: ReactNode) => (footerTarget ? createPortal(node, footerTarget) : node);
+  const renderFooter = (node: ReactNode) => {
+    if (!active) return null;
+    return footerTarget ? createPortal(node, footerTarget) : node;
+  };
 
   const savedPayload = data.draft?.payload ?? data.current?.payload ?? EMPTY_TECH_CARD_PAYLOAD;
   const [editing, setEditing] = useState<{ payload: TechCardPayload; names: TechCardDetailDto['goodNames'] } | null>(null);
@@ -385,11 +402,26 @@ function CardTab({
     }
   };
 
-  const handleSave = async () => {
-    if (!editing) return;
+  const handleSave = async (): Promise<boolean> => {
+    if (!editing) return true;
     const payload = pruneTechCardRefs(editing.payload, rows.map((r) => r.rowKey));
-    if (await run('Чернетку техкарти збережено', () => actions.saveDraft(payload))) setEditing(null);
+    const ok = await run('Чернетку техкарти збережено', () => actions.saveDraft(payload));
+    if (ok) setEditing(null);
+    return ok;
   };
+
+  // Незбережені зміни рецепту – для guard закриття Drawer / переходу зі сторінки
+  const isDirty = editing != null && JSON.stringify(editing.payload) !== JSON.stringify(savedPayload);
+  const onDirtyChange = editGuard?.onDirtyChange;
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+  if (editGuard) {
+    editGuard.saveRef.current = async () => {
+      if (!(await handleSave())) throw new Error('Не вдалося зберегти чернетку техкарти');
+    };
+  }
 
   const handleModalConfirm = async () => {
     const text = modalText.trim();
@@ -476,12 +508,22 @@ function CardTab({
             <TechCardStagesView payload={savedPayload} rows={rows} />
           </Section>
           <Divider className="bg-default-200/60" />
-          <Section icon="package" title="Пакування">
+          <Section
+            icon="package"
+            title="Пакування"
+            action={
+              savedPayload.portionsPerBox != null ? (
+                <span className="text-sm text-default-500">
+                  Порцій у коробці: <span className="text-default-900 font-semibold">{savedPayload.portionsPerBox}</span>
+                </span>
+              ) : undefined
+            }
+          >
             <TechCardPackagingView payload={savedPayload} goodNames={data.goodNames} />
           </Section>
           <Divider className="bg-default-200/60" />
           <Section icon="scale" title="Дозування">
-            <TechCardDosingView payload={savedPayload} rows={rows} />
+            <TechCardDosingView payload={savedPayload} rows={rows} goodNames={data.goodNames} />
           </Section>
           <Divider className="bg-default-200/60" />
           <Section icon="sticky-note" title="Примітки">
@@ -517,7 +559,11 @@ function CardTab({
               </div>
             </div>
             <div className="flex shrink-0 justify-end gap-2">
-              <Button variant="flat" isDisabled={busy} onPress={() => setEditing(null)}>
+              <Button
+                variant="flat"
+                isDisabled={busy}
+                onPress={() => (editGuard ? editGuard.confirmDiscard(() => setEditing(null)) : setEditing(null))}
+              >
                 Скасувати
               </Button>
               <Button
@@ -640,6 +686,7 @@ export function TechCardDocument({
   overlayZ,
   tab: controlledTab,
   footerTarget: externalFooter,
+  editGuard,
 }: {
   data: TechCardDetailDto;
   context?: TechCardContext;
@@ -649,6 +696,7 @@ export function TechCardDocument({
   tab?: TabKey;
   /** Футер Drawer для панелі дій */
   footerTarget?: HTMLElement | null;
+  editGuard?: TechCardEditGuard;
 }) {
   const [ownTab, setTab] = useState<TabKey>('card');
   const tab = controlledTab ?? ownTab;
@@ -656,15 +704,18 @@ export function TechCardDocument({
   const [footerEl, setFooterEl] = useState<HTMLDivElement | null>(null);
   const body = (
     <>
-      {tab === 'card' && (
+      {/* Змонтована завжди: перемикання вкладок не губить редагування рецепту */}
+      <div className={tab === 'card' ? undefined : 'hidden'}>
         <CardTab
           data={data}
           context={context}
           overlayZ={overlayZ}
           footerTarget={context === 'page' ? footerEl : (externalFooter ?? null)}
           footerVariant={context === 'page' ? 'card' : 'bare'}
+          active={tab === 'card'}
+          editGuard={editGuard}
         />
-      )}
+      </div>
       {tab === 'versions' && <VersionsTab data={data} overlayZ={overlayZ} />}
       {tab === 'batches' && <p className="text-sm text-default-500">Варок за цією техкартою ще немає.</p>}
     </>
