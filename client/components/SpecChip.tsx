@@ -50,7 +50,7 @@ export function SpecChip({
           rounded ? `rounded-${rounded}` : 'rounded-full',
           specColorToClassNames(tokens, { border: true, intensity: selected ? 'medium' : tokens.intensity }),
           selected ? 'ring-2 ring-slate-800 ring-offset-1' : '',
-          className ?? rounded === 'full' ? 'px-1.5' : 'px-1',
+          className ?? rounded === 'full' ? 'px-1.5' : 'pl-1.5 pr-1',
         ].join(' '),
         content: 'font-medium leading-none ml-0.5',
       }}

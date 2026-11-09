@@ -9,6 +9,7 @@
 import { detectDocumentKind } from './NotificationDocumentService.js';
 import { prisma } from '../../lib/utils.js';
 import { renderNotification } from '../../../shared/notifications/ruleEngine.js';
+import { resolveDirectEvent } from '../../../shared/constants/notifications.js';
 import type { NotificationRuleDef } from '../../../shared/types/notificationRules.js';
 import type { NotificationTab } from '../../../shared/types/notifications.js';
 import { notificationConfigService } from './NotificationConfigService.js';
@@ -149,6 +150,7 @@ export class NotificationFeedService {
           initiatedBy: row.initiatedBy,
           rendered,
           recipients: parseRecipients(row.data),
+          directEvent: resolveDirectEvent(row.category, row.title, row.data),
           actorUserId: user?.id ?? null,
           actorName,
           docNumber: docNumberOf(row.data) ?? (rendered.vars.doc || null),

@@ -50,6 +50,19 @@
 
 **Files:** `client/components/NotificationBell.tsx`, `client/components/notifications/{NotificationPanel,NotificationRow,NotificationAvatar,NotificationPrefsView,NotificationTelegramConnect,NotificationDocumentDrawer,NotificationDebugTools,useOrderDetailsDrawer}.ts(x)`, `client/hooks/useNotificationFeed.ts`, `client/pages/SettingsNotifications/notificationPlayground.ts`, `server/modules/Notifications/{NotificationDocumentService,NotificationFeedService,notificationFeed,NotificationPrefsService}.ts` (+ spec), `server/routes/{notifications,support-reports,orders}.ts`, `server/services/SupportReportScreenshotStore.ts`, `server/services/dilovod/DilovodAutoExportService.ts`, `shared/notifications/{feedPresentation,defaultRules}.ts`, `shared/types/notifications.ts`, `.gitignore`
 
+## 2026-11-09 – Ролі: адресні сповіщення в матриці, пошук прав по всіх доменах
+
+**Files:** `shared/constants/notifications.ts`, `server/modules/Notifications/{notificationFeed,telegramDelivery,NotificationFeedService}.ts` (+ spec), `server/modules/Products/CatalogSpecService.ts`, `client/pages/Settings/Users/components/{NotificationPermissionsMatrix,RolesManager,RolePermissionsEditor}.tsx`, `prisma/migrations/20261109150000_notification_direct_events`
+
+- **Адресні сповіщення в ролі:** у блоці «Сповіщення» окремий рядок на кожну адресну подію («Специфікація чекає на затвердження», «Рішення по специфікації») з галочками дзвіночка й Telegram (`action.notify.direct.<event>.<channel>`). Рядок видно лише ролі, що може бути адресатом; увімкнення права затвердження / редагування специфікацій одразу ставить галочки події.
+- Стрічка й Telegram враховують ці права; `CatalogSpecService` пише подію в `data.event`, старі записи впізнаються за заголовком. Міграція вмикає обидва канали всім ролям, поведінка не змінилась.
+- **Пошук прав:** з текстом шукає по всіх доменах одразу, секції «Домен › Підрозділ», домени зі збігами виділені й показують кількість, збіги в назвах прав підсвічені.
+- **Перекриті права:** якщо увімкнено повне редагування табеля, право «свої записи за сьогодні» приховане й не робить групу «частковою».
+
+**Документація:** `Docs/features/notification-centre.md` – «Права ролей», видимість, Telegram; `Docs/features/users-and-roles.md` – пошук.
+
+---
+
 - **Дровери:** «Відкрити замовлення» відкриває деталі замовлення, як на «Стан замовлень». «Відкрити документ» – новий дровер документа (`GET /api/notifications/:id/document`): локальний запис комплектування / переміщення або спроба списання, помилка Діловода, позиції, кнопка «Документ у Діловоді». Нестача товару – таблицею, сира відповідь під спойлером.
 - **Мета рядка:** «дата • хто запускав • номер документа» без категорії; тултіп «Запускали» зі всіма запусками згорнутого рядка. Підписи: «Імʼя (авто)» для авто-експорту після зміни статусу (новий `initiatedBy = manual:by:<userId>`), «SalesDrive (API)», «Cron», «автоматично».
 - **Аватар** – сервіс транзакції: знак Діловода на блідо-жовтому, логотип SalesDrive.

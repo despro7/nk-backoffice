@@ -74,10 +74,55 @@ export function isNotifyPermissionKey(key: string): boolean {
   return key.startsWith('action.notify.');
 }
 
+/**
+ * Адресні сповіщення: кому – вирішує код (data.recipients), а роль лише вмикає / вимикає канали.
+ * Ключ: action.notify.direct.<event>.<channel>. Рядок у матриці ролі показується,
+ * лише якщо роль має `requires` (інакше вона не може бути адресатом).
+ */
+export const NOTIFICATION_DIRECT_EVENTS = [
+  {
+    id: 'specReview',
+    label: 'Специфікація чекає на затвердження',
+    hint: 'Нова або оновлена чернетка специфікації. Отримують ті, хто затверджує',
+    requires: 'action.products.approveSpec',
+    titlePattern: /чекає на затвердження|Оновлено чернетку/i,
+  },
+  {
+    id: 'specResult',
+    label: 'Рішення по специфікації',
+    hint: 'Затверджено, затверджено з правками або відхилено. Отримує автор чернетки',
+    requires: 'action.products.editSpec',
+    titlePattern: /Специфікацію (затверджено|відхилено)/i,
+  },
+] as const;
+
+export type NotificationDirectEventId = (typeof NOTIFICATION_DIRECT_EVENTS)[number]['id'];
+
+export function directNotifyPermissionKey(event: NotificationDirectEventId, channel: NotificationChannel): string {
+  return `action.notify.direct.${event}.${channel}`;
+}
+
+/** Подія адресного сповіщення: data.event, для старих записів – за заголовком; null – невідома. */
+export function resolveDirectEvent(
+  category: string,
+  title: string | null,
+  data: unknown,
+): NotificationDirectEventId | null {
+  const event = data && typeof data === 'object' ? (data as { event?: unknown }).event : undefined;
+  const known = NOTIFICATION_DIRECT_EVENTS.find((e) => e.id === event);
+  if (known) return known.id;
+  if (category !== 'catalog_spec' || !title) return null;
+  return NOTIFICATION_DIRECT_EVENTS.find((e) => e.titlePattern.test(title))?.id ?? null;
+}
+
 /** Усі notify-ключі (для admin, тестів і UI матриці). */
 export const ALL_NOTIFY_PERMISSION_KEYS: string[] = NOTIFICATION_GROUP_IDS.flatMap((group) =>
   NOTIFICATION_LEVEL_IDS.flatMap((level) =>
     NOTIFICATION_CHANNELS.map((channel) => notifyPermissionKey(group, level, channel.id)),
+  ),
+).concat(
+  NOTIFICATION_DIRECT_EVENTS.flatMap((event) =>
+    NOTIFICATION_CHANNELS.map((channel) => directNotifyPermissionKey(event.id, channel.id)),
   ),
 );
 

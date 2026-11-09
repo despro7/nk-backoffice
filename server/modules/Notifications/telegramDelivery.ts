@@ -11,7 +11,7 @@ import {
   type NotificationGroupId,
 } from '../../../shared/constants/notifications.js';
 import type { NotificationUserPrefsData } from '../../../shared/types/notifications.js';
-import type { PreparedLog } from './notificationFeed.js';
+import { directEventAllowed, type PreparedLog } from './notificationFeed.js';
 
 export const TG_DEDUPE_WINDOW_MS = 30 * 60 * 1000;
 
@@ -31,7 +31,7 @@ export function telegramAudience(log: PreparedLog, recipients: TelegramRecipient
     const isAdmin = u.role === 'admin';
     if (log.category === 'user_report' && !isAdmin) return false;
     if (u.prefs.mutedTgGroups.includes(r.group as NotificationGroupId)) return false;
-    if (log.recipients) return log.recipients.includes(u.userId);
+    if (log.recipients) return log.recipients.includes(u.userId) && directEventAllowed(log, isAdmin, u.permissions, 'tg');
     if (u.prefs.mutedGroups.includes(r.group as NotificationGroupId)) return false;
     return hasPermission(u.permissions, notifyPermissionKey(r.group as NotificationGroupId, r.level, 'tg'));
   });

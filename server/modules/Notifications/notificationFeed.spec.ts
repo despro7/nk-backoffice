@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildFeed, collapseRepeats, initialsOf, type LogUserState, type PreparedLog } from './notificationFeed';
 import { categoriesWithVisibleSuccess, parseInitiator } from './NotificationFeedService';
 import { DEFAULT_NOTIFICATION_RULES } from '../../../shared/notifications/defaultRules';
+import { resolveDirectEvent } from '../../../shared/constants/notifications';
 import type { RenderedNotification } from '../../../shared/types/notificationRules';
 
 function rendered(p: Partial<RenderedNotification> = {}): RenderedNotification {
@@ -30,6 +31,7 @@ function log(id: number, p: Partial<PreparedLog> = {}, r: Partial<RenderedNotifi
     initiatedBy: null,
     rendered: rendered(r),
     recipients: null,
+    directEvent: null,
     actorUserId: null,
     actorName: null,
     docNumber: null,
@@ -119,6 +121,23 @@ describe('buildFeed', () => {
   it('shows warehouse doc number when there is no order', () => {
     const feed = buildFeed([log(1, { orderNumber: null, docNumber: 'K-000654' })], new Map(), picker, 'all', 50);
     expect(feed.data[0].docNumber).toBe('K-000654');
+  });
+
+  it('addressed events follow the role switch for the app channel', () => {
+    const logs = [
+      log(1, { category: 'catalog_spec', recipients: [7], directEvent: 'specReview' }, { group: 'products', title: 'a' }),
+      log(2, { category: 'catalog_spec', recipients: [7], directEvent: 'specResult' }, { group: 'products', title: 'b' }),
+    ];
+    const viewer = { ...picker, permissions: new Set(['action.notify.direct.specResult.app']) };
+    expect(buildFeed(logs, new Map(), viewer, 'all', 50).data.map((i) => i.id)).toEqual([2]);
+    expect(buildFeed(logs, new Map(), { ...viewer, isAdmin: true }, 'all', 50).data.map((i) => i.id)).toEqual([1, 2]);
+  });
+
+  it('resolves addressed event from data or legacy title', () => {
+    expect(resolveDirectEvent('catalog_spec', 'x', { event: 'specResult' })).toBe('specResult');
+    expect(resolveDirectEvent('catalog_spec', 'Специфікація чекає на затвердження', {})).toBe('specReview');
+    expect(resolveDirectEvent('catalog_spec', 'Специфікацію відхилено', null)).toBe('specResult');
+    expect(resolveDirectEvent('dilovod', 'Специфікацію відхилено', null)).toBeNull();
   });
 
   it('hides rule-hidden logs', () => {

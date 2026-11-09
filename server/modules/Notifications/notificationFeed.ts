@@ -5,7 +5,10 @@
 
 import { hasPermission } from '../../../shared/constants/permissions.js';
 import {
+  directNotifyPermissionKey,
   notifyPermissionKey,
+  type NotificationChannel,
+  type NotificationDirectEventId,
   type NotificationGroupId,
 } from '../../../shared/constants/notifications.js';
 import type { RenderedNotification } from '../../../shared/types/notificationRules.js';
@@ -37,6 +40,8 @@ export interface PreparedLog {
   rendered: RenderedNotification;
   /** data.recipients; null – не адресне. */
   recipients: number[] | null;
+  /** Подія адресного сповіщення (вмикається в ролі); null – невідома, приходить завжди. */
+  directEvent: NotificationDirectEventId | null;
   actorUserId: number | null;
   actorName: string | null;
   /** Номер складського документа (data.docNumber / internalDocNumber / {{doc}} правила). */
@@ -59,6 +64,17 @@ export interface FeedViewer {
   mutedGroups?: readonly string[];
 }
 
+/** Чи дозволяє роль адресату отримати цю подію в каналі; невідома подія – так (як раніше). */
+export function directEventAllowed(
+  log: Pick<PreparedLog, 'directEvent'>,
+  isAdmin: boolean,
+  permissions: ReadonlySet<string>,
+  channel: NotificationChannel,
+): boolean {
+  if (isAdmin || !log.directEvent) return true;
+  return hasPermission(permissions, directNotifyPermissionKey(log.directEvent, channel));
+}
+
 export function isReadBy(map: ReadByMap, userId: number): boolean {
   return `${userId}` in map || '_all' in map;
 }
@@ -74,8 +90,8 @@ export function canSee(log: PreparedLog, viewer: FeedViewer): { visible: boolean
   if (!log.rendered.visible) return { visible: false, addressed: false };
   if (log.category === 'user_report' && !viewer.isAdmin) return { visible: false, addressed: false };
   if (log.recipients) {
-    const addressed = log.recipients.includes(viewer.userId);
-    // Адресні сповіщення приходять лише адресатам і незалежно від матриці ролі.
+    // Адресні – лише адресатам; роль може вимкнути канал для цієї події (рядок «Адресні» в матриці).
+    const addressed = log.recipients.includes(viewer.userId) && directEventAllowed(log, viewer.isAdmin, viewer.permissions, 'app');
     return { visible: addressed, addressed };
   }
   if (viewer.mutedGroups?.includes(log.rendered.group)) return { visible: false, addressed: false };

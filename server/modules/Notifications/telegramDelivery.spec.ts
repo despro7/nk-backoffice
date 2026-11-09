@@ -18,6 +18,7 @@ function log(p: Partial<PreparedLog> = {}, r: Partial<PreparedLog['rendered']> =
     orderNumber: '25727',
     initiatedBy: null,
     recipients: null,
+    directEvent: null,
     actorUserId: null,
     actorName: null,
     docNumber: null,
@@ -62,6 +63,12 @@ describe('telegramAudience', () => {
   it('sends addressed notifications only to recipients, regardless of role', () => {
     const out = telegramAudience(log({ recipients: [2] }, { group: 'products' }), [user(1, ['*']), user(2, [])]);
     expect(out.map((u) => u.userId)).toEqual([2]);
+  });
+
+  it('addressed event respects the role Telegram switch', () => {
+    const spec = log({ recipients: [1, 2], directEvent: 'specReview' }, { group: 'products' });
+    const out = telegramAudience(spec, [user(1, ['action.notify.direct.specReview.tg']), user(2, ['action.notify.direct.specReview.app'])]);
+    expect(out.map((u) => u.userId)).toEqual([1]);
   });
 
   it('skips hidden and admin-only logs', () => {

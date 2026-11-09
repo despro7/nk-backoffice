@@ -3,7 +3,6 @@ import {
   Button,
   Card,
   CardBody,
-  Checkbox,
   Chip,
   Divider,
   Drawer,
@@ -35,7 +34,7 @@ import { notifyPermissionsChanged } from '@/lib/notifyPermissionsChanged';
 import type { RoleDto } from '@shared/types/role';
 import { appRoutes } from '@/routes.config';
 import { CatalogFolderAclTree } from './CatalogFolderAclTree';
-import { NotificationPermissionsMatrix } from './NotificationPermissionsMatrix';
+import { NotificationPermissionsMatrix, withDirectEventDefaults } from './NotificationPermissionsMatrix';
 import { isNotifyPermissionKey } from '@shared/constants/notifications';
 
 const ROLE_ROW_GRID = 'grid grid-cols-[32px_minmax(160px,1.4fr)_120px_140px_80px] gap-2 items-center';
@@ -350,7 +349,7 @@ function RoleEditorDrawer({
       const next = new Set(prev);
       if (value) next.add(key);
       else next.delete(key);
-      return stripSupersededPermissions(next);
+      return stripSupersededPermissions(withDirectEventDefaults(prev, next));
     });
   };
 
@@ -362,7 +361,7 @@ function RoleEditorDrawer({
         if (value) next.add(item.key);
         else next.delete(item.key);
       }
-      return stripSupersededPermissions(next);
+      return stripSupersededPermissions(withDirectEventDefaults(prev, next));
     });
   };
 

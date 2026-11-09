@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   Accordion,
   AccordionItem,
@@ -65,6 +65,85 @@ function splitByLayer(items: CatalogItem[]): { pages: CatalogItem[]; actions: Ca
   return { pages, actions };
 }
 
+type PermissionSection = { id: string; title: string; items: CatalogItem[]; visible: CatalogItem[] };
+
+function domainSubsections(domain: PermissionDomainId, items: CatalogItem[]) {
+  if (domain === 'hr') {
+    return {
+      order: PERMISSION_HR_SUBSECTION_ORDER as readonly string[],
+      labels: PERMISSION_HR_SUBSECTION_LABELS as Record<string, string>,
+      map: groupHrCatalogBySubsection(items) as Map<string, CatalogItem[]>,
+    };
+  }
+  if (domain === 'products') {
+    return {
+      order: PERMISSION_PRODUCTS_SUBSECTION_ORDER as readonly string[],
+      labels: PERMISSION_PRODUCTS_SUBSECTION_LABELS as Record<string, string>,
+      map: groupProductsCatalogBySubsection(items) as Map<string, CatalogItem[]>,
+    };
+  }
+  return null;
+}
+
+/** Секції домену (підрозділи HR / Товарів або одна «Усі права»), лише ті, де є видимі права. */
+function buildDomainSections(
+  domain: PermissionDomainId,
+  items: CatalogItem[],
+  selected: ReadonlySet<string>,
+  query: string,
+  filter: PermissionSelectionFilter,
+  titlePrefix?: string,
+): PermissionSection[] {
+  const withPrefix = (title: string) => (titlePrefix ? `${titlePrefix} › ${title}` : title);
+  const subsections = domainSubsections(domain, items);
+  if (!subsections) {
+    const visible = filterItems(items, selected, query, filter);
+    if (visible.length === 0) return [];
+    return [{
+      id: titlePrefix ? `${domain}:${PERMISSION_DOMAIN_DEFAULT_SUBSECTION}` : PERMISSION_DOMAIN_DEFAULT_SUBSECTION,
+      title: titlePrefix ?? 'Усі права',
+      items,
+      visible,
+    }];
+  }
+  const sections: PermissionSection[] = [];
+  for (const id of subsections.order) {
+    const subItems = subsections.map.get(id) ?? [];
+    if (subItems.length === 0) continue;
+    const visible = filterItems(subItems, selected, query, filter);
+    if (visible.length === 0) continue;
+    sections.push({
+      id: titlePrefix ? `${domain}:${id}` : id,
+      title: withPrefix(subsections.labels[id] ?? id),
+      items: subItems,
+      visible,
+    });
+  }
+  return sections;
+}
+
+/** Підсвітка збігів пошуку в назві права (без урахування регістру). */
+function HighlightMatch({ text, query }: { text: string; query: string }) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return <>{text}</>;
+  const parts: ReactNode[] = [];
+  const lower = text.toLowerCase();
+  let start = 0;
+  let index = lower.indexOf(needle);
+  while (index !== -1) {
+    if (index > start) parts.push(text.slice(start, index));
+    parts.push(
+      <mark key={index} className="rounded-[2px] bg-yellow-200 px-px text-inherit">
+        {text.slice(index, index + needle.length)}
+      </mark>,
+    );
+    start = index + needle.length;
+    index = lower.indexOf(needle, start);
+  }
+  if (start < text.length) parts.push(text.slice(start));
+  return <>{parts}</>;
+}
+
 const colorClassMap = (color: string) => {
   switch (color) {
     case 'sky':
@@ -82,7 +161,9 @@ function PermissionCheckboxRow({
   selected,
   disabled,
   onToggle,
+  query,
 }: {
+  query: string;
   item: CatalogItem;
   color: string;
   selected: ReadonlySet<string>;
@@ -102,7 +183,7 @@ function PermissionCheckboxRow({
         label: 'text-sm text-default-700 whitespace-normal',
       }}
     >
-      {item.label}
+      <HighlightMatch text={item.label} query={query} />
     </Checkbox>
   );
 }
@@ -116,7 +197,9 @@ function PermissionColumn({
   disabled,
   onToggle,
   onToggleGroup,
+  query,
 }: {
+  query: string;
   title: string;
   color: string;
   allItems: CatalogItem[];
@@ -129,6 +212,9 @@ function PermissionColumn({
   const checkedCount = countSelectedInItems(allItems, selected);
   const allChecked = checkedCount === allItems.length && allItems.length > 0;
   const someChecked = checkedCount > 0 && !allChecked;
+  // Пошук / фільтр не зачепив жодного права колонки: груповий чекбокс приглушений і неактивний,
+  // щоб перемикання «усієї колонки» не плутали зі знайденими правами іншого типу.
+  const filteredOut = allItems.length > 0 && visibleItems.length === 0;
 
   return (
     <div className="flex min-w-0 flex-col">
@@ -146,13 +232,13 @@ function PermissionColumn({
           <Checkbox
             isSelected={allChecked}
             isIndeterminate={someChecked}
-            isDisabled={disabled || allItems.length === 0}
+            isDisabled={disabled || allItems.length === 0 || filteredOut}
             onValueChange={(value) => onToggleGroup(allItems, value)}
             aria-label={title}
             classNames={{
-              base: 'win-w-0',
-              wrapper: colorClassMap(color),
-              label: 'text-sm font-semibold leading-snug',
+              base: `win-w-0${filteredOut ? ' opacity-50' : ''}`,
+              wrapper: filteredOut ? 'after:bg-default-400' : colorClassMap(color),
+              label: `text-sm font-semibold leading-snug${filteredOut ? ' text-default-500' : ''}`,
             }}
           >
             {title}
@@ -164,7 +250,9 @@ function PermissionColumn({
       </div>
       <div className="flex flex-1 flex-col gap-2 px-1.5 py-1.5">
         {visibleItems.length === 0 ? (
-          <p className="py-2 text-center text-xs text-default-400">Немає прав у цій групі</p>
+          <p className="py-2 text-center text-xs text-default-400">
+            {filteredOut ? 'Немає збігів серед цих прав' : 'Немає прав у цій групі'}
+          </p>
         ) : (
           visibleItems.map((item) => (
             <PermissionCheckboxRow
@@ -174,6 +262,7 @@ function PermissionColumn({
               selected={selected}
               disabled={disabled}
               onToggle={onToggle}
+              query={query}
             />
           ))
         )}
@@ -189,7 +278,9 @@ function PermissionTwoColumnPanel({
   disabled,
   onToggle,
   onToggleGroup,
+  query,
 }: {
+  query: string;
   items: CatalogItem[];
   visible: CatalogItem[];
   selected: ReadonlySet<string>;
@@ -220,6 +311,7 @@ function PermissionTwoColumnPanel({
         disabled={disabled}
         onToggle={onToggle}
         onToggleGroup={onToggleGroup}
+        query={query}
       />
       <PermissionColumn
         title={`Доступ до виконання дій${actionsTitleSuffix}`}
@@ -230,6 +322,7 @@ function PermissionTwoColumnPanel({
         disabled={disabled}
         onToggle={onToggle}
         onToggleGroup={onToggleGroup}
+        query={query}
       />
     </div>
   );
@@ -244,7 +337,9 @@ function renderSubsectionAccordionItem({
   disabled,
   onToggle,
   onToggleGroup,
+  query,
 }: {
+  query: string;
   subsectionId: string;
   title: string;
   items: CatalogItem[];
@@ -300,6 +395,7 @@ function renderSubsectionAccordionItem({
         disabled={disabled}
         onToggle={onToggle}
         onToggleGroup={onToggleGroup}
+        query={query}
       />
     </AccordionItem>
   );
@@ -321,7 +417,12 @@ export function RolePermissionsEditor({
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<PermissionSelectionFilter>('all');
 
-  const byDomain = useMemo(() => groupCatalogByDomain(catalog), [catalog]);
+  // Права, перекриті увімкненим пріоритетним (напр. повне редагування табеля), не показуємо
+  // і не рахуємо: інакше група виглядає «частковою», хоча доступ повний.
+  const byDomain = useMemo(
+    () => groupCatalogByDomain(catalog.filter((item) => !isPermissionUiSuperseded(item.key, selected))),
+    [catalog, selected],
+  );
 
   const domainsWithItems = useMemo(
     () => PERMISSION_ROLE_EDITOR_DOMAINS.filter((tab) => (byDomain.get(tab.id)?.length ?? 0) > 0),
@@ -331,7 +432,7 @@ export function RolePermissionsEditor({
   const [activeDomain, setActiveDomain] = useState<PermissionDomainId | null>(null);
   const resolvedDomain = activeDomain ?? domainsWithItems[0]?.id ?? 'main';
 
-  const domainItems = byDomain.get(resolvedDomain) ?? [];
+  const domainItems = useMemo(() => byDomain.get(resolvedDomain) ?? [], [byDomain, resolvedDomain]);
 
   const domainCounts = useMemo(() => {
     const counts = new Map<PermissionDomainId, { on: number; total: number }>();
@@ -345,67 +446,40 @@ export function RolePermissionsEditor({
     return counts;
   }, [byDomain, domainsWithItems, selected]);
 
-  const domainSubsections = useMemo(() => {
-    if (resolvedDomain === 'hr') {
-      return {
-        order: PERMISSION_HR_SUBSECTION_ORDER,
-        labels: PERMISSION_HR_SUBSECTION_LABELS as Record<string, string>,
-        map: groupHrCatalogBySubsection(domainItems) as Map<string, CatalogItem[]>,
-      };
-    }
-    if (resolvedDomain === 'products') {
-      return {
-        order: PERMISSION_PRODUCTS_SUBSECTION_ORDER,
-        labels: PERMISSION_PRODUCTS_SUBSECTION_LABELS as Record<string, string>,
-        map: groupProductsCatalogBySubsection(domainItems) as Map<string, CatalogItem[]>,
-      };
-    }
-    return null;
-  }, [resolvedDomain, domainItems]);
+  // Пошук іде по всіх доменах одразу, щоб не перемикати їх вручну.
+  const isGlobalSearch = search.trim().length > 0;
 
   const visibleAccordionSections = useMemo(() => {
-    if (domainSubsections) {
-      const sections: Array<{
-        id: string;
-        title: string;
-        items: CatalogItem[];
-        visible: CatalogItem[];
-      }> = [];
-      for (const id of domainSubsections.order) {
-        const items = domainSubsections.map.get(id) ?? [];
-        if (items.length === 0) continue;
-        const visible = filterItems(items, selected, search, filter);
-        if (visible.length === 0) continue;
-        sections.push({
-          id,
-          title: domainSubsections.labels[id] ?? id,
-          items,
-          visible,
-        });
-      }
-      return sections;
+    if (isGlobalSearch) {
+      return domainsWithItems.flatMap((tab) =>
+        buildDomainSections(tab.id, byDomain.get(tab.id) ?? [], selected, search, filter, tab.label),
+      );
     }
-    const visible = filterItems(domainItems, selected, search, filter);
-    if (visible.length === 0) return [];
-    return [
-      {
-        id: PERMISSION_DOMAIN_DEFAULT_SUBSECTION,
-        title: 'Усі права',
-        items: domainItems,
-        visible,
-      },
-    ];
-  }, [domainSubsections, domainItems, selected, search, filter]);
+    return buildDomainSections(resolvedDomain, domainItems, selected, search, filter);
+  }, [isGlobalSearch, domainsWithItems, byDomain, resolvedDomain, domainItems, selected, search, filter]);
+
+  /** Скільки прав знайдено в кожному домені (бейдж на вкладці під час пошуку). */
+  const searchMatches = useMemo(() => {
+    const counts = new Map<PermissionDomainId, number>();
+    if (!isGlobalSearch) return counts;
+    for (const tab of domainsWithItems) {
+      counts.set(tab.id, filterItems(byDomain.get(tab.id) ?? [], selected, search, filter).length);
+    }
+    return counts;
+  }, [isGlobalSearch, domainsWithItems, byDomain, selected, search, filter]);
 
   const defaultExpandedKeys = useMemo(
     () =>
       visibleAccordionSections
-        .filter((section) => countSelectedInItems(section.items, selected) > 0)
+        // Під час пошуку розгортаємо всі знайдені секції.
+        .filter((section) => isGlobalSearch || countSelectedInItems(section.items, selected) > 0)
         .map((section) => section.id),
-    [visibleAccordionSections, selected]
+    [visibleAccordionSections, selected, isGlobalSearch]
   );
 
-  const isSubsectionAccordion = domainSubsections != null && visibleAccordionSections.length > 0;
+  const isSubsectionAccordion =
+    visibleAccordionSections.length > 0 &&
+    (isGlobalSearch || domainSubsections(resolvedDomain, []) != null);
 
   const filterTabs: { id: PermissionSelectionFilter; label: string }[] = [
     { id: 'all', label: 'Усі' },
@@ -469,7 +543,8 @@ export function RolePermissionsEditor({
         >
           {domainsWithItems.map((tab) => {
             const count = domainCounts.get(tab.id);
-            const isSelected = resolvedDomain === tab.id;
+            const isSelected = !isGlobalSearch && resolvedDomain === tab.id;
+            const matches = searchMatches.get(tab.id) ?? 0;
             return (
               <Button
                 key={tab.id}
@@ -482,15 +557,31 @@ export function RolePermissionsEditor({
                 className={`h-8 min-w-0 shrink-0 px-2.5 text-xs font-normal ${
                   isSelected
                     ? 'bg-primary-600 text-white shadow-sm data-[hover=true]:opacity-100!'
-                    : 'bg-transparent text-default-500'
+                    : isGlobalSearch && matches > 0
+                      ? 'bg-content1 font-medium text-slate-900 shadow-sm ring-1 ring-slate-300'
+                      : `bg-transparent text-default-500${isGlobalSearch ? ' opacity-50' : ''}`
                 }`}
-                onPress={() => setActiveDomain(tab.id)}
+                onPress={() => {
+                  // Під час пошуку клік по домену скидає пошук і відкриває домен.
+                  if (isGlobalSearch) setSearch('');
+                  setActiveDomain(tab.id);
+                }}
               >
                 <span className="inline-flex items-center gap-1 whitespace-nowrap">
                   {tab.label}
-                  <span className="text-[11px] tabular-nums text-default-400 font-normal">
-                    {count?.on ?? 0}/{count?.total ?? 0}
-                  </span>
+                  {isGlobalSearch ? (
+                    matches > 0 ? (
+                      <span className="rounded-full bg-slate-200 px-1.5 text-[11px] font-semibold tabular-nums text-slate-700">
+                        {matches}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] tabular-nums font-normal text-default-400">0</span>
+                    )
+                  ) : (
+                    <span className="text-[11px] tabular-nums text-default-400 font-normal">
+                      {count?.on ?? 0}/{count?.total ?? 0}
+                    </span>
+                  )}
                 </span>
               </Button>
             );
@@ -525,6 +616,7 @@ export function RolePermissionsEditor({
                 disabled,
                 onToggle,
                 onToggleGroup,
+                query: search,
               })
             )}
           </Accordion>
@@ -539,6 +631,7 @@ export function RolePermissionsEditor({
               disabled={disabled}
               onToggle={onToggle}
               onToggleGroup={onToggleGroup}
+              query={search}
             />
           </div>
         )
