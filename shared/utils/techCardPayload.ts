@@ -44,13 +44,37 @@ function list<T>(value: unknown, map: (item: Obj) => T | null): T[] {
   });
 }
 
+const ALLOWED_HTML_TAGS = new Set(['p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'ul', 'ol', 'li', 'h2', 'h3', 'h4', 'h5', 'h6']);
+
+/**
+ * Опис етапу – HTML з TipTap. Лишаємо лише базові теги без атрибутів (без посилань, зображень,
+ * обробників), решту прибираємо: опис показується через innerHTML.
+ */
+export function sanitizeStageHtml(html: string): string {
+  return html
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<(script|style|iframe|object|embed|template|svg|math)\b[\s\S]*?<\/\1\s*>/gi, '')
+    .replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>/g, (tag, name: string) => {
+      const lower = name.toLowerCase();
+      if (!ALLOWED_HTML_TAGS.has(lower)) return '';
+      return tag.startsWith('</') ? `</${lower}>` : `<${lower}>`;
+    })
+    // Будь-яке інше «<» (незакритий тег тощо) – як текст
+    .replace(new RegExp(`<(?!/?(?:${[...ALLOWED_HTML_TAGS].join('|')})>)`, 'g'), '&lt;')
+    .trim();
+}
+
 function stage(item: Obj): TechCardStage | null {
   const key = str(item.key);
   if (!key) return null;
   return {
     key,
     name: str(item.name) ?? '',
-    description: str(item.description),
+    description: (() => {
+      const raw = str(item.description);
+      const clean = raw ? sanitizeStageHtml(raw) : '';
+      return clean && clean.replace(/<[^>]*>/g, '').trim() ? clean : null;
+    })(),
     durationMin: num(item.durationMin),
     offsetMin: num(item.offsetMin),
     equipment: str(item.equipment),
@@ -87,5 +111,53 @@ export function normalizeTechCardPayload(raw: unknown): TechCardPayload {
     notes: str(obj.notes),
     portionsPerBox: portionsPerBox != null && portionsPerBox > 0 ? Math.round(portionsPerBox) : null,
     lossFormula: isCatalogLossFormula(obj.lossFormula) ? obj.lossFormula : null,
+  };
+}
+
+export interface TechCardCoverage {
+  /** Рядки специфікації, що не входять у жоден етап */
+  unassignedRowKeys: string[];
+  /** Посилання етапів і дозування на рядки, яких уже немає в специфікації */
+  missingRefs: Array<{ owner: 'stage' | 'dosing'; key: string; name: string; rowKey: string }>;
+}
+
+/** Що з рядків специфікації не розподілено по етапах і на які зниклі рядки посилається рецепт. */
+export function techCardCoverage(payload: TechCardPayload, rowKeys: string[]): TechCardCoverage {
+  const existing = new Set(rowKeys);
+  const assigned = new Set(payload.stages.flatMap((st) => st.inputRowKeys));
+  const missingRefs: TechCardCoverage['missingRefs'] = [];
+  for (const st of payload.stages) {
+    for (const rowKey of st.inputRowKeys) {
+      if (!existing.has(rowKey)) missingRefs.push({ owner: 'stage', key: st.key, name: st.name, rowKey });
+    }
+  }
+  for (const fraction of payload.dosing) {
+    for (const rowKey of fraction.rowKeys) {
+      if (!existing.has(rowKey)) missingRefs.push({ owner: 'dosing', key: fraction.key, name: fraction.name, rowKey });
+    }
+  }
+  return {
+    unassignedRowKeys: payload.stages.length === 0 ? [] : rowKeys.filter((k) => !assigned.has(k)),
+    missingRefs,
+  };
+}
+
+/** Прибрати посилання на рядки, яких немає в специфікації, і на неіснуючі етапи. */
+export function pruneTechCardRefs(payload: TechCardPayload, rowKeys: string[]): TechCardPayload {
+  const rows = new Set(rowKeys);
+  const stages = new Set(payload.stages.map((st) => st.key));
+  return {
+    ...payload,
+    stages: payload.stages.map((st, idx) => ({
+      ...st,
+      inputRowKeys: st.inputRowKeys.filter((k) => rows.has(k)),
+      // вхід – лише попередні етапи
+      inputStageKeys: st.inputStageKeys.filter((k) => payload.stages.slice(0, idx).some((p) => p.key === k)),
+    })),
+    dosing: payload.dosing.map((d) => ({
+      ...d,
+      rowKeys: d.rowKeys.filter((k) => rows.has(k)),
+      stageKeys: d.stageKeys.filter((k) => stages.has(k)),
+    })),
   };
 }

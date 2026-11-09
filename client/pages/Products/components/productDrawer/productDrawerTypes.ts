@@ -76,6 +76,8 @@ export interface BomRow {
   cookingLossPercent: number;
   /** Розбивка втрат за типами; null / відсутнє – розбивки немає */
   losses?: CatalogLossEntry[] | null;
+  /** Стабільний ключ рядка (етапи техкарти); новий рядок – новий ключ */
+  rowKey?: string | null;
   /** Батьківська папка компонента в каталозі */
   componentCategoryName?: string | null;
 }

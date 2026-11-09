@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 import { prisma, logServer } from '../../lib/utils.js';
 import type { CatalogLossEntry } from '../../../shared/types/production.js';
 import { normalizeLossEntries, resolveCookingLossPercent } from '../../../shared/utils/catalogLoss.js';
+import { isRowKey } from '../../../shared/utils/catalogRowKey.js';
 import { isRebatchSku } from '../../../shared/types/warehouseRelease.js';
 import {
   CATALOG_ACC_POLICY_GOOD,
@@ -1339,6 +1340,7 @@ export class ProductsCatalogService {
       note: row.note?.trim() || null,
       cookingLossPercent: resolveCookingLossPercent(row.losses, row.cookingLossPercent),
       losses: normalizeLossEntries(row.losses),
+      ...(isRowKey(row.rowKey) ? { rowKey: row.rowKey } : {}),
     }));
   }
 
@@ -1370,6 +1372,7 @@ export class ProductsCatalogService {
       cookingLossPercent?: number | null;
       /** Сирий JSON з БД (`lossesJson`) */
       lossesJson?: unknown;
+      rowKey?: string | null;
     }>,
   ): Promise<CatalogGoodComponentDto[]> {
     const componentIds = [...new Set(rows.map((c) => c.componentGoodId))];
@@ -1412,6 +1415,7 @@ export class ProductsCatalogService {
         note: c.note ?? null,
         cookingLossPercent: resolveCookingLossPercent(c.lossesJson, c.cookingLossPercent),
         losses: normalizeLossEntries(c.lossesJson),
+        rowKey: c.rowKey ?? null,
       };
     });
   }
@@ -1553,6 +1557,7 @@ export class ProductsCatalogService {
       note: c.note?.trim() || null,
       cookingLossPercent: resolveCookingLossPercent(c.losses, c.cookingLossPercent),
       losses: normalizeLossEntries(c.losses),
+      rowKey: isRowKey(c.rowKey) ? c.rowKey : null,
     }));
     const { tpGoods, componentsWithRowIds } = !isGroup && hasComponents
       ? await resolveTpGoodsForSave({
@@ -1682,6 +1687,7 @@ export class ProductsCatalogService {
             note?: string;
             cookingLossPercent?: number;
             lossesJson?: Prisma.InputJsonValue | typeof Prisma.DbNull;
+            rowKey?: string;
           } = {};
           if (c.note != null && String(c.note).trim()) {
             patch.note = String(c.note).trim();
@@ -1690,6 +1696,9 @@ export class ProductsCatalogService {
             const losses = normalizeLossEntries(c.losses);
             patch.cookingLossPercent = resolveCookingLossPercent(losses, c.cookingLossPercent);
             patch.lossesJson = losses ? (losses as unknown as Prisma.InputJsonValue) : Prisma.DbNull;
+          }
+          if (isRowKey(c.rowKey)) {
+            patch.rowKey = c.rowKey;
           }
           if (Object.keys(patch).length === 0) continue;
           await prisma.catalogGoodComponent.updateMany({
@@ -1743,6 +1752,7 @@ export class ProductsCatalogService {
       note: c.note ?? null,
       cookingLossPercent: c.cookingLossPercent ?? 0,
       losses: c.losses ?? null,
+      rowKey: c.rowKey ?? null,
     }));
     const componentInputs: CatalogComponentSaveInput[] = components.map((c) => ({
       componentGoodId: c.componentGoodId,
@@ -1755,6 +1765,7 @@ export class ProductsCatalogService {
         'cookingLossPercent' in c ? c.cookingLossPercent : 0
       ),
       losses: normalizeLossEntries('losses' in c ? c.losses : null),
+      rowKey: 'rowKey' in c && isRowKey(c.rowKey) ? c.rowKey : null,
     }));
     const hasComponents = !isGroup && components.length > 0;
     const accPolicyId = isGroup
@@ -2037,6 +2048,7 @@ export class ProductsCatalogService {
             note?: string | null;
             cookingLossPercent?: number;
             lossesJson?: Prisma.InputJsonValue | typeof Prisma.DbNull;
+            rowKey?: string;
           } = {};
           if (c.note !== undefined) {
             patch.note = c.note?.trim() || null;
@@ -2045,6 +2057,9 @@ export class ProductsCatalogService {
             const losses = normalizeLossEntries(c.losses);
             patch.cookingLossPercent = resolveCookingLossPercent(losses, c.cookingLossPercent);
             patch.lossesJson = losses ? (losses as unknown as Prisma.InputJsonValue) : Prisma.DbNull;
+          }
+          if (isRowKey(c.rowKey)) {
+            patch.rowKey = c.rowKey;
           }
           if (Object.keys(patch).length === 0) continue;
           await prisma.catalogGoodComponent.updateMany({

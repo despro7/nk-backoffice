@@ -5,6 +5,7 @@
 
 import { Prisma, type PrismaClient } from '@prisma/client';
 import type { CatalogLossEntry } from '../../../shared/types/production.js';
+import { assignRowKeys } from '../../../shared/utils/catalogRowKey.js';
 import { normalizeLossEntries, sumLossPercent } from '../../../shared/utils/catalogLoss.js';
 import { prisma, logServer } from '../../lib/utils.js';
 import { LocalSyncGoodPayload } from './ProductsTypes.js';
@@ -258,6 +259,7 @@ export class ProductsLocalSync {
       dilovodRowId?: string | null;
       cookingLossPercent?: number | null;
       losses?: CatalogLossEntry[] | null;
+      rowKey?: string | null;
     }>
   ): Promise<void> {
     // Примітки: Dilovod SoT (remark). Якщо payload.note === undefined — зберігаємо попереднє
@@ -273,6 +275,7 @@ export class ProductsLocalSync {
         dilovodRowId: true,
         cookingLossPercent: true,
         lossesJson: true,
+        rowKey: true,
       },
     });
     const noteByRow = new Map(
@@ -318,6 +321,9 @@ export class ProductsLocalSync {
         });
       }
     }
+
+    // Ключ рядка: з payload; інакше той самий рядок за Dilovod rowID / rowNum (sync, перестановка)
+    const rowKeys = assignRowKeys(components, existingRows);
 
     // Гарантуємо унікальний rowNum у межах parent (unique parentGoodId+rowNum)
     await tx.catalogGoodComponent.createMany({
@@ -368,6 +374,7 @@ export class ProductsLocalSync {
           note,
           cookingLossPercent,
           lossesJson: losses ? (losses as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          rowKey: rowKeys[idx],
         };
       }),
     });

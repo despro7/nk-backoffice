@@ -3,7 +3,7 @@ import {
   type CatalogLossEntry,
   type CatalogLossFormula,
 } from '@shared/types/production';
-import { grossFromNet, normalizeLossEntries, resolveCookingLossPercent } from '@shared/utils/catalogLoss';
+import { effectiveLossPercent, grossFromNet, normalizeLossEntries } from '@shared/utils/catalogLoss';
 import {
   bomRowGrossKg,
   massUnitToKgFactor,
@@ -1072,6 +1072,7 @@ export function isSuspiciousBomIngredientQty(
 /**
  * Рядки техкарти для N порцій. Брутто з нетто за формулою втрат (`grossFromNet`):
  * additive – нетто / (1 − Σ%), sequential – нетто / Π(1 − %). Без розбивки – `cookingLossPercent`.
+ * Колонка «Втрати» показує ефективний % за тією ж формулою (для sequential він менший за суму).
  */
 export function buildTechCardRows(
   components: Array<{
@@ -1108,7 +1109,7 @@ export function buildTechCardRows(
       const unit = unitById.get(c.unitId);
       const unitName = unit?.name?.trim() || '';
       const recipeQty = c.qty;
-      const loss = resolveCookingLossPercent(c.losses, c.cookingLossPercent);
+      const loss = effectiveLossPercent(c, lossFormula);
       const netRecipe = bomRowGrossKg(
         { qty: recipeQty, unitId: c.unitId, componentWeight: c.componentWeight },
         unitById

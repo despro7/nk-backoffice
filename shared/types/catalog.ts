@@ -205,6 +205,8 @@ export interface CatalogGoodComponentDto {
   cookingLossPercent?: number | null;
   /** Локально: розбивка втрат за типами; null – розбивки немає */
   losses?: CatalogLossEntry[] | null;
+  /** Локально: стабільний ключ рядка (етапи техкарти) */
+  rowKey?: string | null;
   /** Батьківська папка компонента в каталозі (для групування складу комплекту) */
   componentCategoryName?: string | null;
 }
@@ -300,6 +302,7 @@ export interface CatalogCreateGoodInput {
     note?: string | null;
     cookingLossPercent?: number | null;
     losses?: CatalogLossEntry[] | null;
+    rowKey?: string | null;
   }>;
   prices?: Array<{ priceType: string; price: number; currency?: string | null }>;
   barcodes?: Array<{
@@ -340,6 +343,7 @@ export interface CatalogUpdateGoodInput {
     note?: string | null;
     cookingLossPercent?: number | null;
     losses?: CatalogLossEntry[] | null;
+    rowKey?: string | null;
   }>;
   prices?: Array<{ priceType: string; price: number; currency?: string | null }>;
   barcodes?: Array<{

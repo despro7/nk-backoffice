@@ -1,13 +1,18 @@
 /**
- * Techcards (phase 2a: read side).
+ * Techcards.
  *
  * A techcard is 1:1 with a finished good. Ingredients are the good's spec rows (CatalogSpecVersion /
  * CatalogSpecDraft); the techcard stores only the recipe on top of them (stages, packaging, dosing,
  * notes) in TechCardVersion / TechCardDraft `payloadJson`. Current version = max(version).
+ *
+ * Moderation mirrors the spec: editors save a draft and submit it; an approver approves the pair
+ * (pending spec draft + techcard draft) as spec version N + techcard version M linked to N.
+ * A new spec version without a pending techcard draft gets an automatic techcard version (same recipe).
  */
 
-import type { TechCardDraft, TechCardVersion } from '@prisma/client';
-import { prisma } from '../../lib/utils.js';
+import type { Prisma, TechCardDraft, TechCardVersion } from '@prisma/client';
+import { logServer, prisma } from '../../lib/utils.js';
+import { auditLogService } from '../../services/AuditLogService.js';
 import { CATALOG_ACC_POLICY_GOOD } from '../../../shared/types/catalog.js';
 import type {
   TechCardDetailDto,
@@ -18,9 +23,14 @@ import type {
   TechCardVersionSource,
 } from '../../../shared/types/production.js';
 import { normalizeTechCardPayload } from '../../../shared/utils/techCardPayload.js';
+import { newRowKey } from '../../../shared/utils/catalogRowKey.js';
+import type { TechCardPayload } from '../../../shared/types/production.js';
 import { isArchiveFolderName } from '../../../shared/utils/storefrontDescription.js';
 import { getFinishedProductsFolderIds } from '../Products/catalogFinishedProductsFolder.js';
-import { catalogSpecService } from '../Products/CatalogSpecService.js';
+import {
+  catalogSpecService,
+  type CatalogSpecVersionCreatedEvent,
+} from '../Products/CatalogSpecService.js';
 import { productsCatalogService } from '../Products/ProductsCatalogService.js';
 import { productionSettingsService } from './ProductionSettingsService.js';
 
@@ -29,6 +39,8 @@ export class TechCardError extends Error {
     super(message);
   }
 }
+
+export const TECH_CARD_AUDIT_ENTITY = 'techCard';
 
 const VERSION_SOURCES: readonly TechCardVersionSource[] = ['ui', 'auto', 'rollback'];
 const DRAFT_STATUSES = ['editing', 'pending', 'rejected'] as const;
@@ -80,6 +92,24 @@ function draftDto(row: TechCardDraft, names: Map<number, string>): TechCardDraft
     updatedAt: row.updatedAt.toISOString(),
     payload: normalizeTechCardPayload(row.payloadJson),
   };
+}
+
+/**
+ * Рядки специфікації без `rowKey` (перезаписані кодом, що ще не знає про ключі) отримують нові ключі,
+ * інакше їх не можна вибрати в етапах і дозуванні техкарти.
+ */
+async function ensureComponentRowKeys(goodId: string): Promise<void> {
+  const missing = await prisma.catalogGoodComponent.findMany({
+    where: { parentGoodId: goodId, rowKey: null },
+    select: { id: true },
+  });
+  if (missing.length === 0) return;
+  logServer(`[TechCards] ${goodId}: ${missing.length} spec rows without rowKey, backfilling`);
+  await prisma.$transaction(
+    missing.map((row) =>
+      prisma.catalogGoodComponent.update({ where: { id: row.id }, data: { rowKey: newRowKey() } }),
+    ),
+  );
 }
 
 class TechCardService {
@@ -167,6 +197,7 @@ class TechCardService {
   }
 
   async getDetail(goodId: string): Promise<TechCardDetailDto> {
+    await ensureComponentRowKeys(goodId);
     const good = await productsCatalogService.getGoodDetail(goodId, { livePull: false });
     if (!good || good.isGroup) throw new TechCardError('Товар не знайдено', 404);
 
@@ -186,6 +217,12 @@ class TechCardService {
     const currentDto = current ? versionDto(current, names) : null;
     const draftDtoValue = draft ? draftDto(draft, names) : null;
     const override = (draftDtoValue ?? currentDto)?.payload.lossFormula ?? null;
+    const packagingIds = [
+      ...new Set([...(currentDto?.payload.packaging ?? []), ...(draftDtoValue?.payload.packaging ?? [])].map((p) => p.goodId)),
+    ];
+    const packagingGoods = packagingIds.length
+      ? await prisma.catalogGood.findMany({ where: { id: { in: packagingIds } }, select: { id: true, name: true, sku: true } })
+      : [];
 
     return {
       goodId,
@@ -196,6 +233,7 @@ class TechCardService {
       current: currentDto,
       draft: draftDtoValue,
       lossFormula: override ?? settings.lossFormula,
+      goodNames: Object.fromEntries(packagingGoods.map((g) => [g.id, { name: g.name, sku: g.sku }])),
     };
   }
 
@@ -204,6 +242,190 @@ class TechCardService {
     const names = await userNames(rows.flatMap((r) => [r.authorId, r.approvedById]));
     return rows.map((r) => versionDto(r, names));
   }
+
+  // ─── редагування і затвердження ───────────────────────────────────────────
+
+  private async ensureGood(goodId: string): Promise<{ name: string }> {
+    const good = await prisma.catalogGood.findUnique({
+      where: { id: goodId },
+      select: { name: true, isGroup: true },
+    });
+    if (!good || good.isGroup) throw new TechCardError('Товар не знайдено', 404);
+    return good;
+  }
+
+  private async currentVersionRow(goodId: string) {
+    return prisma.techCardVersion.findFirst({ where: { goodId }, orderBy: { version: 'desc' } });
+  }
+
+  private audit(goodId: string, action: string, userId: number | null, payload?: Record<string, unknown>) {
+    return auditLogService.log({
+      entityType: TECH_CARD_AUDIT_ENTITY,
+      entityId: goodId,
+      action,
+      userId,
+      payload: payload as Prisma.InputJsonValue | undefined,
+    });
+  }
+
+  /** Зберегти чернетку (етапи, пакування, дозування, примітки). Повертає до статусу «Чернетка». */
+  async saveDraft(goodId: string, rawPayload: unknown, userId: number | null): Promise<TechCardDetailDto> {
+    await this.ensureGood(goodId);
+    const payload = normalizeTechCardPayload(rawPayload);
+    const stageNames = payload.stages.map((st) => st.name.trim());
+    if (stageNames.some((name) => !name)) throw new TechCardError('Вкажіть назву кожного етапу');
+    const [existing, current] = await Promise.all([
+      prisma.techCardDraft.findUnique({ where: { goodId } }),
+      this.currentVersionRow(goodId),
+    ]);
+    const data = {
+      payloadJson: payload as unknown as Prisma.InputJsonValue,
+      status: 'editing',
+      lastEditedById: userId,
+      reviewedById: null,
+      reviewedAt: null,
+      rejectReason: null,
+    };
+    if (existing) {
+      await prisma.techCardDraft.update({ where: { goodId }, data });
+    } else {
+      await prisma.techCardDraft.create({
+        data: { ...data, goodId, baseVersion: current?.version ?? null, authorId: userId },
+      });
+    }
+    await this.audit(goodId, existing ? 'draftUpdated' : 'draftCreated', userId, {
+      stages: payload.stages.length,
+      packaging: payload.packaging.length,
+      dosing: payload.dosing.length,
+    });
+    return this.getDetail(goodId);
+  }
+
+  async discardDraft(goodId: string, userId: number | null): Promise<TechCardDetailDto> {
+    const draft = await prisma.techCardDraft.findUnique({ where: { goodId } });
+    if (!draft) throw new TechCardError('Чернетку не знайдено', 404);
+    await prisma.techCardDraft.delete({ where: { goodId } });
+    await this.audit(goodId, 'draftDiscarded', userId);
+    return this.getDetail(goodId);
+  }
+
+  /** Подати чернетку на затвердження (у парі з чернеткою специфікації, якщо вона є). */
+  async submit(goodId: string, comment: string, userId: number | null): Promise<TechCardDetailDto> {
+    const text = comment.trim();
+    if (!text) throw new TechCardError('Опишіть зміни техкарти в коментарі');
+    const draft = await prisma.techCardDraft.findUnique({ where: { goodId } });
+    if (!draft) throw new TechCardError('Чернетку не знайдено', 404);
+    await prisma.techCardDraft.update({
+      where: { goodId },
+      data: { status: 'pending', comment: text, lastEditedById: userId, rejectReason: null },
+    });
+    await this.audit(goodId, 'submitted', userId, { comment: text });
+    return this.getDetail(goodId);
+  }
+
+  /**
+   * Затвердити пару: чернетка специфікації (якщо на затвердженні) → версія N,
+   * чернетка техкарти → версія M+1 з посиланням на N.
+   */
+  async approve(goodId: string, userId: number | null): Promise<TechCardDetailDto> {
+    const draft = await prisma.techCardDraft.findUnique({ where: { goodId } });
+    if (!draft) throw new TechCardError('Чернетку не знайдено', 404);
+    if (draft.status !== 'pending') throw new TechCardError('Чернетку ще не подано на затвердження');
+
+    const specDraft = await prisma.catalogSpecDraft.findUnique({ where: { goodId }, select: { status: true } });
+    if (specDraft?.status === 'pending') {
+      // Помилка (застаріла чернетка специфікації, Dilovod) зупиняє затвердження всієї пари.
+      await catalogSpecService.approve(goodId, userId);
+    }
+    const specVersion = await catalogSpecService.currentVersion(goodId);
+    const version = await this.createVersion({
+      goodId,
+      payload: normalizeTechCardPayload(draft.payloadJson),
+      specVersion,
+      source: 'ui',
+      comment: draft.comment,
+      authorId: draft.authorId,
+      approvedById: userId,
+    });
+    await prisma.techCardDraft.delete({ where: { goodId } }).catch(() => undefined);
+    await this.audit(goodId, 'approved', userId, { version, specVersion, comment: draft.comment });
+    return this.getDetail(goodId);
+  }
+
+  async reject(goodId: string, reason: string, userId: number | null): Promise<TechCardDetailDto> {
+    const text = reason.trim();
+    if (!text) throw new TechCardError('Вкажіть причину відхилення');
+    const draft = await prisma.techCardDraft.findUnique({ where: { goodId } });
+    if (!draft) throw new TechCardError('Чернетку не знайдено', 404);
+    if (draft.status !== 'pending') throw new TechCardError('Чернетка не на затвердженні');
+    await prisma.techCardDraft.update({
+      where: { goodId },
+      data: { status: 'rejected', reviewedById: userId, reviewedAt: new Date(), rejectReason: text },
+    });
+    const specDraft = await prisma.catalogSpecDraft.findUnique({ where: { goodId }, select: { status: true } });
+    if (specDraft?.status === 'pending') await catalogSpecService.reject(goodId, userId, text);
+    await this.audit(goodId, 'rejected', userId, { reason: text });
+    return this.getDetail(goodId);
+  }
+
+  private async createVersion(input: {
+    goodId: string;
+    payload: TechCardPayload;
+    specVersion: number | null;
+    source: TechCardVersionSource;
+    comment?: string | null;
+    authorId?: number | null;
+    approvedById?: number | null;
+  }): Promise<number> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const agg = await prisma.techCardVersion.aggregate({
+          where: { goodId: input.goodId },
+          _max: { version: true },
+        });
+        const version = (agg._max.version ?? 0) + 1;
+        await prisma.techCardVersion.create({
+          data: {
+            goodId: input.goodId,
+            version,
+            specVersion: input.specVersion,
+            payloadJson: input.payload as unknown as Prisma.InputJsonValue,
+            source: input.source,
+            comment: input.comment?.trim() || null,
+            authorId: input.authorId ?? null,
+            approvedById: input.approvedById ?? null,
+            approvedAt: input.approvedById != null ? new Date() : null,
+          },
+        });
+        return version;
+      } catch (error) {
+        // Паралельний запис тієї ж версії (unique goodId+version) – пробуємо ще раз.
+        if (attempt < 2 && (error as { code?: string })?.code === 'P2002') continue;
+        throw error;
+      }
+    }
+  }
+
+  /** Нова версія специфікації без поданої чернетки техкарти → автоматична версія з тим самим рецептом. */
+  async onSpecVersionCreated(event: CatalogSpecVersionCreatedEvent): Promise<void> {
+    if (event.source === 'initial') return;
+    const [current, draft] = await Promise.all([
+      this.currentVersionRow(event.goodId),
+      prisma.techCardDraft.findUnique({ where: { goodId: event.goodId }, select: { status: true } }),
+    ]);
+    if (!current || draft?.status === 'pending') return;
+    if (current.specVersion === event.version) return;
+    const version = await this.createVersion({
+      goodId: event.goodId,
+      payload: normalizeTechCardPayload(current.payloadJson),
+      specVersion: event.version,
+      source: 'auto',
+      comment: `Нова версія специфікації v${event.version}`,
+    });
+    await this.audit(event.goodId, 'autoVersion', null, { version, specVersion: event.version });
+    logServer(`[TechCardService] auto version ${version} for ${event.goodId} (spec v${event.version})`);
+  }
 }
 
 export const techCardService = new TechCardService();
+catalogSpecService.onVersionCreated((event) => techCardService.onSpecVersionCreated(event));

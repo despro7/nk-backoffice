@@ -24,8 +24,10 @@ import {
   parseLossEntriesKey,
   resolveCookingLossPercent,
 } from '../../../shared/utils/catalogLoss.js';
+import { assignRowKeys, isRowKey } from '../../../shared/utils/catalogRowKey.js';
 import { catalogGoodAuditService } from './CatalogGoodAuditService.js';
 import { productsCatalogService } from './ProductsCatalogService.js';
+import type { NotificationDirectEventId } from '../../../shared/constants/notifications.js';
 
 export class CatalogSpecError extends Error {
   constructor(
@@ -69,6 +71,7 @@ function parseComponents(raw: unknown): CatalogSpecComponent[] {
       note: typeof r.note === 'string' && r.note.trim() ? r.note.trim() : null,
       cookingLossPercent: resolveCookingLossPercent(r.losses, r.cookingLossPercent),
       losses: normalizeLossEntries(r.losses),
+      rowKey: isRowKey(r.rowKey) ? r.rowKey : null,
     }))
     .filter((r) => r.componentGoodId);
 }
@@ -105,7 +108,32 @@ function jsonSignature(value: unknown): string {
  * Чинна специфікація живе в `catalog_good_components` / `catalog_goods.specQty` і Dilovod;
  * чернетка зберігається окремо й ніде, крім картки товару, не використовується.
  */
+export interface CatalogSpecVersionCreatedEvent {
+  goodId: string;
+  version: number;
+  source: CatalogSpecVersionSource;
+}
+
+type CatalogSpecVersionListener = (event: CatalogSpecVersionCreatedEvent) => Promise<void> | void;
+
 export class CatalogSpecService {
+  private versionListeners: CatalogSpecVersionListener[] = [];
+
+  /** Підписка на нову версію специфікації (техкарта: автоматична версія з тими самими етапами). */
+  onVersionCreated(listener: CatalogSpecVersionListener): void {
+    this.versionListeners.push(listener);
+  }
+
+  private async emitVersionCreated(event: CatalogSpecVersionCreatedEvent): Promise<void> {
+    for (const listener of this.versionListeners) {
+      try {
+        await listener(event);
+      } catch (err) {
+        logServer('[CatalogSpecService] version listener failed', err);
+      }
+    }
+  }
+
   // ─── читання ──────────────────────────────────────────────────────────────
 
   private async loadGood(goodId: string) {
@@ -143,6 +171,7 @@ export class CatalogSpecService {
         note: c.note?.trim() || null,
         cookingLossPercent: resolveCookingLossPercent(c.lossesJson, c.cookingLossPercent),
         losses: normalizeLossEntries(c.lossesJson),
+        rowKey: c.rowKey ?? null,
       })),
     };
   }
@@ -182,6 +211,7 @@ export class CatalogSpecService {
             note: c.note?.trim() || null,
             cookingLossPercent: resolveCookingLossPercent(c.losses, c.cookingLossPercent),
             losses: normalizeLossEntries(c.losses),
+            rowKey: isRowKey(c.rowKey) ? c.rowKey : null,
           };
         }),
     };
@@ -203,8 +233,17 @@ export class CatalogSpecService {
   }
 
   private async enrich(goodId: string, content: CatalogSpecContent) {
+    // Чернетки й версії до фази 2b не мають ключів рядків: беремо ключі чинних рядків (той самий рядок)
+    let rowKeys: Array<string | null> = content.components.map((c) => c.rowKey ?? null);
+    if (rowKeys.some((k) => !k)) {
+      const existing = await prisma.catalogGoodComponent.findMany({
+        where: { parentGoodId: goodId },
+        select: { rowKey: true, dilovodRowId: true, rowNum: true, componentGoodId: true },
+      });
+      rowKeys = assignRowKeys(content.components, existing);
+    }
     return productsCatalogService.enrichComponents(
-      content.components.map((c) => ({
+      content.components.map((c, idx) => ({
         parentGoodId: goodId,
         componentGoodId: c.componentGoodId,
         qty: c.qty,
@@ -213,6 +252,7 @@ export class CatalogSpecService {
         note: c.note,
         cookingLossPercent: c.cookingLossPercent,
         lossesJson: c.losses ?? null,
+        rowKey: rowKeys[idx],
       })),
     );
   }
@@ -332,7 +372,7 @@ export class CatalogSpecService {
   }): Promise<number> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await prisma.$transaction(async (tx) => {
+        const created = await prisma.$transaction(async (tx) => {
           const agg = await tx.catalogSpecVersion.aggregate({
             where: { goodId: input.goodId },
             _max: { version: true },
@@ -360,6 +400,8 @@ export class CatalogSpecService {
           }
           return version;
         });
+        await this.emitVersionCreated({ goodId: input.goodId, version: created, source: input.source });
+        return created;
       } catch (error) {
         // Паралельний запис тієї ж версії (unique goodId+version) – пробуємо ще раз.
         if (attempt < 2 && (error as { code?: string })?.code === 'P2002') continue;
@@ -492,6 +534,7 @@ export class CatalogSpecService {
       recipients: draft.authorId != null ? [draft.authorId] : [],
       actorId: userId,
       status: 'warning',
+      event: 'specResult',
       title: 'Специфікацію відхилено',
       message: `«${good?.name ?? goodId}»: ${text}`,
       goodId,
@@ -529,6 +572,7 @@ export class CatalogSpecService {
       recipients: draft.authorId != null ? [draft.authorId] : [],
       actorId: userId,
       status: 'success',
+      event: 'specResult',
       title: 'Специфікацію затверджено',
       message: `«${good?.name ?? goodId}» – версія ${version}`,
       goodId,
@@ -604,6 +648,7 @@ export class CatalogSpecService {
             note: c.note,
             cookingLossPercent: c.cookingLossPercent,
             losses: c.losses ?? null,
+            rowKey: c.rowKey ?? null,
           })),
           ...(content.specQty != null ? { specQty: content.specQty } : {}),
         }),
@@ -707,6 +752,7 @@ export class CatalogSpecService {
             recipients: draft.authorId != null ? [draft.authorId] : [],
             actorId: actor.userId,
             status: 'success',
+            event: 'specResult',
             title: 'Специфікацію затверджено з правками',
             message: `«${good.name}» – версія ${version}`,
             goodId,
@@ -788,6 +834,7 @@ export class CatalogSpecService {
         recipients: await this.approverIds(),
         actorId,
         status: 'warning',
+        event: 'specReview',
         title: updated ? 'Оновлено чернетку специфікації' : 'Специфікація чекає на затвердження',
         message: `«${goodName}»: ${comment}`,
         goodId,
@@ -799,6 +846,8 @@ export class CatalogSpecService {
 
   private async notify(input: {
     recipients: number[];
+    /** Подія адресного сповіщення: роль адресата може вимкнути її канали. */
+    event: NotificationDirectEventId;
     actorId: number | null;
     status: 'warning' | 'success';
     title: string;
@@ -814,7 +863,7 @@ export class CatalogSpecService {
           status: input.status,
           title: input.title,
           message: input.message.slice(0, 2000),
-          data: { recipients, goodId: input.goodId, link: goodLink(input.goodId) },
+          data: { recipients, event: input.event, goodId: input.goodId, link: goodLink(input.goodId) },
           initiatedBy: input.actorId != null ? String(input.actorId) : 'system:catalog-spec',
         },
       });

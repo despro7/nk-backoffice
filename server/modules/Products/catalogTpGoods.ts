@@ -17,6 +17,8 @@ export type CatalogComponentSaveInput = {
   cookingLossPercent?: number | null;
   /** Локально: розбивка втрат за типами */
   losses?: CatalogLossEntry[] | null;
+  /** Локально: стабільний ключ рядка */
+  rowKey?: string | null;
 };
 
 export type CatalogComponentRowRef = {

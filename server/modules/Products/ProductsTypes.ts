@@ -121,6 +121,8 @@ export interface LocalSyncGoodPayload {
     cookingLossPercent?: number | null;
     /** Локально: розбивка втрат; undefined = зберегти попередню (sync з Dilovod) */
     losses?: CatalogLossEntry[] | null;
+    /** Локально: ключ рядка; undefined – зберегти попередній (sync з Dilovod) */
+    rowKey?: string | null;
   }>;
   prices?: Array<{ priceType: string; price: number; currency?: string | null }>;
   barcodes?: Array<{

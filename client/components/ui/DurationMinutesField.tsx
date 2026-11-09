@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Input, Select, SelectItem } from '@heroui/react';
 
 export type DurationUnit = 'minutes' | 'hours' | 'days';
@@ -40,6 +40,8 @@ interface DurationMinutesFieldProps {
   description?: string;
   minutes: number;
   onMinutesChange: (minutes: number) => void;
+  /** Компактний вигляд: size sm, рамка, маленька сіра мітка над полем */
+  compact?: boolean;
 }
 
 export function DurationMinutesField({
@@ -47,8 +49,21 @@ export function DurationMinutesField({
   description,
   minutes,
   onMinutesChange,
+  compact = false,
 }: DurationMinutesFieldProps) {
   const safeMinutes = Math.max(0, minutes || 0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Колесо миші над сфокусованим number-полем змінює значення: знімаємо фокус, сторінка прокручується далі
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const onWheel = () => {
+      if (document.activeElement === el) el.blur();
+    };
+    el.addEventListener('wheel', onWheel, { passive: true });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
   const [unit, setUnit] = useState<DurationUnit>(() => pickDisplayUnit(safeMinutes));
   const [draft, setDraft] = useState(() => formatDisplayValue(safeMinutes, pickDisplayUnit(safeMinutes)));
 
@@ -65,22 +80,41 @@ export function DurationMinutesField({
   }, [safeMinutes, unit]);
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex min-w-0 flex-col gap-1">
+      {compact && (
+        <span className="text-xs text-default-500">
+          {label}
+          {(safeMinutes <= 0 || hint) && (
+            <span className="text-default-400">
+              {safeMinutes <= 0 ? ' · 0 – вимкнено' : ` ${hint}`}
+            </span>
+          )}
+        </span>
+      )}
       <Input
+        ref={inputRef}
         type="number"
         min={0}
         step={unit === 'minutes' ? 1 : 0.5}
-        label={label}
-        labelPlacement="outside"
+        label={compact ? undefined : label}
+        aria-label={compact ? label : undefined}
+        labelPlacement={compact ? undefined : 'outside'}
+        size={compact ? 'md' : undefined}
         value={draft}
         onValueChange={(value) => {
           setDraft(value);
           onMinutesChange(parseDisplayValue(value, unit));
         }}
-        description={hint ? `${description ?? ''}${description ? ' · ' : ''}${hint}` : description}
+        description={
+          compact
+            ? description
+            : hint
+              ? `${description ?? ''}${description ? ' · ' : ''}${hint}`
+              : description
+        }
         classNames={{
           label: 'font-normal',
-          inputWrapper: 'pr-0',
+          inputWrapper: compact ? 'pr-0 border-1 border-default-200' : 'pr-0',
         }}
         endContent={
           <Select
@@ -90,7 +124,9 @@ export function DurationMinutesField({
             size="sm"
             variant="flat"
             classNames={{
-              trigger: 'min-h-9 h-9 bg-transparent shadow-none px-2',
+              trigger: compact
+                ? 'min-h-9 h-9 bg-transparent shadow-none px-2 data-[hover=true]:bg-transparent'
+                : 'min-h-9 h-9 bg-transparent shadow-none px-2',
               value: 'text-sm',
             }}
             onSelectionChange={(keys) => {

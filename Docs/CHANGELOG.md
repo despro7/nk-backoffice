@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-11-11 – Техкарти, фаза 2b: ключ рядка специфікації, редагування і затвердження техкарти
+
+**Files:** `shared/utils/{catalogRowKey,techCardPayload}.ts` (+ spec), `shared/types/{production,catalog,catalogSpec}.ts`, `shared/utils/catalogSpecContent.ts`, `server/modules/Products/{CatalogSpecService,ProductsCatalogService,ProductsLocalSync,ProductsTypes,catalogTpGoods}.ts`, `server/modules/Production/TechCardService.ts`, `server/routes/production.ts`, `client/pages/Production/{useTechCards.ts,components/{TechCardDocument,TechCardEditor,TechCardRecipeView,TechCardDrawer,techCardRecipe}.ts(x)}`, `client/pages/Production/TechCards/TechCardPage.tsx`, `client/pages/Products/components/productDrawer/{BomSection,ProductDrawer,productDrawerTypes}.ts(x)`, `client/pages/Products/ProductsUtils.ts` (+ spec), `client/components/ui/DurationMinutesField.tsx`, `prisma/schema.prisma`, `prisma/migrations/20261111130000_catalog_component_row_key/`
+
+- **Ключ рядка специфікації** `rowKey`: стабільний uuid, переживає сортування, чернетки, затвердження і sync з Dilovod; бекфіл для всіх наявних рядків.
+- **Редагування техкарти:** етапи (порядок перетягуванням, інгредієнти, виходи попередніх етапів, тривалість, старт, обладнання, режим, напівфабрикат, вихід %, опис техпроцесу), пакування (пошук матеріалу, кількість на порцію / коробку), дозування (фракції, маса на порцію), примітки, формула брутто техкарти. Попередження про нерозподілені рядки і зниклі посилання.
+- **Модерація пари:** чернетка техкарти → «Подати на затвердження» → Директор затверджує разом із чернеткою специфікації (специфікація v N + техкарта v M з посиланням на N) або відхиляє обидві. Нова версія специфікації без поданої техкарти створює автоматичну версію техкарти. Дії – в журналі (`AuditLog`).
+- **Склад** редагується в картці товару: на сторінці техкарти – «Редагувати специфікацію».
+- **Втрати за формулою:** колонка «Втрати» в складі, PDF і Excel показує ефективний % за формулою брутто (для послідовної – менший за суму розбивки). У режимі редагування склад одразу перераховується за формулою техкарти.
+- **Рядки без ключа:** якщо рядки специфікації перезаписав код без `rowKey` (старий сервер на спільній БД), техкарта при відкритті видає їм нові ключі й пише про це в лог.
+- **Вигляд:** на сторінці вкладки й панель дій (модерація / «Зберегти чернетку») винесені за межі картки; у редакторі мітки полів над полями, поля 40 px, вищий список мультиселекту з виразно позначеними пунктами. `DurationMinutesField` отримав компактний режим (підказка «0 – вимкнено» в мітці) і не змінює значення колесом миші.
+
+**Документація:** `Docs/plans/production-techcards.md` – крок 2b.
+
+---
+
 ## 2026-11-11 – Техкарти, фаза 2a: розділ «Виробництво», сторінка і Drawer техкарти
 
 **Files:** `client/pages/Production/{useTechCards.ts,TechCards/index.tsx,TechCards/TechCardPage.tsx,components/{TechCardDocument,TechCardComposition,TechCardDrawer,techCardUi}.tsx}`, `client/pages/Production/techCardExport/*` (перенесено з `Products/components/productDrawer/`), `client/pages/Products/components/productDrawer/{ProductDrawer,BomSection}.tsx`, `TechCardModal.tsx` (видалено), `client/pages/Products/ProductsUtils.ts`, `client/routes.config.tsx`, `server/modules/Production/TechCardService.ts`, `server/routes/production.ts`, `shared/types/production.ts`, `shared/utils/techCardPayload.ts` (+ spec), `shared/constants/permissions.ts`, `prisma/schema.prisma`, `prisma/migrations/20261111120000_tech_cards/`
@@ -34,6 +50,19 @@
 
 ---
 
+## 2026-11-09 – Ролі: адресні сповіщення в матриці, пошук прав по всіх доменах
+
+**Files:** `shared/constants/notifications.ts`, `server/modules/Notifications/{notificationFeed,telegramDelivery,NotificationFeedService}.ts` (+ spec), `server/modules/Products/CatalogSpecService.ts`, `client/pages/Settings/Users/components/{NotificationPermissionsMatrix,RolesManager,RolePermissionsEditor}.tsx`, `prisma/migrations/20261109150000_notification_direct_events`
+
+- **Адресні сповіщення в ролі:** у блоці «Сповіщення» окремий рядок на кожну адресну подію («Специфікація чекає на затвердження», «Рішення по специфікації») з галочками дзвіночка й Telegram (`action.notify.direct.<event>.<channel>`). Рядок видно лише ролі, що може бути адресатом; увімкнення права затвердження / редагування специфікацій одразу ставить галочки події.
+- Стрічка й Telegram враховують ці права; `CatalogSpecService` пише подію в `data.event`, старі записи впізнаються за заголовком. Міграція вмикає обидва канали всім ролям, поведінка не змінилась.
+- **Пошук прав:** з текстом шукає по всіх доменах одразу, секції «Домен › Підрозділ», домени зі збігами виділені й показують кількість, збіги в назвах прав підсвічені.
+- **Перекриті права:** якщо увімкнено повне редагування табеля, право «свої записи за сьогодні» приховане й не робить групу «частковою».
+
+**Документація:** `Docs/features/notification-centre.md` – «Права ролей», видимість, Telegram; `Docs/features/users-and-roles.md` – пошук.
+
+---
+
 ## 2026-11-09 – Центр сповіщень: нестача в позиціях документа, дубль Raw JSON
 
 **Files:** `server/modules/Notifications/NotificationDocumentService.ts` (+ spec), `client/components/notifications/NotificationDocumentDrawer.tsx`, `shared/types/notifications.ts`, `client/components/ResultDrawer.tsx`
@@ -49,19 +78,6 @@
 ## 2026-11-09 – Центр сповіщень: дровери замовлення й документа, «Запускали», налаштування вкладкою
 
 **Files:** `client/components/NotificationBell.tsx`, `client/components/notifications/{NotificationPanel,NotificationRow,NotificationAvatar,NotificationPrefsView,NotificationTelegramConnect,NotificationDocumentDrawer,NotificationDebugTools,useOrderDetailsDrawer}.ts(x)`, `client/hooks/useNotificationFeed.ts`, `client/pages/SettingsNotifications/notificationPlayground.ts`, `server/modules/Notifications/{NotificationDocumentService,NotificationFeedService,notificationFeed,NotificationPrefsService}.ts` (+ spec), `server/routes/{notifications,support-reports,orders}.ts`, `server/services/SupportReportScreenshotStore.ts`, `server/services/dilovod/DilovodAutoExportService.ts`, `shared/notifications/{feedPresentation,defaultRules}.ts`, `shared/types/notifications.ts`, `.gitignore`
-
-## 2026-11-09 – Ролі: адресні сповіщення в матриці, пошук прав по всіх доменах
-
-**Files:** `shared/constants/notifications.ts`, `server/modules/Notifications/{notificationFeed,telegramDelivery,NotificationFeedService}.ts` (+ spec), `server/modules/Products/CatalogSpecService.ts`, `client/pages/Settings/Users/components/{NotificationPermissionsMatrix,RolesManager,RolePermissionsEditor}.tsx`, `prisma/migrations/20261109150000_notification_direct_events`
-
-- **Адресні сповіщення в ролі:** у блоці «Сповіщення» окремий рядок на кожну адресну подію («Специфікація чекає на затвердження», «Рішення по специфікації») з галочками дзвіночка й Telegram (`action.notify.direct.<event>.<channel>`). Рядок видно лише ролі, що може бути адресатом; увімкнення права затвердження / редагування специфікацій одразу ставить галочки події.
-- Стрічка й Telegram враховують ці права; `CatalogSpecService` пише подію в `data.event`, старі записи впізнаються за заголовком. Міграція вмикає обидва канали всім ролям, поведінка не змінилась.
-- **Пошук прав:** з текстом шукає по всіх доменах одразу, секції «Домен › Підрозділ», домени зі збігами виділені й показують кількість, збіги в назвах прав підсвічені.
-- **Перекриті права:** якщо увімкнено повне редагування табеля, право «свої записи за сьогодні» приховане й не робить групу «частковою».
-
-**Документація:** `Docs/features/notification-centre.md` – «Права ролей», видимість, Telegram; `Docs/features/users-and-roles.md` – пошук.
-
----
 
 - **Дровери:** «Відкрити замовлення» відкриває деталі замовлення, як на «Стан замовлень». «Відкрити документ» – новий дровер документа (`GET /api/notifications/:id/document`): локальний запис комплектування / переміщення або спроба списання, помилка Діловода, позиції, кнопка «Документ у Діловоді». Нестача товару – таблицею, сира відповідь під спойлером.
 - **Мета рядка:** «дата • хто запускав • номер документа» без категорії; тултіп «Запускали» зі всіма запусками згорнутого рядка. Підписи: «Імʼя (авто)» для авто-експорту після зміни статусу (новий `initiatedBy = manual:by:<userId>`), «SalesDrive (API)», «Cron», «автоматично».

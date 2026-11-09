@@ -26,6 +26,8 @@ export interface CatalogSpecComponent {
   cookingLossPercent: number;
   /** Розбивка втрат за типами (з фази 1 техкарт); відсутня в старих версіях */
   losses?: CatalogLossEntry[] | null;
+  /** Стабільний ключ рядка (фаза 2b техкарт); відсутній у старих версіях */
+  rowKey?: string | null;
 }
 
 export interface CatalogSpecContent {
@@ -105,6 +107,7 @@ export interface CatalogSpecDraftInput {
     note?: string | null;
     cookingLossPercent?: number | null;
     losses?: CatalogLossEntry[] | null;
+    rowKey?: string | null;
   }>;
   comment: string;
 }

@@ -261,6 +261,24 @@ describe('buildTechCardRows', () => {
     expect(result.rows[0]?.massKgGrossTotal).toBeCloseTo(0.1 / 0.9);
   });
 
+  it('показує ефективний % втрат за послідовною формулою', () => {
+    const row = {
+      componentName: 'Буряк',
+      qty: 100,
+      unitId: 'g',
+      componentWeight: null,
+      losses: [
+        { typeId: 1, percent: 20 },
+        { typeId: 2, percent: 20 },
+      ],
+    };
+    const additive = buildTechCardRows([row], units, 1, 1, 'auto', 'additive');
+    const sequential = buildTechCardRows([row], units, 1, 1, 'auto', 'sequential');
+    expect(additive.rows[0]?.lossDisplay).toBe('40 %');
+    expect(sequential.rows[0]?.lossDisplay).toBe('36 %');
+    expect(sequential.rows[0]?.massKgGrossTotal).toBeCloseTo(0.1 / 0.64);
+  });
+
   it('форматує масу з фіксованою точністю', () => {
     const result = buildTechCardRows(
       [{ componentName: "М'ясо", qty: 100, unitId: 'g', componentWeight: null, cookingLossPercent: 10 }],

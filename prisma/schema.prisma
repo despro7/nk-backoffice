@@ -671,6 +671,8 @@ model CatalogGoodComponent {
   cookingLossPercent Float?   @default(0)
   /// Локально: розбивка втрат за типами [{ typeId, percent }] (типи: settings_base production.lossTypes)
   lossesJson         Json?
+  /// Локально: стабільний ключ рядка (uuid) для етапів техкарти; переживає сортування, чернетки і sync з Dilovod
+  rowKey             String?  @db.VarChar(64)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

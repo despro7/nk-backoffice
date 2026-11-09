@@ -686,6 +686,7 @@ export function ProductDrawer({
           componentCategoryName: c.componentCategoryName ?? null,
           cookingLossPercent: c.cookingLossPercent ?? 0,
           losses: c.losses ?? null,
+          rowKey: c.rowKey ?? null,
         };
       });
       const nextPrices = detail.prices.map((p) => ({
@@ -1020,6 +1021,7 @@ export function ProductDrawer({
               note: isKit ? null : c.note.trim() || null,
               cookingLossPercent: isKit ? undefined : c.cookingLossPercent,
               losses: isKit ? undefined : normalizeLossEntries(c.losses),
+              rowKey: c.rowKey ?? undefined,
             }))
           : [],
         prices: prices.map((p) => ({
@@ -1216,6 +1218,7 @@ export function ProductDrawer({
           componentCategoryName: c.componentCategoryName ?? null,
           cookingLossPercent: c.cookingLossPercent ?? 0,
           losses: c.losses ?? null,
+          rowKey: c.rowKey ?? null,
         };
       }),
     );

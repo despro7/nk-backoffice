@@ -51,7 +51,7 @@ export interface TechCardStage {
   /** Стабільний ключ етапу (uuid) */
   key: string;
   name: string;
-  /** Опис техпроцесу, TipTap JSON (рядок) */
+  /** Опис техпроцесу, HTML (TipTap) */
   description: string | null;
   durationMin: number | null;
   /** Зміщення старту від початку варки, хв */
@@ -163,4 +163,6 @@ export interface TechCardDetailDto {
   draft: TechCardDraftDto | null;
   /** Формула брутто з урахуванням перевизначення в техкарті */
   lossFormula: CatalogLossFormula;
+  /** Назви товарів пакування з версії і чернетки */
+  goodNames: Record<string, { name: string; sku: string | null }>;
 }

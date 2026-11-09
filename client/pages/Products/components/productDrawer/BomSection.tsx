@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { newRowKey } from '@shared/utils/catalogRowKey';
 import {
   Button,
   Chip,
@@ -903,5 +904,6 @@ export function newBomRowFromSearch(hit: CatalogSearchHit, mainUnitId: string): 
     componentCategoryName: hit.parentName ?? null,
     cookingLossPercent: 0,
     losses: null,
+    rowKey: newRowKey(),
   };
 }

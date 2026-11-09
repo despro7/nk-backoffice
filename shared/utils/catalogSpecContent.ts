@@ -58,6 +58,7 @@ export function specContentFromDetail(detail: CatalogSpecContentDetail): Catalog
       note: c.note?.trim() || null,
       cookingLossPercent: resolveCookingLossPercent(c.losses, c.cookingLossPercent),
       losses: normalizeLossEntries(c.losses),
+      rowKey: c.rowKey ?? null,
     })),
   };
 }

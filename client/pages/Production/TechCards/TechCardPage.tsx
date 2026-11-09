@@ -30,17 +30,20 @@ export default function TechCardPage() {
         </div>
       </div>
 
-      <Card className="shadow-none rounded-lg">
-        <CardBody className="p-4 md:p-6">
-          {loading && (
-            <div className="flex items-center justify-center h-40">
-              <Spinner size="sm" />
-            </div>
-          )}
-          {error && <p className="text-sm text-danger">{error}</p>}
-          {data && <TechCardDocument data={data} />}
-        </CardBody>
-      </Card>
+      {data ? (
+        <TechCardDocument data={data} />
+      ) : (
+        <Card className="shadow-none rounded-lg">
+          <CardBody className="p-4">
+            {loading && (
+              <div className="flex items-center justify-center h-40">
+                <Spinner size="sm" />
+              </div>
+            )}
+            {error && <p className="text-sm text-danger">{error}</p>}
+          </CardBody>
+        </Card>
+      )}
     </div>
   );
 }

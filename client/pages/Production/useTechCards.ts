@@ -1,8 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import { useApi } from '@/hooks/useApi';
 import type {
   TechCardDetailDto,
   TechCardListItemDto,
+  TechCardPayload,
   TechCardVersionDto,
 } from '@shared/types/production';
 
@@ -74,4 +76,38 @@ export function useTechCardVersions(goodId: string, enabled: boolean) {
       get<TechCardVersionDto[]>(`/api/production/techcards/${encodeURIComponent(goodId)}/versions`),
   });
   return { versions: query.data ?? [], loading: query.isLoading, error: errorText(query.error) };
+}
+
+/** Дії з чернеткою техкарти: зберегти, видалити, подати, затвердити, відхилити. */
+export function useTechCardActions(goodId: string) {
+  const { apiCall } = useApi();
+  const queryClient = useQueryClient();
+
+  const send = useCallback(
+    async (path: string, method: 'PUT' | 'POST' | 'DELETE', body?: unknown): Promise<TechCardDetailDto> => {
+      const response = await apiCall(`/api/production/techcards/${encodeURIComponent(goodId)}${path}`, {
+        method,
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+      const data = (await response.json()) as ApiResponse<TechCardDetailDto>;
+      if (!response.ok || !data.success || !data.data) {
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+      queryClient.setQueryData(techCardQueryKey(goodId), data.data);
+      void queryClient.invalidateQueries({ queryKey: [...techCardQueryKey(goodId), 'versions'] });
+      void queryClient.invalidateQueries({ queryKey: TECH_CARDS_QUERY_KEY, exact: true });
+      // Затвердження пари змінює специфікацію в картці товару
+      void queryClient.invalidateQueries({ queryKey: ['catalog', 'good', goodId] });
+      return data.data;
+    },
+    [apiCall, goodId, queryClient],
+  );
+
+  return {
+    saveDraft: (payload: TechCardPayload) => send('/draft', 'PUT', { payload }),
+    discardDraft: () => send('/draft', 'DELETE'),
+    submit: (comment: string) => send('/submit', 'POST', { comment }),
+    approve: () => send('/approve', 'POST', {}),
+    reject: (reason: string) => send('/reject', 'POST', { reason }),
+  };
 }

@@ -1,6 +1,6 @@
 import { Button, Drawer, DrawerBody, DrawerContent, DrawerHeader, Spinner } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { NESTED_DRAWER_Z } from '@/pages/Products/components/productDrawer/productDrawerUtils';
+import { NESTED_DRAWER_Z, NESTED_OVERLAY_Z } from '@/pages/Products/components/productDrawer/productDrawerUtils';
 import { useTechCard } from '../useTechCards';
 import { TechCardDocument, TechCardMeta } from './TechCardDocument';
 
@@ -62,7 +62,11 @@ export function TechCardDrawer({ goodId, onClose, stackLevel = 0 }: TechCardDraw
             </div>
           )}
           {error && <p className="text-sm text-danger">{error}</p>}
-          {data && <TechCardDocument data={data} />}
+          {data && <TechCardDocument
+              data={data}
+              context="drawer"
+              overlayZ={NESTED_OVERLAY_Z[Math.min(stackLevel, NESTED_OVERLAY_Z.length - 1)]}
+            />}
         </DrawerBody>
       </DrawerContent>
     </Drawer>
