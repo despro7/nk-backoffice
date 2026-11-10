@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Tooltip } from '@heroui/react';
 import { cn } from '@/lib/utils';
 import type { ProductionBatchStageDto } from '@shared/types/production';
+import { formatTemp } from './batchUi';
 import { formatMinutes } from './techCardRecipe';
 
 type StageState = 'done' | 'current' | 'upcoming';
@@ -208,7 +209,7 @@ function GanttRow({ bar, index, ticks, nowMin, pct }: GanttRowProps) {
           {state === 'current' ? ' (триває)' : ''}
         </span>
       )}
-      {stage.actualTemp && <span>Температура: {stage.actualTemp}</span>}
+      {stage.actualTemp && <span>Температура: {formatTemp(stage.actualTemp)}</span>}
     </div>
   );
 

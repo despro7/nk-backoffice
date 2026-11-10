@@ -11,7 +11,7 @@ import type {
 } from '@shared/types/production';
 import { isIssueShortage, issuePlan, stockShortGoodIds } from '@shared/utils/productionBatchIssue';
 import { useProductionBatchActions } from '../useProductionBatches';
-import { formatQty } from './batchUi';
+import { MetaParts, formatQty, formatTemp } from './batchUi';
 import { BatchDateTimePicker } from './BatchDatePicker';
 import type { IssueDraft } from './BatchLinesTable';
 import { formatMinutes } from './techCardRecipe';
@@ -355,16 +355,18 @@ function StageRow({
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-default-900">{stage.name}</p>
           <p className="text-xs text-default-500 tabular-nums">
-            {[
-              stage.plannedOffsetMin ? `план +${formatMinutes(stage.plannedOffsetMin)}` : 'план від старту',
-              stage.plannedDurationMin ? formatMinutes(stage.plannedDurationMin) : null,
-              stage.startedAt ? `старт ${formatClock(stage.startedAt)}${stage.startedByName ? ` (${stage.startedByName})` : ''}` : null,
-              stage.finishedAt ? `фініш ${formatClock(stage.finishedAt)}` : null,
-              factMin != null ? `факт ${formatMinutes(factMin)}` : null,
-              done && stage.actualTemp ? `t ${stage.actualTemp}` : null,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
+            <MetaParts
+              parts={[
+                stage.plannedOffsetMin ? `план +${formatMinutes(stage.plannedOffsetMin)}` : 'план від старту',
+                stage.plannedDurationMin ? formatMinutes(stage.plannedDurationMin) : null,
+                stage.startedAt
+                  ? `старт ${formatClock(stage.startedAt)}${stage.startedByName ? ` (${stage.startedByName})` : ''}`
+                  : null,
+                stage.finishedAt ? `фініш ${formatClock(stage.finishedAt)}` : null,
+                factMin != null ? `факт ${formatMinutes(factMin)}` : null,
+                done && stage.actualTemp ? `t\u00A0${formatTemp(stage.actualTemp)}` : null,
+              ]}
+            />
           </p>
           {done && stage.comment && <p className="text-xs text-default-600">{stage.comment}</p>}
         </div>

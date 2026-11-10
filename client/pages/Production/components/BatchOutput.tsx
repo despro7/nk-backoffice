@@ -35,7 +35,7 @@ import {
   isDeviationNotable,
 } from '@shared/utils/productionBatchOutput';
 import { useProductionBatchActions } from '../useProductionBatches';
-import { formatQty } from './batchUi';
+import { MetaParts, formatQty } from './batchUi';
 import { parseQty, toText } from './BatchLinesTable';
 import { BusyIcon, run } from './BatchStepPanels';
 
@@ -313,7 +313,9 @@ export function FactSummary({ batch }: { batch: ProductionBatchDetailDto }) {
   const parts = FACT_FIELDS.filter((f) => fact[f.key] != null).map((f) => `${f.label}: ${fact[f.key]}`);
   return (
     <div className="mt-1.5 flex flex-col gap-0.5">
-      <p className="text-xs text-default-700">{parts.join(' · ')}</p>
+      <p className="text-xs text-default-700">
+        <MetaParts parts={parts} />
+      </p>
       <PortionsSummary fact={fact} planned={batch.plannedPortions} />
       {fact.comment && <p className="text-xs text-default-500">{fact.comment}</p>}
     </div>
@@ -487,7 +489,7 @@ export function CloseStepPanel({ batch }: { batch: ProductionBatchDetailDto }) {
   };
   return (
     <div className="mt-3 flex flex-col gap-2">
-      <p className="text-xs text-default-500">Після закриття варка доступна лише для перегляду, підписи вже не відкликаються.</p>
+      <p className="text-xs text-default-500">Після закриття підписи вже не відкликаються, змінити варку не можна.</p>
       <div className="flex">
         <Button color="primary" startContent={<DynamicIcon name="lock" size={14} />} onPress={() => setOpen(true)}>
           Закрити варку

@@ -15,7 +15,7 @@ import {
   type ProductionBatchStatus,
 } from '@shared/types/production';
 import { useProductionBatch, useProductionBatchActions } from '../useProductionBatches';
-import { BATCH_STEPS, BatchStatusChip, formatBatchDate } from '../components/batchUi';
+import { BATCH_STEPS, BatchStatusChip, formatBatchDate, formatTemp } from '../components/batchUi';
 import { BatchLinesTable, useIssueDraft, type BatchLinesMode, type IssueDraft } from '../components/BatchLinesTable';
 import { AcceptStepPanel, CookingStepPanel, IssueStepPanel, SignatureLine } from '../components/BatchStepPanels';
 import {
@@ -81,7 +81,7 @@ function eventText(e: ProductionBatchEventDto): string {
     case 'stageStarted':
       return `Етап «${String(p.stage ?? '')}» розпочато`;
     case 'stageFinished':
-      return `Етап «${String(p.stage ?? '')}» завершено${p.actualTemp ? `, t ${String(p.actualTemp)}` : ''}`;
+      return `Етап «${String(p.stage ?? '')}» завершено${p.actualTemp ? `, t\u00A0${formatTemp(String(p.actualTemp))}` : ''}`;
     case 'stageUndone':
       return `Етап «${String(p.stage ?? '')}»: відмінено ${p.what === 'finish' ? 'фініш' : 'старт'}`;
     case 'stageTimeEdited': {
