@@ -75,8 +75,8 @@ export function SignatureLine({ batch, signature, canRevoke }: SignatureLineProp
 
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-default-600">
-      <DynamicIcon name="signature" size={14} className="text-success-600" />
-      <span>
+      <DynamicIcon name="signature" size={14} className="text-lime-600" />
+      <span className="-ml-1">
         {signature.userName}
         {signature.roleLabel ? <span className="text-default-400"> · {signature.roleLabel}</span> : null}
         <span className="text-default-400"> · {formatDateTime(signature.signedAt)}</span>
