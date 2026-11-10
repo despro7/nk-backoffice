@@ -55,6 +55,20 @@ export const DEFAULT_NOTIFICATION_RULES: NotificationRuleDef[] = [
     output: { kind: 'event', group: 'products', level: 'success', visibility: 'show', actionLabel: 'Відкрити товар' },
   }),
 
+  // ── Виробництво: техкарти й варки (адресні) ───────────────────────────────
+  rule({
+    key: 'production-techcard-pending',
+    name: 'Техкарта чекає на затвердження',
+    match: { categories: ['production_techcard'] },
+    output: { kind: 'task', group: 'production', level: 'info', visibility: 'show', actionLabel: 'Переглянути техкарту' },
+  }),
+  rule({
+    key: 'production-batch-step',
+    name: 'Варка чекає наступного кроку',
+    match: { categories: ['production_batch'] },
+    output: { kind: 'task', group: 'production', level: 'info', visibility: 'show', actionLabel: 'Відкрити варку' },
+  }),
+
   // ── Склад: документи, які Діловод не прийняв ─────────────────────────────
   rule({
     key: 'warehouse-movement-rejected',

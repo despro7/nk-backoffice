@@ -6,6 +6,7 @@ import {
   Input,
   Select,
   SelectItem,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -18,15 +19,19 @@ import { useNavigate } from 'react-router-dom';
 import {
   PRODUCTION_BATCH_STATUSES,
   PRODUCTION_BATCH_STATUS_LABELS,
+  type ProductionBatchListItemDto,
   type ProductionBatchStatus,
 } from '@shared/types/production';
+import { useRoleAccess } from '@/hooks/useRoleAccess';
+import { batchAwaitsUser, batchNextActions } from '@shared/utils/productionBatchActions';
 import { useProductionBatches } from '../useProductionBatches';
 import { BatchStatusChip, formatBatchDate } from '../components/batchUi';
-import { BatchDatePicker } from '../components/BatchDatePicker';
+import type { DateRange } from '@react-types/datepicker';
+import ReportDateRangeFilter from '@/pages/Reports/shared/filters/ReportDateRangeFilter';
 
 const TABLE_CLASS_NAMES = {
   wrapper: 'p-0 shadow-none',
-  table: 'min-w-[640px]',
+  table: 'min-w-[860px]',
   th: 'first:rounded-s-md last:rounded-e-md bg-default-100',
   tr: 'hover:bg-gray-100/60 transition-colors duration-50 cursor-pointer',
   td: 'first:rounded-s-md last:rounded-e-md',
@@ -34,29 +39,50 @@ const TABLE_CLASS_NAMES = {
 
 const ALL = 'all';
 
+/** Наступна дія варки; моя – виділена. */
+function NextStep({ batch, awaitsMe }: { batch: ProductionBatchListItemDto; awaitsMe: boolean }) {
+  const action = batchNextActions(batch)[0];
+  if (!action) return <span className="text-default-400">–</span>;
+  return (
+    <span className={`text-[13px] leading-tight ${awaitsMe ? 'flex items-center gap-1.5 font-medium text-primary' : 'text-default-600'}`}>
+      {awaitsMe && <DynamicIcon name="hand" size={14} className="shrink-0" />}
+      {action.label}
+    </span>
+  );
+}
+
 /** Список варок: номер, товар, план, плановий день, стан. Нова варка – з техкарти. */
 export default function BatchesPage() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<string>(ALL);
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [range, setRange] = useState<DateRange | null>(null);
   const [search, setSearch] = useState('');
+  const [mine, setMine] = useState(false);
+  const { hasPermission } = useRoleAccess();
   const { items, loading, error } = useProductionBatches({
     status: status === ALL ? null : (status as ProductionBatchStatus),
-    from: from || null,
-    to: to || null,
+    from: range?.start.toString() ?? null,
+    to: range?.end.toString() ?? null,
   });
+
+  // Варки, що чекають дії поточного користувача (за його правами)
+  const awaitingIds = useMemo(
+    () => new Set(items.filter((b) => batchAwaitsUser(b, hasPermission)).map((b) => b.id)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hasPermission змінюється разом із ролями, items – з даними
+    [items],
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return items;
     return items.filter(
       (b) =>
-        b.number.toLowerCase().includes(q) ||
-        b.goodName.toLowerCase().includes(q) ||
-        (b.goodSku ?? '').toLowerCase().includes(q),
+        (!mine || awaitingIds.has(b.id)) &&
+        (!q ||
+          b.number.toLowerCase().includes(q) ||
+          b.goodName.toLowerCase().includes(q) ||
+          (b.goodSku ?? '').toLowerCase().includes(q)),
     );
-  }, [items, search]);
+  }, [items, search, mine, awaitingIds]);
 
   return (
     <div className="space-y-4">
@@ -82,27 +108,28 @@ export default function BatchesPage() {
             ...PRODUCTION_BATCH_STATUSES.map((s) => <SelectItem key={s}>{PRODUCTION_BATCH_STATUS_LABELS[s]}</SelectItem>),
           ]}
         </Select>
-        <div className="flex w-full items-center gap-2 sm:w-auto">
-          <BatchDatePicker ariaLabel="Плановий день від" className="flex-1 sm:w-44" value={from} onChange={setFrom} />
-          <span className="text-default-400">–</span>
-          <BatchDatePicker ariaLabel="Плановий день до" className="flex-1 sm:w-44" value={to} onChange={setTo} />
-          {(from || to) && (
+        <div className="flex items-center gap-1">
+          <ReportDateRangeFilter ariaLabel="Плановий день: період" value={range} onChange={setRange} />
+          {range && (
             <Button
               size="sm"
               variant="light"
               isIconOnly
               aria-label="Скинути дати"
               title="Скинути дати"
-              onPress={() => {
-                setFrom('');
-                setTo('');
-              }}
+              onPress={() => setRange(null)}
             >
               <DynamicIcon name="x" size={14} />
             </Button>
           )}
         </div>
-        <span className="ml-auto text-sm text-default-500 tabular-nums">{filtered.length}</span>
+        <Switch size="sm" isSelected={mine} onValueChange={setMine} classNames={{ wrapper: 'border border-white/75' }}>
+          <span className="text-sm">
+            Очікує моєї дії
+            {awaitingIds.size > 0 && <span className="ml-1.5 tabular-nums text-[12px] text-default-700 bg-default-700/10 px-1 py-0.5 rounded shadow-inner-sm">{awaitingIds.size}</span>}
+          </span>
+        </Switch>
+        {/* <span className="ml-auto text-sm text-default-500 tabular-nums">{filtered.length}</span> */}
       </div>
 
       {error && <p className="text-sm text-danger">{error}</p>}
@@ -113,9 +140,11 @@ export default function BatchesPage() {
             <div className="p-8 text-center text-default-500">Завантаження...</div>
           ) : filtered.length === 0 ? (
             <div className="p-8 text-center text-default-500">
-              {items.length === 0
+              {items.length === 0 && status === ALL && !range
                 ? 'Варок ще немає. Нову варку створюють у техкарті товару.'
-                : 'Нічого не знайдено за обраними фільтрами'}
+                : mine
+                  ? 'Немає варок, що чекають вашої дії'
+                  : 'Нічого не знайдено за обраними фільтрами'}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -131,13 +160,15 @@ export default function BatchesPage() {
                   <TableColumn key="portions" className="text-right">План порцій</TableColumn>
                   <TableColumn key="date">Плановий день</TableColumn>
                   <TableColumn key="status">Стан</TableColumn>
+                  <TableColumn key="next">Наступний крок</TableColumn>
+                  <TableColumn key="stages" className="text-right">Етапи</TableColumn>
                   <TableColumn key="author">Створив</TableColumn>
                 </TableHeader>
                 <TableBody>
                   {filtered.map((b) => (
                     <TableRow key={b.id}>
-                      <TableCell className="font-mono text-sm font-medium">{b.number}</TableCell>
-                      <TableCell>
+                      <TableCell className="font-mono text-sm font-medium [&>span]:text-nowrap">{b.number}</TableCell>
+                      <TableCell className="whitespace-nowrap">
                         <div className="font-medium">{b.goodName}</div>
                         <div className="text-xs text-default-500">
                           {[b.goodSku, `техкарта v${b.techCardVersion}`].filter(Boolean).join(' · ')}
@@ -147,6 +178,12 @@ export default function BatchesPage() {
                       <TableCell className="tabular-nums">{formatBatchDate(b.plannedDate)}</TableCell>
                       <TableCell>
                         <BatchStatusChip status={b.status} />
+                      </TableCell>
+                      <TableCell>
+                        <NextStep batch={b} awaitsMe={awaitingIds.has(b.id)} />
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-sm text-default-500">
+                        {b.stagesTotal > 0 ? `${b.stagesDone} / ${b.stagesTotal}` : '–'}
                       </TableCell>
                       <TableCell className="text-sm text-default-500">{b.createdByName ?? '–'}</TableCell>
                     </TableRow>

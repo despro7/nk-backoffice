@@ -32,6 +32,7 @@ import { PayrollLineDrawer } from './Payroll/PayrollLineDrawer';
 import { PayrollHelpDrawer } from './Payroll/PayrollHelpDrawer';
 import { HR_BTN_PRIMARY, HR_BTN_WARNING } from '@/lib/buttonStyles';
 import { HR_BTN_NEUTRAL, SpecChip } from './hrUi';
+import { useRangeCalendarMonths } from '@/hooks/useTouchUi';
 
 function parseGroupParam(raw: string | null): HrTimesheetGroupFilter | null {
   if (!raw) return null;
@@ -61,6 +62,7 @@ function dateValueToYmd(value: DateValue): string {
 
 export default function HrPayrollPage() {
   const { hasPermission } = useRoleAccess();
+  const rangeMonths = useRangeCalendarMonths();
   const canView = hasPermission(PERMISSIONS.PAGE_HR_PAYROLL);
   const canCalculate = hasPermission(PERMISSIONS.ACTION_HR_PAYROLL_VIEW);
   const canRevealCard = hasPermission(PERMISSIONS.ACTION_HR_PAYOUTS_VIEW);
@@ -303,6 +305,7 @@ export default function HrPayrollPage() {
           <I18nProvider locale="uk-UA">
             <DateRangePicker
               aria-label="Довільний період"
+              visibleMonths={rangeMonths}
               size="sm"
               value={customDateRange}
               onChange={setCustomDateRange}

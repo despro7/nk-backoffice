@@ -7,7 +7,7 @@ import { buildTechCardFileName } from './techCardExportShared';
 
 let fontsRegistered = false;
 
-function ensureTechCardPdfFonts(): void {
+export function ensureTechCardPdfFonts(): void {
   if (fontsRegistered) return;
   Font.register({
     family: 'Arial',
@@ -30,7 +30,7 @@ async function renderTechCardPdfBlob(
   return pdf(TechCardPdfDocument({ productName, specQty, portions, techCard, recipe })).toBlob();
 }
 
-function printPdfInBrowser(blob: Blob): void {
+export function printPdfInBrowser(blob: Blob): void {
   const url = URL.createObjectURL(blob);
   const printWindow = window.open(url, '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
   if (printWindow) {

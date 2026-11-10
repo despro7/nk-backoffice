@@ -70,6 +70,7 @@ export type NotificationServiceId =
   | 'sync'
   | 'warehouse'
   | 'products'
+  | 'production'
   | 'assembly'
   | 'cron'
   | 'webhook'

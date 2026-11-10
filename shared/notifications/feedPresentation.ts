@@ -15,6 +15,8 @@ const CATEGORY_SERVICE: Record<string, NotificationServiceId> = {
   warehouse_movement: 'warehouse',
   catalog_spec: 'products',
   products: 'products',
+  production_batch: 'production',
+  production_techcard: 'production',
   assembly: 'assembly',
 };
 
@@ -24,6 +26,7 @@ const SERVICE_LABELS: Record<NotificationServiceId, string> = {
   sync: 'Синхронізація',
   warehouse: 'Склад',
   products: 'Товари',
+  production: 'Виробництво',
   assembly: 'Збірка',
   cron: 'Планове завдання',
   webhook: 'Webhook',

@@ -38,6 +38,8 @@ import { specContentFromDetail } from '../../../shared/utils/catalogSpecContent.
 import { productsCatalogService } from '../Products/ProductsCatalogService.js';
 import { productionSettingsService } from './ProductionSettingsService.js';
 import { productionBatchService } from './ProductionBatchService.js';
+import { PERMISSIONS } from '../../../shared/constants/permissions.js';
+import { sendDirectNotification, userIdsWithPermission } from '../Notifications/directNotify.js';
 
 export class TechCardError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -267,6 +269,26 @@ class TechCardService {
     return prisma.techCardVersion.findFirst({ where: { goodId }, orderBy: { version: 'desc' } });
   }
 
+  /** Сповіщення тим, хто затверджує техкарти (право затверджувати специфікацію, як і для пари). */
+  private async notifyApprovers(goodId: string, goodName: string, comment: string, actorId: number | null): Promise<void> {
+    try {
+      await sendDirectNotification({
+        category: 'production_techcard',
+        recipients: await userIdsWithPermission(PERMISSIONS.ACTION_PRODUCTS_APPROVE_SPEC, { includeAdmin: true }),
+        event: 'techCardReview',
+        actorId,
+        status: 'info',
+        title: 'Техкарта чекає на затвердження',
+        message: `«${goodName}»: ${comment}`,
+        link: `/production/techcards/${encodeURIComponent(goodId)}`,
+        data: { goodId },
+        systemSource: 'system:techcard',
+      });
+    } catch (error) {
+      logServer('[techcard] notify approvers failed', { goodId, error });
+    }
+  }
+
   private audit(goodId: string, action: string, userId: number | null, payload?: Record<string, unknown>) {
     return auditLogService.log({
       entityType: TECH_CARD_AUDIT_ENTITY,
@@ -329,7 +351,9 @@ class TechCardService {
       data: { status: 'pending', comment: text, lastEditedById: userId, rejectReason: null },
     });
     await this.audit(goodId, 'submitted', userId, { comment: text });
-    return this.getDetail(goodId);
+    const detail = await this.getDetail(goodId);
+    await this.notifyApprovers(goodId, detail.good.name, text, userId);
+    return detail;
   }
 
   /**

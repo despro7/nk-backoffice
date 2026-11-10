@@ -47,6 +47,7 @@ import type { SalesDriveOrderForExport, SalesDriveOrdersResponse, } from "@share
 import type { OrderDilovodDocumentDto, OrderDilovodDocumentType } from "@shared/types/orderDilovodDocuments";
 import type { OrderShipmentBriefDto } from "@shared/types/orderShipments";
 import type { SalesChannel } from "@shared/types/dilovod";
+import { useRangeCalendarMonths } from "@/hooks/useTouchUi";
 import { isReshippedAfterReturn, isReturnDuplicate, isSaleDuplicate, isShippedWithoutPicking } from "@shared/utils/dilovodShipmentCycle";
 
 // Функція для отримання класів каналу (статична — кольори визначаються по id)
@@ -234,6 +235,7 @@ function DilovodShipmentTimeline({ order }: { order: SalesDriveOrderForExport })
 
 export default function SalesDriveOrdersTable({ className, initialSearch, initialSearchCategory, hideFilters = false }: SalesDriveOrdersTableProps) {
   const { apiCall } = useApi();
+  const rangeMonths = useRangeCalendarMonths();
   const queryClient = useQueryClient();
   const { isAdminView } = useRolePreview();
   const { isDebugMode } = useDebug();
@@ -1742,6 +1744,7 @@ export default function SalesDriveOrdersTable({ className, initialSearch, initia
           <I18nProvider locale="uk-UA">
             <DateRangePicker
               aria-label="Період відвантаження"
+              visibleMonths={rangeMonths}
               value={dateRange}
               onChange={setDateRange}
               size="md"

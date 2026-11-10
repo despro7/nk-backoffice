@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { PERMISSIONS } from '../../shared/constants/permissions';
 import { ROLES } from '../../shared/constants/roles';
-import { RoleService } from './RoleService';
+import { ROLE_PERMISSIONS_CACHE_TTL_MS, RoleService } from './RoleService';
 
 type RoleRow = {
   id: number;
@@ -141,6 +141,19 @@ describe('RoleService', () => {
     expect(await service.hasPermission(created.slug, PERMISSIONS.PAGE_ORDERS)).toBe(false);
     await service.setPermissions(created.id, [PERMISSIONS.PAGE_PRODUCTS, PERMISSIONS.PAGE_ORDERS]);
     expect(await service.hasPermission(created.slug, PERMISSIONS.PAGE_ORDERS)).toBe(true);
+  });
+
+  it('picks up permissions changed outside the service after TTL', async () => {
+    let clock = 1_000;
+    const svc = new RoleService(memory.db as never, () => clock);
+    const created = await svc.createRole({ name: 'Ext', permissions: [PERMISSIONS.PAGE_PRODUCTS] });
+    expect(await svc.hasPermission(created.slug, PERMISSIONS.PAGE_ORDERS)).toBe(false);
+    // Інший процес дописав право прямо в БД
+    memory.perms.push({ roleId: created.id, permissionKey: PERMISSIONS.PAGE_ORDERS });
+    clock += ROLE_PERMISSIONS_CACHE_TTL_MS - 1;
+    expect(await svc.hasPermission(created.slug, PERMISSIONS.PAGE_ORDERS)).toBe(false);
+    clock += 1;
+    expect(await svc.hasPermission(created.slug, PERMISSIONS.PAGE_ORDERS)).toBe(true);
   });
 
   it('assertRoleExists rejects unknown slug', async () => {

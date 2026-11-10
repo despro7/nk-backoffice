@@ -5,7 +5,10 @@
  * залишки по рядках, підпис), прийом на склад ГП (підпис), закриття. Підписи відкликаються на крок назад.
  */
 import { Prisma, type ProductionBatch } from '@prisma/client';
-import { prisma } from '../../lib/utils.js';
+import { logServer, prisma } from '../../lib/utils.js';
+import { PERMISSIONS } from '../../../shared/constants/permissions.js';
+import type { NotificationDirectEventId } from '../../../shared/constants/notifications.js';
+import { sendDirectNotification, userIdsWithPermission } from '../Notifications/directNotify.js';
 import {
   PRODUCTION_BATCH_STATUSES,
   type CatalogLossEntry,
@@ -131,7 +134,7 @@ async function userNames(ids: Array<number | null | undefined>): Promise<Map<num
 }
 
 function listItemDto(
-  row: ProductionBatch & { good: { name: string; sku: string | null } },
+  row: ProductionBatch & { good: { name: string; sku: string | null }; stages?: Array<{ finishedAt: Date | null }> },
   names: Map<number, string>,
 ): ProductionBatchListItemDto {
   return {
@@ -146,6 +149,8 @@ function listItemDto(
     techCardVersion: row.techCardVersion,
     createdByName: row.createdById != null ? names.get(row.createdById) ?? null : null,
     createdAt: row.createdAt.toISOString(),
+    stagesTotal: row.stages?.length ?? 0,
+    stagesDone: row.stages?.filter((st) => st.finishedAt != null).length ?? 0,
   };
 }
 
@@ -175,6 +180,35 @@ function lineDto(row: BatchWithRelations['lines'][number]): ProductionBatchLineD
   };
 }
 
+type BatchNotifyEvent = Extract<
+  NotificationDirectEventId,
+  'batchIssue' | 'batchAcceptProduction' | 'batchAcceptFinished' | 'batchClose'
+>;
+
+/** Кому і з яким заголовком сповіщати про крок; author – автор варки. */
+const BATCH_NOTIFY: Record<BatchNotifyEvent, { permission: string | 'author'; title: string }> = {
+  batchIssue: { permission: PERMISSIONS.ACTION_PRODUCTION_BATCHES_ISSUE, title: 'чекає видачі сировини' },
+  batchAcceptProduction: {
+    permission: PERMISSIONS.ACTION_PRODUCTION_BATCHES_ACCEPT_PRODUCTION,
+    title: 'чекає прийому на виробництво',
+  },
+  batchAcceptFinished: { permission: PERMISSIONS.ACTION_PRODUCTION_BATCHES_ACCEPT_FINISHED, title: 'чекає прийому на склад ГП' },
+  batchClose: { permission: 'author', title: 'прийнята на склад ГП, можна закривати' },
+};
+
+function batchNotifyMessage(batch: ProductionBatchDetailDto, event: BatchNotifyEvent): string {
+  const [y, m, d] = batch.plannedDate.split('-');
+  const parts = [`«${batch.goodName}»`, `${batch.plannedPortions} порцій`, `на ${d}.${m}.${y}`];
+  if (event === 'batchAcceptProduction') {
+    const shortages = batch.lines.filter((l) => l.shortageComment).length;
+    if (shortages > 0) parts.push(`нестача: ${shortages} поз.`);
+  }
+  if ((event === 'batchAcceptFinished' || event === 'batchClose') && batch.fact?.portionsGood != null) {
+    parts.push(`на ГП: ${batch.fact.portionsGood} порцій`);
+  }
+  return parts.join(', ');
+}
+
 class ProductionBatchService {
   async list(filters: { status?: unknown; goodId?: unknown; from?: unknown; to?: unknown } = {}): Promise<
     ProductionBatchListItemDto[]
@@ -192,7 +226,7 @@ class ProductionBatchService {
     }
     const rows = await prisma.productionBatch.findMany({
       where,
-      include: { good: { select: { name: true, sku: true } } },
+      include: { good: { select: { name: true, sku: true } }, stages: { select: { finishedAt: true } } },
       orderBy: [{ plannedDate: 'desc' }, { id: 'desc' }],
       take: 500,
     });
@@ -385,7 +419,9 @@ class ProductionBatchService {
             },
           },
         });
-        return this.getDetail(created.id);
+        const detail = await this.getDetail(created.id);
+        await this.notifyStep(detail, 'batchIssue', userId);
+        return detail;
       } catch (err) {
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002' && attempt < 5) continue;
         throw err;
@@ -547,7 +583,9 @@ class ProductionBatchService {
         data: { batchId: id, type: 'issued', userId: actor.userId, userName, payloadJson: { shortages } },
       });
     }, STEP_TX);
-    return this.getDetail(id);
+    const detail = await this.getDetail(id);
+    await this.notifyStep(detail, 'batchAcceptProduction', actor.userId);
+    return detail;
   }
 
   /** Прийом сировини на виробництво: підпис → «Прийнято на виробництво». */
@@ -829,7 +867,9 @@ class ProductionBatchService {
         },
       });
     }, STEP_TX);
-    return this.getDetail(id);
+    const detail = await this.getDetail(id);
+    await this.notifyStep(detail, 'batchAcceptFinished', actor.userId);
+    return detail;
   }
 
   /** Прийом продукції на склад ГП: підпис → «Прийнято на склад ГП». */
@@ -847,7 +887,39 @@ class ProductionBatchService {
         data: { batchId: id, type: 'finished', userId: actor.userId, userName, payloadJson: text ? { comment: text } : Prisma.DbNull },
       }),
     ]);
-    return this.getDetail(id);
+    const detail = await this.getDetail(id);
+    await this.notifyStep(detail, 'batchClose', actor.userId);
+    return detail;
+  }
+
+  // ─── сповіщення ───────────────────────────────────────────────────────────
+
+  /** Адресне сповіщення тим, хто виконує наступний крок; помилка лише логуюється. */
+  private async notifyStep(batch: ProductionBatchDetailDto, event: BatchNotifyEvent, actorId: number | null): Promise<void> {
+    try {
+      const spec = BATCH_NOTIFY[event];
+      let recipients: number[];
+      if (spec.permission === 'author') {
+        const row = await prisma.productionBatch.findUnique({ where: { id: batch.id }, select: { createdById: true } });
+        recipients = row?.createdById != null ? [row.createdById] : [];
+      } else {
+        recipients = await userIdsWithPermission(spec.permission);
+      }
+      await sendDirectNotification({
+        category: 'production_batch',
+        recipients,
+        event,
+        actorId,
+        status: 'info',
+        title: `Варка ${batch.number} ${spec.title}`,
+        message: batchNotifyMessage(batch, event),
+        link: `/production/batches/${batch.id}`,
+        data: { batchId: batch.id, goodId: batch.goodId },
+        systemSource: 'system:production-batch',
+      });
+    } catch (error) {
+      logServer('[production-batch] notify failed', { batchId: batch.id, event, error });
+    }
   }
 
   /** Закрити варку після прийому на ГП: далі лише перегляд. */

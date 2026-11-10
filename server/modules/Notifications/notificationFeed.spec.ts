@@ -165,7 +165,7 @@ describe('helpers', () => {
 
   it('success prefilter covers only categories with visible success rules', () => {
     expect(categoriesWithVisibleSuccess(DEFAULT_NOTIFICATION_RULES)?.sort()).toEqual(
-      ['catalog_spec', 'product_sync', 'user_report', 'warehouse_movement'],
+      ['catalog_spec', 'product_sync', 'production_batch', 'production_techcard', 'user_report', 'warehouse_movement'],
     );
   });
 });

@@ -298,6 +298,9 @@ export interface ProductionBatchListItemDto {
   techCardVersion: number;
   createdByName: string | null;
   createdAt: string;
+  /** Етапів усього / завершено */
+  stagesTotal: number;
+  stagesDone: number;
 }
 
 /** Факт виходу варки (крок 5), порції і тара. */

@@ -10,7 +10,7 @@
 | Поле | Значення |
 |------|----------|
 | `kind` | `alert` – проблема; `task` – від адресата чекають дії; `event` – інформація |
-| `group` | `assembly`, `dilovod`, `sync`, `warehouse`, `products`, `system` (`shared/constants/notifications.ts`) |
+| `group` | `assembly`, `dilovod`, `sync`, `warehouse`, `products`, `production`, `system` (`shared/constants/notifications.ts`) |
 | `level` | `error`, `warning`, `success`, `info` (з `meta_logs.status` або перевизначений правилом) |
 | `visible` | `hidden` – запис лишається в журналі, але не йде в дропдаун і Telegram |
 | `title`, `message` | Текст після замін, шаблонів і словника |
@@ -137,11 +137,17 @@
 |-------|------|----------|----------------------------|
 | Специфікація чекає на затвердження (і «Оновлено чернетку») | `specReview` | ролі з правом затвердження + адміністратори | `action.products.approveSpec` |
 | Рішення по специфікації (затверджено / з правками / відхилено) | `specResult` | автор чернетки | `action.products.editSpec` |
+| Техкарта чекає на затвердження | `techCardReview` | ролі з правом затвердження + адміністратори | `action.products.approveSpec` |
+| Варка чекає видачі сировини (варку створено) | `batchIssue` | ролі з правом видачі, без адміністратора | `action.production.batches.issue` |
+| Варка чекає прийому на виробництво (видачу підписано) | `batchAcceptProduction` | ролі з правом прийому, без адміністратора | `action.production.batches.acceptProduction` |
+| Варка чекає прийому на склад ГП (факт виходу підписано) | `batchAcceptFinished` | ролі з правом прийому на ГП, без адміністратора | `action.production.batches.acceptFinished` |
+| Варка чекає закриття (прийнято на склад ГП) | `batchClose` | автор варки | `action.production.batches.create` |
 
-- Подія пишеться в `data.event` (`CatalogSpecService`); старі записи впізнаються за заголовком (`resolveDirectEvent`). Невідома подія приходить адресату, як раніше.
+- Подія пишеться в `data.event` (`CatalogSpecService`, `TechCardService`, `ProductionBatchService`) через спільний `sendDirectNotification` (`server/modules/Notifications/directNotify.ts`; адресати за правом – `userIdsWithPermission`, автор дії собі не отримує); старі записи впізнаються за заголовком (`resolveDirectEvent`). Невідома подія приходить адресату, як раніше.
 - Увімкнення в ролі права з колонки «Рядок видно» одразу ставить обидві галочки події (`withDirectEventDefaults`), їх можна зняти.
 - Адміністратор отримує адресні завжди.
-- Міграція `20261109150000_notification_direct_events` увімкнула обидва канали всім ролям, крім admin, тож поведінка не змінилась.
+- Міграція `20261109150000_notification_direct_events` увімкнула обидва канали всім ролям, крім admin, тож поведінка не змінилась. Події виробництва – так само, міграцією `20261114120000_notification_production_events`.
+- Події виробництва: категорії `production_batch` / `production_techcard`, група «Виробництво» (`production`), стандартні правила `production-batch-step` / `production-techcard-pending` – тип «Задача», кнопки «Відкрити варку» / «Переглянути техкарту».
 
 ## Персональні налаштування (шестерня)
 
@@ -181,7 +187,7 @@
 | Типи | `shared/types/notificationRules.ts`, `shared/types/notifications.ts` |
 | Рушій | `shared/notifications/ruleEngine.ts` (+ spec), `shared/notifications/defaultRules.ts` |
 | Клієнт | `client/components/NotificationBell.tsx`, `client/components/notifications/*` (у т.ч. `NotificationDocumentDrawer`, `NotificationDebugTools`, `useOrderDetailsDrawer`), `client/hooks/useNotificationFeed.ts` |
-| Сервер | `server/modules/Notifications/{NotificationConfigService,NotificationFeedService,notificationFeed,NotificationDocumentService}.ts` (+ spec), `server/routes/notifications.ts` |
+| Сервер | `server/modules/Notifications/{NotificationConfigService,NotificationFeedService,notificationFeed,NotificationDocumentService,directNotify}.ts` (+ spec), `server/routes/notifications.ts` |
 | Скріншоти звітів | `server/services/SupportReportScreenshotStore.ts`, `server/routes/support-reports.ts` |
 | Налаштування | `client/pages/SettingsNotifications/**`, `client/services/NotificationSettingsService.ts`, `server/routes/notification-settings.ts`, `server/modules/Notifications/NotificationSettingsService.ts`, `shared/types/notificationSettings.ts`, `shared/notifications/feedPresentation.ts` |
 | Telegram | `server/modules/Notifications/{NotificationTelegramService,telegramDelivery}.ts`, `client/components/notifications/NotificationTelegramConnect.tsx`, `client/pages/SettingsNotifications/components/TelegramTab.tsx` |

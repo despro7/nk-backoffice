@@ -12,6 +12,7 @@ export const NOTIFICATION_GROUPS = [
   { id: 'sync', label: 'Синхронізації', hint: 'Товари, SalesDrive, WordPress' },
   { id: 'warehouse', label: 'Склад', hint: 'Переміщення, списання, комплектування' },
   { id: 'products', label: 'Товари', hint: 'Специфікації, картки товарів' },
+  { id: 'production', label: 'Виробництво', hint: 'Техкарти, варки' },
   { id: 'system', label: 'Звіти та система', hint: 'Звіти користувачів, налаштування' },
 ] as const;
 
@@ -94,6 +95,41 @@ export const NOTIFICATION_DIRECT_EVENTS = [
     requires: 'action.products.editSpec',
     titlePattern: /Специфікацію (затверджено|відхилено)/i,
   },
+  {
+    id: 'techCardReview',
+    label: 'Техкарта чекає на затвердження',
+    hint: 'Чернетку техкарти подано на затвердження. Отримують ті, хто затверджує',
+    requires: 'action.products.approveSpec',
+    titlePattern: null,
+  },
+  {
+    id: 'batchIssue',
+    label: 'Варка чекає видачі сировини',
+    hint: 'Створено варку. Отримують ті, хто видає сировину',
+    requires: 'action.production.batches.issue',
+    titlePattern: null,
+  },
+  {
+    id: 'batchAcceptProduction',
+    label: 'Варка чекає прийому на виробництво',
+    hint: 'Сировину видано. Отримують ті, хто приймає на виробництво',
+    requires: 'action.production.batches.acceptProduction',
+    titlePattern: null,
+  },
+  {
+    id: 'batchAcceptFinished',
+    label: 'Варка чекає прийому на склад ГП',
+    hint: 'Підписано факт виходу. Отримують ті, хто приймає на склад ГП',
+    requires: 'action.production.batches.acceptFinished',
+    titlePattern: null,
+  },
+  {
+    id: 'batchClose',
+    label: 'Варка чекає закриття',
+    hint: 'Продукцію прийнято на склад ГП. Отримує автор варки',
+    requires: 'action.production.batches.create',
+    titlePattern: null,
+  },
 ] as const;
 
 export type NotificationDirectEventId = (typeof NOTIFICATION_DIRECT_EVENTS)[number]['id'];
@@ -112,7 +148,7 @@ export function resolveDirectEvent(
   const known = NOTIFICATION_DIRECT_EVENTS.find((e) => e.id === event);
   if (known) return known.id;
   if (category !== 'catalog_spec' || !title) return null;
-  return NOTIFICATION_DIRECT_EVENTS.find((e) => e.titlePattern.test(title))?.id ?? null;
+  return NOTIFICATION_DIRECT_EVENTS.find((e) => e.titlePattern?.test(title))?.id ?? null;
 }
 
 /** Усі notify-ключі (для admin, тестів і UI матриці). */
@@ -142,6 +178,9 @@ export function defaultGroupForCategory(category: string): NotificationGroupId {
     case 'catalog_spec':
     case 'products':
       return 'products';
+    case 'production_batch':
+    case 'production_techcard':
+      return 'production';
     case 'assembly':
     case 'weight_tolerance':
       return 'assembly';

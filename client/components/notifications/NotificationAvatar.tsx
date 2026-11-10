@@ -7,6 +7,7 @@ const SERVICE_STYLE: Record<NotificationServiceId, { icon: string; className: st
   sync: { icon: 'refresh-cw', className: 'bg-teal-100 text-teal-700' },
   warehouse: { icon: 'warehouse', className: 'bg-amber-100 text-amber-700' },
   products: { icon: 'package', className: 'bg-lime-100 text-lime-700' },
+  production: { icon: 'cooking-pot', className: 'bg-rose-100 text-rose-700' },
   assembly: { icon: 'package-check', className: 'bg-orange-100 text-orange-700' },
   cron: { icon: 'clock', className: 'bg-default-100 text-default-600' },
   webhook: { icon: 'webhook', className: 'bg-default-100 text-default-600' },

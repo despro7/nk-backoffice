@@ -3,6 +3,7 @@ import type { DateValue } from "@internationalized/date";
 import { I18nProvider } from "@react-aria/i18n";
 import type { DateRange } from "@react-types/datepicker";
 import { DynamicIcon } from "lucide-react/dynamic";
+import { useRangeCalendarMonths } from "@/hooks/useTouchUi";
 
 /**
  * Дні між початком і кінцем діапазону. HeroUI фарбує їх `before:bg-primary-50`, а primary у проєкті сірий —
@@ -19,6 +20,7 @@ interface ReportDateRangeFilterProps {
   inputWrapperClassName?: string;
   maxValue?: DateValue;
   minValue?: DateValue;
+  ariaLabel?: string;
 }
 
 export default function ReportDateRangeFilter({
@@ -29,14 +31,17 @@ export default function ReportDateRangeFilter({
   inputWrapperClassName = "h-10",
   maxValue,
   minValue,
+  ariaLabel = "Або власний період",
 }: ReportDateRangeFilterProps) {
+  const visibleMonths = useRangeCalendarMonths();
   return (
     <div className={className ?? "w-fit shrink-0"}>
       <I18nProvider locale="uk-UA">
         <DateRangePicker
-          aria-label="Або власний період"
+          aria-label={ariaLabel}
           value={value}
           onChange={onChange}
+          visibleMonths={visibleMonths}
           maxValue={maxValue}
           minValue={minValue}
           size={size}

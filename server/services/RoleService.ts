@@ -58,11 +58,20 @@ interface RoleDb {
   };
 }
 
+/**
+ * Скільки живе кеш прав ролі. Права можуть змінитися поза цим процесом (інший інстанс сервера
+ * на тій самій БД, міграція, ручний SQL), тому кеш не вічний.
+ */
+export const ROLE_PERMISSIONS_CACHE_TTL_MS = 60_000;
+
 export class RoleService {
-  private cache = new Map<string, Set<string>>();
+  private cache = new Map<string, { keys: Set<string>; at: number }>();
   private seedPromise: Promise<void> | null = null;
 
-  constructor(private db: RoleDb = prisma as unknown as RoleDb) {}
+  constructor(
+    private db: RoleDb = prisma as unknown as RoleDb,
+    private now: () => number = Date.now,
+  ) {}
 
   invalidateCache(): void {
     this.cache.clear();
@@ -131,7 +140,7 @@ export class RoleService {
     if (slug === ROLES.ADMIN) return new Set(['*', ...ALL_PERMISSION_KEYS]);
 
     const cached = this.cache.get(slug);
-    if (cached) return cached;
+    if (cached && this.now() - cached.at < ROLE_PERMISSIONS_CACHE_TTL_MS) return cached.keys;
 
     const role = await this.db.role.findUnique({
       where: { slug },
@@ -142,7 +151,7 @@ export class RoleService {
       const key = normalizePermissionKey(row.permissionKey);
       if (key) set.add(key);
     }
-    this.cache.set(slug, set);
+    this.cache.set(slug, { keys: set, at: this.now() });
     return set;
   }
 

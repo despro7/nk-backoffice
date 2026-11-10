@@ -54,3 +54,8 @@ export function useTouchUi(): boolean {
 export function useIsMobile(): boolean {
   return useCompactViewport();
 }
+
+/** Скільки місяців показувати в календарі діапазону: два від `md`, один на телефоні. */
+export function useRangeCalendarMonths(): 1 | 2 {
+  return useViewportMinWidth(768) ? 2 : 1;
+}

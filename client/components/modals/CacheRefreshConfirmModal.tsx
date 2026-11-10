@@ -14,6 +14,7 @@ import { I18nProvider } from "@react-aria/i18n";
 import { addToast } from "@heroui/react";
 import type { DateRange } from "@react-types/datepicker";
 import { createStandardDatePresets } from "../../lib/dateReportingUtils";
+import { useRangeCalendarMonths } from "@/hooks/useTouchUi";
 
 // ─── Утиліти ────────────────────────────────────────────────────────────────
 
@@ -148,6 +149,7 @@ export function CachePeriodSelectModal({
   onCancel,
 }: CachePeriodSelectModalProps) {
   const datePresets = createStandardDatePresets();
+  const rangeMonths = useRangeCalendarMonths();
   const [range, setRange] = useState<DateRange | null>(null);
   const [presetKey, setPresetKey] = useState<string | null>(null);
 
@@ -206,6 +208,7 @@ export function CachePeriodSelectModal({
             <I18nProvider locale="uk-UA">
               <DateRangePicker
                 label="Або власний діапазон"
+                visibleMonths={rangeMonths}
                 value={range}
                 onChange={(val) => {
                   setRange(val);

@@ -29,6 +29,7 @@ import { normalizeQtyFormula } from '../../../shared/utils/catalogQtyFormula.js'
 import { catalogGoodAuditService } from './CatalogGoodAuditService.js';
 import { productsCatalogService } from './ProductsCatalogService.js';
 import type { NotificationDirectEventId } from '../../../shared/constants/notifications.js';
+import { sendDirectNotification, userIdsWithPermission } from '../Notifications/directNotify.js';
 
 export class CatalogSpecError extends Error {
   constructor(
@@ -52,7 +53,6 @@ type VersionRow = Prisma.CatalogSpecVersionGetPayload<object>;
 type InputComponents = NonNullable<CatalogUpdateGoodInput['components']>;
 
 const NOTIFY_CATEGORY = 'catalog_spec';
-const ADMIN_ROLE_SLUG = 'admin';
 
 function goodLink(goodId: string): string {
   return `/products#good=${encodeURIComponent(goodId)}`;
@@ -816,16 +816,7 @@ export class CatalogSpecService {
   // ─── сповіщення ───────────────────────────────────────────────────────────
 
   private async approverIds(): Promise<number[]> {
-    const roles = await prisma.rolePermission.findMany({
-      where: { permissionKey: PERMISSIONS.ACTION_PRODUCTS_APPROVE_SPEC },
-      select: { role: { select: { slug: true } } },
-    });
-    const slugs = [ADMIN_ROLE_SLUG, ...roles.map((r) => r.role.slug)];
-    const users = await prisma.user.findMany({
-      where: { role: { in: slugs }, isActive: true },
-      select: { id: true },
-    });
-    return users.map((u) => u.id);
+    return userIdsWithPermission(PERMISSIONS.ACTION_PRODUCTS_APPROVE_SPEC, { includeAdmin: true });
   }
 
   private async notifyApprovers(
@@ -860,22 +851,18 @@ export class CatalogSpecService {
     message: string;
     goodId: string;
   }): Promise<void> {
-    const recipients = [...new Set(input.recipients)].filter((id) => id !== input.actorId);
-    if (recipients.length === 0) return;
-    try {
-      await prisma.meta_logs.create({
-        data: {
-          category: NOTIFY_CATEGORY,
-          status: input.status,
-          title: input.title,
-          message: input.message.slice(0, 2000),
-          data: { recipients, event: input.event, goodId: input.goodId, link: goodLink(input.goodId) },
-          initiatedBy: input.actorId != null ? String(input.actorId) : 'system:catalog-spec',
-        },
-      });
-    } catch (error) {
-      logServer('[catalog-spec] notification failed', { goodId: input.goodId, error });
-    }
+    await sendDirectNotification({
+      category: NOTIFY_CATEGORY,
+      recipients: input.recipients,
+      event: input.event,
+      actorId: input.actorId,
+      status: input.status,
+      title: input.title,
+      message: input.message,
+      link: goodLink(input.goodId),
+      data: { goodId: input.goodId },
+      systemSource: 'system:catalog-spec',
+    });
   }
 }
 

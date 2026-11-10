@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-11-14 – Варки, фаза 3d: сповіщення, акт варки PDF, «Очікує моєї дії»
+
+**Files:** `shared/utils/productionBatchActions.ts` (+ spec), `shared/constants/{notifications,permissionRoleEditor}.ts` (+ spec), `shared/notifications/{defaultRules,feedPresentation}.ts`, `shared/types/{notifications,production}.ts`, `server/modules/Notifications/directNotify.ts`, `server/modules/Notifications/notificationFeed.spec.ts`, `server/modules/Production/{ProductionBatchService,TechCardService}.ts`, `server/modules/Products/CatalogSpecService.ts`, `server/services/RoleService.ts` (+ spec), `prisma/migrations/20261114120000_notification_production_events/`, `client/pages/Production/batchExport/{BatchActPdfDocument,BatchActButton}.tsx`, `client/pages/Production/batchExport/batchActPdfExport.ts`, `client/pages/Production/techCardExport/techCardPdfExport.ts`, `client/pages/Production/Batches/{index,BatchPage}.tsx`, `client/components/notifications/NotificationAvatar.tsx`, `client/hooks/useTouchUi.ts`, `client/pages/Reports/shared/filters/ReportDateRangeFilter.tsx`, `client/components/{SalesDriveOrdersTable,modals/CacheRefreshConfirmModal}.tsx`, `client/pages/Hr/HrPayrollPage.tsx`
+
+- **Наступна дія варки** (`productionBatchActions`): за станом – хто діє (право) і що зробити. Одне джерело для адресатів сповіщень, фільтра й колонки в списку.
+- **Сповіщення** (група «Виробництво», адресні події): варку створено → видача сировини; сировину видано → прийом на виробництво; підписано факт виходу → прийом на склад ГП; прийнято на ГП → автору «можна закривати»; техкарту подано на затвердження → тим, хто затверджує. Адресати – за правом кроку, без адміністратора (крім техкарт); автор дії собі не отримує. Міграція вмикає нові події всім ролям, крім admin. Спільна відправка – `directNotify.ts` (на неї переведено й специфікації).
+- **Акт варки PDF** («Акт PDF» у шапці варки, завантажити / друк, будь-який стан): план, нетто, втрати за типами, видано, залишки, витрачено, відхилення, етапи (план і факт), факт виходу, підписи; непідписані кроки – порожні рядки «ПІБ / Дата, час / Підпис» для паперу.
+- **Список варок:** перемикач «Очікує моєї дії» з лічильником, колонки «Наступний крок» і «Етапи» (`2 / 5`); плановий день – один діапазон замість двох полів; порожній результат за фільтром – «Нічого не знайдено».
+- **Права доступу:** у редакторі ролі зʼявилась вкладка «Виробництво» (сторінки варок і техкарт, дії варок) – раніше ці права не показувались.
+- **Календар діапазону дат** (усі `DateRangePicker`): два місяці поруч від ширини 768 px, на телефоні один.
+- **Кеш прав ролей** живе 60 с: зміни прав з іншого процесу на тій самій БД (локальний сервер, міграція, SQL) підхоплюються без перезапуску.
+
+**Документація:** `Docs/plans/production-techcards.md` – крок 3d; `Docs/features/notification-centre.md` – група «Виробництво», нові адресні події, `directNotify`.
+
+---
+
 ## 2026-11-14 – Варки, фаза 3c: факт виходу, прийом на склад ГП, закриття
 
 **Files:** `shared/utils/productionBatchOutput.ts` (+ spec), `shared/types/production.ts`, `server/modules/Production/ProductionBatchService.ts`, `server/routes/production.ts`, `client/pages/Production/useProductionBatches.ts`, `client/pages/Production/Batches/BatchPage.tsx`, `client/pages/Production/components/{BatchOutput,BatchStepPanels,BatchLinesTable}.tsx`

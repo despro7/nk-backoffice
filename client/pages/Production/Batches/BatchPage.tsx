@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils';
 import { BatchStagesGantt } from '../components/BatchStagesGantt';
 import { formatDateTime } from '../components/techCardUi';
 import { BatchDatePicker } from '../components/BatchDatePicker';
+import { BatchActButton } from '../batchExport/BatchActButton';
 
 function Section({ className, icon, title, aside, children }: { className?: string; icon: string; title: string; aside?: ReactNode; children: ReactNode }) {
   return (
@@ -452,6 +453,7 @@ export default function BatchPage() {
             </div>
           )}
         </div>
+        {data && <BatchActButton batch={data} />}
       </div>
 
       {loading && (

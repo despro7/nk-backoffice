@@ -15,6 +15,8 @@ describe('permissionRoleEditor', () => {
     expect(permissionDomainForGroup('pages.hr')).toBe('hr');
     expect(permissionDomainForGroup('actions.hr')).toBe('hr');
     expect(permissionDomainForGroup('actions.products')).toBe('products');
+    expect(permissionDomainForGroup('pages.production')).toBe('production');
+    expect(permissionDomainForGroup('actions.production')).toBe('production');
   });
 
   it('overrides products pages into products domain', () => {
