@@ -35,12 +35,13 @@ import {
   assertCatalogProductFieldPermissions,
   assertCatalogProductFieldPermissionsForUpdate,
 } from './catalogProductPermissions.js';
-import { CATALOG_TRASH_ID, type CatalogGoodUsedInScope } from '../../../shared/types/catalog.js';
+import { CATALOG_ACC_POLICY_KIT, CATALOG_TRASH_ID, type CatalogGoodUsedInScope } from '../../../shared/types/catalog.js';
 import {
   canViewCatalogItem,
   normalizeCatalogFolderId,
 } from '../../../shared/utils/catalogFolderAccess.js';
 import { DilovodService, dilovodService } from '../../services/dilovod/DilovodService.js';
+import { ProductBatchInputError, warehouseBatchesService } from '../Warehouse/WarehouseBatchesService.js';
 import type { DilovodSyncResult } from '../../services/dilovod/DilovodTypes.js';
 import {
   catalogMediaService,
@@ -237,6 +238,72 @@ router.get('/barcode/next', ...authOnly, async (req, res) => {
     res.json({ success: true, data: { code } });
   } catch (error) {
     handleError(res, error, 'GET /barcode/next');
+  }
+});
+
+/** Товар (не група, не комплект) з правом редагування його розділу; інакше відповідь уже надіслано. */
+async function loadBatchTargetGood(req: Parameters<typeof assertCanUseCatalogApi>[0], res: Response): Promise<string | null> {
+  const perms = await assertCanUseCatalogApi(req, res);
+  if (!perms) return null;
+  const goodId = String(req.params.id);
+  const good = await prisma.catalogGood.findUnique({
+    where: { id: goodId },
+    select: { id: true, isGroup: true, parentId: true, accPolicyId: true },
+  });
+  if (!good || good.isGroup) {
+    res.status(404).json({ success: false, error: 'Товар не знайдено' });
+    return null;
+  }
+  if (good.accPolicyId === CATALOG_ACC_POLICY_KIT) {
+    res.status(400).json({ success: false, error: 'Партії комплектів створюються при випуску наборів' });
+    return null;
+  }
+  const index = await loadCatalogAclIndex();
+  if (!assertFolderEdit(res, perms, good.parentId, index.parentById)) return null;
+  return good.id;
+}
+
+function handleBatchError(res: Response, error: unknown, context: string) {
+  if (error instanceof ProductBatchInputError) {
+    res.status(400).json({ success: false, error: error.message });
+    return;
+  }
+  handleError(res, error, context);
+}
+
+// GET /api/catalog/goods/:id/batches/preview?date=YYYY-MM-DD – назва нової партії і партії цього дня
+router.get('/goods/:id/batches/preview', ...authOnly, async (req, res) => {
+  try {
+    const goodId = await loadBatchTargetGood(req, res);
+    if (!goodId) return;
+    const data = await warehouseBatchesService.previewProductBatch({
+      goodId,
+      date: String(req.query.date ?? ''),
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    handleBatchError(res, error, 'GET /goods/:id/batches/preview');
+  }
+});
+
+// POST /api/catalog/goods/:id/batches – партія в Dilovod (YMMDD) + порційний ШК
+router.post('/goods/:id/batches', ...authOnly, async (req, res) => {
+  try {
+    const goodId = await loadBatchTargetGood(req, res);
+    if (!goodId) return;
+    const body = req.body || {};
+    const data = await warehouseBatchesService.createProductBatch({
+      goodId,
+      date: String(body.date ?? ''),
+      expiration: String(body.expiration ?? ''),
+      reuseBatchId: body.reuseBatchId ? String(body.reuseBatchId) : null,
+    });
+    logServer(
+      `[ProductsCatalog] product batch user=${catalogAuditUserId(req)} good=${goodId} batch=${data.batchNumber} created=${data.created} barcode=${data.barcode ?? '-'}`,
+    );
+    res.json({ success: true, data });
+  } catch (error) {
+    handleBatchError(res, error, 'POST /goods/:id/batches');
   }
 });
 

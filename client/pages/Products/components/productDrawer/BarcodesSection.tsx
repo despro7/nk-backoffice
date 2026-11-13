@@ -120,6 +120,8 @@ interface BarcodesSectionProps {
   onGenerateBarcode: (idx: number) => void;
   onOpenBatchPicker: (idx: number) => void;
   onRowDeleteConfirm: (next: { kind: RowDeleteKind; idx: number } | null) => void;
+  /** Створити партію в Dilovod з ШК (лише для збереженого товару, не комплекту) */
+  onCreateBatch?: () => void;
   isReadOnly?: boolean;
 }
 
@@ -135,6 +137,7 @@ export function BarcodesSection({
   onGenerateBarcode,
   onOpenBatchPicker,
   onRowDeleteConfirm,
+  onCreateBatch,
   isReadOnly = false,
 }: BarcodesSectionProps) {
   const [listSortEnabled, setListSortEnabled] = useState(false);
@@ -344,6 +347,20 @@ export function BarcodesSection({
       >
         Додати ШК
       </Button>
+      {onCreateBatch && (
+        <Button
+          size="sm"
+          color="warning"
+          variant="flat"
+          aria-label="Створити партію"
+          className="ml-2"
+          startContent={<DynamicIcon name="package-plus" size={14} />}
+          isDisabled={isReadOnly || saving}
+          onPress={onCreateBatch}
+        >
+          Створити партію
+        </Button>
+      )}
     </section>
   );
 }

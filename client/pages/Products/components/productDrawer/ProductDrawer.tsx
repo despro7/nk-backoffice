@@ -138,12 +138,15 @@ import {
   parseSpecQtyInput,
   resolveObjectKind,
   snapshotState,
+  appendBarcodeToDrawerBaseline,
   snapshotStorefrontFields,
   sortDictByName,
 } from './productDrawerUtils';
 import { prepareStorefrontDescriptionDocForForm } from '@shared/utils/storefrontDescription';
 import { formatStockQty, isInFinishedProductsBranch, resolveUnitName } from '../../ProductsUtils';
 import { BarcodesSection } from './BarcodesSection';
+import { CreateProductBatchModal } from './CreateProductBatchModal';
+import type { ProductBatchCreateResult } from '@shared/types/productBatch';
 import { BomSection, newBomRowFromSearch } from './BomSection';
 import { PricesSection } from './PricesSection';
 import { RequisitesSection } from './RequisitesSection';
@@ -299,6 +302,7 @@ export function ProductDrawer({
   >(null);
   /** Індекс рядка ШК, для якого відкрито picker партій */
   const [batchPickerIdx, setBatchPickerIdx] = useState<number | null>(null);
+  const [createBatchOpen, setCreateBatchOpen] = useState(false);
   const batchInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<DrawerForm>(emptyForm);
   /** Батьківська група при створенні (впливає на parentId і SKU) */
@@ -1489,6 +1493,45 @@ export function ProductDrawer({
     void fetchBatches(sku, undefined, undefined, false, undefined, { includeSmallStorage: true });
   };
 
+  const handleProductBatchCreated = (result: ProductBatchCreateResult) => {
+    const barcode = result.barcode?.trim() || '';
+    const row: BarcodeRow = {
+      code: barcode,
+      activity: true,
+      goodPart: result.batchId,
+      goodPartName: result.batchNumber,
+      barcodeKind: 'portion',
+      isNew: !barcode,
+    };
+    const alreadyShown =
+      Boolean(barcode) &&
+      barcodesRef.current.some((b) => b.code === barcode && b.goodPart === result.batchId);
+    if (!alreadyShown) {
+      setBarcodes((prev) => [...prev, row]);
+      if (barcode) {
+        // ШК уже записаний у Dilovod і локально: рядок не робить картку «зміненою»
+        baselineRef.current = appendBarcodeToDrawerBaseline(baselineRef.current, row);
+        setBaselineVersion((v) => v + 1);
+      }
+    }
+
+    if (result.barcodeError) {
+      ToastService.show({
+        title: `Партію ${result.batchNumber} створено без ШК`,
+        description: `${result.barcodeError}. Згенеруйте ШК у новому рядку і збережіть товар.`,
+        color: 'warning',
+      });
+      return;
+    }
+    ToastService.show({
+      title: result.created ? `Партію ${result.batchNumber} створено` : `Партія ${result.batchNumber}`,
+      description: result.barcodeCreated
+        ? `ШК ${barcode} зареєстровано в Діловоді`
+        : `Партія вже має ШК ${barcode}`,
+      color: 'success',
+    });
+  };
+
   const handleBatchSelect = (batch: BatchNumber) => {
     if (batchPickerIdx == null) return;
     const idx = batchPickerIdx;
@@ -1938,6 +1981,11 @@ export function ProductDrawer({
                           onGenerateBarcode={handleGenerateBarcode}
                           onOpenBatchPicker={openBatchPicker}
                           onRowDeleteConfirm={setRowDeleteConfirm}
+                          onCreateBatch={
+                            isEdit && detail?.id && !isKit && !isFolder
+                              ? () => setCreateBatchOpen(true)
+                              : undefined
+                          }
                           isReadOnly={readOnly}
                         />
                         {isEdit && detail?.id && isOther && (
@@ -2471,6 +2519,17 @@ export function ProductDrawer({
         }}
         onCancel={() => setGenerateReplace(null)}
       />
+      {isEdit && detail?.id && (
+        <CreateProductBatchModal
+          isOpen={createBatchOpen}
+          goodId={detail.id}
+          productName={form.name.trim() || detail.name || null}
+          defaultDateKind={isGood && components.length > 0 ? 'production' : 'receipt'}
+          overlayZClassName={overlayZ}
+          onClose={() => setCreateBatchOpen(false)}
+          onCreated={handleProductBatchCreated}
+        />
+      )}
       <BatchNumbersAutocomplete
         batches={batches}
         isOpen={batchPickerIdx != null}

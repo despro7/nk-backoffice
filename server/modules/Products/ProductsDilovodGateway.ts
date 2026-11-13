@@ -5,7 +5,7 @@
 import { DilovodApiClient } from '../../services/dilovod/DilovodApiClient.js';
 import { dilovodCacheService, type CacheType } from '../../services/dilovod/DilovodCacheService.js';
 import { translateDilovodError } from '../../services/dilovod/DilovodUtils.js';
-import { logServer } from '../../lib/utils.js';
+import { logServer, prisma } from '../../lib/utils.js';
 import {
   CATALOG_DEFAULT_MAIN_UNIT_ID,
   DilovodCatalogGoodRow,
@@ -18,7 +18,7 @@ import {
   toNumberOrNull,
 } from './ProductsTypes.js';
 import { allocateNextSku, isSkuDuplicateError } from './skuUtils.js';
-import { allocateNextEan13 } from './barcodeUtils.js';
+import { allocateNextEan13, EAN13_SERIES_PREFIX } from './barcodeUtils.js';
 import { sanitizeStoredBatchName } from '../../../shared/utils/dilovodBatchId.js';
 
 /** Поля списку catalogs.goods (у т.ч. specQty = «Розрахунок на»). */
@@ -279,8 +279,29 @@ export class ProductsDilovodGateway {
    * Наступний вільний EAN-13: max серед існуючих у Dilovod → body+1 + check digit.
    */
   async allocateNextBarcode(): Promise<string> {
-    const codes = await this.fetchAllBarcodeCodes();
-    return allocateNextEan13(codes, (code) => this.isBarcodeTaken(code));
+    const [dilovodCodes, localRows] = await Promise.all([
+      this.fetchAllBarcodeCodes(),
+      prisma.catalogGoodBarcode.findMany({
+        where: { code: { startsWith: EAN13_SERIES_PREFIX } },
+        select: { code: true },
+      }),
+    ]);
+    // Локальна таблиця теж джерело зайнятості: код міг бути вже записаний у backoffice,
+    // а в регістрі Dilovod ще відсутній або деактивований.
+    const codes = [...dilovodCodes, ...localRows.map((row) => row.code)];
+    return allocateNextEan13(codes, (code) => this.isBarcodeTakenAnywhere(code));
+  }
+
+  /** Код зайнятий, якщо він є в catalog_good_barcodes (будь-яка партія / статус) або активний у Dilovod. */
+  async isBarcodeTakenAnywhere(code: string): Promise<boolean> {
+    const trimmed = String(code || '').trim();
+    if (!trimmed) return false;
+    const local = await prisma.catalogGoodBarcode.findFirst({
+      where: { code: trimmed },
+      select: { id: true },
+    });
+    if (local) return true;
+    return this.isBarcodeTaken(trimmed);
   }
 
   /**

@@ -255,10 +255,10 @@ UI: кнопка `dices` у полі SKU → `GET /api/catalog/sku/next?parentId
 
 Алгоритм `GET /api/catalog/barcode/next`:
 
-1. `ProductsDilovodGateway.fetchAllBarcodeCodes` — пагінація `sliceLast` / `barCodes` (лише `activity !== "0"`).
+1. `ProductsDilovodGateway.fetchAllBarcodeCodes` – пагінація `sliceLast` / `barCodes` (лише `activity !== "0"`) + усі коди серії `22…` з локальної `catalog_good_barcodes`.
 2. `pickLatestEan13` — max серед кодів з префіксом **`22`** (зовнішні EAN на кшталт `482…` ігноруються).
 3. Body (12 цифр) + 1 → `ean13CheckDigit` → повний код.
-4. `isBarcodeTaken` + in-process mutex / retry (`barcodeUtils.allocateNextEan13`).
+4. `isBarcodeTakenAnywhere` (локальна таблиця, будь-яка партія / статус, + активний у Dilovod) + in-process mutex / retry (`barcodeUtils.allocateNextEan13`).
 5. Якщо серії `22…` ще немає — seed body `220000000000` → `2200000000002`.
 
 UI у `ProductDrawer` (секція «Штрихкоди»):
@@ -271,6 +271,18 @@ UI у `ProductDrawer` (секція «Штрихкоди»):
 - Окремого Input «Партія (ID)» немає; у **debug mode** (`useDebug`) ID показується маленьким бейджем у полі номера партії.
 - **Ручне сортування** рядків (як у «Цінах»): кнопка біля заголовка при ≥2 ШК, DnD `@hello-pangea/dnd` (`barcodesSectionSort.ts`); порядок зберігається при save картки (локальний snapshot `catalog_good_barcodes` за `id asc`). Рядки **`barcodeKind: box`** не перетягуються.
 - **`barcodeKind`:** `portion` — партійні ШК (Dilovod / sync ERP); **`box`** — локальний ШК коробки (`CatalogBoxBarcodeService`, не пишеться в Dilovod). У картці box read-only (без генерації EAN, без зміни партії); кнопка «Генерувати ШК» — лише для **нових** порційних рядків (`isNew`). Іконка коробки — `BarcodeKindIcon` лише для box; порційні без іконки. Detail API (`readGoodDetailFromLocal`) віддає `barcodeKind` у barcodes DTO.
+
+### Створення партії з картки
+
+Кнопка **«Створити партію»** у секції «Штрихкоди і партії» (збережений товар, не група і не комплект). Модалка `CreateProductBatchModal`:
+
+- **Походження:** «Власне виробництво» / «Зовнішній товар (надходження)» – змінює лише підпис дати («Дата виробництва» / «Дата надходження»). За замовчуванням «виробництво» для продукції зі специфікацією, інакше «надходження».
+- **Дата** (сьогодні за Києвом) і **термін придатності** (обовʼязковий, не раніше дати).
+- **Назва партії:** `YMMDD` без префіксів (`61113` = 13.11.2026), `shared/utils/productBatchName.ts`. Зайнятість перевіряється лише серед партій цього товару (той самий код на різних товарах – норма). Партія за цей день уже є – попередження з ТП і ШК кожної партії та обовʼязковий вибір: використати наявну (ШК реєструється, якщо його немає) або створити нову `YMMDD-N`.
+- **API:** `GET /api/catalog/goods/:id/batches/preview?date=YYYY-MM-DD`, `POST /api/catalog/goods/:id/batches` (`{ date, expiration, reuseBatchId? }`), право редагування розділу каталогу. Сервіс: `WarehouseBatchesService.previewProductBatch` / `createProductBatch`.
+- **Запис:** партія одразу створюється в Dilovod (`catalogs.goodParts`, `code` = назва, `date`, `expiration`), далі порційний ШК серії `22…` записується в регістр `barCodes` з `goodPart` і в `catalog_good_barcodes`. Виділення + запис ШК серіалізовані в процесі, перед записом – контрольна перевірка унікальності.
+- **Збій ШК:** партія вже в Dilovod, відповідь з `barcodeError`; у картку додається рядок з партією без коду (згенерувати ШК і зберегти товар).
+- Рядок з успішно зареєстрованим ШК додається в картку без позначки «змінено».
 
 ### Наліпки для друку
 

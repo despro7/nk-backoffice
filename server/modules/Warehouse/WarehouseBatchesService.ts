@@ -44,6 +44,16 @@ import {
   refineKitOutputBatchPlanForOccupiedCodes,
 } from '../../../shared/utils/kitBatchName.js';
 import { formatKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
+import {
+  formatProductBatchBaseName,
+  nextFreeProductBatchName,
+  productBatchSuffix,
+} from '../../../shared/utils/productBatchName.js';
+import type {
+  ProductBatchCreateResult,
+  ProductBatchPreview,
+  ProductBatchSameDayItem,
+} from '../../../shared/types/productBatch.js';
 import { productsDilovodGateway } from '../Products/ProductsDilovodGateway.js';
 import {
   warehouseStatementValueTypeIncludes,
@@ -287,6 +297,17 @@ export type KitOutputBatchResult = {
   expirationRequired?: boolean;
   dryRun?: boolean;
 };
+
+/** Помилка вхідних даних створення партії товару (HTTP 400). */
+export class ProductBatchInputError extends Error {}
+
+function productBatchDayOrThrow(value: unknown, what: string): string {
+  const day = String(value ?? '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(new Date(`${day}T00:00:00Z`).getTime())) {
+    throw new ProductBatchInputError(`Вкажіть ${what} у форматі YYYY-MM-DD`);
+  }
+  return day;
+}
 
 export class WarehouseBatchesService {
   private readonly api = new DilovodApiClient();
@@ -839,7 +860,26 @@ export class WarehouseBatchesService {
     };
   }
 
-  private async registerBatchBarcode(input: {
+  /**
+   * Серіалізує «виділити ШК → записати в Dilovod → записати локально» в межах процесу:
+   * інакше два паралельні запити могли б отримати той самий вільний код до запису першого.
+   */
+  private barcodeRegistrationQueue: Promise<unknown> = Promise.resolve();
+
+  private registerBatchBarcode(input: {
+    goodId: string;
+    batchId: string;
+    batchName: string;
+  }): Promise<string> {
+    const run = this.barcodeRegistrationQueue.then(
+      () => this.registerBatchBarcodeUnlocked(input),
+      () => this.registerBatchBarcodeUnlocked(input),
+    );
+    this.barcodeRegistrationQueue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async registerBatchBarcodeUnlocked(input: {
     goodId: string;
     batchId: string;
     batchName: string;
@@ -856,6 +896,10 @@ export class WarehouseBatchesService {
     if (current) return current;
 
     const code = await productsDilovodGateway.allocateNextBarcode();
+    // Контрольна перевірка безпосередньо перед записом (локальна таблиця + регістр Dilovod).
+    if (await productsDilovodGateway.isBarcodeTakenAnywhere(code)) {
+      throw new Error(`ШК ${code} уже зайнятий, повторіть спробу`);
+    }
     const registerId = await productsDilovodGateway.saveBarcode({
       goodId,
       code,
@@ -888,6 +932,103 @@ export class WarehouseBatchesService {
 
     clearWarehouseBatchesListCache();
     return code;
+  }
+
+  /**
+   * Партії товару за день (серія YMMDD / YMMDD-N без префіксів) і наступна вільна назва для цього товару.
+   */
+  async previewProductBatch(input: { goodId: string; date: string }): Promise<ProductBatchPreview> {
+    const goodId = String(input.goodId ?? '').trim();
+    if (!goodId) throw new ProductBatchInputError('goodId обовʼязковий');
+    const date = productBatchDayOrThrow(input.date, 'дату партії');
+    const baseName = formatProductBatchBaseName(date);
+    if (!baseName) throw new ProductBatchInputError('Некоректна дата партії');
+
+    const ownerParts = await this.fetchGoodPartsForOwner(goodId);
+    const sameDayParts = ownerParts
+      .filter((part) => productBatchSuffix(part.code, baseName) >= 0)
+      .sort((a, b) => productBatchSuffix(a.code, baseName) - productBatchSuffix(b.code, baseName));
+
+    // Той самий code на різних товарах – норма (усі страви дня мають партію YMMDD), Dilovod
+    // відхиляє лише дубль owner+code, тож зайнятість перевіряємо тільки серед партій цього товару.
+    const batchName = nextFreeProductBatchName(baseName, ownerParts.map((part) => part.code));
+
+    const barcodesByPart = await this.loadBarcodesByPart(sameDayParts.map((part) => part.id));
+    const sameDay: ProductBatchSameDayItem[] = sameDayParts.map((part) => ({
+      batchId: part.id,
+      batchNumber: part.code,
+      expiration: part.expiration,
+      barcodes: (barcodesByPart.get(part.id) ?? []).map((row) => row.code),
+    }));
+
+    return { date, baseName, batchName, sameDay };
+  }
+
+  /**
+   * Створює партію товару в Dilovod (YMMDD без префікса) і реєструє для неї порційний ШК.
+   * З `reuseBatchId` нову партію не створює: дореєстровує ШК для наявної партії цього дня, якщо його немає.
+   * Партія без ШК після збою реєстрації повертається з `barcodeError` (партія вже існує в Dilovod).
+   */
+  async createProductBatch(input: {
+    goodId: string;
+    date: string;
+    expiration: string;
+    reuseBatchId?: string | null;
+  }): Promise<ProductBatchCreateResult> {
+    const goodId = String(input.goodId ?? '').trim();
+    const date = productBatchDayOrThrow(input.date, 'дату партії');
+    const reuseBatchId = String(input.reuseBatchId ?? '').trim();
+
+    if (reuseBatchId) {
+      const preview = await this.previewProductBatch({ goodId, date });
+      const existing = preview.sameDay.find((item) => item.batchId === reuseBatchId);
+      if (!existing) {
+        throw new ProductBatchInputError('Обрана партія не належить товару або створена за інший день');
+      }
+      if (existing.barcodes.length > 0) {
+        return {
+          batchId: existing.batchId,
+          batchNumber: existing.batchNumber,
+          barcode: existing.barcodes[0],
+          created: false,
+          barcodeCreated: false,
+        };
+      }
+      return this.attachBarcodeToProductBatch(goodId, existing.batchId, existing.batchNumber, false);
+    }
+
+    const expiration = normalizeBatchExpiration(input.expiration);
+    if (!expiration) throw new ProductBatchInputError('Вкажіть термін придатності');
+    if (expiration < date) {
+      throw new ProductBatchInputError('Термін придатності не може бути раніше дати партії');
+    }
+
+    const preview = await this.previewProductBatch({ goodId, date });
+    const created = await this.createGoodPartBatch({
+      goodId,
+      batchName: preview.batchName,
+      productionDate: `${date} 00:00:00`,
+      expiration,
+    });
+    logServer(`[WarehouseBatches] product batch created good=${goodId} batch=${created.batchNumber} id=${created.batchId}`);
+
+    return this.attachBarcodeToProductBatch(goodId, created.batchId, created.batchNumber, true);
+  }
+
+  private async attachBarcodeToProductBatch(
+    goodId: string,
+    batchId: string,
+    batchNumber: string,
+    created: boolean,
+  ): Promise<ProductBatchCreateResult> {
+    try {
+      const barcode = await this.registerBatchBarcode({ goodId, batchId, batchName: batchNumber });
+      return { batchId, batchNumber, barcode, created, barcodeCreated: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logServer(`[WarehouseBatches] barcode for product batch ${batchNumber} (${batchId}) failed: ${message}`, error);
+      return { batchId, batchNumber, barcode: null, created, barcodeCreated: false, barcodeError: message };
+    }
   }
 
   /** Скидає in-memory кеш GET /warehouse/batches (TTL ~5 хв). */

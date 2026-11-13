@@ -18,6 +18,20 @@
 
 ---
 
+## 2026-11-13 – Картка товару: створення партії з ШК у Діловоді
+
+**Files:** `shared/utils/productBatchName.ts` (+ spec), `shared/types/productBatch.ts`, `server/modules/Warehouse/WarehouseBatchesService.ts`, `server/modules/Products/{ProductsController.ts,ProductsDilovodGateway.ts}`, `client/pages/Products/components/productDrawer/{CreateProductBatchModal.tsx,BarcodesSection.tsx,ProductDrawer.tsx,productDrawerUtils.ts}`
+
+- **Кнопка «Створити партію»** у секції «Штрихкоди і партії» (збережений товар, не комплект): модалка з походженням (власне виробництво / зовнішній товар – дата виробництва або надходження), датою та обовʼязковим терміном придатності.
+- **Назва партії** `YMMDD` без префіксів, при повторі для того самого товару – `YMMDD-N`. Якщо партія за цей день уже є, модалка попереджає (ТП, ШК) і просить обрати: використати наявну чи створити нову.
+- **Одразу в Діловод:** партія (`catalogs.goodParts`) + порційний ШК з привʼязкою до партії; рядок зʼявляється в картці без позначки «змінено». Якщо ШК не зареєструвався – партія лишається, показується попередження, у картку додається рядок без коду.
+- **Унікальність ШК:** виділення наступного EAN-13 (і для кнопки генерації в картці) тепер враховує всю локальну `catalog_good_barcodes`, а не лише активні коди регістру Dilovod; реєстрація ШК партії серіалізована з контрольною перевіркою перед записом.
+- API: `GET /api/catalog/goods/:id/batches/preview`, `POST /api/catalog/goods/:id/batches`.
+
+**Документація:** `Docs/features/products-catalog-2.0.md` – «Штрихкоди» (алгоритм унікальності), новий розділ «Створення партії з картки».
+
+---
+
 ## 2026-11-14 – Специфікація: редагування чернетки без окремого відкриття
 
 **Files:** `shared/types/production.ts`, `server/modules/Production/ProductionSettingsService.ts` (+ spec), `client/hooks/useProductionSettings.ts`, `client/pages/SettingsProduction.tsx`, `client/pages/Products/components/productDrawer/ProductDrawer.tsx`

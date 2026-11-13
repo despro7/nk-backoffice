@@ -141,6 +141,21 @@ export function snapshotState(
   return JSON.stringify(buildDrawerStateSnapshot(form, components, prices, barcodes, images, objectKind, parentId));
 }
 
+/**
+ * Додає рядок ШК у baseline drawer: рядок уже збережений на сервері (напр. ШК нової партії),
+ * тож не має підсвічувати картку як змінену.
+ */
+export function appendBarcodeToDrawerBaseline(baseline: string, row: BarcodeRow): string {
+  if (!baseline) return baseline;
+  try {
+    const parsed = JSON.parse(baseline) as DrawerStateSnapshot;
+    parsed.barcodes = [...(parsed.barcodes ?? []), row];
+    return JSON.stringify(parsed);
+  } catch {
+    return baseline;
+  }
+}
+
 export type DrawerDirtyFieldKey =
   | 'name'
   | 'sku'
