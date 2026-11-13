@@ -38,24 +38,26 @@ function formatKg(value: number): string {
   return value.toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/** Налаштування виробництва: типи втрат для розбивки в специфікації і формула брутто. */
+/** Налаштування виробництва: типи втрат для розбивки в специфікації, формула брутто, чернетки специфікацій. */
 export default function SettingsProduction() {
   const { settings, loading, error, save } = useProductionSettings();
   const [types, setTypes] = useState<EditableLossType[]>([]);
   const [formula, setFormula] = useState<CatalogLossFormula>(settings.lossFormula);
+  const [specDraftAutoEdit, setSpecDraftAutoEdit] = useState(settings.specDraftAutoEdit);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (loading) return;
     setTypes(toEditable(settings));
     setFormula(settings.lossFormula);
+    setSpecDraftAutoEdit(settings.specDraftAutoEdit);
   }, [loading, settings]);
 
   const isDirty = useMemo(() => {
     const saved = JSON.stringify(toEditable(settings).map(({ id, name, isActive }) => ({ id, name, isActive })));
     const current = JSON.stringify(types.map(({ id, name, isActive }) => ({ id, name: name.trim(), isActive })));
-    return saved !== current || formula !== settings.lossFormula;
-  }, [settings, types, formula]);
+    return saved !== current || formula !== settings.lossFormula || specDraftAutoEdit !== settings.specDraftAutoEdit;
+  }, [settings, types, formula, specDraftAutoEdit]);
 
   const example = useMemo(() => {
     const losses = [
@@ -82,6 +84,7 @@ export default function SettingsProduction() {
     try {
       const saved = await save({
         lossFormula: formula,
+        specDraftAutoEdit,
         lossTypes: types.map((t) => ({ id: t.id, name: t.name.trim(), isActive: t.isActive })),
       });
       setTypes(toEditable(saved));
@@ -233,6 +236,32 @@ export default function SettingsProduction() {
             Приклад: картопля 171,6 кг нетто, очистка 32% і розсип 12% дають{' '}
             <span className="font-medium text-default-700 tabular-nums">{formatKg(example)} кг</span> брутто.
           </p>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader className="border-b border-default-200 gap-2">
+          <DynamicIcon name="file-pen" size={18} className="text-default-500" />
+          <h2 className="text-lg font-semibold">Чернетки специфікацій</h2>
+        </CardHeader>
+        <CardBody className="p-4">
+          <div className="flex items-start gap-3">
+            <Switch
+              size="sm"
+              classNames={{ base: 'mt-0.5' }}
+              isSelected={specDraftAutoEdit}
+              onValueChange={setSpecDraftAutoEdit}
+              aria-label="Редагувати чернетку без окремого відкриття"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Редагувати чернетку без окремого відкриття</p>
+              <p className="text-xs text-default-500">
+                Якщо для товару є чернетка специфікації (на затвердженні або відхилена), картка товару одразу
+                показує її склад, і таблицю можна змінювати без кнопки «Редагувати» у віджеті модерації. Правки
+                зберігаються в ту саму чернетку. Діє для тих, хто має право редагувати специфікацію.
+              </p>
+            </div>
+          </div>
         </CardBody>
       </Card>
 

@@ -32,11 +32,18 @@ export interface ProductionLossType {
 export interface ProductionSettingsDto {
   lossTypes: ProductionLossType[];
   lossFormula: CatalogLossFormula;
+  /**
+   * Чернетка специфікації одразу відкрита в редакторі BOM картки товару
+   * (без кнопки «Редагувати» у віджеті модерації), для тих, хто має право редагувати специфікацію.
+   */
+  specDraftAutoEdit: boolean;
 }
 
 export interface ProductionSettingsInput {
   lossTypes: Array<{ id?: number | null; name: string; sortOrder?: number; isActive?: boolean }>;
   lossFormula: CatalogLossFormula;
+  /** Не передано – значення не змінюється. */
+  specDraftAutoEdit?: boolean;
 }
 
 /** Стартовий довідник, коли ключа в settings_base ще немає. */

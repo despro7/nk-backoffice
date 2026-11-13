@@ -1,7 +1,9 @@
 /**
  * Production settings in settings_base (category `production`):
  * - `production_loss_types` – JsonCollection of loss types for the BOM loss split;
- * - `production_loss_formula` – how several loss types add up to gross (additive | sequential).
+ * - `production_loss_formula` – how several loss types add up to gross (additive | sequential);
+ * - `production_spec_draft_auto_edit` – open a pending spec draft right in the product BOM editor
+ *   (no «Редагувати» click), JSON boolean, default false.
  *
  * Loss types are never deleted: old spec versions reference them by id, so a removed type
  * becomes inactive (kept for display, hidden from new rows).
@@ -20,6 +22,7 @@ import { isCatalogLossFormula, normalizeLossFormula } from '../../../shared/util
 
 const CATEGORY = 'production';
 const LOSS_FORMULA_KEY = 'production_loss_formula';
+const SPEC_DRAFT_AUTO_EDIT_KEY = 'production_spec_draft_auto_edit';
 const LOSS_TYPE_NAME_MAX = 60;
 
 export const lossTypeStore = new JsonCollection<ProductionLossType>(
@@ -31,6 +34,16 @@ export const lossTypeStore = new JsonCollection<ProductionLossType>(
 export class ProductionSettingsError extends Error {
   constructor(message: string, readonly status = 400) {
     super(message);
+  }
+}
+
+/** JSON boolean у settings_base; будь-що інше (немає ключа, зламаний JSON) – false. */
+export function parseJsonBoolean(raw: string | null | undefined): boolean {
+  if (!raw) return false;
+  try {
+    return JSON.parse(raw) === true;
+  } catch {
+    return false;
   }
 }
 
@@ -60,14 +73,26 @@ export class ProductionSettingsService {
     return normalizeLossFormula(row?.value);
   }
 
+  async getSpecDraftAutoEdit(): Promise<boolean> {
+    const row = await prisma.settingsBase.findUnique({ where: { key: SPEC_DRAFT_AUTO_EDIT_KEY }, select: { value: true } });
+    return parseJsonBoolean(row?.value);
+  }
+
   async getSettings(): Promise<ProductionSettingsDto> {
-    const [lossTypes, lossFormula] = await Promise.all([this.listLossTypes(), this.getLossFormula()]);
-    return { lossTypes, lossFormula };
+    const [lossTypes, lossFormula, specDraftAutoEdit] = await Promise.all([
+      this.listLossTypes(),
+      this.getLossFormula(),
+      this.getSpecDraftAutoEdit(),
+    ]);
+    return { lossTypes, lossFormula, specDraftAutoEdit };
   }
 
   async saveSettings(input: ProductionSettingsInput): Promise<ProductionSettingsDto> {
     if (!isCatalogLossFormula(input?.lossFormula)) {
       throw new ProductionSettingsError('Невідома формула втрат');
+    }
+    if (input.specDraftAutoEdit !== undefined && typeof input.specDraftAutoEdit !== 'boolean') {
+      throw new ProductionSettingsError('Некоректне значення налаштування чернетки специфікації');
     }
     const rows = Array.isArray(input.lossTypes) ? input.lossTypes : [];
     const names = new Set<string>();
@@ -114,6 +139,20 @@ export class ProductionSettingsService {
       },
       update: { value: input.lossFormula },
     });
+
+    if (input.specDraftAutoEdit !== undefined) {
+      const value = JSON.stringify(input.specDraftAutoEdit);
+      await prisma.settingsBase.upsert({
+        where: { key: SPEC_DRAFT_AUTO_EDIT_KEY },
+        create: {
+          key: SPEC_DRAFT_AUTO_EDIT_KEY,
+          value,
+          category: CATEGORY,
+          description: 'Виробництво: чернетка специфікації одразу відкрита в редакторі BOM картки товару',
+        },
+        update: { value },
+      });
+    }
 
     return this.getSettings();
   }

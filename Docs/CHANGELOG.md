@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-11-14 – Специфікація: редагування чернетки без окремого відкриття
+
+**Files:** `shared/types/production.ts`, `server/modules/Production/ProductionSettingsService.ts` (+ spec), `client/hooks/useProductionSettings.ts`, `client/pages/SettingsProduction.tsx`, `client/pages/Products/components/productDrawer/ProductDrawer.tsx`
+
+- **Налаштування** «Виробництво → Чернетки специфікацій → Редагувати чернетку без окремого відкриття»: ключ `production_spec_draft_auto_edit` у `settings_base` (JSON boolean, за замовчуванням вимкнено), поле `specDraftAutoEdit` у `GET/PUT /api/production/settings` (не передано – не змінюється).
+- **Увімкнено:** картка товару одразу показує чернетку специфікації (на затвердженні або відхилену) в BOM, таблицю можна змінювати без кнопки «Редагувати» у віджеті модерації; картка не вважається зміненою. Правки зберігаються в ту саму чернетку. Діє для права «Редагувати специфікацію». Чернетку видалено чи затверджено – у редакторі знову чинна специфікація.
+- **Вимкнено:** поведінка як раніше.
+
+**Документація:** `Docs/features/products-catalog-2.0.md` – «Модерація специфікації», абзац про налаштування.
+
+---
+
 ## 2026-11-14 – Варки, фаза 3d: сповіщення, акт варки PDF, «Очікує моєї дії»
 
 **Files:** `shared/utils/productionBatchActions.ts` (+ spec), `shared/constants/{notifications,permissionRoleEditor}.ts` (+ spec), `shared/notifications/{defaultRules,feedPresentation}.ts`, `shared/types/{notifications,production}.ts`, `server/modules/Notifications/directNotify.ts`, `server/modules/Notifications/notificationFeed.spec.ts`, `server/modules/Production/{ProductionBatchService,TechCardService}.ts`, `server/modules/Products/CatalogSpecService.ts`, `server/services/RoleService.ts` (+ spec), `prisma/migrations/20261114120000_notification_production_events/`, `client/pages/Production/batchExport/{BatchActPdfDocument,BatchActButton}.tsx`, `client/pages/Production/batchExport/batchActPdfExport.ts`, `client/pages/Production/techCardExport/techCardPdfExport.ts`, `client/pages/Production/Batches/{index,BatchPage}.tsx`, `client/components/notifications/NotificationAvatar.tsx`, `client/hooks/useTouchUi.ts`, `client/pages/Reports/shared/filters/ReportDateRangeFilter.tsx`, `client/components/{SalesDriveOrdersTable,modals/CacheRefreshConfirmModal}.tsx`, `client/pages/Hr/HrPayrollPage.tsx`

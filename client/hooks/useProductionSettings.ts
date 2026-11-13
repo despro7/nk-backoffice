@@ -9,7 +9,11 @@ import {
 
 export const PRODUCTION_SETTINGS_QUERY_KEY = ['production', 'settings'] as const;
 
-const FALLBACK: ProductionSettingsDto = { lossTypes: [], lossFormula: DEFAULT_CATALOG_LOSS_FORMULA };
+const FALLBACK: ProductionSettingsDto = {
+  lossTypes: [],
+  lossFormula: DEFAULT_CATALOG_LOSS_FORMULA,
+  specDraftAutoEdit: false,
+};
 
 interface ApiResponse<T> {
   success?: boolean;

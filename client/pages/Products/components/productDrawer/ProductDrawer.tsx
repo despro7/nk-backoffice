@@ -175,6 +175,28 @@ async function fetchCatalogGoodDetail(
   return json.data as CatalogGoodDetailDto;
 }
 
+function specDraftRows(draft: CatalogSpecDraftDto): BomRow[] {
+  return draft.components.map((c) => {
+    const nested = Number(c.componentNestedPortionCount);
+    return {
+      componentGoodId: c.componentGoodId,
+      componentName: c.componentName || c.componentGoodId,
+      componentSku: c.componentSku ?? null,
+      qty: c.qty,
+      unitId: c.unitId ?? '',
+      note: c.note || '',
+      componentWeight: c.componentWeight ?? null,
+      componentAccPolicyId: c.componentAccPolicyId ?? null,
+      componentNestedPortionCount: Number.isFinite(nested) && nested > 0 ? nested : 1,
+      componentCategoryName: c.componentCategoryName ?? null,
+      cookingLossPercent: c.cookingLossPercent ?? 0,
+      losses: c.losses ?? null,
+      rowKey: c.rowKey ?? null,
+      qtyFormula: c.qtyFormula ?? null,
+    };
+  });
+}
+
 function mergePulledPrices(
   current: PriceRow[],
   fresh: CatalogGoodDetailDto['prices'],
@@ -1212,27 +1234,7 @@ export function ProductDrawer({
   }, [specDraftSignature]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLoadSpecDraft = useCallback((draft: CatalogSpecDraftDto) => {
-    setComponents(
-      draft.components.map((c) => {
-        const nested = Number(c.componentNestedPortionCount);
-        return {
-          componentGoodId: c.componentGoodId,
-          componentName: c.componentName || c.componentGoodId,
-          componentSku: c.componentSku ?? null,
-          qty: c.qty,
-          unitId: c.unitId ?? '',
-          note: c.note || '',
-          componentWeight: c.componentWeight ?? null,
-          componentAccPolicyId: c.componentAccPolicyId ?? null,
-          componentNestedPortionCount: Number.isFinite(nested) && nested > 0 ? nested : 1,
-          componentCategoryName: c.componentCategoryName ?? null,
-          cookingLossPercent: c.cookingLossPercent ?? 0,
-          losses: c.losses ?? null,
-          rowKey: c.rowKey ?? null,
-          qtyFormula: c.qtyFormula ?? null,
-        };
-      }),
-    );
+    setComponents(specDraftRows(draft));
     if (draft.specQty != null) setForm((f) => ({ ...f, specQty: String(draft.specQty) }));
     setSpecDraftLoaded(true);
     setCardTab('main');
@@ -1245,6 +1247,34 @@ export function ProductDrawer({
       .then((fresh) => queryClient.setQueryData(['catalog', 'good', id], fresh))
       .catch(() => undefined);
   }, [detail?.id, queryClient]);
+
+  // Налаштування «Редагувати чернетку без окремого відкриття»: чернетка одразу в редакторі BOM
+  // і стає базою для isDirty (картка не вважається зміненою). Ключ – updatedAt чернетки:
+  // після збереження / відхилення підтягується свіжа версія, якщо користувач нічого не міняв.
+  const specDraftAutoKeyRef = useRef<string | null>(null);
+  const specDraftAutoEdit =
+    productionSettings.specDraftAutoEdit && canEditSpec && !readOnly && isEdit && !!detail && !detail.isGroup;
+  useEffect(() => {
+    if (!specDraftAutoEdit || !detail || !specState || specState.goodId !== detail.id || isDirty) return;
+    const draft = specState.draft;
+    if (!draft) {
+      // Чернетку видалено / затверджено, а в редакторі лишився її склад – повернути чинну специфікацію.
+      if (specDraftAutoKeyRef.current && specDraftLoaded) {
+        specDraftAutoKeyRef.current = null;
+        handleSpecApplied();
+      }
+      return;
+    }
+    const key = `${detail.id}:${draft.updatedAt}`;
+    if (specDraftLoaded && specDraftAutoKeyRef.current === key) return;
+    specDraftAutoKeyRef.current = key;
+    const nextComponents = specDraftRows(draft);
+    const nextForm = draft.specQty != null ? { ...form, specQty: String(draft.specQty) } : form;
+    setComponents(nextComponents);
+    setForm(nextForm);
+    setSpecDraftLoaded(true);
+    commitBaseline(nextForm, nextComponents, prices, barcodes, images, objectKind, drawerParentId);
+  }, [specDraftAutoEdit, detail, specState, isDirty, specDraftLoaded, form, prices, barcodes, images, objectKind, drawerParentId, commitBaseline, handleSpecApplied]);
 
   const handleSpecContentReviewed = useCallback(() => {
     if (!detail?.id) return;
