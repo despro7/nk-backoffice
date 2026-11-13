@@ -60,3 +60,53 @@ export async function sendDirectNotification(input: DirectNotification): Promise
     logServer('[notify] direct notification failed', { category: input.category, event: input.event, error });
   }
 }
+
+export interface DirectNotificationMatch {
+  category: string;
+  events: NotificationDirectEventId[];
+  /** Поля data, за якими шукаємо сповіщення об'єкта (goodId, batchId). */
+  match: Record<string, string | number>;
+  /** Старі записи без data.event – за точним заголовком. */
+  legacyTitles?: string[];
+}
+
+const DATA_KEY = /^[a-zA-Z][a-zA-Z0-9]*$/;
+
+/** SQL-умова й параметри для пошуку адресних сповіщень об'єкта (без hiddenBy). */
+export function directNotificationWhere(input: DirectNotificationMatch): { sql: string; params: Array<string | number> } {
+  const params: Array<string | number> = [input.category];
+  const eventSql = `JSON_UNQUOTE(JSON_EXTRACT(data, '$.event')) IN (${input.events.map(() => '?').join(',')})`;
+  params.push(...input.events);
+  let kindSql = eventSql;
+  if (input.legacyTitles?.length) {
+    kindSql = `(${eventSql} OR (JSON_EXTRACT(data, '$.event') IS NULL AND title IN (${input.legacyTitles.map(() => '?').join(',')})))`;
+    params.push(...input.legacyTitles);
+  }
+  const matchSql = Object.entries(input.match).map(([key, value]) => {
+    if (!DATA_KEY.test(key)) throw new Error(`Invalid data key: ${key}`);
+    params.push(String(value));
+    return `JSON_UNQUOTE(JSON_EXTRACT(data, '$.${key}')) = ?`;
+  });
+  if (matchSql.length === 0) throw new Error('Direct notification match is empty');
+  return { sql: ['category = ?', kindSql, ...matchSql].join(' AND '), params };
+}
+
+/**
+ * Хтось уже відреагував на задачу (затвердив, видав сировину…): її адресні сповіщення
+ * переходять в архів для всіх як «Вирішено» (hiddenBy._all). Помилка лише логуюється.
+ */
+export async function resolveDirectNotifications(input: DirectNotificationMatch): Promise<number> {
+  if (input.events.length === 0) return 0;
+  try {
+    const where = directNotificationWhere(input);
+    return await prisma.$executeRawUnsafe(
+      `UPDATE meta_logs SET hiddenBy = JSON_SET(COALESCE(hiddenBy, JSON_OBJECT()), '$._all', ?)
+       WHERE ${where.sql} AND (hiddenBy IS NULL OR JSON_EXTRACT(hiddenBy, '$._all') IS NULL)`,
+      new Date().toISOString(),
+      ...where.params,
+    );
+  } catch (error) {
+    logServer('[notify] resolve direct notifications failed', { category: input.category, events: input.events, error });
+    return 0;
+  }
+}

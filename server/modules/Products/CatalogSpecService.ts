@@ -29,7 +29,7 @@ import { normalizeQtyFormula } from '../../../shared/utils/catalogQtyFormula.js'
 import { catalogGoodAuditService } from './CatalogGoodAuditService.js';
 import { productsCatalogService } from './ProductsCatalogService.js';
 import type { NotificationDirectEventId } from '../../../shared/constants/notifications.js';
-import { sendDirectNotification, userIdsWithPermission } from '../Notifications/directNotify.js';
+import { resolveDirectNotifications, sendDirectNotification, userIdsWithPermission } from '../Notifications/directNotify.js';
 
 export class CatalogSpecError extends Error {
   constructor(
@@ -498,6 +498,8 @@ export class CatalogSpecService {
         ...(options.restoredFromVersion != null ? { restoredFromVersion: options.restoredFromVersion } : {}),
       },
     });
+    // Попереднє «чекає на затвердження» застаріло: лишаємо лише нове.
+    await this.closeReviewNotifications(goodId);
     await this.notifyApprovers(goodId, good.name, userId, text, Boolean(existing));
     return this.getState(goodId);
   }
@@ -509,6 +511,7 @@ export class CatalogSpecService {
       throw new CatalogSpecError('Видалити чернетку може її автор або той, хто затверджує', 403);
     }
     await prisma.catalogSpecDraft.delete({ where: { goodId } });
+    await this.closeReviewNotifications(goodId);
     await catalogGoodAuditService.logEvent({
       goodId,
       action: CATALOG_AUDIT_ACTIONS.SPEC_DRAFT_DISCARDED,
@@ -528,6 +531,7 @@ export class CatalogSpecService {
       where: { goodId },
       data: { status: 'rejected', reviewedById: userId, reviewedAt: new Date(), rejectReason: text },
     });
+    await this.closeReviewNotifications(goodId);
     await catalogGoodAuditService.logEvent({
       goodId,
       action: CATALOG_AUDIT_ACTIONS.SPEC_REJECTED,
@@ -572,6 +576,7 @@ export class CatalogSpecService {
       },
     });
     await prisma.catalogSpecDraft.delete({ where: { goodId } }).catch(() => undefined);
+    await this.closeReviewNotifications(goodId);
     const good = await prisma.catalogGood.findUnique({ where: { id: goodId }, select: { name: true } });
     await this.notify({
       recipients: draft.authorId != null ? [draft.authorId] : [],
@@ -754,6 +759,7 @@ export class CatalogSpecService {
         });
         if (draft) {
           await prisma.catalogSpecDraft.delete({ where: { goodId } }).catch(() => undefined);
+          await this.closeReviewNotifications(goodId);
           await this.notify({
             recipients: draft.authorId != null ? [draft.authorId] : [],
             actorId: actor.userId,
@@ -839,6 +845,16 @@ export class CatalogSpecService {
     } catch (error) {
       logServer('[catalog-spec] notify approvers failed', { goodId, error });
     }
+  }
+
+  /** Хтось відреагував на чернетку (або вона застаріла): «чекає на затвердження» – в архів для всіх. */
+  private closeReviewNotifications(goodId: string): Promise<number> {
+    return resolveDirectNotifications({
+      category: NOTIFY_CATEGORY,
+      events: ['specReview'],
+      match: { goodId },
+      legacyTitles: ['Специфікація чекає на затвердження', 'Оновлено чернетку специфікації'],
+    });
   }
 
   private async notify(input: {

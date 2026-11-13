@@ -8,7 +8,7 @@ import { Prisma, type ProductionBatch } from '@prisma/client';
 import { logServer, prisma } from '../../lib/utils.js';
 import { PERMISSIONS } from '../../../shared/constants/permissions.js';
 import type { NotificationDirectEventId } from '../../../shared/constants/notifications.js';
-import { sendDirectNotification, userIdsWithPermission } from '../Notifications/directNotify.js';
+import { resolveDirectNotifications, sendDirectNotification, userIdsWithPermission } from '../Notifications/directNotify.js';
 import {
   PRODUCTION_BATCH_STATUSES,
   type CatalogLossEntry,
@@ -63,6 +63,17 @@ const SIGNATURE_FLOW: Partial<Record<ProductionBatchSignatureStep, { status: Pro
   // Без жодного старту етапу – назад у «Прийнято» (див. revokeSignature)
   output: { status: 'output', back: 'cooking' },
   finished: { status: 'finished', back: 'output' },
+};
+
+/**
+ * Відкликання підпису: яке адресне сповіщення наступного кроку закрити
+ * і про який крок, що знову чекає виконавця, сповістити повторно.
+ */
+const REVOKE_NOTIFY: Partial<Record<ProductionBatchSignatureStep, { close?: BatchNotifyEvent; renotify?: BatchNotifyEvent }>> = {
+  issued: { close: 'batchAcceptProduction', renotify: 'batchIssue' },
+  accepted: { renotify: 'batchAcceptProduction' },
+  output: { close: 'batchAcceptFinished' },
+  finished: { renotify: 'batchAcceptFinished' },
 };
 
 /** Факт виходу вносять після прийому на виробництво (етапи – попередження, не блокування). */
@@ -499,6 +510,7 @@ class ProductionBatchService {
         data: { batchId: id, type: 'cancelled', userId, userName, payloadJson: { reason: text } },
       }),
     ]);
+    await this.closeStepNotifications(id, ['batchIssue', 'batchAcceptProduction', 'batchAcceptFinished']);
     return this.getDetail(id);
   }
 
@@ -583,6 +595,7 @@ class ProductionBatchService {
         data: { batchId: id, type: 'issued', userId: actor.userId, userName, payloadJson: { shortages } },
       });
     }, STEP_TX);
+    await this.closeStepNotifications(id, ['batchIssue']);
     const detail = await this.getDetail(id);
     await this.notifyStep(detail, 'batchAcceptProduction', actor.userId);
     return detail;
@@ -603,6 +616,7 @@ class ProductionBatchService {
         data: { batchId: id, type: 'accepted', userId: actor.userId, userName, payloadJson: text ? { comment: text } : Prisma.DbNull },
       }),
     ]);
+    await this.closeStepNotifications(id, ['batchAcceptProduction']);
     return this.getDetail(id);
   }
 
@@ -778,7 +792,12 @@ class ProductionBatchService {
         },
       }),
     ]);
-    return this.getDetail(id);
+    // Крок знову чекає виконавця: задача наступного кроку застаріла, поточний крок – нове сповіщення.
+    const revoke = REVOKE_NOTIFY[sig.step as ProductionBatchSignatureStep];
+    if (revoke?.close) await this.closeStepNotifications(id, [revoke.close]);
+    const detail = await this.getDetail(id);
+    if (revoke?.renotify) await this.notifyStep(detail, revoke.renotify, actor.userId);
+    return detail;
   }
 
   /** Факт із JSON варки; «Порцій у коробці» за замовчуванням – з техкарти. */
@@ -887,12 +906,18 @@ class ProductionBatchService {
         data: { batchId: id, type: 'finished', userId: actor.userId, userName, payloadJson: text ? { comment: text } : Prisma.DbNull },
       }),
     ]);
+    await this.closeStepNotifications(id, ['batchAcceptFinished']);
     const detail = await this.getDetail(id);
     await this.notifyStep(detail, 'batchClose', actor.userId);
     return detail;
   }
 
   // ─── сповіщення ───────────────────────────────────────────────────────────
+
+  /** Хтось виконав крок (або варку скасовано): адресні задачі кроку – в архів для всіх. */
+  private closeStepNotifications(id: number, events: BatchNotifyEvent[]): Promise<number> {
+    return resolveDirectNotifications({ category: 'production_batch', events, match: { batchId: id } });
+  }
 
   /** Адресне сповіщення тим, хто виконує наступний крок; помилка лише логуюється. */
   private async notifyStep(batch: ProductionBatchDetailDto, event: BatchNotifyEvent, actorId: number | null): Promise<void> {

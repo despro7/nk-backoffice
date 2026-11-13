@@ -39,7 +39,7 @@ import { productsCatalogService } from '../Products/ProductsCatalogService.js';
 import { productionSettingsService } from './ProductionSettingsService.js';
 import { productionBatchService } from './ProductionBatchService.js';
 import { PERMISSIONS } from '../../../shared/constants/permissions.js';
-import { sendDirectNotification, userIdsWithPermission } from '../Notifications/directNotify.js';
+import { resolveDirectNotifications, sendDirectNotification, userIdsWithPermission } from '../Notifications/directNotify.js';
 
 export class TechCardError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -269,6 +269,11 @@ class TechCardService {
     return prisma.techCardVersion.findFirst({ where: { goodId }, orderBy: { version: 'desc' } });
   }
 
+  /** Хтось відреагував на чернетку техкарти: «чекає на затвердження» – в архів для всіх. */
+  private closeReviewNotifications(goodId: string): Promise<number> {
+    return resolveDirectNotifications({ category: 'production_techcard', events: ['techCardReview'], match: { goodId } });
+  }
+
   /** Сповіщення тим, хто затверджує техкарти (право затверджувати специфікацію, як і для пари). */
   private async notifyApprovers(goodId: string, goodName: string, comment: string, actorId: number | null): Promise<void> {
     try {
@@ -336,6 +341,7 @@ class TechCardService {
     const draft = await prisma.techCardDraft.findUnique({ where: { goodId } });
     if (!draft) throw new TechCardError('Чернетку не знайдено', 404);
     await prisma.techCardDraft.delete({ where: { goodId } });
+    await this.closeReviewNotifications(goodId);
     await this.audit(goodId, 'draftDiscarded', userId);
     return this.getDetail(goodId);
   }
@@ -352,6 +358,8 @@ class TechCardService {
     });
     await this.audit(goodId, 'submitted', userId, { comment: text });
     const detail = await this.getDetail(goodId);
+    // Повторна подача: попереднє «чекає на затвердження» застаріло.
+    await this.closeReviewNotifications(goodId);
     await this.notifyApprovers(goodId, detail.good.name, text, userId);
     return detail;
   }
@@ -383,6 +391,7 @@ class TechCardService {
       approvedById: userId,
     });
     await prisma.techCardDraft.delete({ where: { goodId } }).catch(() => undefined);
+    await this.closeReviewNotifications(goodId);
     await this.audit(goodId, 'approved', userId, { version, specVersion, comment: draft.comment });
     return this.getDetail(goodId);
   }
@@ -427,6 +436,7 @@ class TechCardService {
       where: { goodId },
       data: { status: 'rejected', reviewedById: userId, reviewedAt: new Date(), rejectReason: text },
     });
+    await this.closeReviewNotifications(goodId);
     const specDraft = await prisma.catalogSpecDraft.findUnique({ where: { goodId }, select: { status: true } });
     if (specDraft?.status === 'pending') await catalogSpecService.reject(goodId, userId, text);
     await this.audit(goodId, 'rejected', userId, { reason: text });

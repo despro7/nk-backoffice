@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-11-13 – Центр сповіщень: адресні задачі закриваються для всіх після реакції
+
+**Files:** `server/modules/Notifications/directNotify.ts` (+ spec), `server/modules/Products/CatalogSpecService.ts`, `server/modules/Production/{TechCardService,ProductionBatchService}.ts`, `prisma/migrations/20261115120000_notification_resolve_stale_tasks`
+
+- **Задача вирішена одним – зникає в усіх:** «Специфікація / техкарта чекає на затвердження» і кроки варки (видача сировини, прийом на виробництво, прийом на склад ГП) переходять в архів для всіх адресатів як «Вирішено», щойно хтось затвердив, відхилив, видалив чернетку, виконав крок або скасував варку.
+- Оновлення чернетки / повторна подача лишає лише найновіше «чекає на затвердження».
+- Відкликання підпису варки закриває задачу наступного кроку і повторно сповіщає про крок, що знову чекає виконавця.
+- Міграція разово закриває вже застарілі задачі.
+
+**Документація:** `Docs/features/notification-centre.md` – «Закриття задач».
+
+---
+
 ## 2026-11-14 – Специфікація: редагування чернетки без окремого відкриття
 
 **Files:** `shared/types/production.ts`, `server/modules/Production/ProductionSettingsService.ts` (+ spec), `client/hooks/useProductionSettings.ts`, `client/pages/SettingsProduction.tsx`, `client/pages/Products/components/productDrawer/ProductDrawer.tsx`
