@@ -558,7 +558,8 @@ export function useProductsCatalog() {
     },
     detail: detailQuery.data || null,
     /** Спinner лише до першої відповіді; кешована картка відкривається одразу */
-    detailLoading: detailQuery.isPending && !detailQuery.data,
+    // isLoading = isPending && isFetching: вимкнений запит (режим створення) не вважається завантаженням
+    detailLoading: detailQuery.isLoading,
     openCreate,
     openEdit,
     closeDrawer,

@@ -17,6 +17,18 @@
 
 ---
 
+## 2026-11-13 – Картка товару: кнопки при створенні, стабільний редактор «Повного опису»
+
+**Files:** `client/pages/Products/useProductsCatalog.ts`, `client/pages/Products/components/productDrawer/{StorefrontDescriptionEditor.tsx,storefrontBlockDrag.lib.ts}` (+ spec)
+
+- **Новий обʼєкт:** у drawer знову видно заголовок і кнопки «Скасувати / Створити» (`detailLoading` = `isLoading`: вимкнений запит у режимі створення не вважається завантаженням).
+- **Вставка блоку** («Блок»): блок стає в позицію курсора, курсор переходить за нього; наступна вставка більше не замінює вміст. Прихований блок шаблону (`manualExclude`) переноситься до курсора, а не відкривається на старому місці.
+- **Перетягування блоків:** блок падає точно на позицію індикатора, сусідні блоки не зсуваються (подвійний зсув позиції, повторний перенос із cleanup NodeView); скасований drag нічого не переносить.
+
+**Документація:** –
+
+---
+
 ## 2026-11-14 – Варки, фаза 3d: сповіщення, акт варки PDF, «Очікує моєї дії»
 
 **Files:** `shared/utils/productionBatchActions.ts` (+ spec), `shared/constants/{notifications,permissionRoleEditor}.ts` (+ spec), `shared/notifications/{defaultRules,feedPresentation}.ts`, `shared/types/{notifications,production}.ts`, `server/modules/Notifications/directNotify.ts`, `server/modules/Notifications/notificationFeed.spec.ts`, `server/modules/Production/{ProductionBatchService,TechCardService}.ts`, `server/modules/Products/CatalogSpecService.ts`, `server/services/RoleService.ts` (+ spec), `prisma/migrations/20261114120000_notification_production_events/`, `client/pages/Production/batchExport/{BatchActPdfDocument,BatchActButton}.tsx`, `client/pages/Production/batchExport/batchActPdfExport.ts`, `client/pages/Production/techCardExport/techCardPdfExport.ts`, `client/pages/Production/Batches/{index,BatchPage}.tsx`, `client/components/notifications/NotificationAvatar.tsx`, `client/hooks/useTouchUi.ts`, `client/pages/Reports/shared/filters/ReportDateRangeFilter.tsx`, `client/components/{SalesDriveOrdersTable,modals/CacheRefreshConfirmModal}.tsx`, `client/pages/Hr/HrPayrollPage.tsx`

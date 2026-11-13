@@ -1,4 +1,5 @@
 import type { Editor as TipTapCoreEditor } from '@tiptap/core';
+import type { EditorState, Transaction } from '@tiptap/pm/state';
 import {
   applyTouchGestureClasses,
   capturePointer,
@@ -39,7 +40,7 @@ function collectTopLevelSlots(editor: TipTapCoreEditor): TopLevelSlot[] {
   return slots;
 }
 
-function resolveInsertPos(slots: TopLevelSlot[], clientY: number, excludePos: number): number | null {
+export function resolveInsertPos(slots: TopLevelSlot[], clientY: number, excludePos: number): number | null {
   if (slots.length === 0) return null;
 
   for (const slot of slots) {
@@ -55,20 +56,30 @@ function resolveInsertPos(slots: TopLevelSlot[], clientY: number, excludePos: nu
   return last.pos + last.nodeSize;
 }
 
-function moveTopLevelNode(editor: TipTapCoreEditor, fromPos: number, insertPos: number): void {
-  const { state, view } = editor;
+/**
+ * Переносить top-level вузол з `fromPos` на межу `insertPos` (обидві позиції в координатах
+ * поточного документа). Повертає null, якщо переносити нічого або позиція не змінюється.
+ */
+export function buildMoveTopLevelNodeTransaction(
+  state: EditorState,
+  fromPos: number,
+  insertPos: number,
+): Transaction | null {
   const node = state.doc.nodeAt(fromPos);
-  if (!node) return;
+  if (!node) return null;
 
   const nodeSize = node.nodeSize;
-  let targetPos = insertPos;
-  if (targetPos > fromPos) targetPos -= nodeSize;
-  if (targetPos === fromPos) return;
+  if (insertPos >= fromPos && insertPos <= fromPos + nodeSize) return null;
 
   const tr = state.tr.delete(fromPos, fromPos + nodeSize);
-  const mappedPos = tr.mapping.map(targetPos);
-  tr.insert(mappedPos, node);
-  view.dispatch(tr.scrollIntoView());
+  // mapping сам зсуває позицію після видаленого вузла, ручне віднімання nodeSize не потрібне
+  tr.insert(tr.mapping.map(insertPos), node);
+  return tr;
+}
+
+function moveTopLevelNode(editor: TipTapCoreEditor, fromPos: number, insertPos: number): void {
+  const tr = buildMoveTopLevelNodeTransaction(editor.state, fromPos, insertPos);
+  if (tr) editor.view.dispatch(tr.scrollIntoView());
 }
 
 export function attachStorefrontBlockLongPressDrag(opts: {
@@ -110,16 +121,16 @@ export function attachStorefrontBlockLongPressDrag(opts: {
     onDragStateChange?.(next);
   };
 
-  const finishDrag = () => {
+  const finishDrag = (commit = true) => {
+    // Знімаємо весь drag-стан ДО dispatch: перенос перемальовує/знищує NodeView,
+    // а його cleanup знову викликає finishDrag. З незнятим станом другий виклик
+    // повторював перенос із застарілою позицією і рухав сусідній блок.
+    const shouldMove = commit && dragging;
+    const fromPos = shouldMove ? getPos() : null;
+    const insertPos = dropInsertPos;
+
     releaseSelection?.();
     releaseSelection = null;
-
-    if (dragging) {
-      const fromPos = getPos();
-      if (fromPos != null && dropInsertPos != null) {
-        moveTopLevelNode(editor, fromPos, dropInsertPos);
-      }
-    }
 
     if (activePointerId != null) {
       releasePointer(handle, activePointerId);
@@ -131,6 +142,10 @@ export function attachStorefrontBlockLongPressDrag(opts: {
     removeDropIndicator();
     setDragging(false);
     shellRect = null;
+
+    if (shouldMove && fromPos != null && insertPos != null) {
+      moveTopLevelNode(editor, fromPos, insertPos);
+    }
   };
 
   const updateDropTarget = (clientY: number) => {
@@ -175,16 +190,20 @@ export function attachStorefrontBlockLongPressDrag(opts: {
     onPointerUp(event);
   };
 
+  const onWindowPointerCancel = (event: PointerEvent) => {
+    onPointerCancel(event);
+  };
+
   const attachWindowListeners = () => {
     window.addEventListener('pointermove', onWindowPointerMove);
     window.addEventListener('pointerup', onWindowPointerUp);
-    window.addEventListener('pointercancel', onWindowPointerUp);
+    window.addEventListener('pointercancel', onWindowPointerCancel);
   };
 
   const detachWindowListeners = () => {
     window.removeEventListener('pointermove', onWindowPointerMove);
     window.removeEventListener('pointerup', onWindowPointerUp);
-    window.removeEventListener('pointercancel', onWindowPointerUp);
+    window.removeEventListener('pointercancel', onWindowPointerCancel);
   };
 
   const startDrag = (pointerId: number) => {
@@ -239,7 +258,7 @@ export function attachStorefrontBlockLongPressDrag(opts: {
 
   const onPointerCancel = (event: PointerEvent) => {
     if (activePointerId != null && event.pointerId !== activePointerId) return;
-    finishDrag();
+    finishDrag(false);
   };
 
   const onContextMenu = (event: Event) => {
@@ -253,7 +272,7 @@ export function attachStorefrontBlockLongPressDrag(opts: {
   handle.addEventListener('contextmenu', onContextMenu);
 
   return () => {
-    finishDrag();
+    finishDrag(false);
     handle.removeEventListener('pointerdown', onPointerDown);
     handle.removeEventListener('pointermove', onPointerMove);
     handle.removeEventListener('pointerup', onPointerUp);

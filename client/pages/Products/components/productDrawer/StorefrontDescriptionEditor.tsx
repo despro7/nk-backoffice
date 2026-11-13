@@ -6,7 +6,8 @@ import {
   mergeAttributes,
 } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
-import { Plugin } from '@tiptap/pm/state';
+import { AllSelection, NodeSelection, Plugin, TextSelection } from '@tiptap/pm/state';
+import { GapCursor } from '@tiptap/pm/gapcursor';
 import Paragraph from '@tiptap/extension-paragraph';
 import { EditorContent, useEditor } from '@tiptap/react';
 import type { NodeViewRenderer } from '@tiptap/core';
@@ -112,7 +113,17 @@ function applyStorefrontBlockFromPreset(
 ): void {
   const manualInclude = Boolean(enabledBlockIds?.size && !enabledBlockIds.has(block.id));
   const attrs = createStorefrontBlockNodeAttrsFromPreset(block, { manualInclude });
-  const existingPos = findStorefrontBlockPos(editor, block.id);
+  let existingPos = findStorefrontBlockPos(editor, block.id);
+  const existingNode = existingPos != null ? editor.state.doc.nodeAt(existingPos) : null;
+
+  if (existingPos != null && existingNode?.attrs.manualExclude) {
+    // Прихований блок (видалений, але увімкнений у шаблоні) лежить на старому місці.
+    // Меню обіцяє вставку в позицію курсора: прибираємо його звідти й вставляємо як новий.
+    editor.view.dispatch(
+      editor.state.tr.delete(existingPos, existingPos + existingNode.nodeSize),
+    );
+    existingPos = null;
+  }
 
   if (existingPos != null) {
     const tr = editor.state.tr.setNodeMarkup(existingPos, undefined, {
@@ -128,7 +139,43 @@ function applyStorefrontBlockFromPreset(
     return;
   }
 
-  editor.chain().focus().insertContent({ type: 'storefrontBlock', attrs }).run();
+  const { selection } = editor.state;
+  if (selection instanceof AllSelection || selection instanceof NodeSelection) {
+    // Без текстового курсора (документ лише з блоків) insertContent замінив би виділене:
+    // вставляємо після виділеного вузла або в кінець документа.
+    const insertPos =
+      selection instanceof NodeSelection ? selection.to : editor.state.doc.content.size;
+    const node = editor.state.schema.nodes.storefrontBlock.create(attrs);
+    editor.view.dispatch(editor.state.tr.insert(insertPos, node));
+  } else {
+    editor.chain().focus().insertContent({ type: 'storefrontBlock', attrs }).run();
+  }
+
+  placeCursorAfterStorefrontBlock(editor, block.id);
+}
+
+/**
+ * Атомарний блок не має текстової позиції після себе (trailingNode вимкнено після storefrontBlock),
+ * тож ProseMirror ставить AllSelection, і наступна вставка замінює весь вміст.
+ * Ставимо gap cursor одразу після блоку або текстовий курсор у наступний абзац.
+ */
+function placeCursorAfterStorefrontBlock(editor: TipTapCoreEditor, blockId: string): void {
+  const pos = findStorefrontBlockPos(editor, blockId);
+  if (pos == null) return;
+  const node = editor.state.doc.nodeAt(pos);
+  if (!node) return;
+
+  const $after = editor.state.doc.resolve(pos + node.nodeSize);
+  const nextNode = $after.nodeAfter;
+  // Між двома атомарними блоками або в кінці документа текстової позиції немає: gap cursor.
+  const nextSelection =
+    !nextNode || nextNode.isAtom
+      ? new GapCursor($after)
+      : TextSelection.findFrom($after, 1, true);
+  if (!nextSelection) return;
+
+  editor.view.dispatch(editor.state.tr.setSelection(nextSelection).scrollIntoView());
+  editor.view.focus();
 }
 
 type StorefrontBlockDeleteRequest = {
