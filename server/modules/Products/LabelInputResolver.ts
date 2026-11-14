@@ -8,7 +8,7 @@ import {
   mergeLabelOverrides,
   type LabelInputSource,
 } from '../../../shared/utils/labelInputs.js';
-import { formatLabelExpiryDate } from '../../../shared/utils/productLabel.js';
+import { formatLabelExpiryDate, formatLabelExpiryFullDate } from '../../../shared/utils/productLabel.js';
 import {
   parseProductIngredientsJson,
   parseProductNutritionJson,
@@ -26,9 +26,18 @@ import { resolveStorefrontBlockOverridePlain } from '../../../shared/utils/label
 
 const dilovodApiClient = new DilovodApiClient();
 
-async function resolveExpiration(batchId: string, hint?: string | null): Promise<string> {
+async function resolveExpiration(
+  batchId: string,
+  hint?: string | null,
+): Promise<{ short: string; full: string }> {
   const trimmed = hint?.trim();
-  if (trimmed && !isMissingDilovodDate(trimmed)) return formatLabelExpiryDate(trimmed);
+  let short = '';
+  let full = '';
+  if (trimmed && !isMissingDilovodDate(trimmed)) {
+    short = formatLabelExpiryDate(trimmed);
+    full = formatLabelExpiryFullDate(trimmed);
+    if (full) return { short, full };
+  }
   try {
     const obj = await dilovodApiClient.getObject(batchId);
     const header =
@@ -36,12 +45,17 @@ async function resolveExpiration(batchId: string, hint?: string | null): Promise
         ? (obj.header as Record<string, unknown>)
         : undefined;
     const expiration = extractBatchExpirationFromGoodPartHeader(header);
-    if (expiration && !isMissingDilovodDate(expiration)) return formatLabelExpiryDate(expiration);
+    if (expiration && !isMissingDilovodDate(expiration)) {
+      return {
+        short: short || formatLabelExpiryDate(expiration),
+        full: formatLabelExpiryFullDate(expiration),
+      };
+    }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     logServer(`[LabelInput] expiration resolve failed for ${batchId}: ${msg}`);
   }
-  return '';
+  return { short, full };
 }
 
 export async function resolveLabelBaseInputs(input: {
@@ -109,7 +123,7 @@ export async function resolveLabelBaseInputs(input: {
       batchNumber: input.batchNumber,
     });
   }
-  const expiresAt = await resolveExpiration(input.batchId, input.expiration);
+  const expiry = await resolveExpiration(input.batchId, input.expiration);
   const source: LabelInputSource = {
     name: good.name,
     printName: good.printName,
@@ -119,7 +133,8 @@ export async function resolveLabelBaseInputs(input: {
     mainProductWeightKg: good.mainProductWeight,
     barcode,
     batchNumber: input.batchNumber,
-    expiresAt,
+    expiresAt: expiry.short,
+    expiresFull: expiry.full,
     portionsPerBox: good.packageRatio,
     storageText: storageFromDescription,
   };

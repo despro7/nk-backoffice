@@ -94,6 +94,7 @@
     "mysql2": "^3.14.3",
     "node-cron": "^4.2.1",
     "openai": "^7.38.0",
+    "pdfjs-dist": "^6.4.299",
     "photoswipe": "^5.4.4",
     "qrcode.react": "^4.2.0",
     "qz-tray": "^2.2.5",

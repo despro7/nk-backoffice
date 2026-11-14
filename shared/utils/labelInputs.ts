@@ -32,6 +32,8 @@ export interface LabelInputSource {
   barcode: string;
   batchNumber: string;
   expiresAt: string;
+  /** Повна дата DD.MM.YYYY (для плейсхолдера `{expires_full}`). */
+  expiresFull?: string;
   /** Порцій у коробці (`catalog_goods.packageRatio`). */
   portionsPerBox?: number | null;
   /** Умови зберігання з блоку опису вітрини (override), інакше статичний текст. */
@@ -93,6 +95,7 @@ export function buildLabelInputs(source: LabelInputSource): LabelInputMap {
       ? `${PORTION_LABEL_STATIC.batchLabel} ${source.batchNumber}`
       : '',
     expires_at: source.expiresAt ? `${PORTION_LABEL_STATIC.expiryLabel} ${source.expiresAt}` : '',
+    expires_full: source.expiresFull?.trim() ?? '',
     net_weight: formatNetWeightLabel(source.weightKg),
     net_weight_label: PORTION_LABEL_STATIC.netWeightLabel,
     main_product_weight: formatNetWeightLabel(source.mainProductWeightKg),

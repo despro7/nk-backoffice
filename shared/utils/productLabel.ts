@@ -38,6 +38,28 @@ export function formatLabelExpiryDate(raw?: string | null): string {
   return s;
 }
 
+/** Повна дата придатності для етикетки (DD.MM.YYYY); порожньо, якщо день невідомий. */
+export function formatLabelExpiryFullDate(raw?: string | null): string {
+  if (!raw?.trim() || isMissingDilovodDate(raw)) return '';
+  const s = raw.trim();
+
+  if (/^\d{2}\.\d{2}\.\d{4}$/.test(s)) return s;
+
+  const dashed = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (dashed) return `${dashed[3]}.${dashed[2]}.${dashed[1]}`;
+
+  if (/^\d{2}\.\d{4}$/.test(s)) return '';
+
+  const parsed = new Date(s);
+  if (!Number.isNaN(parsed.getTime())) {
+    const dd = String(parsed.getDate()).padStart(2, '0');
+    const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+    return `${dd}.${mm}.${parsed.getFullYear()}`;
+  }
+
+  return '';
+}
+
 /** Підставляє дату з партії, якщо в payload ще порожньо. */
 export function resolveLabelExpiryDate(
   expiresAt: string | null | undefined,

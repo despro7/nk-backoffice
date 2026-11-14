@@ -18,7 +18,7 @@ PDF-етикетки **100×100 мм** для партій готової про
 | Чернетка | **Одна активна** на `(goodId, labelKind)` — при збереженні інші партії видаляються; у БД ключ `(goodId, batchId, labelKind)`; `updatedBy` + `updatedAt`; спільна для всіх користувачів до генерації PDF |
 | Опубліковані PDF | Кожна генерація — `version`, файл у `uploads/catalog-labels/{goodId}/`, `publishedBy` |
 | Історія в UI | `GET …/labels/history` — чернетка + PDF; у Select **«Версії»** чернетка показується лише якщо зміст **не збігається** з останнім PDF або є **незбережені** локальні правки |
-| Превʼю | `LabelPdfmeViewer` (pdfme Form); підпис під превʼю (дата, автор, партія) |
+| Превʼю | `LabelPdfmeViewer` (pdfme Viewer, масштаб 125%): чернетка – рендер шаблону з `inputs`; опублікована версія – **збережений PDF**; підпис під превʼю (дата, автор, партія) |
 | PDF | `@pdfme/generator` + `labelPdfmeRuntime.ts`, шрифти Arial з assets Designer |
 | ШК порції | `catalog_good_barcodes` (`barcodeKind: portion`), привʼязка до `goodPart` (партія) |
 | ШК коробки | `barcodeKind: box`, один EAN-13 на пару good+batch (`CatalogBoxBarcodeService`), окрема серія `225…` (порції – `220…`); старі коди коробок `220…` перевидано 06.11.2026. Скан на моб. переміщенні → +1 «Коробок» |
@@ -107,6 +107,9 @@ PDF-етикетки **100×100 мм** для партій готової про
 
 Превʼю: `label/LabelPdfmeViewer.tsx` — шаблон з БД проходить `hydrateLabelTemplateContent`, потім `resolvePdfmeInputs` (див. **SVG і pdfme inputs** нижче).
 
+- **Опублікована версія** (обрано `vN`, не «Редагувати як чернетку»): `ProductLabelService.fetchPdfBase64` → PDF іде в Viewer як `basePdf` (без schemas), тобто превʼю = файл, що друкується, навіть якщо пресет змінили після генерації. Поки PDF вантажиться – спінер; помилка завантаження → фолбек на рендер з `payload.inputs` версії.
+- Контейнер `aspect-[5/5.6]`, панель масштабу pdfme притиснута до низу (`bottom-2!` поверх inline `bottom: 6%`), стартовий масштаб `zoomLevel: 1.25`.
+
 ---
 
 ## SVG і pdfme inputs
@@ -151,11 +154,14 @@ Legacy `@react-pdf/renderer` для наліпок **знято**; react-pdf л�
 
 `@pdfme/ui` тягне `@pdfme/converter` → `clawpdf` (pdfium, Node API) — без обхідного шляху production build падає з OOM. У Vite alias `@pdfme/converter` → `client/shims/pdfmeConverterBrowserStub.ts`. Перед Rollup `scripts/vite/pdfmeClientPrebundle.ts` збирає `@pdfme/ui` і `@pdfme/schemas` одним esbuild-бандлом (кеш `node_modules/.cache/pdfme-client-bundle`), щоб не парсити zod і не ловити жовті `INVALID_ANNOTATION`. `build:client` — heap 8 GB, без gzip-звіту. Імпорт стороннього PDF у Designer у браузері не підтримується.
 
+**Рендер PDF як `basePdf`** (превʼю опублікованої наліпки): shim без імпортів (потрапляє у prebundle `@pdfme/ui`), `pdf2img` / `pdf2size` делегують реалізації, зареєстрованій через `registerPdfmeConverter` (`globalThis`). Реалізація – `productDrawer/label/pdfjsPdfmeConverter.ts` на `pdfjs-dist` (lazy chunk + `pdf.worker.min.mjs?url`, один спільний `PDFWorker`). Без реєстрації shim поводиться як раніше (100×100 мм, без фону). Після зміни shim у dev потрібен перезапуск з переоптимізацією deps (prebundle кешує старий код).
+
 ---
 
 ## Склад і термін придатності
 
 - Термін: `formatLabelExpiryDate` → `MM.YYYY`; fallback з Dilovod `goodParts` / `getObject` (див. попередні нотатки в git-історії docs).
+- Повна дата: `formatLabelExpiryFullDate` → `DD.MM.YYYY`, input `expires_full`, MVT-змінна **`{expires_full}`** (напр. `Вжити до: {expires_full}`). `LabelInputResolver` бере її з підказки, якщо там є день, інакше з Dilovod `getObject`. Чернетки, збережені до появи ключа, мають порожнє значення до синхронізації з картки.
 - Поживна цінність: `shared/utils/labelInputs.ts`, `getLabelNutritionErrors`, auto energy (Atwater).
 
 ---

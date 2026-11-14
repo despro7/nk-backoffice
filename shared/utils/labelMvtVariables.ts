@@ -18,6 +18,7 @@ export const LABEL_MVT_DESIGNER_SAMPLE: Record<LabelMvtVariable, string> = {
   salt: '',
   batch: '61007',
   expires: '09.2027',
+  expires_full: '15.09.2027',
   ingredients:
     'картопля свіжа, м’ясо свинини, цибуля ріпчаста свіжа, олія соняшникова, морква свіжа, сіль кухонна харчова, перець чорний мелений, паприка мелена, кріп сушений, коріандр, чебрець, часникова есенція',
   net_weight: '380 г',
@@ -94,6 +95,7 @@ export function buildLabelMvtVariableMap(source: LabelInputSource): LabelMvtVari
     salt: nutrition?.salt?.trim() ?? '',
     batch: source.batchNumber.trim(),
     expires: source.expiresAt.trim(),
+    expires_full: source.expiresFull?.trim() ?? '',
     ingredients: ingredientsRaw.toLowerCase().startsWith('склад')
       ? stripLabelTextPrefix(ingredientsRaw, 'Склад:')
       : ingredientsRaw,
@@ -129,6 +131,7 @@ export function buildLabelMvtVariableMapFromInputs(
     salt: salt || stripLabelTextPrefix(inputs.nutrition_salt ?? '', 'Сіль').replace(/г$/i, '').trim(),
     batch: stripLabelTextPrefix(inputs.batch_number ?? '', PORTION_LABEL_STATIC.batchLabel),
     expires: stripLabelTextPrefix(inputs.expires_at ?? '', PORTION_LABEL_STATIC.expiryLabel),
+    expires_full: inputs.expires_full?.trim() ?? '',
     ingredients: stripLabelTextPrefix(inputs.ingredients ?? '', 'Склад:'),
     net_weight: inputs.net_weight?.trim() ?? '',
     net_weight_label: inputs.net_weight_label?.trim() ?? PORTION_LABEL_STATIC.netWeightLabel,

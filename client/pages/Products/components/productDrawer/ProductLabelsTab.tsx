@@ -396,6 +396,32 @@ export function ProductLabelsTab({
   }, [viewingVersion, draftPayload, publishedEntries]);
 
   const labelFieldsEditable = !readOnly && !viewingVersion;
+
+  /** Опублікована версія без правок: preview показує збережений PDF, а не рендер з JSON. */
+  const previewPdfLabelId = viewingVersion && selectedPublished ? selectedPublished.id : null;
+  const [previewPdf, setPreviewPdf] = useState<{
+    labelId: number;
+    base64: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (previewPdfLabelId == null) return;
+    let cancelled = false;
+    void ProductLabelService.fetchPdfBase64(detail.id, previewPdfLabelId)
+      .then((base64) => {
+        if (!cancelled) setPreviewPdf({ labelId: previewPdfLabelId, base64 });
+      })
+      .catch(() => {
+        // Фолбек: рендер з payload версії.
+        if (!cancelled) setPreviewPdf({ labelId: previewPdfLabelId, base64: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [detail.id, previewPdfLabelId]);
+
+  const previewPdfReady = previewPdfLabelId == null || previewPdf?.labelId === previewPdfLabelId;
+  const previewPdfBase64 = previewPdfReady && previewPdfLabelId != null ? previewPdf?.base64 ?? null : null;
   const [labelFieldsAccordionKeys, setLabelFieldsAccordionKeys] = useState<Set<string>>(
     () => new Set<string>(),
   );
@@ -842,7 +868,13 @@ export function ProductLabelsTab({
             </div>
           ) : selectedBatch ? (
             <div className="flex w-full flex-col items-center gap-2">
-              <LabelPdfmeViewer template={template} inputs={inputs} />
+              {previewPdfReady ? (
+                <LabelPdfmeViewer template={template} inputs={inputs} pdfBase64={previewPdfBase64} />
+              ) : (
+                <div className="flex aspect-[5/5.6] w-full max-w-[640px] items-center justify-center">
+                  <Spinner label="Завантаження PDF…" />
+                </div>
+              )}
               {selectedHistoryEntry ? (
                 <p className="text-center text-xs text-secondary">
                   {formatProductLabelHistoryCaption(selectedHistoryEntry)}

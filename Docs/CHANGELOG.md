@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-11-14 – Наліпки: превʼю збереженого PDF і плейсхолдер `{expires_full}`
+
+**Files:** `client/pages/Products/components/productDrawer/{ProductLabelsTab.tsx,label/LabelPdfmeViewer.tsx,label/pdfjsPdfmeConverter.ts}`, `client/shims/pdfmeConverterBrowserStub.ts`, `package.json` (`pdfjs-dist`), `shared/constants/{labelInputKeys,labelMvtVariables}.ts`, `shared/utils/{labelInputs,labelMvtVariables,productLabel}.ts`, `server/modules/Products/LabelInputResolver.ts`
+
+- **Превʼю опублікованої версії** у вкладці «Наліпки» показує збережений PDF, а не повторний рендер шаблону з JSON (раніше превʼю могло розходитися з файлом після зміни пресету). Чернетка, як і раніше, рендериться з `inputs`.
+- PDF малює pdfme Viewer через `pdfjs-dist`: shim `@pdfme/converter` делегує `pdf2img` / `pdf2size` зареєстрованій реалізації (lazy chunk, один worker).
+- Превʼю вище (`5/5.6`), панель масштабу не перекриває наліпку, стартовий масштаб 125%.
+- **Плейсхолдер `{expires_full}`** у шаблонах наліпок – повна дата «Вжити до» (`DD.MM.YYYY`), поряд з наявним `{expires}` (`MM.YYYY`).
+
+**Документація:** `Docs/features/product-labels.md` – «Огляд», «UI – картка товару», «Client build (Vite)», «Склад і термін придатності».
+
+---
+
 ## 2026-11-13 – Центр сповіщень: адресні задачі закриваються для всіх після реакції
 
 **Files:** `server/modules/Notifications/directNotify.ts` (+ spec), `server/modules/Products/CatalogSpecService.ts`, `server/modules/Production/{TechCardService,ProductionBatchService}.ts`, `prisma/migrations/20261115120000_notification_resolve_stale_tasks`
