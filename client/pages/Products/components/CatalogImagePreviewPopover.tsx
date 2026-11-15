@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@heroui/react';
+import type { PullImageMeta } from '@shared/utils/catalogImageCompare';
 import { catalogImageThumbUrl } from '@shared/utils/catalogImageThumbUrl';
 import {
   CatalogImageGalleryLightbox,
@@ -13,13 +14,21 @@ interface CatalogImagePreviewPopoverProps {
   label?: string;
   children: ReactNode;
   clickToOpen?: boolean;
+  /** Метадані (назва, розмір, формат) для caption у галереї; індекси відповідають `urls` */
+  images?: PullImageMeta[];
 }
 
-function buildGalleryImages(urls: string[]): CatalogGalleryImage[] {
-  return urls.filter(Boolean).map((src) => ({
-    src,
-    thumbSrc: catalogImageThumbUrl(src),
-  }));
+function buildGalleryImages(urls: string[], images?: PullImageMeta[]): CatalogGalleryImage[] {
+  return urls.filter(Boolean).map((src, i) => {
+    const meta = images?.find((m) => m.url === src) ?? images?.[i];
+    return {
+      src,
+      thumbSrc: catalogImageThumbUrl(src),
+      alt: meta?.name,
+      sizeBytes: meta?.sizeBytes ?? null,
+      ext: meta?.ext,
+    };
+  });
 }
 
 export function CatalogImagePreviewPopover({
@@ -27,11 +36,12 @@ export function CatalogImagePreviewPopover({
   label,
   children,
   clickToOpen = true,
+  images,
 }: CatalogImagePreviewPopoverProps) {
   const [open, setOpen] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
   const allUrls = useMemo(() => urls.filter(Boolean), [urls]);
-  const galleryImages = useMemo(() => buildGalleryImages(allUrls), [allUrls]);
+  const galleryImages = useMemo(() => buildGalleryImages(allUrls, images), [allUrls, images]);
 
   if (allUrls.length === 0) {
     return <>{children}</>;

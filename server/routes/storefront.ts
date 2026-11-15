@@ -6,6 +6,10 @@ import { storefrontDescriptionBuilder } from '../modules/Storefront/StorefrontDe
 import { wooCommerceSyncService } from '../modules/Storefront/WooCommerceSyncService.js';
 import { CATALOG_AUDIT_ACTIONS } from '../../shared/types/catalogAudit.js';
 import { trackCatalogAction } from '../modules/Products/catalogAuditHttp.js';
+import {
+  readCatalogImageSettings,
+  writeCatalogImageSettings,
+} from '../modules/Products/CatalogImageOptimizer.js';
 import { wooCommerceMediaService } from '../modules/Storefront/WooCommerceMediaService.js';
 import { wooCommerceStockService } from '../modules/Storefront/WooCommerceStockService.js';
 import type {
@@ -92,6 +96,22 @@ router.put('/settings', ...authOnly, storefrontManage, async (req, res) => {
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'updateSettings');
+  }
+});
+
+router.get('/media-settings', ...authOnly, storefrontRead, async (_req, res) => {
+  try {
+    res.json({ success: true, data: await readCatalogImageSettings() });
+  } catch (error) {
+    handleError(res, error, 'getMediaSettings');
+  }
+});
+
+router.put('/media-settings', ...authOnly, storefrontManage, async (req, res) => {
+  try {
+    res.json({ success: true, data: await writeCatalogImageSettings(req.body ?? {}) });
+  } catch (error) {
+    handleError(res, error, 'updateMediaSettings');
   }
 });
 

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import PhotoSwipeLightbox from 'photoswipe/lightbox';
 import type { DataSource } from 'photoswipe';
 import 'photoswipe/style.css';
+import { formatImageMetaLine } from './ImageMetaBadges';
+import { imageExtFromName, imageFileNameFromUrl } from '@shared/utils/catalogImageCompare';
 import { catalogImageThumbUrl } from '@shared/utils/catalogImageThumbUrl';
 import {
   markPhotoSwipeClosed,
@@ -12,6 +14,8 @@ export interface CatalogGalleryImage {
   src: string;
   thumbSrc?: string;
   alt?: string;
+  sizeBytes?: number | null;
+  ext?: string | null;
 }
 
 interface CatalogImageGalleryLightboxProps {
@@ -20,6 +24,17 @@ interface CatalogImageGalleryLightboxProps {
   onClose: () => void;
   /** Монтувати `.pswp` всередині drawer — менше «interact outside». */
   appendToRef?: RefObject<HTMLElement | null>;
+}
+
+/** Вага файлу через HEAD (best-effort; на чужому домені без CORS поверне null). */
+async function probeFileBytes(src: string): Promise<number | null> {
+  try {
+    const res = await fetch(src, { method: 'HEAD' });
+    const len = Number(res.headers.get('content-length'));
+    return res.ok && Number.isFinite(len) && len > 0 ? len : null;
+  } catch {
+    return null;
+  }
 }
 
 function probeImageSize(src: string): Promise<{ width: number; height: number }> {
@@ -58,13 +73,23 @@ export function CatalogImageGalleryLightbox({
     let cancelled = false;
     void Promise.all(
       images.map(async (img) => {
-        const { width, height } = await probeImageSize(img.src);
+        const [{ width, height }, sizeBytes] = await Promise.all([
+          probeImageSize(img.src),
+          img.sizeBytes != null ? Promise.resolve(img.sizeBytes) : probeFileBytes(img.src),
+        ]);
+        const fileName = imageFileNameFromUrl(img.src);
         return {
           src: img.src,
           msrc: img.thumbSrc ?? catalogImageThumbUrl(img.src),
           width,
           height,
-          alt: img.alt ?? '',
+          alt: img.alt || fileName,
+          metaLine: formatImageMetaLine({
+            width,
+            height,
+            sizeBytes,
+            ext: img.ext || imageExtFromName(fileName),
+          }),
         };
       }),
     ).then((items) => {
@@ -83,6 +108,36 @@ export function CatalogImageGalleryLightbox({
       showHideAnimationType: 'zoom',
       initialZoomLevel: 'fit',
       appendToEl: document.body,
+    });
+
+    lightbox.on('uiRegister', () => {
+      lightbox.pswp?.ui?.registerElement({
+        name: 'catalog-caption',
+        order: 9,
+        isButton: false,
+        appendTo: 'root',
+        onInit: (el, pswp) => {
+          el.className = 'pswp__catalog-caption';
+          const render = () => {
+            const data = pswp.currSlide?.data as { alt?: string; metaLine?: string } | undefined;
+            el.textContent = '';
+            if (data?.alt) {
+              const title = document.createElement('div');
+              title.className = 'pswp__catalog-caption-title';
+              title.textContent = data.alt;
+              el.appendChild(title);
+            }
+            if (data?.metaLine) {
+              const meta = document.createElement('div');
+              meta.className = 'pswp__catalog-caption-meta';
+              meta.textContent = data.metaLine;
+              el.appendChild(meta);
+            }
+          };
+          pswp.on('change', render);
+          render();
+        },
+      });
     });
 
     lightbox.on('openingAnimationStart', () => {

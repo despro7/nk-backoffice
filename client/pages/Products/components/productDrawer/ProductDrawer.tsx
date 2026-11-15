@@ -251,8 +251,7 @@ export function ProductDrawer({
   onUpdate,
   onRestore,
   catalogSearch,
-  onLegacyUpdate,
-  legacyUpdating,
+  onSyncFromDilovod,
   stackLevel = 0,
   stackGoodIds = [],
   readOnly = false,
@@ -2055,7 +2054,7 @@ export function ProductDrawer({
             <DrawerFooter className="-mx-3 md:-mx-6 px-3 md:px-6 md:py-5 mt-auto border-t border-default-200/60 bg-content2/75">
               {!readOnly && (isDebugMode ||
                 (isTrashed && detail && onRestore) ||
-                (isEdit && !isFolder && detail?.sku && onLegacyUpdate) ||
+                (isEdit && !isFolder && detail?.sku && onSyncFromDilovod) ||
                 (canPullStorefront && isEdit && !isFolder && detail?.sku) ||
                 (canPushStorefront && isEdit && !isFolder && detail?.sku) ||
                 (isAdmin && isEdit && detail) ||
@@ -2081,8 +2080,8 @@ export function ProductDrawer({
                           case 'restoreTrash':
                             if (detail && onRestore) onRestore(detail.id);
                             break;
-                          case 'legacyUpdate':
-                            if (detail && onLegacyUpdate) onLegacyUpdate(detail.id);
+                          case 'syncDilovod':
+                            if (detail && onSyncFromDilovod) onSyncFromDilovod(detail.id);
                             break;
                           case 'storefrontInspect':
                             void handleStorefrontInspect();
@@ -2121,22 +2120,16 @@ export function ProductDrawer({
                         Відновити зі смітника
                       </DropdownItem>
                       <DropdownItem
-                        key="legacyUpdate"
+                        key="syncDilovod"
                         className={
-                          isEdit && !isFolder && detail?.sku && onLegacyUpdate
-                            ? 'text-slate-600 data-[hover=true]:text-slate-700 data-[hover=true]:bg-slate-600/10'
+                          isEdit && !isFolder && detail?.sku && onSyncFromDilovod
+                            ? 'text-default-700 data-[hover=true]:bg-default-100'
                             : 'hidden'
                         }
-                        isDisabled={saving || legacyUpdating}
-                        startContent={
-                          <DynamicIcon
-                            name={legacyUpdating ? 'refresh-cw' : 'database'}
-                            size={16}
-                            className={`shrink-0 ${legacyUpdating ? 'animate-spin' : ''}`}
-                          />
-                        }
+                        isDisabled={saving}
+                        startContent={<DynamicIcon name="cloud-download" size={16} className="shrink-0" />}
                       >
-                        Оновити legacy cache
+                        Синхронізувати з Dilovod
                       </DropdownItem>
                       <DropdownItem
                         key="openStorefront"
@@ -2153,7 +2146,7 @@ export function ProductDrawer({
                         key="storefrontInspect"
                         className={
                           canPullStorefront && isEdit && !isFolder && detail?.sku
-                            ? 'text-blue-600 data-[hover=true]:text-blue-700 data-[hover=true]:bg-blue-600/10'
+                            ? 'text-default-700 data-[hover=true]:bg-default-100'
                             : 'hidden'
                         }
                         startContent={<DynamicIcon name="search" size={16} className="shrink-0" />}
@@ -2164,7 +2157,7 @@ export function ProductDrawer({
                         key="storefrontPull"
                         className={
                           canPullStorefront && isEdit && !isFolder && detail?.sku
-                            ? 'text-blue-600 data-[hover=true]:text-blue-700 data-[hover=true]:bg-blue-600/10'
+                            ? 'text-default-700 data-[hover=true]:bg-default-100'
                             : 'hidden'
                         }
                         startContent={<DynamicIcon name="cloud-download" size={16} className="shrink-0" />}
@@ -2319,8 +2312,7 @@ export function ProductDrawer({
           }}
           onRestore={onRestore}
           catalogSearch={catalogSearch}
-          onLegacyUpdate={onLegacyUpdate}
-          legacyUpdating={legacyUpdating}
+          onSyncFromDilovod={onSyncFromDilovod}
           stackLevel={stackLevel + 1}
           stackGoodIds={currentStackGoodIds}
           readOnly={readOnly}

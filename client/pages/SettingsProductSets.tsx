@@ -1,3 +1,9 @@
+/**
+ * TODO(deprecated): застарілий розділ «Набори товарів» (legacy-модель наборів).
+ * Актуальні картки товарів і комплекти керуються через `client/pages/Products/**`.
+ * Не розвивати, не брати за зразок для нових компонентів. Видалити разом з маршрутом
+ * `/settings/...` у `routes.config.tsx` після підтвердження, що нічого не залежить від нього.
+ */
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { DynamicIcon } from 'lucide-react/dynamic';

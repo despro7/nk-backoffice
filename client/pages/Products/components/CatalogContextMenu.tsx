@@ -26,7 +26,6 @@ interface CatalogContextMenuProps {
   onEdit?: (id: string) => void;
   onShowMovements?: (id: string) => void;
   onSyncFromDilovod: (ids: string[]) => void;
-  onLegacyUpdate: (ids: string[]) => void;
   onPushStorefront?: (ids: string[]) => void;
   canPushStorefront?: boolean;
   onPullStorefront?: (ids: string[]) => void;
@@ -53,7 +52,6 @@ export function CatalogContextMenu({
   onEdit,
   onShowMovements,
   onSyncFromDilovod,
-  onLegacyUpdate,
   onPushStorefront,
   canPushStorefront,
   onPullStorefront,
@@ -131,7 +129,6 @@ export function CatalogContextMenu({
         onEdit={onEdit}
         onShowMovements={onShowMovements}
         onSyncFromDilovod={onSyncFromDilovod}
-        onLegacyUpdate={onLegacyUpdate}
         onPushStorefront={onPushStorefront}
         canPushStorefront={canPushStorefront}
         onPullStorefront={onPullStorefront}

@@ -98,6 +98,7 @@
     "photoswipe": "^5.4.4",
     "qrcode.react": "^4.2.0",
     "qz-tray": "^2.2.5",
+    "sharp": "^0.35.5",
     "typograf": "^7.8.0",
     "xlsx": "^0.18.5"
   },

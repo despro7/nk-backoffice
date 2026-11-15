@@ -469,6 +469,7 @@ export function ProductContentTab({
         <ProductImageUpload
           goodId={isEdit ? detail?.id : null}
           stagingSessionId={!isEdit ? stagingSessionId : null}
+          productName={form.name}
           images={images}
           isDisabled={fieldsLocked}
           overlayZClassName={overlayZClassName}
@@ -477,7 +478,7 @@ export function ProductContentTab({
         />
       </div>
 
-      {isAdmin && (
+      {isAdmin && form.fullDescription?.replace(/<[^>]*>|&nbsp;/g, '').trim() && (
         <Accordion variant="light" className="mt-10">
           <AccordionItem
             key="legacy-full-description"

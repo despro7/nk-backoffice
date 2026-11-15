@@ -385,7 +385,7 @@ client/pages/Products/
     CatalogBreadcrumbs.tsx      # у пошуку: лише Каталог > Пошук
     CatalogToolbar.tsx          # пошук, «Додати обʼєкт», «Оновити залишки», «На затвердженні», «Журнал змін»
     CatalogActionsMenu.tsx      # «Дії»: Рухи товару, Синхронізувати гілку (+ TEMP Legacy), вибірковий Legacy, archive/trash
-    CatalogContextMenu.tsx      # Рухи товару, Legacy Update, fromTrash / fromArchive (і в пошуку)
+    CatalogContextMenu.tsx      # Рухи товару, fromTrash / fromArchive (і в пошуку)
     MoveToFolderModal.tsx
     ProductDrawer.tsx           # футер: Оновити Legacy; Tabs kind, BOM, UsedIn, техкарта, unitRatio Admin, Наліпки, …
     productDrawer/
@@ -455,7 +455,10 @@ client/pages/Products/
   - Toast після узгодження: окремі рядки для Dilovod pull, завантаження з WC, відправки на WC.
   - Семантичне порівняння `storefrontDescriptionDoc` (HTML/plain `_nk_storage`, coalesce override; diff блоків за **blockId** + маркетинг) — `storefrontDescription*.ts`, `storefrontDescriptionDocDiff.ts`; pull apply нормалізує doc (`normalizeStorefrontDescriptionDoc`).
   - Popover порівняння doc: `PullFieldStorefrontDocComparePopover` + `StorefrontDocJsonCompareView` (inline diff, спільний scroll).
-- **Зображення в картці:** `ProductImageUpload` — галерея **PhotoSwipe** (`CatalogImageGalleryLightbox`); під час lightbox drawer не закривається (`photoswipeOverlay.ts` + `isDismissable={false}` на HeroUI `Drawer`, не React Aria `shouldCloseOnInteractOutside`).
+- **Меню «Дії» картки:** Payload (debug), «Відновити зі смітника», «Синхронізувати з Dilovod» (`onSyncFromDilovod` → `requestSyncFromDilovod([id])`), «Відкрити товар на сайті», «Інспектувати на сайті», «Завантажити з сайту» (звичайний колір), «Синхронізувати з сайтом» (зелений).
+- **Склад (`ProductIngredientsTags`):** текст із комами при вставці / після коми розкладається на теги (`splitIngredientsInput`, коми в дужках не ділять). Вкладений склад – тег `назва (a, b, c)` у `productIngredientsJson` (`string[]`, без міграції; `parseIngredientGroup` / `buildIngredientGroupTag`): група з дочірніми тегами, клік редагує, ✕ видаляє, DnD лише в межах батька. DnD – `wrapSortingStrategy` + `DragOverlay`.
+- **Legacy fullDescription (admin)** – акордеон лише коли поле не порожнє (без урахування HTML-тегів).
+- **Зображення в картці:** `ProductImageUpload` — галерея **PhotoSwipe** (`CatalogImageGalleryLightbox`; caption: назва + `W × H px · вага · ФОРМАТ` на темній напівпрозорій підкладці); на мініатюрах при hover бейджі метаданих (`ImageMetaBadges`) і кнопки «автоназва» та «оптимізувати» (Tooltip `dark`); завантаження до 30 МБ з автостисненням, правила назв, оптимізація й дзеркалювання на прод – див. [`woocommerce-storefront-phase1.md`](./woocommerce-storefront-phase1.md#зображення-каталогу); під час lightbox drawer не закривається (`photoswipeOverlay.ts` + `isDismissable={false}` на HeroUI `Drawer`, не React Aria `shouldCloseOnInteractOutside`).
 - **Detail fetch:** `fetchCatalogGoodDetail(…, { livePull: false })` для швидкого відкриття drawer без блокуючого Dilovod live-pull.
 
 ### UI: CatalogTable (список)
@@ -601,8 +604,7 @@ client/pages/Products/
 
 | Що | Деталі |
 | --- | --- |
-| UI вибірково | Toolbar (обрані з SKU), context menu, кнопка **Оновити Legacy** у футері `ProductDrawer` |
-| Confirm | Список обраних з SKU; папки / без SKU пропускаються |
+| UI | **Прибрано з UI** (2026-11-16): пунктів «Оновити legacy cache» у картці, меню та контекстному меню більше немає. `legacySyncMutation` і `POST /api/products/sync-manual` лишились |
 | Клієнт | `legacySyncMutation` → `POST /api/products/sync-manual` з `{ skus, force: true }` |
 | Сервер (вибірково) | `partitionCatalogSkusByArchive` → архівні: `products.isOutdated = true`; активні: `dilovodService.syncProductsWithDilovod('manual', …, { force })` |
 | **TEMP гілка** | Після `refreshFolderFromDilovod` (`maxDepth`: 0 = поточна папка): SKU з `visitedFolderIds` → ті самі правила; відповідь: `legacySkuCount`, `legacyOutdatedCount`, `legacySync`, `maxDepth` |

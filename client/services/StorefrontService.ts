@@ -22,6 +22,7 @@ import type {
   WooPushPreviewResult,
   WooStockSyncResult,
 } from '@shared/types/storefront';
+import type { CatalogImageOptimizationSettings } from '@shared/types/catalogImageSettings';
 
 /** Fired after storefront preset/settings are saved in SettingsStorefront. */
 export const STOREFRONT_SETTINGS_UPDATED_EVENT = 'storefront-settings-updated';
@@ -81,6 +82,23 @@ export const storefrontApi = {
     sync?: Partial<StorefrontSyncSettingsDto>;
   }): Promise<StorefrontSettingsDto> {
     const res = await fetch('/api/storefront/settings', {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    return parseJson(res);
+  },
+
+  async getMediaSettings(): Promise<CatalogImageOptimizationSettings> {
+    const res = await fetch('/api/storefront/media-settings', { credentials: 'include' });
+    return parseJson(res);
+  },
+
+  async updateMediaSettings(
+    input: Partial<CatalogImageOptimizationSettings>,
+  ): Promise<CatalogImageOptimizationSettings> {
+    const res = await fetch('/api/storefront/media-settings', {
       method: 'PUT',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },

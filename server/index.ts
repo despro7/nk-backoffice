@@ -1,3 +1,4 @@
+import { resolveCatalogMediaPublicBaseUrl } from './modules/Storefront/catalogMediaPublicUrl.js';
 import './env.js';
 import express from "express";
 import cors from "cors";
@@ -143,6 +144,19 @@ export function createServer() {
     fallthrough: true,
     maxAge: '1d',
   }));
+  // Лише dev: файлів, яких немає локально (старі товари лежать на проді), редіректимо на прод-URL.
+  if (process.env.NODE_ENV !== 'production') {
+    app.use('/uploads/catalog', async (req, res, next) => {
+      try {
+        const base = await resolveCatalogMediaPublicBaseUrl();
+        const baseHost = new URL(base).host;
+        if (!baseHost || baseHost === req.headers.host) return next();
+        res.redirect(302, `${base}/uploads/catalog${req.url}`);
+      } catch {
+        next();
+      }
+    });
+  }
   
   // Глобальная диагностика всех PUT/POST запросов
   app.use((req, res, next) => {

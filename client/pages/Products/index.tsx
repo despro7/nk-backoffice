@@ -104,7 +104,6 @@ export default function ProductsPage() {
   const [syncReport, setSyncReport] = useState<CatalogSyncReport | null>(null);
   const syncStartedAtRef = useRef(0);
   const [syncConfirmIds, setSyncConfirmIds] = useState<string[] | null>(null);
-  const [legacyUpdateConfirmIds, setLegacyUpdateConfirmIds] = useState<string[] | null>(null);
   const [pushStorefrontConfirmIds, setPushStorefrontConfirmIds] = useState<string[] | null>(null);
   const [pushStorefrontLoading, setPushStorefrontLoading] = useState(false);
   const [pullStorefrontIds, setPullStorefrontIds] = useState<string[] | null>(null);
@@ -302,7 +301,6 @@ export default function ProductsPage() {
     catalog.duplicateMutation.isPending ||
     catalog.refreshBranchMutation.isPending ||
     catalog.syncSelectedMutation.isPending ||
-    catalog.legacySyncMutation.isPending ||
     catalog.stockSyncMutation.isPending ||
     catalog.refreshFullMutation.isPending ||
     stockStorefrontLoading;
@@ -392,36 +390,6 @@ export default function ProductsPage() {
       }),
     [syncConfirmIds, catalog.tableRows, catalog.treeItemsFull]
   );
-
-  const legacyUpdateLabels = useMemo(
-    () =>
-      resolveCatalogItemLabels(legacyUpdateConfirmIds || [], {
-        tableRows: [
-          ...catalog.tableRows,
-          ...(catalog.detail ? [catalog.detail] : []),
-        ],
-        treeItems: catalog.treeItemsFull,
-      }),
-    [
-      legacyUpdateConfirmIds,
-      catalog.tableRows,
-      catalog.detail,
-      catalog.treeItemsFull,
-    ]
-  );
-
-  const legacyUpdateSkus = useMemo(() => {
-    const skus: string[] = [];
-    const seen = new Set<string>();
-    for (const item of legacyUpdateLabels) {
-      if (item.isGroup) continue;
-      const sku = item.sku?.trim();
-      if (!sku || seen.has(sku)) continue;
-      seen.add(sku);
-      skus.push(sku);
-    }
-    return skus;
-  }, [legacyUpdateLabels]);
 
   const stockStorefrontConfirmLabels = useMemo(
     () =>
@@ -652,38 +620,6 @@ export default function ProductsPage() {
       setSyncConfirmIds(ids);
     },
     [catalog.setSelectedIds]
-  );
-
-  const requestLegacyUpdate = useCallback(
-    (ids: string[]) => {
-      if (ids.length === 0) return;
-      catalog.setSelectedIds(ids);
-      const labels = resolveCatalogItemLabels(ids, {
-        tableRows: [
-          ...catalog.tableRows,
-          ...(catalog.detail ? [catalog.detail] : []),
-        ],
-        treeItems: catalog.treeItemsFull,
-      });
-      const skus = labels
-        .filter((l) => !l.isGroup && l.sku?.trim())
-        .map((l) => l.sku!.trim());
-      if (skus.length === 0) {
-        ToastService.show({
-          title: 'Немає SKU для синхронізації товарів',
-          description: 'Оберіть товари з артикулом (папки та елементи без SKU пропускаються).',
-          color: 'warning',
-        });
-        return;
-      }
-      setLegacyUpdateConfirmIds(ids);
-    },
-    [
-      catalog.setSelectedIds,
-      catalog.tableRows,
-      catalog.detail,
-      catalog.treeItemsFull,
-    ]
   );
 
   const requestPushStorefront = useCallback(
@@ -946,7 +882,6 @@ export default function ProductsPage() {
             onEdit={catalog.openEdit}
             onShowMovements={showProductMovements}
             onSyncFromDilovod={requestSyncFromDilovod}
-            onLegacyUpdate={requestLegacyUpdate}
             onPushStorefront={requestPushStorefront}
             canPushStorefront={canPushStorefront}
             onPullStorefront={requestPullStorefront}
@@ -1132,7 +1067,6 @@ export default function ProductsPage() {
         onEdit={catalog.openEdit}
         onShowMovements={showProductMovements}
         onSyncFromDilovod={requestSyncFromDilovod}
-        onLegacyUpdate={requestLegacyUpdate}
         onPushStorefront={requestPushStorefront}
         canPushStorefront={canPushStorefront}
         onPullStorefront={requestPullStorefront}
@@ -1174,8 +1108,7 @@ export default function ProductsPage() {
         }
         onRestore={(id) => requestRestoreFromTrash(id)}
         catalogSearch={catalogSearch}
-        onLegacyUpdate={(id) => requestLegacyUpdate([id])}
-        legacyUpdating={catalog.legacySyncMutation.isPending}
+        onSyncFromDilovod={(id) => requestSyncFromDilovod([id])}
         readOnly={drawerReadOnly}
       />
 
@@ -1429,41 +1362,6 @@ export default function ProductsPage() {
           const ids = syncConfirmIds;
           setSyncConfirmIds(null);
           if (ids?.length) catalog.syncSelectedMutation.mutate(ids);
-        }}
-      />
-
-      <ConfirmModal
-        isOpen={Boolean(legacyUpdateConfirmIds?.length)}
-        title={`Синхронізувати ${legacyUpdateSkus.length} ${pluralize(legacyUpdateSkus.length, 'товар', 'товари', 'товарів')} в старій таблиці товарів?`}
-        message={
-          <div className="space-y-1">
-            <p>
-              Обрані товари буде синхронізовано в legacy таблицю{' '}
-              <b>products</b> через Dilovod (<code>sync-manual</code>,{' '}
-              <b>force</b>): set, ціни, штрихкод, hash, вага (з категорії) —
-              навіть якщо хеш не змінився.
-            </p>
-            <p className="text-default-500 text-sm">
-              SKU до оновлення: {legacyUpdateSkus.length}
-              {legacyUpdateLabels.length > legacyUpdateSkus.length
-                ? ` (пропущено ${legacyUpdateLabels.length - legacyUpdateSkus.length} без SKU / папок)`
-                : ''}
-              .
-            </p>
-            <CatalogConfirmItemsList
-              items={legacyUpdateLabels.filter((l) => !l.isGroup && l.sku?.trim())}
-            />
-          </div>
-        }
-        confirmText="Синхронізувати"
-        confirmColor="primary"
-        cancelText="Скасувати"
-        confirmLoading={catalog.legacySyncMutation.isPending}
-        onCancel={() => setLegacyUpdateConfirmIds(null)}
-        onConfirm={() => {
-          const skus = legacyUpdateSkus;
-          setLegacyUpdateConfirmIds(null);
-          if (skus.length) catalog.legacySyncMutation.mutate(skus);
         }}
       />
 

@@ -17,6 +17,15 @@ import { ToastService } from '@/services/ToastService';
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { storefrontApi, STOREFRONT_SETTINGS_UPDATED_EVENT } from '../services/StorefrontService';
+import PageTabs from '@/components/PageTabs';
+import { parseUrlHash, useUrlHashSync } from '@/hooks/useUrlHashSync';
+import {
+  STOREFRONT_SETTINGS_TAB_KEYS,
+  STOREFRONT_SETTINGS_TAB_LABELS,
+  parseStorefrontSettingsTabKey,
+  type StorefrontSettingsTabKey,
+} from './storefrontSettingsTabs';
+import { CatalogImageSettingsCard } from '@/components/storefront/CatalogImageSettingsCard';
 import { DescriptionEditor } from './Products/components/DescriptionEditor';
 import { KitComponentsTemplateEditor } from '@/components/storefront/KitComponentsTemplateEditor';
 import { BTN_PRIMARY_BLUE } from '@/lib/buttonStyles';
@@ -98,6 +107,12 @@ const SettingsStorefront: React.FC = () => {
   const [deleteMetaKeyConfirmId, setDeleteMetaKeyConfirmId] = useState<string | null>(null);
   const [editingBlockLabelId, setEditingBlockLabelId] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
+  const [activeTab, setActiveTab] = useState<StorefrontSettingsTabKey>(() =>
+    parseStorefrontSettingsTabKey(parseUrlHash(window.location.hash).get('tab')),
+  );
+  useUrlHashSync({ tab: activeTab === 'connection' ? null : activeTab }, (params) => {
+    setActiveTab(parseStorefrontSettingsTabKey(params.get('tab')));
+  });
   const [blocksRevision, setBlocksRevision] = useState(0);
   const [wooSiteUrl, setWooSiteUrl] = useState('');
   const [wooMediaPublicBaseUrl, setWooMediaPublicBaseUrl] = useState('');
@@ -715,8 +730,17 @@ const SettingsStorefront: React.FC = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-start">
-        <aside className="space-y-4 lg:col-span-2">
+      <PageTabs
+        selectedKey={activeTab}
+        onSelectionChange={(key) => setActiveTab(String(key) as StorefrontSettingsTabKey)}
+      >
+        {STOREFRONT_SETTINGS_TAB_KEYS.map((key) => (
+          <Tab key={key} title={STOREFRONT_SETTINGS_TAB_LABELS[key]} />
+        ))}
+      </PageTabs>
+
+      {activeTab === 'connection' && (
+        <div className="max-w-3xl space-y-4">
           <Card className="w-full">
             <CardHeader className="border-b border-gray-200 flex items-center gap-2">
               <DynamicIcon name="plug" size={18} className="text-gray-600" />
@@ -826,85 +850,15 @@ const SettingsStorefront: React.FC = () => {
                   Зберегти credentials
                 </Button>
               </div>
-              <Divider />
-              <div className="flex items-end gap-2">
-                <Input
-                  className="flex-1 min-w-0"
-                  label="Inspect SKU"
-                  labelPlacement="outside"
-                  value={inspectSku}
-                  onValueChange={setInspectSku}
-                  placeholder="SKU для тесту"
-                  isDisabled={!canManage}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && inspectSku.trim() && canManage) {
-                      void handleInspect();
-                    }
-                  }}
-                />
-                <Button
-                  variant="flat"
-                  color="success"
-                  className="shrink-0"
-                  isDisabled={!canManage || !inspectSku.trim()}
-                  onPress={() => void handleInspect()}
-                  startContent={<DynamicIcon name={inspectLoading ? 'loader-2' : 'search-code'} className={inspectLoading ? 'animate-spin' : ''} size={14} />}
-                >
-                  Інспектувати
-                </Button>
-              </div>
-              {inspectError != null && (
-                <p className="text-sm text-danger">{inspectError}</p>
-              )}
-              {inspectData != null && (
-                <div className="flex flex-col gap-2">
-                  <Tabs
-                    size="sm"
-                    color="primary"
-                    aria-label="Режим перегляду inspect"
-                    selectedKey={inspectViewTab}
-                    onSelectionChange={(key) => setInspectViewTab(String(key) as InspectViewTab)}
-                  >
-                    <Tab key="summary" title="Summary" />
-                    <Tab key="raw" title="Raw" />
-                  </Tabs>
-                  <div
-                    className="resize-y overflow-hidden min-h-40 h-52 max-h-[75vh] rounded-sm border border-gray-200 bg-gray-100 p-1"
-                    title="Потягніть за нижній край, щоб змінити висоту"
-                  >
-                    <MetaLogJsonView
-                      value={inspectViewTab === 'summary' ? inspectData.summary : inspectData.raw}
-                      className="h-full min-h-0"
-                    />
-                  </div>
-                </div>
-              )}
-              <Divider />
-              <p className="text-sm font-medium text-gray-700">Orphan media cleanup</p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="flat"
-                  isLoading={orphanLoading}
-                  isDisabled={!canManage}
-                  onPress={() => void handleOrphanAudit()}
-                >
-                  Аудит orphan
-                </Button>
-                <Button
-                  size="sm"
-                  color="danger"
-                  variant="flat"
-                  isDisabled={!canManage || orphanIds.length === 0}
-                  onPress={() => setOrphanDeleteConfirm(true)}
-                >
-                  Видалити orphan ({orphanIds.length})
-                </Button>
-              </div>
-              {orphanResult && <p className="text-xs text-default-500">{orphanResult}</p>}
             </CardBody>
           </Card>
+        </div>
+      )}
 
+      {activeTab === 'description' && (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-start">
+            <aside className="space-y-4 lg:col-span-2">
           <Card className="w-full">
             <CardHeader className="border-b border-gray-200">
               <DynamicIcon name="key-round" size={18} className="text-gray-600 mr-2" />
@@ -1227,7 +1181,7 @@ const SettingsStorefront: React.FC = () => {
               </div>
             </CardBody>
           </Card>
-        </aside>
+            </aside>
 
         <div className="lg:col-span-3">
           <Card className="w-full">
@@ -1594,7 +1548,7 @@ const SettingsStorefront: React.FC = () => {
             </CardBody>
           </Card>
         </div>
-      </div>
+          </div>
 
       <div className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-5 py-4 shadow-sm">
         <div className="flex items-center gap-3">
@@ -1648,6 +1602,102 @@ const SettingsStorefront: React.FC = () => {
           </Button>
         </div>
       </div>
+        </>
+      )}
+
+      {activeTab === 'images' && (
+        <div className="max-w-xl">
+          <CatalogImageSettingsCard canManage={canManage} />
+        </div>
+      )}
+
+      {activeTab === 'diagnostics' && (
+        <div className="max-w-3xl">
+          <Card className="w-full">
+            <CardHeader className="border-b border-gray-200 flex items-center gap-2">
+              <DynamicIcon name="stethoscope" size={18} className="text-gray-600" />
+              <h2 className="text-base font-semibold text-gray-900">Діагностика WooCommerce</h2>
+            </CardHeader>
+            <CardBody className="p-6 space-y-4">
+              <div className="flex items-end gap-2">
+                <Input
+                  className="flex-1 min-w-0"
+                  label="Inspect SKU"
+                  labelPlacement="outside"
+                  value={inspectSku}
+                  onValueChange={setInspectSku}
+                  placeholder="SKU для тесту"
+                  isDisabled={!canManage}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && inspectSku.trim() && canManage) {
+                      void handleInspect();
+                    }
+                  }}
+                />
+                <Button
+                  variant="flat"
+                  color="success"
+                  className="shrink-0"
+                  isDisabled={!canManage || !inspectSku.trim()}
+                  onPress={() => void handleInspect()}
+                  startContent={<DynamicIcon name={inspectLoading ? 'loader-2' : 'search-code'} className={inspectLoading ? 'animate-spin' : ''} size={14} />}
+                >
+                  Інспектувати
+                </Button>
+              </div>
+              {inspectError != null && (
+                <p className="text-sm text-danger">{inspectError}</p>
+              )}
+              {inspectData != null && (
+                <div className="flex flex-col gap-2">
+                  <Tabs
+                    size="sm"
+                    color="primary"
+                    aria-label="Режим перегляду inspect"
+                    selectedKey={inspectViewTab}
+                    onSelectionChange={(key) => setInspectViewTab(String(key) as InspectViewTab)}
+                  >
+                    <Tab key="summary" title="Summary" />
+                    <Tab key="raw" title="Raw" />
+                  </Tabs>
+                  <div
+                    className="resize-y overflow-hidden min-h-40 h-52 max-h-[75vh] rounded-sm border border-gray-200 bg-gray-100 p-1"
+                    title="Потягніть за нижній край, щоб змінити висоту"
+                  >
+                    <MetaLogJsonView
+                      value={inspectViewTab === 'summary' ? inspectData.summary : inspectData.raw}
+                      className="h-full min-h-0"
+                    />
+                  </div>
+                </div>
+              )}
+              <Divider />
+              <p className="text-sm font-medium text-gray-700">Orphan media cleanup</p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="flat"
+                  isLoading={orphanLoading}
+                  isDisabled={!canManage}
+                  onPress={() => void handleOrphanAudit()}
+                >
+                  Аудит orphan
+                </Button>
+                <Button
+                  size="sm"
+                  color="danger"
+                  variant="flat"
+                  isDisabled={!canManage || orphanIds.length === 0}
+                  onPress={() => setOrphanDeleteConfirm(true)}
+                >
+                  Видалити orphan ({orphanIds.length})
+                </Button>
+              </div>
+              {orphanResult && <p className="text-xs text-default-500">{orphanResult}</p>}
+            </CardBody>
+          </Card>
+        </div>
+      )}
 
       <ConfirmModal
         isOpen={wooSaveConfirm}

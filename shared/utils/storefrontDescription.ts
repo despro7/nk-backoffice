@@ -605,6 +605,54 @@ export function normalizeIngredientTag(text: string): string {
   return text.trim().replace(/[.,;]+$/g, '').toLowerCase();
 }
 
+/** Розбити текст по комі / `;` / переносу лише на верхньому рівні (коми в дужках не ділять). */
+export function splitIngredientsInput(text: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const ch of text) {
+    if (ch === '(') depth += 1;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    if (depth === 0 && (ch === ',' || ch === ';' || ch === '\n')) {
+      parts.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  parts.push(current);
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const part of parts) {
+    const tag = normalizeIngredientTag(part);
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    result.push(tag);
+  }
+  return result;
+}
+
+export interface IngredientGroup {
+  name: string;
+  children: string[];
+}
+
+/** `назва (a, b, c)` -> група з дочірніми тегами; інакше null. */
+export function parseIngredientGroup(tag: string): IngredientGroup | null {
+  const match = /^(.+?)\s*\((.+)\)$/.exec(tag.trim());
+  if (!match) return null;
+  const name = normalizeIngredientTag(match[1]);
+  const children = splitIngredientsInput(match[2]);
+  if (!name || children.length === 0) return null;
+  return { name, children };
+}
+
+export function buildIngredientGroupTag(name: string, children: string[]): string {
+  const base = normalizeIngredientTag(name);
+  const kids = children.map(normalizeIngredientTag).filter(Boolean);
+  return kids.length ? `${base} (${kids.join(', ')})` : base;
+}
+
 export function formatIngredientsList(items: string[]): string {
   return items.map(normalizeIngredientTag).filter(Boolean).join(', ');
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   Button,
   Chip,
@@ -13,13 +13,11 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
-  type DragOverEvent,
   type DragStartEvent,
 } from '@dnd-kit/core';
 import {
   SortableContext,
   arrayMove,
-  rectSortingStrategy,
   sortableKeyboardCoordinates,
   useSortable,
 } from '@dnd-kit/sortable';
@@ -30,9 +28,13 @@ import {
   buildIngredientsJsonFromBom,
   ingredientsListsEqual,
   normalizeIngredientTag,
+  splitIngredientsInput,
+  parseIngredientGroup,
+  buildIngredientGroupTag,
 } from '@shared/utils/storefrontDescription';
 import type { BomRow } from './productDrawerTypes';
 import { FieldDirtyMarker } from './FieldDirtyMarker';
+import { createWrapSortingStrategy } from './wrapSortingStrategy';
 
 function remapIndexAfterReorder(index: number, from: number, to: number): number {
   if (index === from) return to;
@@ -44,11 +46,193 @@ function remapIndexAfterReorder(index: number, from: number, to: number): number
   return index;
 }
 
+interface SortableChildProps {
+  child: string;
+  disabled?: boolean;
+  isEditing: boolean;
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onStartEdit: () => void;
+  onCommit: () => void;
+  onCancel: () => void;
+  onDelete: () => void;
+}
+
+function SortableIngredientChild({
+  child,
+  disabled,
+  isEditing,
+  draft,
+  onDraftChange,
+  onStartEdit,
+  onCommit,
+  onCancel,
+  onDelete,
+}: SortableChildProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: child,
+    disabled: disabled || isEditing,
+  });
+  // Зміщення рахує wrapSortingStrategy (різна ширина), плавність дає transition.
+  const style: CSSProperties = { transform: CSS.Translate.toString(transform), transition };
+
+  if (isEditing) {
+    return (
+      <div ref={setNodeRef} style={style} className="shrink-0 w-fit">
+        <input
+          autoFocus
+          className="rounded-full bg-white px-2 py-0.5 block h-5 text-[11px] leading-none focus:outline-amber-400"
+          style={{ width: `${Math.max((draft || child).length + 2, 4)}ch` }}
+          value={draft}
+          onChange={(e) => onDraftChange(e.target.value.toLowerCase())}
+          onBlur={onCommit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onCommit();
+            if (e.key === 'Escape') onCancel();
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="shrink-0 w-fit max-w-full rounded-full"
+    >
+      <Chip
+        size="sm"
+        variant="bordered"
+        onClose={disabled ? undefined : onDelete}
+        onClick={onStartEdit}
+        classNames={{
+          base: `h-5 w-max cursor-pointer border-default-200 bg-white ${isDragging ? 'opacity-30' : ''}`,
+          content: 'text-[11px] whitespace-nowrap',
+          closeButton: 'text-default-400 hover:text-danger',
+        }}
+      >
+        <span className="inline-flex items-center gap-1">
+          <span
+            {...attributes}
+            {...listeners}
+            className={`inline-flex shrink-0 text-default-400 touch-none ${
+              disabled ? 'cursor-default' : 'cursor-grab active:cursor-grabbing hover:text-default-600'
+            }`}
+            aria-label={`Перетягнути «${child}»`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <DynamicIcon name="grip-vertical" size={10} />
+          </span>
+          {child}
+        </span>
+      </Chip>
+    </div>
+  );
+}
+
+/** Вкладені теги групи: клік редагує, DnD змінює порядок лише в межах батька. */
+function IngredientGroupChildren({
+  children,
+  disabled,
+  onChange,
+}: {
+  children: string[];
+  disabled?: boolean;
+  onChange: (next: string[]) => void;
+}) {
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [draft, setDraft] = useState('');
+  const [activeChild, setActiveChild] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const childrenStrategy = useMemo(
+    () =>
+      createWrapSortingStrategy({
+        getContainerWidth: () => containerRef.current?.clientWidth ?? null,
+        gapX: 4,
+        gapY: 4,
+      }),
+    [],
+  );
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const commit = () => {
+    if (editingIdx == null) return;
+    const tag = normalizeIngredientTag(draft);
+    const next = [...children];
+    if (!tag || children.some((c, i) => c === tag && i !== editingIdx)) next.splice(editingIdx, 1);
+    else next[editingIdx] = tag;
+    setEditingIdx(null);
+    setDraft('');
+    onChange(next);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveChild(null);
+    const { active, over } = event;
+    if (disabled || !over || active.id === over.id) return;
+    const from = children.indexOf(String(active.id));
+    const to = children.indexOf(String(over.id));
+    if (from < 0 || to < 0) return;
+    onChange(arrayMove(children, from, to));
+  };
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={(e: DragStartEvent) => setActiveChild(String(e.active.id))}
+      onDragEnd={handleDragEnd}
+      onDragCancel={() => {
+        setActiveChild(null);
+      }}
+    >
+      <SortableContext items={children} strategy={childrenStrategy}>
+        <div ref={containerRef} className="mt-1 ml-3 flex flex-wrap items-center gap-1 border-l-2 border-default-200 pl-2">
+          {children.map((child, idx) => (
+            <SortableIngredientChild
+              key={child}
+              child={child}
+              disabled={disabled}
+              isEditing={editingIdx === idx}
+              draft={draft}
+              onDraftChange={setDraft}
+              onStartEdit={() => {
+                if (disabled) return;
+                setEditingIdx(idx);
+                setDraft(child);
+              }}
+              onCommit={commit}
+              onCancel={() => setEditingIdx(null)}
+              onDelete={() => onChange(children.filter((_, i) => i !== idx))}
+            />
+          ))}
+        </div>
+      </SortableContext>
+      <DragOverlay dropAnimation={{ duration: 200, easing: 'cubic-bezier(0.25, 1, 0.5, 1)' }}>
+        {activeChild ? (
+          <Chip
+            size="sm"
+            variant="bordered"
+            classNames={{
+              base: 'h-5 w-max cursor-grabbing border-primary-300 bg-primary-50 ring-2 ring-primary-300 shadow-md',
+              content: 'text-[11px] whitespace-nowrap',
+            }}
+          >
+            {activeChild}
+          </Chip>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
+  );
+}
+
 interface SortableIngredientTagProps {
   tag: string;
   disabled?: boolean;
-  isSorting: boolean;
-  isDropTarget: boolean;
   isEditing: boolean;
   editDraft: string;
   editInputWidthCh: (text: string) => number;
@@ -57,13 +241,13 @@ interface SortableIngredientTagProps {
   onCancelEdit: () => void;
   onStartEdit: () => void;
   onDelete: () => void;
+  /** Зміна складу вкладеної групи (видалення дочірнього тега) */
+  onReplace: (nextTag: string) => void;
 }
 
 function SortableIngredientTag({
   tag,
   disabled,
-  isSorting,
-  isDropTarget,
   isEditing,
   editDraft,
   editInputWidthCh,
@@ -72,7 +256,9 @@ function SortableIngredientTag({
   onCancelEdit,
   onStartEdit,
   onDelete,
+  onReplace,
 }: SortableIngredientTagProps) {
+  const group = parseIngredientGroup(tag);
   const {
     attributes,
     listeners,
@@ -85,12 +271,10 @@ function SortableIngredientTag({
     disabled: disabled || isEditing,
   });
 
-  const style: CSSProperties = isSorting
-    ? undefined
-    : {
-        transform: CSS.Translate.toString(transform),
-        transition,
-      };
+  const style: CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+  };
 
   if (isEditing) {
     return (
@@ -115,9 +299,7 @@ function SortableIngredientTag({
     <div
       ref={setNodeRef}
       style={style}
-      className={`relative shrink-0 w-fit max-w-full rounded-full transition-shadow duration-150 ${
-        isDropTarget ? 'ring-2 ring-primary-400/90 ring-offset-1 shadow-sm' : ''
-      }`}
+      className="relative shrink-0 w-fit max-w-full rounded-full"
     >
       {isDragging && (
         <div
@@ -151,9 +333,16 @@ function SortableIngredientTag({
           >
             <DynamicIcon name="grip-vertical" size={12} />
           </span>
-          {tag}
+          {group ? group.name : tag}
         </span>
       </Chip>
+      {group && (
+        <IngredientGroupChildren
+          children={group.children}
+          disabled={disabled}
+          onChange={(nextChildren) => onReplace(buildIngredientGroupTag(group.name, nextChildren))}
+        />
+      )}
     </div>
   );
 }
@@ -196,7 +385,16 @@ export function ProductIngredientsTags({
   const [bomRefreshConfirmOpen, setBomRefreshConfirmOpen] = useState(false);
   const [deleteConfirmIdx, setDeleteConfirmIdx] = useState<number | null>(null);
   const [activeTag, setActiveTag] = useState<string | null>(null);
-  const [overTag, setOverTag] = useState<string | null>(null);
+  const tagsContainerRef = useRef<HTMLDivElement>(null);
+  const tagsStrategy = useMemo(
+    () =>
+      createWrapSortingStrategy({
+        getContainerWidth: () => tagsContainerRef.current?.clientWidth ?? null,
+        gapX: 8,
+        gapY: 8,
+      }),
+    [],
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -210,14 +408,29 @@ export function ProductIngredientsTags({
     [components],
   );
 
-  const addTag = () => {
-    const tag = normalizeIngredientTag(draft);
-    if (!tag || value.includes(tag)) {
-      setDraft('');
+  const addTags = (text: string) => {
+    const incoming = splitIngredientsInput(text);
+    if (incoming.length) {
+      const next = [...value];
+      for (const tag of incoming) {
+        if (!next.includes(tag)) next.push(tag);
+      }
+      if (next.length !== value.length) onChange(next);
+    }
+    setDraft('');
+  };
+
+  const addTag = () => addTags(draft);
+
+  const replaceTag = (idx: number, nextTag: string) => {
+    const tag = normalizeIngredientTag(nextTag);
+    if (!tag) {
+      removeTag(idx);
       return;
     }
-    onChange([...value, tag]);
-    setDraft('');
+    const next = [...value];
+    next[idx] = tag;
+    onChange(next);
   };
 
   const removeTag = (idx: number) => {
@@ -254,16 +467,10 @@ export function ProductIngredientsTags({
   const handleDragStart = (event: DragStartEvent) => {
     if (disabled) return;
     setActiveTag(String(event.active.id));
-    setOverTag(null);
-  };
-
-  const handleDragOver = (event: DragOverEvent) => {
-    setOverTag(event.over ? String(event.over.id) : null);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveTag(null);
-    setOverTag(null);
     if (disabled) return;
 
     const { active, over } = event;
@@ -285,7 +492,6 @@ export function ProductIngredientsTags({
 
   const handleDragCancel = () => {
     setActiveTag(null);
-    setOverTag(null);
   };
 
   const applyBomRefresh = () => {
@@ -335,12 +541,12 @@ export function ProductIngredientsTags({
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        <SortableContext items={value} strategy={rectSortingStrategy}>
+        <SortableContext items={value} strategy={tagsStrategy}>
           <div
+            ref={tagsContainerRef}
             className={`ingredient-tags-dnd flex flex-wrap items-start gap-2 min-h-8 rounded-lg transition-colors duration-200 ${
               activeTag ? 'bg-default-100/60 ring-1 ring-primary-200/70' : ''
             }`}
@@ -350,8 +556,6 @@ export function ProductIngredientsTags({
                 key={tag}
                 tag={tag}
                 disabled={disabled}
-                isSorting={activeTag != null}
-                isDropTarget={overTag === tag && activeTag !== tag}
                 isEditing={editingIdx === idx}
                 editDraft={editDraft}
                 editInputWidthCh={editInputWidthCh}
@@ -360,6 +564,7 @@ export function ProductIngredientsTags({
                 onCancelEdit={() => setEditingIdx(null)}
                 onStartEdit={() => startEdit(idx)}
                 onDelete={() => setDeleteConfirmIdx(idx)}
+                onReplace={(nextTag) => replaceTag(idx, nextTag)}
               />
             ))}
           </div>
@@ -380,7 +585,20 @@ export function ProductIngredientsTags({
           placeholder="Додати інгредієнт…"
           value={draft}
           isDisabled={disabled}
-          onValueChange={(v) => setDraft(v.toLowerCase())}
+          onValueChange={(v) => {
+            const lower = v.toLowerCase();
+            const splitNow = /,\s*$/.test(lower) && splitIngredientsInput(lower.slice(0, -1)).length > 0
+              && !(lower.split('(').length > lower.split(')').length);
+            if (splitNow) addTags(lower);
+            else setDraft(lower);
+          }}
+          onPaste={(e) => {
+            const text = e.clipboardData.getData('text');
+            if (/[,;\n]/.test(text)) {
+              e.preventDefault();
+              addTags(draft ? `${draft} ${text}` : text);
+            }
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               e.preventDefault();

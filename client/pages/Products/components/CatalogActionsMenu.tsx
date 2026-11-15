@@ -22,7 +22,6 @@ export interface CatalogActionsMenuItemsProps {
   /** Звіт «Рухи товару» (за товаром, без партії); лише для одного товару */
   onShowMovements?: (id: string) => void;
   onSyncFromDilovod: (ids: string[]) => void;
-  onLegacyUpdate: (ids: string[]) => void;
   onPushStorefront?: (ids: string[]) => void;
   canPushStorefront?: boolean;
   onPullStorefront?: (ids: string[]) => void;
@@ -50,7 +49,6 @@ export function CatalogActionsMenuItems({
   onEdit,
   onShowMovements,
   onSyncFromDilovod,
-  onLegacyUpdate,
   onPushStorefront,
   canPushStorefront,
   onPullStorefront,
@@ -116,15 +114,6 @@ export function CatalogActionsMenuItems({
         disabled={!canBulk}
         onSelect={() => run(onSyncFromDilovod)}
       />
-      {!onlyGroups && (
-        <CatalogMenuItem
-          icon="database"
-          label="Оновити legacy cache"
-          disabled={!canBulk}
-          legacy
-          onSelect={() => run(onLegacyUpdate)}
-        />
-      )}
       {!onlyGroups && canPullStorefront && onPullStorefront && (
         <CatalogMenuItem
           icon="cloud-download"
@@ -286,7 +275,6 @@ export function CatalogActionsDropdown({
   onEdit,
   onShowMovements,
   onSyncFromDilovod,
-  onLegacyUpdate,
   onPushStorefront,
   canPushStorefront,
   onPullStorefront,
@@ -387,9 +375,6 @@ export function CatalogActionsDropdown({
               break;
             case 'syncDilovod':
               onSyncFromDilovod(ids);
-              break;
-            case 'legacyUpdate':
-              onLegacyUpdate(ids);
               break;
             case 'pullStorefront':
               onPullStorefront?.(ids);
@@ -506,16 +491,8 @@ export function CatalogActionsDropdown({
             Синхронізувати з Діловодом
           </DropdownItem>
           <DropdownItem
-            key="legacyUpdate"
-            className={onlyGroups ? 'hidden' : 'text-lime-600'}
-            isDisabled={!canBulk}
-            startContent={<DynamicIcon name="database" size={16} className="shrink-0" />}
-          >
-            Оновити legacy cache
-          </DropdownItem>
-          <DropdownItem
             key="pullStorefront"
-            className={onlyGroups || !canPullStorefront ? 'hidden' : 'text-primary'}
+            className={onlyGroups || !canPullStorefront ? 'hidden' : ''}
             isDisabled={!canBulk}
             startContent={<DynamicIcon name="download" size={16} className="shrink-0" />}
           >

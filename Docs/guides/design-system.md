@@ -136,13 +136,29 @@ Primary = **neutral grey** `#374151`, не Tailwind blue. Повна шкала 
 | Таблиці sortable | `Hr/Employees/index.tsx` | `DemoSortableTable` у `DesignSystemPatterns.tsx` |
 | SpecChip | `SpecChip.tsx`, `hrUi.tsx` | Секція SpecChip |
 | Drawer | `ProductDrawer.tsx`, `EmployeeDrawer.tsx` | `ProductDrawerDemo` |
+| Tooltip | `client/lib/tooltipStyles.ts` | Секція «Tooltip (зі стрілочкою)» |
 | Токени (кольори, spacing) | `global.css` | `DesignSystemDemo.tsx` |
+
+---
+
+## Tooltip
+
+Усі підказки зі стрілочкою беруть стилі з `client/lib/tooltipStyles.ts`:
+
+```tsx
+<Tooltip content="…" placement="top" showArrow delay={300} classNames={TOOLTIP_CLASS_NAMES.dark}>
+```
+
+- `base` фарбує стрілку (`before:bg-*`, `before:z-[10]`, легка тінь зсувом), `content` – саму підказку (`rounded-sm text-xs border-0`).
+- Варіанти: `white`, `dark` (базові; `gray-900`, відрізняється від `primary` `#374151`), `primary`, `secondary`, `warning`, `danger`, `success`, `yellow` (яскраво-жовтий), `blue` (`blue-500`, білий текст).
+- `dark` – для підказок над світлим контентом (мініатюри, таблиця узгодження); `white` – у таблицях і картках зі світлим фоном.
+- Нові варіанти додавати в `TOOLTIP_CLASS_NAMES` + `TOOLTIP_VARIANT_LABELS`; вітрина підхопить автоматично. Copy id: `design:tooltip-{variant}`.
 
 ---
 
 ## Copy id для агента
 
-Формат: `design:btn-{id}` – відповідає `id` у `ButtonShowcase` / `ETALON_BUTTON_PATTERNS`.
+Формат: `design:btn-{id}` – відповідає `id` у `ButtonShowcase` / `ETALON_BUTTON_PATTERNS`. Для підказок: `design:tooltip-{variant}`.
 
 Приклади: `design:btn-primary-solid`, `design:btn-row-actions`, `design:btn-anti-loading`.
 

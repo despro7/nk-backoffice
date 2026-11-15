@@ -30,7 +30,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Button, Chip, Progress, Spinner } from '@heroui/react';
+import { Button, Chip, Progress, Spinner, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { catalogImageThumbUrl } from '@shared/utils/catalogImageThumbUrl';
 import {
@@ -41,11 +41,14 @@ import { ToastService } from '@/services/ToastService';
 import { storefrontApi } from '@/services/StorefrontService';
 import { resolveCatalogMediaAbsoluteUrl } from '@shared/utils/resolveCatalogMediaAbsoluteUrl';
 import { InlineImageName } from './InlineImageName';
+import { MeasuredThumb, imageExtLabel } from './ImageMetaBadges';
+import { TOOLTIP_CLASS_NAMES } from '@/lib/tooltipStyles';
+import { sanitizeImageBaseName } from '@shared/utils/catalogImageName';
 import type { CatalogGoodImageDto } from '../ProductsTypes';
 
 const ACCEPT = 'image/jpeg,image/png,image/webp,image/gif';
 const ACCEPT_SET = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
-const MAX_BYTES = 8 * 1024 * 1024;
+const MAX_BYTES = 30 * 1024 * 1024;
 const MAX_FILES = 10;
 
 type QueueStatus = 'queued' | 'uploading' | 'success' | 'error';
@@ -71,6 +74,8 @@ export interface ProductImageUploadProps {
   isDisabled?: boolean;
   overlayZClassName?: string;
   lightboxAppendToRef?: RefObject<HTMLElement | null>;
+  /** Назва товару: база для автоназви файлу (borshch-z-kuryatynoyu-1) */
+  productName?: string;
   onImagesChange?: (images: CatalogGoodImageDto[]) => void;
 }
 
@@ -90,6 +95,65 @@ function sortCatalogImages(images: CatalogGoodImageDto[]): CatalogGoodImageDto[]
   });
 }
 
+const THUMB_ACTION_CLASS =
+  'flex h-6 w-6 items-center justify-center rounded-md bg-black/55 text-white backdrop-blur-sm transition-colors hover:bg-black/75 disabled:cursor-default disabled:opacity-60';
+
+/** Кнопки дій над мініатюрою (видимі при hover): автоназва та оптимізація. */
+function ThumbActions({
+  disabled,
+  optimizing,
+  onAutoName,
+  onOptimize,
+}: {
+  disabled?: boolean;
+  optimizing?: boolean;
+  onAutoName?: () => void;
+  onOptimize?: () => void;
+}) {
+  if (disabled) return null;
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
+  return (
+    <div
+      className={`absolute left-1 top-1 z-10 flex gap-1 transition-opacity duration-150 group-hover:opacity-100 ${
+        optimizing ? 'opacity-100' : 'opacity-0'
+      }`}
+      onPointerDown={stop}
+    >
+      {onAutoName && (
+        <Tooltip content="Автоматична назва за назвою товару" placement="top" showArrow delay={300} classNames={TOOLTIP_CLASS_NAMES.dark}>
+          <button
+            type="button"
+            aria-label="Автоматична назва файлу"
+            className={THUMB_ACTION_CLASS}
+            onClick={(e) => {
+              stop(e);
+              onAutoName();
+            }}
+          >
+            <DynamicIcon name="wand-sparkles" size={13} />
+          </button>
+        </Tooltip>
+      )}
+      {onOptimize && (
+        <Tooltip content="Оптимізувати формат і стиснення зображення" placement="top" showArrow delay={300} classNames={TOOLTIP_CLASS_NAMES.dark}>
+          <button
+            type="button"
+            aria-label="Оптимізувати зображення"
+            disabled={optimizing}
+            className={THUMB_ACTION_CLASS}
+            onClick={(e) => {
+              stop(e);
+              onOptimize();
+            }}
+          >
+            {optimizing ? <Spinner size="sm" color="white" classNames={{ wrapper: 'h-3.5 w-3.5' }} /> : <DynamicIcon name="file-cog" size={13} />}
+          </button>
+        </Tooltip>
+      )}
+    </div>
+  );
+}
+
 interface SortableSavedImageProps {
   image: CatalogGoodImageDto;
   displayUrl: string;
@@ -99,6 +163,9 @@ interface SortableSavedImageProps {
   onDelete: () => void;
   onPreview: () => void;
   onRename: (originalName: string) => Promise<void>;
+  onAutoName?: () => void;
+  onOptimize?: () => void;
+  isOptimizing?: boolean;
   overlayZClassName?: string;
 }
 
@@ -111,6 +178,9 @@ function SortableSavedImage({
   onDelete,
   onPreview,
   onRename,
+  onAutoName,
+  onOptimize,
+  isOptimizing,
   overlayZClassName,
 }: SortableSavedImageProps) {
   const {
@@ -163,13 +233,21 @@ function SortableSavedImage({
             onPreview();
           }}
         >
-          <img
+          <MeasuredThumb
             src={displayUrl}
             alt={image.originalName}
             draggable={false}
+            sizeBytes={image.size}
+            ext={imageExtLabel(image.fileName)}
             className="aspect-square w-full select-none object-cover"
           />
         </button>
+        <ThumbActions
+          disabled={isDisabled}
+          optimizing={isOptimizing}
+          onAutoName={onAutoName}
+          onOptimize={onOptimize}
+        />
         {isPrimary && (
           <Chip
             size="sm"
@@ -226,6 +304,7 @@ export function ProductImageUpload({
   isDisabled,
   overlayZClassName,
   lightboxAppendToRef,
+  productName,
   onImagesChange,
 }: ProductImageUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -249,7 +328,8 @@ export function ProductImageUpload({
   const [mediaPublicBaseUrl, setMediaPublicBaseUrl] = useState('');
 
   const resolveDisplayUrl = useCallback(
-    (url: string) => resolveCatalogMediaAbsoluteUrl(mediaPublicBaseUrl, url),
+    // Локально (dev) файли лежать у локальному uploads/, на проді їх може ще не бути: беремо відносний URL.
+    (url: string) => (import.meta.env.DEV ? url : resolveCatalogMediaAbsoluteUrl(mediaPublicBaseUrl, url)),
     [mediaPublicBaseUrl],
   );
 
@@ -325,7 +405,7 @@ export function ProductImageUpload({
         if (file.size > MAX_BYTES) {
           ToastService.show({
             title: 'Файл завеликий',
-            description: `${file.name} — макс. 8 МБ`,
+            description: `${file.name} — макс. 30 МБ`,
             color: 'warning',
           });
           continue;
@@ -425,6 +505,24 @@ export function ProductImageUpload({
     if (e.dataTransfer.files?.length) validateAndEnqueue(e.dataTransfer.files);
   };
 
+  /** `{slug-назви-товару}-{N}{ext}`; N = позиція, при колізії з іншим файлом береться наступний вільний. */
+  const buildAutoName = (fileName: string, position: number, taken: string[]): string | null => {
+    if (!productName?.trim()) {
+      ToastService.show({
+        title: 'Вкажіть назву товару',
+        description: 'Автоназва файлу будується з назви товару.',
+        color: 'warning',
+      });
+      return null;
+    }
+    const base = sanitizeImageBaseName(productName);
+    const ext = /\.[a-z0-9]+$/i.exec(fileName)?.[0].toLowerCase() ?? '';
+    const used = new Set(taken.map((n) => n.toLowerCase()));
+    let n = position + 1;
+    while (used.has(`${base}-${n}${ext}`)) n += 1;
+    return `${base}-${n}${ext}`;
+  };
+
   const handleRenameSaved = async (image: CatalogGoodImageDto, originalName: string) => {
     try {
       const res = await fetch(`/api/catalog/images/${image.id}`, {
@@ -494,6 +592,84 @@ export function ProductImageUpload({
         color: 'danger',
       });
       throw err;
+    }
+  };
+
+  const [optimizingKey, setOptimizingKey] = useState<string | null>(null);
+
+  const reportOptimize = (before: number, after: number, changed: boolean) => {
+    if (!changed) {
+      ToastService.show({ title: 'Вже оптимальне', description: 'Файл не змінено.', color: 'default' });
+      return;
+    }
+    ToastService.show({
+      title: 'Зображення оптимізовано',
+      description: `${formatBytes(before)} → ${formatBytes(after)}`,
+      color: 'success',
+    });
+  };
+
+  const handleOptimizeSaved = async (image: CatalogGoodImageDto) => {
+    setOptimizingKey(String(image.id));
+    try {
+      const res = await fetch(`/api/catalog/images/${image.id}/optimize`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const json = (await res.json()) as {
+        success?: boolean;
+        data?: { image: CatalogGoodImageDto; changed: boolean };
+        error?: string;
+      };
+      if (!res.ok || !json.success || !json.data) {
+        throw new Error(json.error || 'Не вдалося оптимізувати зображення');
+      }
+      const { image: updated, changed } = json.data;
+      setSaved((prev) => {
+        const next = prev.map((item) => (item.id === image.id ? updated : item));
+        onImagesChange?.(next);
+        return next;
+      });
+      reportOptimize(image.size, updated.size, changed);
+    } catch (err) {
+      ToastService.show({
+        title: 'Помилка оптимізації',
+        description: err instanceof Error ? err.message : 'Unknown',
+        color: 'danger',
+      });
+    } finally {
+      setOptimizingKey(null);
+    }
+  };
+
+  const handleOptimizeStaging = async (fileName: string) => {
+    if (!stagingSessionId) return;
+    const before = stagingItems.find((i) => i.fileName === fileName)?.size ?? 0;
+    setOptimizingKey(fileName);
+    try {
+      const res = await fetch(
+        `/api/catalog/images/staging/${encodeURIComponent(stagingSessionId)}/${encodeURIComponent(fileName)}/optimize`,
+        { method: 'POST', credentials: 'include' },
+      );
+      const json = (await res.json()) as {
+        success?: boolean;
+        data?: { item: (typeof stagingItems)[number]; changed: boolean };
+        error?: string;
+      };
+      if (!res.ok || !json.success || !json.data) {
+        throw new Error(json.error || 'Не вдалося оптимізувати зображення');
+      }
+      const { item, changed } = json.data;
+      setStagingItems((prev) => prev.map((i) => (i.fileName === fileName ? { ...i, ...item } : i)));
+      reportOptimize(before, item.size, changed);
+    } catch (err) {
+      ToastService.show({
+        title: 'Помилка оптимізації',
+        description: err instanceof Error ? err.message : 'Unknown',
+        color: 'danger',
+      });
+    } finally {
+      setOptimizingKey(null);
     }
   };
 
@@ -623,6 +799,8 @@ export function ProductImageUpload({
         src,
         thumbSrc: catalogImageThumbUrl(src),
         alt: img.originalName,
+        sizeBytes: img.size,
+        ext: imageExtLabel(img.fileName),
       };
     });
     const stagingPart = displayStaging.map((img) => {
@@ -631,6 +809,8 @@ export function ProductImageUpload({
         src,
         thumbSrc: catalogImageThumbUrl(src),
         alt: img.originalName,
+        sizeBytes: img.size,
+        ext: imageExtLabel(img.fileName),
       };
     });
     return [...savedPart, ...stagingPart];
@@ -663,7 +843,7 @@ export function ProductImageUpload({
         <span className="text-sm font-medium text-default-700">
           Перетягніть або оберіть зображення
         </span>
-        <span className="text-xs text-default-400">{displaySaved.length + displayStaging.length}/{MAX_FILES} · JPEG/PNG/WebP/GIF · до 8 МБ</span>
+        <span className="text-xs text-default-400">{displaySaved.length + displayStaging.length}/{MAX_FILES} · JPEG/PNG/WebP/GIF · до 30 МБ (автостиснення)</span>
       </button>
       <input
         ref={inputRef}
@@ -773,6 +953,16 @@ export function ProductImageUpload({
                     onDelete={() => void handleDeleteSaved(img)}
                     onPreview={() => setGalleryOpenIndex(idx)}
                     onRename={(originalName) => handleRenameSaved(img, originalName)}
+                    isOptimizing={optimizingKey === String(img.id)}
+                    onOptimize={() => void handleOptimizeSaved(img)}
+                    onAutoName={() => {
+                      const name = buildAutoName(
+                        img.fileName,
+                        idx,
+                        displaySaved.filter((o) => o.id !== img.id).map((o) => o.originalName),
+                      );
+                      if (name && name !== img.originalName) void handleRenameSaved(img, name).catch(() => undefined);
+                    }}
                   />
                 );
               })}
@@ -791,16 +981,33 @@ export function ProductImageUpload({
               key={img.fileName}
               className="group relative overflow-hidden rounded-xl border border-default-200 bg-default-50"
             >
+              <ThumbActions
+                disabled={isDisabled}
+                optimizing={optimizingKey === img.fileName}
+                onOptimize={() => void handleOptimizeStaging(img.fileName)}
+                onAutoName={() => {
+                  const name = buildAutoName(
+                    img.fileName,
+                    stagingIdx,
+                    displayStaging.filter((o) => o.fileName !== img.fileName).map((o) => o.originalName),
+                  );
+                  if (name && name !== img.originalName) {
+                    void handleRenameStaging(img.fileName, name).catch(() => undefined);
+                  }
+                }}
+              />
               <button
                 type="button"
                 className="block w-full"
                 aria-label="Відкрити зображення у повному розмірі"
                 onClick={() => setGalleryOpenIndex(displaySaved.length + stagingIdx)}
               >
-                <img
+                <MeasuredThumb
                   src={displayUrl}
                   alt={img.originalName}
                   draggable={false}
+                  sizeBytes={img.size}
+                  ext={imageExtLabel(img.fileName)}
                   className="aspect-square w-full object-cover"
                 />
               </button>

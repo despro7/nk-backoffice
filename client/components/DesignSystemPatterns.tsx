@@ -24,6 +24,7 @@ import {
   SelectItem,
   Tab,
   Tabs,
+  Tooltip,
   Table,
   TableBody,
   TableCell,
@@ -50,6 +51,11 @@ import {
   hrStatusTokens,
   hrTaxPayerTokens,
 } from '@/pages/Hr/hrUi';
+import {
+  TOOLTIP_CLASS_NAMES,
+  TOOLTIP_VARIANT_LABELS,
+  type TooltipVariant,
+} from '@/lib/tooltipStyles';
 import { HR_PAY_GROUP_LABELS, type HrPayGroup } from '@shared/types/hr';
 
 type MockRow = {
@@ -879,6 +885,36 @@ export function DesignSystemPatterns() {
           <SpecChip tokens={hrStatusTokens('inactive')} icon="error">неактивний</SpecChip>
           <SpecChip tokens={hrEmployerTokensFromName('ТОВ NK Food')} rounded="sm">ТОВ NK Food</SpecChip>
           <SpecChip tokens={hrTaxPayerTokens('employer')} icon="info">Роботодавець</SpecChip>
+        </div>
+      </Section>
+
+      <Section
+        title="Tooltip (зі стрілочкою)"
+        description="showArrow + classNames з TOOLTIP_CLASS_NAMES. Білий і темний – базові, решта – за семантикою (стан, попередження, акцент)."
+        reference="client/lib/tooltipStyles.ts"
+      >
+        <div className="grid gap-3 grid-cols-2 md:grid-cols-3">
+          {(Object.keys(TOOLTIP_CLASS_NAMES) as TooltipVariant[]).map((variant) => (
+            <ButtonShowcase
+              key={variant}
+              id={`tooltip-${variant}`}
+              kind={variant === 'white' || variant === 'dark' ? 'etalon' : 'domain'}
+              label={TOOLTIP_VARIANT_LABELS[variant]}
+              hint={`TOOLTIP_CLASS_NAMES.${variant}`}
+            >
+              <Tooltip
+                content="photo_2026-05-18.jpg · 77 КБ · JPG"
+                placement="top"
+                showArrow
+                delay={0}
+                classNames={TOOLTIP_CLASS_NAMES[variant]}
+              >
+                <span className="inline-flex cursor-help rounded-md border border-default-200 bg-default-50 px-2 py-1 text-xs text-default-600">
+                  Наведіть курсор
+                </span>
+              </Tooltip>
+            </ButtonShowcase>
+          ))}
         </div>
       </Section>
 

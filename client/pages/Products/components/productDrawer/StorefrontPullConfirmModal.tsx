@@ -35,7 +35,7 @@ import {
   ProductPullTriSourceTable,
   shouldPushTriSyncChoicesToWoo,
 } from './ProductPullTriSourceTable';
-import { resolveCatalogMediaAbsoluteUrls } from '@shared/utils/resolveCatalogMediaAbsoluteUrl';
+import { resolveCatalogMediaAbsoluteUrl, resolveCatalogMediaAbsoluteUrls } from '@shared/utils/resolveCatalogMediaAbsoluteUrl';
 
 export interface StorefrontPullApplyFlags {
   name: boolean;
@@ -314,6 +314,15 @@ export function StorefrontPullConfirmModal({
     [mediaPublicBaseUrl, preview?.localImagePreviewUrls],
   );
 
+  const localImagesMeta = useMemo(
+    () =>
+      (preview?.localImages ?? []).map((img) => ({
+        ...img,
+        url: resolveCatalogMediaAbsoluteUrl(mediaPublicBaseUrl, img.url),
+      })),
+    [mediaPublicBaseUrl, preview?.localImages],
+  );
+
   const hasApplySelection = useMemo(() => {
     const hasRemoteSelection = triRowsAll.some(
       (row) => (sourceByRowId[row.id] ?? 'local') !== 'local',
@@ -529,6 +538,8 @@ export function StorefrontPullConfirmModal({
                   sourceByRowId={sourceByRowId}
                   localImagePreviewUrls={localImagePreviewUrls}
                   wooImagePreviewUrls={preview.wooImagePreviewUrls ?? []}
+                  localImages={localImagesMeta}
+                  wooImages={preview.wooImages ?? []}
                   replaceImages={
                     wooImagesSelected && preview.local.imageCount > 0
                       ? {

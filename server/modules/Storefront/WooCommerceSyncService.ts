@@ -2,6 +2,12 @@
  * WooCommerce pull/push sync orchestration.
  */
 
+import {
+  imageExtFromName,
+  imageFileNameFromUrl,
+  imageSetsDiffer,
+  type PullImageMeta,
+} from '../../../shared/utils/catalogImageCompare.js';
 import { prisma, logServer } from '../../lib/utils.js';
 import {
   CATALOG_ACC_POLICY_KIT,
@@ -76,6 +82,18 @@ function boolFieldConflict(
 function sanitizeCatalogDescription(value: string | null | undefined): string | null {
   if (!value || value === '[object Object]') return null;
   return value;
+}
+
+/** Розмір віддаленого файлу через HEAD (best-effort, null якщо недоступно). */
+async function fetchRemoteImageSize(url: string): Promise<number | null> {
+  try {
+    const res = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(4000) });
+    if (!res.ok) return null;
+    const len = Number(res.headers.get('content-length'));
+    return Number.isFinite(len) && len > 0 ? len : null;
+  } catch {
+    return null;
+  }
 }
 
 function fieldConflict(
@@ -404,7 +422,7 @@ export class WooCommerceSyncService {
         images: {
           orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
           take: 24,
-          select: { id: true, fileName: true },
+          select: { id: true, fileName: true, originalName: true, size: true },
         },
         components: {
           orderBy: { rowNum: 'asc' },
@@ -476,6 +494,18 @@ export class WooCommerceSyncService {
     const wooImagePreviewUrls = (product.images ?? [])
       .map((img) => img.src?.trim())
       .filter((src): src is string => Boolean(src));
+    const localImages: PullImageMeta[] = good.images.map((img, i) => ({
+      url: localImagePreviewUrls[i],
+      name: img.originalName || img.fileName,
+      sizeBytes: img.size ?? null,
+      ext: imageExtFromName(img.fileName),
+    }));
+    const wooImages = await Promise.all(
+      wooImagePreviewUrls.map(async (url): Promise<PullImageMeta> => {
+        const name = imageFileNameFromUrl(url);
+        return { url, name, sizeBytes: await fetchRemoteImageSize(url), ext: imageExtFromName(name) };
+      }),
+    );
     const groupName = await resolveParentGroupName(good.parentId);
     const wcCategoryName = resolveWcPrimaryCategoryName(product);
 
@@ -485,8 +515,12 @@ export class WooCommerceSyncService {
       fieldConflict('weight', good.weight, proposedWeight),
       priceFieldConflict(localRegularPrice, resolveWooRegularPrice(product)),
       boolFieldConflict('doNotPublish', good.doNotPublish, proposedDoNotPublish),
-      localImageCount > 0 && proposedImageCount > 0
-        ? fieldConflict('images', localImageCount, proposedImageCount)
+      localImageCount > 0 && proposedImageCount > 0 && imageSetsDiffer(localImages, wooImages)
+        ? {
+            field: 'images',
+            localValue: String(localImageCount),
+            remoteValue: String(proposedImageCount),
+          }
         : null,
       storefrontDescriptionDocFieldConflict(
         good.storefrontDescriptionDoc,
@@ -547,6 +581,8 @@ export class WooCommerceSyncService {
       conflicts,
       localImagePreviewUrls,
       wooImagePreviewUrls,
+      localImages,
+      wooImages,
     };
   }
 

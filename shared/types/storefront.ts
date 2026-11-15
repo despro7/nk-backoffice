@@ -3,6 +3,7 @@
  */
 
 import type { CatalogLossEntry, CatalogLossFormula } from './production.js';
+import type { PullImageMeta } from '../utils/catalogImageCompare.js';
 
 /** Default WC meta key strings (seed only) */
 export const STOREFRONT_WC_META = {
@@ -345,6 +346,9 @@ export interface WooPullPreviewResult {
   localImagePreviewUrls?: string[];
   /** До 5 URL з WooCommerce (src) */
   wooImagePreviewUrls?: string[];
+  /** Метадані зображень (назва, розмір, формат) для порівняння */
+  localImages?: PullImageMeta[];
+  wooImages?: PullImageMeta[];
 }
 
 /** Flags for pull-apply (single and bulk) */

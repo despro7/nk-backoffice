@@ -733,3 +733,26 @@ describe('storefront template editor html', () => {
     expect(doc.content?.[0]?.attrs?.overrideContent).toBeNull();
   });
 });
+
+import {
+  splitIngredientsInput,
+  parseIngredientGroup,
+  buildIngredientGroupTag,
+} from './storefrontDescription';
+
+describe('ingredient input helpers', () => {
+  it('splits by top-level commas only', () => {
+    expect(splitIngredientsInput('Вода, сіль, соус (соя, цукор), вода')).toEqual([
+      'вода',
+      'сіль',
+      'соус (соя, цукор)',
+    ]);
+  });
+
+  it('parses and rebuilds groups', () => {
+    const g = parseIngredientGroup('авторський соус (соєвий соус, вода, цукор)');
+    expect(g).toEqual({ name: 'авторський соус', children: ['соєвий соус', 'вода', 'цукор'] });
+    expect(buildIngredientGroupTag(g!.name, g!.children)).toBe('авторський соус (соєвий соус, вода, цукор)');
+    expect(parseIngredientGroup('вода')).toBeNull();
+  });
+});

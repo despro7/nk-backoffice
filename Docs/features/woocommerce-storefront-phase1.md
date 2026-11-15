@@ -111,6 +111,7 @@ Preset = упорядкований список блоків у `blocksJson` (�
 | `storefront.defaultPresetId` | UUID preset за замовчуванням |
 | `storefront.sync.autoPushOnSave` | Push на WC після збереження картки товару |
 | `storefront.sync.stockViaWc` | Режим синхронізації залишків: `legacy` / `parallel` / `wc_only` |
+| `storefront.media.optimization` | JSON `{ enabled, maxDimension, format: 'webp'\|'jpeg'\|'original', quality }` – стиснення зображень каталогу (дефолт: `true`, 2000, `webp`, 82) |
 
 Seed preset «Стандарт»: `00000000-0000-4000-8000-000000000001`.
 
@@ -211,13 +212,14 @@ Seed preset «Стандарт»: `00000000-0000-4000-8000-000000000001`.
 
 **Доступ:** `page.settings.storefront`. **Мутації** (preset CRUD, meta-ключі, зберегти) — `action.storefront.manage`.
 
-Layout **1/3 + 2/3**:
+Сторінка розбита на **4 таби** (`PageTabs`, ключ у URL-hash `#tab=…`, `storefrontSettingsTabs.ts`):
 
-| Ліва колонка | Права колонка |
-|--------------|---------------|
-| WooCommerce API (URL, keys, enable, test connection, media base URL) | Конструктор опису |
-| Meta-ключі (CRUD) | Presets, drag-and-drop блоків, шаблони |
-| Orphan WC media audit | Налаштування `kitComponents` (категорії BOM) |
+| Таб | Вміст |
+|-----|-------|
+| **Підключення** (за замовчуванням) | WooCommerce API (enable, URL, URL backoffice для медіа, keys, test connection), режими синхронізації (автопуш, залишки) |
+| **Опис товару** | Конструктор опису (presets, блоки, шаблони, `kitComponents`), Meta-ключі (CRUD), категорії комплекту. Нижня панель «Зберегти / Скасувати» (на інших табах – лише за наявності незбережених змін) |
+| **Зображення** | `CatalogImageSettingsCard`: стиснення (увімк., формат, макс. розмір, якість), зберігається окремо |
+| **Діагностика** | Inspect SKU, Orphan WC media audit |
 
 ### Конструктор блоків
 
@@ -228,6 +230,19 @@ Layout **1/3 + 2/3**:
 - **Решта built-in блоків** (маркетинг, сіль, зберігання…) — текстові; видалення дозволене (можна замінити кастомним `template`-блоком)
 
 При видаленні meta-ключа з реєстру — `metaKeyId` у блоках скидається в `null`.
+
+---
+
+## Зображення каталогу
+
+Локальні файли в `uploads/catalog/{goodId}/`, URL `/uploads/catalog/…`; для WooCommerce sideload потрібен публічний base URL (`storefront.woo.mediaPublicBaseUrl`).
+
+- **Завантаження:** до 30 МБ, до 10 файлів (`CATALOG_MEDIA_MAX_BYTES`). `CatalogImageOptimizer.optimizeCatalogImage` (`sharp`): `rotate()` за EXIF, `resize` по довшій стороні без збільшення, конвертація у формат із налаштувань (`storefront.media.optimization`). Анімовані GIF і результат не менший за оригінал (той самий формат) лишаються без змін. Фактичні `mimeType` / `size` / розширення пишуться в БД.
+- **Налаштування:** `GET/PUT /api/storefront/media-settings` (`action.storefront.read` / `manage`), UI – таб «Зображення».
+- **Оптимізувати наявне:** `POST /api/catalog/images/:imageId/optimize` і `POST /api/catalog/images/staging/:sessionId/:fileName/optimize` – примусове перекодування за поточними налаштуваннями (навіть якщо автостиснення вимкнено); при зміні формату змінюються `fileName` і розширення в `originalName`.
+- **Назви:** `shared/utils/catalogImageName.ts` – транслітерація, пробіли та спецсимволи → `-`, нижній регістр, розширення береться з реального файлу і не редагується при перейменуванні (клієнт і сервер). Кнопка автоназви в UI: `{slug-назви-товару}-{N}`.
+- **Dev ↔ прод:** `npm run dev` пише в прод-БД, файли лягають локально. `CatalogMediaProdSync` (лише `NODE_ENV !== 'production'`, потрібні `CATALOG_MEDIA_PROD_SSH_HOST` і `CATALOG_MEDIA_PROD_UPLOADS_DIR`) копіює нові файли через `ssh` / `scp` у `uploads/catalog` на проді і видаляє прибрані; помилки лише логуються. Для файлів, яких немає локально (старі товари), `server/index.ts` редіректить `/uploads/catalog/*` на прод-URL; у dev клієнт використовує відносні URL.
+- **Узгодження BO ↔ WC:** `WooPullPreviewResult.localImages` / `wooImages` (`PullImageMeta`: назва, розмір, формат; розмір WC – через `HEAD`). Конфлікт `images` виникає при різній кількості або позиційній розбіжності назви (без розширення, `-scaled`, `-WxH`), розміру (допуск 2%) чи формату (`shared/utils/catalogImageCompare.ts`).
 
 ---
 
@@ -343,6 +358,8 @@ Pull парсить WC HTML/meta через `storefrontDescriptionParser` → `s
 | POST | `/presets` | `action.storefront.manage` | створити |
 | PUT | `/presets/:id` | `action.storefront.manage` | оновити blocks / name |
 | DELETE | `/presets/:id` | `action.storefront.manage` | видалити (не default) |
+| GET | `/media-settings` | `action.storefront.read` | налаштування стиснення зображень |
+| PUT | `/media-settings` | `action.storefront.manage` | зберегти налаштування стиснення |
 | GET | `/settings` | `action.storefront.read` | metaKeys, defaultPresetId, kitComponentSettings, wooCommerce |
 | PUT | `/settings` | `action.storefront.manage` | metaKeys, defaultPresetId, kitComponentSettings, wooCommerce |
 | POST | `/preview` | `action.storefront.read` | HTML preview для `goodId` |

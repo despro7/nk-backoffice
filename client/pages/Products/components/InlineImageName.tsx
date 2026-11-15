@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
+import { buildCatalogImageName, splitImageName } from '@shared/utils/catalogImageName';
 
 interface InlineImageNameProps {
   value: string;
@@ -16,15 +17,16 @@ export function InlineImageName({
   overlayZClassName,
   onSave,
 }: InlineImageNameProps) {
+  const { base: valueBase, ext: valueExt } = splitImageName(value);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
+  const [draft, setDraft] = useState(valueBase);
   const [pendingName, setPendingName] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!editing) setDraft(value);
-  }, [value, editing]);
+    if (!editing) setDraft(valueBase);
+  }, [valueBase, editing]);
 
   useEffect(() => {
     if (!editing) return;
@@ -38,19 +40,19 @@ export function InlineImageName({
   }, [editing]);
 
   const requestCommit = () => {
-    const trimmed = draft.trim();
-    if (!trimmed || trimmed === value) {
-      setDraft(value);
+    const next = buildCatalogImageName(draft, valueExt);
+    if (!draft.trim() || next === value) {
+      setDraft(valueBase);
       setEditing(false);
       return;
     }
-    setPendingName(trimmed);
+    setPendingName(next);
     setEditing(false);
   };
 
   const cancelConfirm = () => {
     setPendingName(null);
-    setDraft(value);
+    setDraft(valueBase);
   };
 
   const confirmSave = async () => {
@@ -60,7 +62,7 @@ export function InlineImageName({
       await onSave(pendingName);
       setPendingName(null);
     } catch {
-      setDraft(value);
+      setDraft(valueBase);
       setPendingName(null);
     } finally {
       setSaving(false);
@@ -68,14 +70,14 @@ export function InlineImageName({
   };
 
   const cancelEditing = () => {
-    setDraft(value);
+    setDraft(valueBase);
     setEditing(false);
   };
 
   return (
     <>
       {editing ? (
-        <span className={`block min-w-0 ${className}`}>
+        <span className={`flex min-w-0 items-center ${className}`}>
           <input
             ref={inputRef}
             type="text"
@@ -93,9 +95,10 @@ export function InlineImageName({
                 cancelEditing();
               }
             }}
-            className="m-0 block h-[14px] w-full min-w-0 border-0 bg-transparent p-0 text-[10px] leading-[14px] text-white caret-white outline-none ring-0"
+            className="m-0 block h-[14px] min-w-0 flex-1 border-0 bg-transparent p-0 text-[10px] leading-[14px] text-white caret-white outline-none ring-0"
             aria-label="Назва зображення"
           />
+          <span className="shrink-0 text-[10px] leading-[14px] text-white/60">{valueExt}</span>
         </span>
       ) : (
         <button

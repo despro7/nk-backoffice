@@ -885,3 +885,30 @@ html.report-capture-ui-hidden [data-report-capture-chrome="true"] {
   min-height: 0;
   align-items: flex-start;
 }
+/* PhotoSwipe: caption каталогу (назва + розміри, вага, формат) */
+.pswp__catalog-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 8px 14px;
+  text-align: center;
+  color: #fff;
+  /* Темна напівпрозора підкладка: текст читається і на білому фоні фото */
+  background: rgba(17, 24, 39, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-radius: 8px;
+  pointer-events: none;
+}
+.pswp__catalog-caption-title {
+  font-size: 13px;
+  font-weight: 500;
+}
+.pswp__catalog-caption-meta {
+  margin-top: 2px;
+  font-size: 11px;
+  opacity: 0.75;
+}

@@ -1,9 +1,12 @@
 import type { ReactNode } from 'react';
-import { Checkbox } from '@heroui/react';
+import { Checkbox, Tooltip } from '@heroui/react';
 import type { CatalogDilovodPreviewResult, CatalogDilovodBarcodePreviewLine } from '@shared/types/catalog';
 import type { WooPullPreviewResult } from '@shared/types/storefront';
 import { catalogPlainTextForCompare } from '@shared/utils/catalogHtmlCompare';
 import { CatalogImagePreviewPopover } from '../CatalogImagePreviewPopover';
+import { TOOLTIP_CLASS_NAMES } from '@/lib/tooltipStyles';
+import { formatImageSize } from '../ImageMetaBadges';
+import { diffImageMeta, type PullImageMeta } from '@shared/utils/catalogImageCompare';
 import { PullFieldBarcodesComparePopover } from '../PullFieldBarcodesComparePopover';
 import { PullFieldConflictTooltip } from '../PullFieldConflictTooltip';
 import { PullFieldFullTextPopover } from '../PullFieldFullTextPopover';
@@ -460,6 +463,8 @@ interface ProductPullTriSourceTableProps {
   onSourceChange: (rowId: ProductPullTriRowId, source: ProductPullSource) => void;
   localImagePreviewUrls?: string[];
   wooImagePreviewUrls?: string[];
+  localImages?: PullImageMeta[];
+  wooImages?: PullImageMeta[];
   replaceImages?: {
     visible: boolean;
     checked: boolean;
@@ -501,9 +506,19 @@ function wrapCellContent(
   display: string,
   localImagePreviewUrls: string[],
   wooImagePreviewUrls: string[],
+  localImages: PullImageMeta[],
+  wooImages: PullImageMeta[],
 ): ReactNode {
   if (row.id === 'images') {
-    return wrapImagePreview(row.id, side, display, localImagePreviewUrls, wooImagePreviewUrls);
+    return wrapImagePreview(
+      row.id,
+      side,
+      display,
+      localImagePreviewUrls,
+      wooImagePreviewUrls,
+      localImages,
+      wooImages,
+    );
   }
 
   if (row.id === 'barcodesAndBatches' && side !== 'woo') {
@@ -577,21 +592,67 @@ function wrapCellContent(
   return display;
 }
 
+function ImageMetaList({
+  mine,
+  other,
+}: {
+  mine: PullImageMeta[];
+  other: PullImageMeta[];
+}) {
+  const MAX = 4;
+  return (
+    <span className="mt-1 block space-y-0.5 text-[10px] leading-tight text-default-500">
+      {mine.slice(0, MAX).map((img, i) => {
+        const diff = other[i] ? diffImageMeta(img, other[i]) : null;
+        const warn = 'text-warning-600 font-medium';
+        const size = formatImageSize(img.sizeBytes);
+        const fullLine = [img.name || '—', size || '—', img.ext || '—'].join(' · ');
+        return (
+          <Tooltip
+            key={`${img.url}-${i}`}
+            content={fullLine}
+            placement="top"
+            delay={300}
+            showArrow
+            classNames={TOOLTIP_CLASS_NAMES.dark}
+          >
+            <span className="block truncate">
+              <span className={diff?.name ? warn : ''}>{img.name || '—'}</span>
+              {' · '}
+              <span className={diff?.size ? warn : ''}>{size || '—'}</span>
+              {' · '}
+              <span className={diff?.ext ? warn : ''}>{img.ext || '—'}</span>
+            </span>
+          </Tooltip>
+        );
+      })}
+      {mine.length > MAX && <span className="block">… ще {mine.length - MAX}</span>}
+    </span>
+  );
+}
+
 function wrapImagePreview(
   rowId: ProductPullTriRowId,
   side: ProductPullSource,
   display: string,
   localImagePreviewUrls: string[],
   wooImagePreviewUrls: string[],
+  localImages: PullImageMeta[],
+  wooImages: PullImageMeta[],
 ): ReactNode {
   if (rowId !== 'images') return display;
   const urls =
     side === 'local' ? localImagePreviewUrls : side === 'woo' ? wooImagePreviewUrls : [];
   if (urls.length === 0) return display;
+  const mine = side === 'local' ? localImages : wooImages;
+  const other = side === 'local' ? wooImages : localImages;
   return (
-    <CatalogImagePreviewPopover urls={urls} label={display}>
-      <span className="underline decoration-dotted underline-offset-2">{display}</span>
-    </CatalogImagePreviewPopover>
+    <>
+      <CatalogImagePreviewPopover urls={urls} label={display} images={mine}>
+        <span className="underline decoration-dotted underline-offset-2">{display}</span>
+      </CatalogImagePreviewPopover>
+      {mine.length > 0 && <ImageMetaList mine={mine} other={other} />}
+    </>
   );
 }
 
@@ -601,6 +662,8 @@ export function ProductPullTriSourceTable({
   onSourceChange,
   localImagePreviewUrls = [],
   wooImagePreviewUrls = [],
+  localImages = [],
+  wooImages = [],
   replaceImages,
 }: ProductPullTriSourceTableProps) {
   const LABEL_CLASS = 'bg-default-200/80 text-default-500 rounded ml-0.5 px-1 py-0.5 text-xs font-medium';
@@ -671,6 +734,8 @@ export function ProductPullTriSourceTable({
                           display,
                           localImagePreviewUrls,
                           wooImagePreviewUrls,
+                          localImages,
+                          wooImages,
                         )}
                       </span>
                       <label
@@ -717,6 +782,8 @@ export function ProductPullTriSourceTable({
                         display,
                         localImagePreviewUrls,
                         wooImagePreviewUrls,
+                        localImages,
+                        wooImages,
                       )}
                     </span>
                   </div>

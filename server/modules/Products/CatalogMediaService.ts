@@ -9,9 +9,12 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { prisma, logServer } from '../../lib/utils.js';
 import type { CatalogGoodImageDto } from '../../../shared/types/catalog.js';
+import { buildCatalogImageName, splitImageName } from '../../../shared/utils/catalogImageName.js';
+import { pushCatalogImageToProd, removeCatalogImageFromProd } from './CatalogMediaProdSync.js';
+import { optimizeCatalogImage, readCatalogImageSettings } from './CatalogImageOptimizer.js';
 
 export const CATALOG_MEDIA_MAX_FILES = 10;
-export const CATALOG_MEDIA_MAX_BYTES = 8 * 1024 * 1024; // 8 MB
+export const CATALOG_MEDIA_MAX_BYTES = 30 * 1024 * 1024; // 30 MB (до стиснення)
 export const CATALOG_MEDIA_ACCEPT = new Set([
   'image/jpeg',
   'image/png',
@@ -203,6 +206,7 @@ export class CatalogMediaService {
     const dir = this.stagingDir(sessionId);
     await fs.mkdir(dir, { recursive: true });
     const meta = await this.readStagingMeta(sessionId);
+    const imageSettings = await readCatalogImageSettings();
     const saved: Array<{
       id: string;
       fileName: string;
@@ -214,23 +218,24 @@ export class CatalogMediaService {
 
     for (const file of files) {
       this.validateFileMeta(file.mimeType, file.size);
-      const fileName = `${randomUUID()}${extFromMime(file.mimeType, file.originalName)}`;
+      const opt = await optimizeCatalogImage(file.tempPath, file.mimeType, file.size, imageSettings);
+      const fileName = `${randomUUID()}${opt.ext ?? extFromMime(file.mimeType, file.originalName)}`;
       const dest = path.join(dir, fileName);
-      await fs.rename(file.tempPath, dest).catch(async () => {
-        await fs.copyFile(file.tempPath, dest);
-        await fs.unlink(file.tempPath).catch(() => undefined);
+      await fs.rename(opt.path, dest).catch(async () => {
+        await fs.copyFile(opt.path, dest);
+        await fs.unlink(opt.path).catch(() => undefined);
       });
       meta[fileName] = {
-        originalName: file.originalName,
-        mimeType: file.mimeType,
-        size: file.size,
+        originalName: buildCatalogImageName(file.originalName, path.extname(fileName)),
+        mimeType: opt.mimeType,
+        size: opt.size,
       };
       saved.push({
         id: fileName,
         fileName,
-        originalName: file.originalName,
-        mimeType: file.mimeType,
-        size: file.size,
+        originalName: meta[fileName].originalName,
+        mimeType: opt.mimeType,
+        size: opt.size,
         url: `/uploads/catalog/_staging/${encodeURIComponent(sessionId)}/${encodeURIComponent(fileName)}`,
       });
     }
@@ -272,6 +277,7 @@ export class CatalogMediaService {
 
     const dir = this.goodDir(goodId);
     await fs.mkdir(dir, { recursive: true });
+    const imageSettings = await readCatalogImageSettings();
 
     const maxSort = await prisma.catalogGoodImage.aggregate({
       where: { goodId },
@@ -284,20 +290,22 @@ export class CatalogMediaService {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       this.validateFileMeta(file.mimeType, file.size);
-      const fileName = `${randomUUID()}${extFromMime(file.mimeType, file.originalName)}`;
+      const opt = await optimizeCatalogImage(file.tempPath, file.mimeType, file.size, imageSettings);
+      const fileName = `${randomUUID()}${opt.ext ?? extFromMime(file.mimeType, file.originalName)}`;
       const dest = path.join(dir, fileName);
-      await fs.rename(file.tempPath, dest).catch(async () => {
-        await fs.copyFile(file.tempPath, dest);
-        await fs.unlink(file.tempPath).catch(() => undefined);
+      await fs.rename(opt.path, dest).catch(async () => {
+        await fs.copyFile(opt.path, dest);
+        await fs.unlink(opt.path).catch(() => undefined);
       });
+      await pushCatalogImageToProd(goodId, fileName, dest);
 
       const row = await prisma.catalogGoodImage.create({
         data: {
           goodId,
           fileName,
-          originalName: file.originalName,
-          mimeType: file.mimeType,
-          size: file.size,
+          originalName: buildCatalogImageName(file.originalName, path.extname(fileName)),
+          mimeType: opt.mimeType,
+          size: opt.size,
           sortOrder: nextSort++,
           isPrimary: isFirstBatch && i === 0,
         },
@@ -354,6 +362,7 @@ export class CatalogMediaService {
         );
         continue;
       }
+      await pushCatalogImageToProd(targetGoodId, newFileName, destPath);
 
       const row = await prisma.catalogGoodImage.create({
         data: {
@@ -417,6 +426,7 @@ export class CatalogMediaService {
       } catch {
         await fs.copyFile(src, dest);
       }
+      await pushCatalogImageToProd(goodId, item.fileName, dest);
 
       const row = await prisma.catalogGoodImage.create({
         data: {
@@ -442,6 +452,7 @@ export class CatalogMediaService {
 
     const filePath = path.join(this.goodDir(row.goodId), row.fileName);
     await fs.unlink(filePath).catch(() => undefined);
+    await removeCatalogImageFromProd(row.goodId, row.fileName);
     await prisma.catalogGoodImage.delete({ where: { id: imageId } });
 
     if (row.isPrimary) {
@@ -458,10 +469,19 @@ export class CatalogMediaService {
     }
   }
 
+  /** Нова назва: латиниця, дефіси, розширення береться з реального файлу (не редагується). */
+  private renamedImageName(input: string, fileName: string): string {
+    if (!input.trim()) throw new Error('Назва не може бути порожньою');
+    if (input.length > 512) throw new Error('Назва занадто довга');
+    const ext = path.extname(fileName).toLowerCase();
+    const { base } = splitImageName(input);
+    return buildCatalogImageName(base, ext);
+  }
+
   async renameImage(imageId: number, originalName: string): Promise<CatalogGoodImageDto> {
-    const trimmed = originalName.trim();
-    if (!trimmed) throw new Error('Назва не може бути порожньою');
-    if (trimmed.length > 512) throw new Error('Назва занадто довга');
+    const current = await prisma.catalogGoodImage.findUnique({ where: { id: imageId } });
+    if (!current) throw new Error('Зображення не знайдено');
+    const trimmed = this.renamedImageName(originalName, current.fileName);
 
     const updated = await prisma.catalogGoodImage.update({
       where: { id: imageId },
@@ -482,13 +502,10 @@ export class CatalogMediaService {
     size: number;
     url: string;
   }> {
-    const trimmed = originalName.trim();
-    if (!trimmed) throw new Error('Назва не може бути порожньою');
-    if (trimmed.length > 512) throw new Error('Назва занадто довга');
-
     const meta = await this.readStagingMeta(sessionId);
     const entry = meta[fileName];
     if (!entry) throw new Error('Файл не знайдено у staging');
+    const trimmed = this.renamedImageName(originalName, fileName);
 
     meta[fileName] = { ...entry, originalName: trimmed };
     await this.writeStagingMeta(sessionId, meta);
@@ -500,6 +517,71 @@ export class CatalogMediaService {
       mimeType: entry.mimeType,
       size: entry.size,
       url: `/uploads/catalog/_staging/${encodeURIComponent(sessionId)}/${encodeURIComponent(fileName)}`,
+    };
+  }
+
+  /** Повторна оптимізація файлу за поточними налаштуваннями (примусово, навіть якщо вимкнено). */
+  private async reoptimizeFile(
+    dir: string,
+    fileName: string,
+    mimeType: string,
+    size: number,
+  ): Promise<{ fileName: string; mimeType: string; size: number; changed: boolean }> {
+    const settings = { ...(await readCatalogImageSettings()), enabled: true };
+    const full = path.join(dir, fileName);
+    const opt = await optimizeCatalogImage(full, mimeType, size, settings);
+    if (opt.ext === null) return { fileName, mimeType, size, changed: false };
+    const newName = `${fileName.replace(/\.[^.]+$/, '')}${opt.ext}`;
+    if (newName !== fileName) await fs.rename(full, path.join(dir, newName));
+    return { fileName: newName, mimeType: opt.mimeType, size: opt.size, changed: true };
+  }
+
+  async optimizeImage(imageId: number): Promise<{ image: CatalogGoodImageDto; changed: boolean }> {
+    const row = await prisma.catalogGoodImage.findUnique({ where: { id: imageId } });
+    if (!row) throw new Error('Зображення не знайдено');
+    const dir = this.goodDir(row.goodId);
+    const res = await this.reoptimizeFile(dir, row.fileName, row.mimeType, row.size);
+    if (!res.changed) return { image: toDto(row), changed: false };
+    const updated = await prisma.catalogGoodImage.update({
+      where: { id: imageId },
+      data: {
+        fileName: res.fileName,
+        mimeType: res.mimeType,
+        size: res.size,
+        originalName: buildCatalogImageName(row.originalName, path.extname(res.fileName)),
+      },
+    });
+    if (res.fileName !== row.fileName) await removeCatalogImageFromProd(row.goodId, row.fileName);
+    await pushCatalogImageToProd(row.goodId, res.fileName, path.join(dir, res.fileName));
+    return { image: toDto(updated), changed: true };
+  }
+
+  async optimizeStagingFile(sessionId: string, fileName: string): Promise<{
+    item: { id: string; fileName: string; originalName: string; mimeType: string; size: number; url: string };
+    changed: boolean;
+  }> {
+    const safe = path.basename(fileName);
+    const meta = await this.readStagingMeta(sessionId);
+    const entry = meta[safe];
+    if (!entry) throw new Error('Файл не знайдено у staging');
+    const res = await this.reoptimizeFile(this.stagingDir(sessionId), safe, entry.mimeType, entry.size);
+    let originalName = entry.originalName;
+    if (res.changed) {
+      delete meta[safe];
+      originalName = buildCatalogImageName(entry.originalName, path.extname(res.fileName));
+      meta[res.fileName] = { originalName, mimeType: res.mimeType, size: res.size };
+      await this.writeStagingMeta(sessionId, meta);
+    }
+    return {
+      changed: res.changed,
+      item: {
+        id: res.fileName,
+        fileName: res.fileName,
+        originalName,
+        mimeType: res.mimeType,
+        size: res.size,
+        url: `/uploads/catalog/_staging/${encodeURIComponent(sessionId)}/${encodeURIComponent(res.fileName)}`,
+      },
     };
   }
 

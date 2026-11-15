@@ -1136,6 +1136,32 @@ router.post('/images/staging/:sessionId/commit', ...authOnly, async (req, res) =
   }
 });
 
+// POST /api/catalog/images/staging/:sessionId/:fileName/optimize
+router.post('/images/staging/:sessionId/:fileName/optimize', ...authOnly, async (req, res) => {
+  try {
+    const data = await catalogMediaService.optimizeStagingFile(req.params.sessionId, req.params.fileName);
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'POST /images/staging/:sessionId/:fileName/optimize');
+  }
+});
+
+// POST /api/catalog/images/:imageId/optimize
+router.post('/images/:imageId/optimize', ...authOnly, async (req, res) => {
+  try {
+    const imageId = Number(req.params.imageId);
+    const row = await prisma.catalogGoodImage.findUnique({ where: { id: imageId }, select: { goodId: true } });
+    if (!row) {
+      res.status(404).json({ success: false, error: 'Зображення не знайдено' });
+      return;
+    }
+    const data = await trackCatalogAction(req, CATALOG_AUDIT_ACTIONS.IMAGES_CHANGED, [row.goodId], () => catalogMediaService.optimizeImage(imageId));
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'POST /images/:imageId/optimize');
+  }
+});
+
 // DELETE /api/catalog/images/:imageId
 router.delete('/images/:imageId', ...authOnly, async (req, res) => {
   try {

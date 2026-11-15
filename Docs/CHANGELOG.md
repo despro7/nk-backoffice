@@ -5,6 +5,27 @@
 
 ---
 
+## 2026-11-16 – Картка товару: зображення, склад, налаштування вітрини
+
+**Files:** `client/pages/Products/components/{ProductImageUpload,ImageMetaBadges,InlineImageName,CatalogImageGalleryLightbox,CatalogImagePreviewPopover,CatalogActionsMenu,CatalogContextMenu}.tsx`, `client/pages/Products/components/productDrawer/{ProductDrawer,ProductIngredientsTags,ProductPullTriSourceTable,StorefrontPullConfirmModal,ProductContentTab}.tsx`, `productDrawer/wrapSortingStrategy.ts`, `client/pages/{SettingsStorefront.tsx,storefrontSettingsTabs.ts,SettingsProductSets.tsx}`, `client/components/{storefront/CatalogImageSettingsCard.tsx,DesignSystemPatterns.tsx}`, `client/lib/tooltipStyles.ts`, `client/global.css`, `server/modules/Products/{CatalogMediaService,CatalogImageOptimizer,CatalogMediaProdSync,ProductsController}.ts`, `server/modules/Storefront/WooCommerceSyncService.ts`, `server/{index.ts,routes/storefront.ts}`, `shared/utils/{catalogImageName,catalogImageCompare,storefrontDescription}.ts`, `shared/types/{catalogImageSettings,storefront}.ts`, `package.json` (`sharp`)
+
+- **Меню «Дії»:** прибрано «Оновити legacy cache» (картка, меню списку, контекстне меню). У картці додано «Синхронізувати з Dilovod». «Інспектувати на сайті» і «Завантажити з сайту» – звичайного кольору, зелений push лишився.
+- **Склад:** текст із комами (введення або вставка) розбивається на окремі теги; коми всередині дужок не ділять (`splitIngredientsInput`). Вкладені інгредієнти зберігаються як `назва (a, b, c)` (`string[]`, без міграції), у UI – група з дочірніми тегами: клік редагує, ✕ видаляє, DnD лише в межах батька. DnD тегів – `wrapSortingStrategy` (flow-layout за реальними ширинами, плавний `transition`) + `DragOverlay`.
+- **Зображення:**
+  - Ліміт 30 МБ; після завантаження `sharp` зменшує/конвертує за налаштуваннями (за замовчуванням WebP, 2000px, q82; анімовані GIF не змінюються).
+  - Імена файлів транслітеруються в латиницю, пробіли → дефіси, розширення не редагується (`catalogImageName.ts`); кнопка автоназви `{назва-товару}-{N}`.
+  - Кнопка «Оптимізувати формат і стиснення зображення» перекодовує наявний файл (`POST /api/catalog/images/:id/optimize`, також для staging).
+  - Бейджі px / вага / формат на мініатюрі при hover і в caption PhotoSwipe (темна напівпрозора підкладка).
+  - Dev: нові файли дзеркаляться на VPS по SSH (`CATALOG_MEDIA_PROD_SSH_HOST`, `CATALOG_MEDIA_PROD_UPLOADS_DIR`), відсутні локально віддаються редіректом на прод; прев'ю в dev бере відносні URL.
+- **Узгодження BO ↔ WC:** зображення порівнюються за назвою (без розширення і суфіксів WP), розміром (допуск 2%) і форматом; рядки `назва · розмір · ФОРМАТ` з підсвіткою відмінностей і Tooltip.
+- **`/settings/storefront`:** 4 таби (Підключення, Опис товару, Зображення, Діагностика), активний таб у URL-hash; нова картка налаштувань стиснення (`storefront.media.optimization`, `GET/PUT /api/storefront/media-settings`).
+- **Legacy fullDescription** у картці показується лише коли поле не порожнє. У `SettingsProductSets` додано `TODO(deprecated)`.
+- **Дизайн-система:** `client/lib/tooltipStyles.ts` (`TOOLTIP_CLASS_NAMES`, 9 варіантів: white, dark, primary, secondary, warning, danger, success, yellow, blue) і секція «Tooltip» на `/settings/design`.
+
+**Документація:** `Docs/guides/design-system.md` – «Інші патерни на вітрині», «Tooltip»; `Docs/features/woocommerce-storefront-phase1.md` – `settings_base`, «UI: `/settings/storefront`», «Зображення каталогу», API; `Docs/features/products-catalog-2.0.md` – «UI: ProductDrawer», «Legacy Update».
+
+---
+
 ## 2026-11-14 – Наліпки: превʼю збереженого PDF і плейсхолдер `{expires_full}`
 
 **Files:** `client/pages/Products/components/productDrawer/{ProductLabelsTab.tsx,label/LabelPdfmeViewer.tsx,label/pdfjsPdfmeConverter.ts}`, `client/shims/pdfmeConverterBrowserStub.ts`, `package.json` (`pdfjs-dist`), `shared/constants/{labelInputKeys,labelMvtVariables}.ts`, `shared/utils/{labelInputs,labelMvtVariables,productLabel}.ts`, `server/modules/Products/LabelInputResolver.ts`

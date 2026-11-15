@@ -35,8 +35,7 @@ export interface ProductDrawerProps {
     q: string,
     opts?: { underFolderName?: string }
   ) => Promise<CatalogSearchHit[]>;
-  onLegacyUpdate?: (id: string) => void;
-  legacyUpdating?: boolean;
+  onSyncFromDilovod?: (id: string) => void;
   /** Глибина вкладеного drawer (GTM-стек) */
   stackLevel?: number;
   /** Id карток у відкритому стеку — щоб не відкривати ту саму двічі */
