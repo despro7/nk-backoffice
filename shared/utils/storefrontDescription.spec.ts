@@ -741,6 +741,15 @@ import {
 } from './storefrontDescription';
 
 describe('ingredient input helpers', () => {
+  it('canonicalizes nested tags (space before paren, comma + space inside)', () => {
+    expect(normalizeIngredientTag('Авторський соус(соєвий соус,вода,цукор)')).toBe(
+      'авторський соус (соєвий соус, вода, цукор)',
+    );
+    expect(formatIngredientsList(['бобова локшина', 'соус(соя,вода)'])).toBe(
+      'бобова локшина, соус (соя, вода)',
+    );
+  });
+
   it('splits by top-level commas only', () => {
     expect(splitIngredientsInput('Вода, сіль, соус (соя, цукор), вода')).toEqual([
       'вода',

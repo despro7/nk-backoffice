@@ -95,10 +95,9 @@ export function InlineImageName({
                 cancelEditing();
               }
             }}
-            className="m-0 block h-[14px] min-w-0 flex-1 border-0 bg-transparent p-0 text-[10px] leading-[14px] text-white caret-white outline-none ring-0"
+            className="m-0 block h-[14px] w-full min-w-0 flex-1 border-0 bg-transparent p-0 text-[10px] leading-[14px] text-white caret-white outline-none ring-0"
             aria-label="Назва зображення"
           />
-          <span className="shrink-0 text-[10px] leading-[14px] text-white/60">{valueExt}</span>
         </span>
       ) : (
         <button
@@ -110,9 +109,9 @@ export function InlineImageName({
             if (isDisabled) return;
             setEditing(true);
           }}
-          title={isDisabled ? value : 'Натисніть для редагування назви'}
+          title={isDisabled ? value : `${value} · натисніть для редагування назви`}
         >
-          {value}
+          {valueBase}
         </button>
       )}
 

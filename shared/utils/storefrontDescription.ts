@@ -601,8 +601,19 @@ export function buildKitComponentsHtml(
   return buildKitComponentsLegacyHtml(components);
 }
 
+/**
+ * Канонічний вигляд тега складу. Вкладений склад приводиться до `назва (a, b, c)`:
+ * пробіл перед `(`, `, ` між дочірніми. Тому і старі збережені значення («соус(a,b)»)
+ * виводяться на етикетці та вітрині за правилами пунктуації.
+ */
 export function normalizeIngredientTag(text: string): string {
-  return text.trim().replace(/[.,;]+$/g, '').toLowerCase();
+  const base = text.trim().replace(/[.,;]+$/g, '').toLowerCase();
+  const match = /^(.+?)\s*\((.+)\)$/.exec(base);
+  if (!match) return base;
+  const name = match[1].trim().replace(/[.,;]+$/g, '');
+  const children = splitIngredientsInput(match[2]);
+  if (!name || children.length === 0) return base;
+  return `${name} (${children.join(', ')})`;
 }
 
 /** Розбити текст по комі / `;` / переносу лише на верхньому рівні (коми в дужках не ділять). */

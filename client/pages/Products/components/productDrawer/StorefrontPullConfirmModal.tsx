@@ -34,6 +34,7 @@ import {
   type ProductPullTriRowId,
   ProductPullTriSourceTable,
   shouldPushTriSyncChoicesToWoo,
+  countTriSyncChoicesToPushToWoo,
 } from './ProductPullTriSourceTable';
 import { resolveCatalogMediaAbsoluteUrl, resolveCatalogMediaAbsoluteUrls } from '@shared/utils/resolveCatalogMediaAbsoluteUrl';
 
@@ -323,6 +324,16 @@ export function StorefrontPullConfirmModal({
     [mediaPublicBaseUrl, preview?.localImages],
   );
 
+  /** Скільки конфліктних полів піде з BO на WooCommerce (push). */
+  const pushToWooCount = useMemo(() => {
+    if (!preview || preview.wcCompareEnabled === false) return 0;
+    return countTriSyncChoicesToPushToWoo(
+      triRowsAll,
+      sourceByRowId,
+      preview.conflicts.map((c) => c.field),
+    );
+  }, [preview, triRowsAll, sourceByRowId]);
+
   const hasApplySelection = useMemo(() => {
     const hasRemoteSelection = triRowsAll.some(
       (row) => (sourceByRowId[row.id] ?? 'local') !== 'local',
@@ -331,8 +342,9 @@ export function StorefrontPullConfirmModal({
       preview?.wcCompareEnabled !== false &&
       isEmpty(localFullDescription) &&
       Boolean(preview?.proposed.fullDescription?.trim());
-    return hasRemoteSelection || needsLegacyFullSeed;
+    return hasRemoteSelection || needsLegacyFullSeed || pushToWooCount > 0;
   }, [
+    pushToWooCount,
     triRowsAll,
     sourceByRowId,
     localFullDescription,
@@ -559,17 +571,27 @@ export function StorefrontPullConfirmModal({
                 {preview && (
                   <div className="flex flex-wrap items-center justify-between w-full gap-3">
                     <p className="text-xs font-normal text-default-500">Оберіть джерело для кожного поля</p>
+                    <div className="flex flex-col items-end gap-0.5">
                     {selectedCount > 0 ? (
                       <p className="text-xs text-default-500 flex items-center gap-1">
                         <DynamicIcon name="check-circle" size={14} className="text-success" />
                         {selectedCount}{' '}
                         {selectedCount === 1 ? 'поле' : selectedCount < 5 ? 'поля' : 'полів'} буде оновлено
                       </p>
-                    ) : (
+                    ) : null}
+                    {pushToWooCount > 0 ? (
+                      <p className="text-xs text-default-500 flex items-center gap-1">
+                        <DynamicIcon name="upload" size={14} className="text-warning-600" />
+                        {pushToWooCount}{' '}
+                        {pushToWooCount === 1 ? 'поле' : pushToWooCount < 5 ? 'поля' : 'полів'} буде відправлено з Backoffice на WooCommerce
+                      </p>
+                    ) : null}
+                    {selectedCount === 0 && pushToWooCount === 0 ? (
                       <p className="text-xs text-default-500">
                         Усі видимі поля залишаються з Backoffice, нічого не буде перезаписано
                       </p>
-                    )}
+                    ) : null}
+                    </div>
                   </div>
                 )}
 

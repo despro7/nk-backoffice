@@ -180,18 +180,28 @@ const KIT_HIDDEN_ROW_IDS: ProductPullTriRowId[] = [
 export type ProductPullTriFieldView = 'differences' | 'all';
 
 /** Після узгодження: якщо для WC-конфлікту обрано не WC — потрібен push BO → сайт. */
+/** Кількість конфліктних полів, де обрано не WC (Backoffice / Dilovod), тобто WC буде перезаписано при push. */
+export function countTriSyncChoicesToPushToWoo(
+  rows: ProductPullTriRow[],
+  sourceByRowId: Record<string, ProductPullSource>,
+  wooConflictFields: Iterable<string>,
+): number {
+  const conflicts = new Set(wooConflictFields);
+  let count = 0;
+  for (const row of rows) {
+    const wooField = ROW_WOO_CONFLICT_FIELD[row.id];
+    if (!wooField || !conflicts.has(wooField)) continue;
+    if ((sourceByRowId[row.id] ?? 'local') !== 'woo') count += 1;
+  }
+  return count;
+}
+
 export function shouldPushTriSyncChoicesToWoo(
   rows: ProductPullTriRow[],
   sourceByRowId: Record<string, ProductPullSource>,
   wooConflictFields: Iterable<string>,
 ): boolean {
-  const conflicts = new Set(wooConflictFields);
-  for (const row of rows) {
-    const wooField = ROW_WOO_CONFLICT_FIELD[row.id];
-    if (!wooField || !conflicts.has(wooField)) continue;
-    if ((sourceByRowId[row.id] ?? 'local') !== 'woo') return true;
-  }
-  return false;
+  return countTriSyncChoicesToPushToWoo(rows, sourceByRowId, wooConflictFields) > 0;
 }
 
 export function filterProductPullTriRows(
