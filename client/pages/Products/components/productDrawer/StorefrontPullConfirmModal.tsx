@@ -14,6 +14,7 @@ import {
   ModalFooter,
   ModalHeader,
   Spinner,
+  Switch,
 } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
@@ -204,6 +205,8 @@ export function StorefrontPullConfirmModal({
 }: StorefrontPullConfirmModalProps) {
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
+  /** Явний дозвіл відправити Backoffice на WooCommerce (push) для конфліктних полів. */
+  const [pushBoToWooEnabled, setPushBoToWooEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<WooPullPreviewResult | null>(null);
   const [dilovodPreview, setDilovodPreview] = useState<CatalogDilovodPreviewResult | null>(null);
@@ -256,6 +259,7 @@ export function StorefrontPullConfirmModal({
     setPreview(null);
     setDilovodPreview(null);
     setSourceByRowId({});
+    setPushBoToWooEnabled(false);
     void Promise.all([
       storefrontApi.pullPreview(goodId),
       catalogApi.fetchDilovodPreview(goodId).catch(() => null),
@@ -324,8 +328,8 @@ export function StorefrontPullConfirmModal({
     [mediaPublicBaseUrl, preview?.localImages],
   );
 
-  /** Скільки конфліктних полів піде з BO на WooCommerce (push). */
-  const pushToWooCount = useMemo(() => {
+  /** Скільки конфліктних полів МОЖНА відправити з BO на WooCommerce (push). */
+  const pushCandidateCount = useMemo(() => {
     if (!preview || preview.wcCompareEnabled === false) return 0;
     return countTriSyncChoicesToPushToWoo(
       triRowsAll,
@@ -333,6 +337,9 @@ export function StorefrontPullConfirmModal({
       preview.conflicts.map((c) => c.field),
     );
   }, [preview, triRowsAll, sourceByRowId]);
+
+  /** Скільки полів реально піде на WC: лише при увімкненому перемикачі. */
+  const pushToWooCount = pushBoToWooEnabled ? pushCandidateCount : 0;
 
   const hasApplySelection = useMemo(() => {
     const hasRemoteSelection = triRowsAll.some(
@@ -367,6 +374,7 @@ export function StorefrontPullConfirmModal({
       const dilovodFields = dilovodFieldsFromTriSources(sourceByRowId);
 
       const pushBoToWoo =
+        pushBoToWooEnabled &&
         preview.wcCompareEnabled !== false &&
         shouldPushTriSyncChoicesToWoo(
           triRowsAll,
@@ -570,7 +578,21 @@ export function StorefrontPullConfirmModal({
 
                 {preview && (
                   <div className="flex flex-wrap items-center justify-between w-full gap-3">
-                    <p className="text-xs font-normal text-default-500">Оберіть джерело для кожного поля</p>
+                    <div className="flex flex-col gap-1">
+                      <p className="text-xs font-normal text-default-500">Оберіть джерело для кожного поля</p>
+                      {pushCandidateCount > 0 ? (
+                        <Switch
+                          size="sm"
+                          isSelected={pushBoToWooEnabled}
+                          onValueChange={setPushBoToWooEnabled}
+                          isDisabled={applying}
+                          classNames={{ label: 'text-xs text-default-600' }}
+                        >
+                          Відправити BO на WC
+                          <span className="ml-1 text-default-400">({pushCandidateCount})</span>
+                        </Switch>
+                      ) : null}
+                    </div>
                     <div className="flex flex-col items-end gap-0.5">
                     {selectedCount > 0 ? (
                       <p className="text-xs text-default-500 flex items-center gap-1">

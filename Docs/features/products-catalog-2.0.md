@@ -446,7 +446,7 @@ client/pages/Products/
 - **Tri-source sync (BO / WC / Dilovod):**
   - При відкритті edit-картки з SKU — фонова перевірка конфліктів: `GET …/dilovod-preview` + (за правом pull) `POST /api/storefront/woo/pull-preview`.
   - Банер **«Узгодити»** якщо є відмінності Dilovod і/або WC (WC лише в гілці «Готова продукція»).
-  - Модалка `CatalogOpenSyncModal` → `StorefrontPullConfirmModal`: таблиця `ProductPullTriSourceTable`, фільтр «Лише відмінності / Усі поля», застосування Dilovod + WC окремо; push BO→WC лише коли `wcCompareEnabled !== false`; рядок **«Штрихкоди і партії»**:
+  - Модалка `CatalogOpenSyncModal` → `StorefrontPullConfirmModal`: таблиця `ProductPullTriSourceTable`, фільтр «Лише відмінності / Усі поля», застосування Dilovod + WC окремо; push BO→WC лише коли `wcCompareEnabled !== false` і ввімкнено перемикач «Відправити BO на WC» (за замовчуванням вимкнений; `countTriSyncChoicesToPushToWoo` рахує конфліктні поля з обраним не WC); рядок **«Штрихкоди і партії»**:
     - банер і `conflicts` — лише **порційні** ШК BO ↔ Dilovod (`catalogBarcodePreviewPortionLines`, на сервері `localPortionBarcodeLines` у `previewGoodFromDilovod` / `barcodeCount` у snapshot); локальні **box**-ШК, яких немає в ERP, **не** вважаються розбіжністю;
     - колонка BO у tri-source — лічильник порційних; ERP — `proposedBarcodes`;
     - клік по «N поз.» — `PullFieldBarcodesComparePopover` (повні списки BO включно з box, іконки `barcodeKind`; Dilovod — порційні; жовтим — лише в одному джерелі); preview API: `localBarcodes` / `proposedBarcodes` у `CatalogDilovodPreviewResult` (`barcodeKind` у рядках preview);
