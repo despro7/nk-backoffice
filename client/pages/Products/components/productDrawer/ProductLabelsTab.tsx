@@ -572,7 +572,12 @@ export function ProductLabelsTab({
     const res = await fetch(ProductLabelService.pdfUrl(detail.id, labelId), { credentials: 'include' });
     if (!res.ok) return;
     const blob = await res.blob();
-    saveAs(blob, `label-${labelKind}.pdf`);
+    const safeName = detail.name
+      .replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 120);
+    saveAs(blob, safeName ? `${safeName} (${labelKind}).pdf` : `label-${labelKind}.pdf`);
   };
 
   const fetchSelectedPdfBlob = async (): Promise<Blob> => {
