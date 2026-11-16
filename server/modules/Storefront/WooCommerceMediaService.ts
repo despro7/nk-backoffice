@@ -109,7 +109,7 @@ export class WooCommerceMediaService {
       }
 
       wcPayload.push({
-        src: buildCatalogImagePublicUrl(publicBase, goodId, image.fileName),
+        src: buildCatalogImagePublicUrl(publicBase, goodId, image.fileName, image.originalName),
         name: image.originalName || image.fileName,
       });
     }

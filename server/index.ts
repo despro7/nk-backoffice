@@ -144,6 +144,19 @@ export function createServer() {
     fallthrough: true,
     maxAge: '1d',
   }));
+  // Той самий файл під «красивим» ім'ям в кінці URL (для WordPress sideload: ім'я файлу береться з URL)
+  app.get('/uploads/catalog/:goodId/:fileName/:friendly', (req, res, next) => {
+    const { goodId, fileName } = req.params;
+    if (!/^[\w.\-]+$/.test(goodId) || !/^[\w.\-]+$/.test(fileName)) return next();
+    res.sendFile(
+      fileName,
+      { root: path.resolve(process.cwd(), 'uploads', 'catalog', goodId), maxAge: '1d' },
+      (err) => {
+        if (err) next();
+      },
+    );
+  });
+
   // Лише dev: файлів, яких немає локально (старі товари лежать на проді), редіректимо на прод-URL.
   if (process.env.NODE_ENV !== 'production') {
     app.use('/uploads/catalog', async (req, res, next) => {

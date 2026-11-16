@@ -12,6 +12,7 @@ import { parseNutritionValues } from './productLabelNutrition.js';
 import {
   buildStorefrontDescriptionDocFromPreset,
   normalizeIngredientTag,
+  splitIngredientsInput,
   normalizeStorefrontBlockHtml,
   normalizeWcTypography,
   normalizeWcTypographyInHtml,
@@ -59,11 +60,9 @@ export function isEffectivelyEmptyHtml(value: string | null | undefined): boolea
   return !stripHtml(value).trim();
 }
 
+/** Розбиття складу з HTML на теги; коми всередині дужок (вкладений склад) не ділять. */
 function splitIngredientsText(text: string): string[] {
-  return text
-    .split(/[,;•·]/)
-    .map((part) => normalizeIngredientTag(part))
-    .filter(Boolean);
+  return splitIngredientsInput(text.replace(/[•·]/g, ','));
 }
 
 function parseIngredientsFromHtml(html: string): string | null {

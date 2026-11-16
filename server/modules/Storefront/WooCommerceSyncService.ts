@@ -42,6 +42,7 @@ import {
   normalizeStorefrontDescriptionDoc,
   normalizeWcTypographyInHtml,
   stringifyProductIngredientsJson,
+  parseProductIngredientsJson,
   stringifyProductNutritionJson,
   stringifyStorefrontDescriptionDoc,
 } from '../../../shared/utils/storefrontDescription.js';
@@ -497,6 +498,9 @@ export class WooCommerceSyncService {
     const localImages: PullImageMeta[] = good.images.map((img, i) => ({
       url: localImagePreviewUrls[i],
       name: img.originalName || img.fileName,
+      // На WC ім'я береться з URL: originalName (новий push) або uuid fileName (старіші push)
+      fileKey: img.originalName || img.fileName,
+      altKeys: [img.fileName],
       sizeBytes: img.size ?? null,
       ext: imageExtFromName(img.fileName),
     }));
@@ -508,6 +512,16 @@ export class WooCommerceSyncService {
     );
     const groupName = await resolveParentGroupName(good.parentId);
     const wcCategoryName = resolveWcPrimaryCategoryName(product);
+
+    // Парсинг WC HTML назад у doc втратний (manualInclude / override не відновлюються), тому якщо HTML,
+    // який BO відправив би на WC зараз, збігається з тим, що вже на сайті, doc і склад вважаємо узгодженими.
+    let wcHtmlMatchesBo = false;
+    try {
+      const rendered = await storefrontDescriptionBuilder.previewHtml(good.id);
+      wcHtmlMatchesBo = catalogHtmlEquivalent(rendered.html, product.description);
+    } catch {
+      wcHtmlMatchesBo = false;
+    }
 
     const conflicts = [
       fieldConflict('name', good.name, product.name),
@@ -522,13 +536,18 @@ export class WooCommerceSyncService {
             remoteValue: String(proposedImageCount),
           }
         : null,
-      storefrontDescriptionDocFieldConflict(
-        good.storefrontDescriptionDoc,
-        stringifyStorefrontDescriptionDoc(parsed.storefrontDescriptionDoc),
-      ),
-      fieldConflict(
+      wcHtmlMatchesBo
+        ? null
+        : storefrontDescriptionDocFieldConflict(
+            good.storefrontDescriptionDoc,
+            stringifyStorefrontDescriptionDoc(parsed.storefrontDescriptionDoc),
+          ),
+      wcHtmlMatchesBo
+        ? null
+        : fieldConflict(
         'productIngredientsJson',
-        good.productIngredientsJson,
+        // Канонізуємо локальне значення (старі «соус(a,b)» == «соус (a, b)»), щоб не було хибного конфлікту
+        stringifyProductIngredientsJson(parseProductIngredientsJson(good.productIngredientsJson)),
         stringifyProductIngredientsJson(parsed.productIngredientsJson),
       ),
       fieldConflict(

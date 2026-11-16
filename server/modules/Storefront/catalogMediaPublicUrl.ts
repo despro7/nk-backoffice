@@ -6,13 +6,20 @@
 import { prisma } from '../../lib/utils.js';
 import { STOREFRONT_SETTINGS_KEYS } from '../../../shared/constants/storefrontDefaults.js';
 
+/**
+ * @param friendlyName необов'язково: «красиве» ім'я файлу (латиниця) в кінці URL. WordPress при
+ *   sideload зберігає файл під іменем з кінця URL, тож на сайті буде це ім'я, а не uuid.
+ *   Сервер віддає той самий файл за `/uploads/catalog/{goodId}/{fileName}/{friendlyName}`.
+ */
 export function buildCatalogImagePublicUrl(
   baseUrl: string,
   goodId: string,
   fileName: string,
+  friendlyName?: string | null,
 ): string {
   const base = baseUrl.replace(/\/+$/, '');
-  return `${base}/uploads/catalog/${encodeURIComponent(goodId)}/${encodeURIComponent(fileName)}`;
+  const friendly = friendlyName?.trim() ? `/${encodeURIComponent(friendlyName.trim())}` : '';
+  return `${base}/uploads/catalog/${encodeURIComponent(goodId)}/${encodeURIComponent(fileName)}${friendly}`;
 }
 
 export async function resolveCatalogMediaPublicBaseUrl(): Promise<string> {

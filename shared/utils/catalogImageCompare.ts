@@ -2,8 +2,12 @@
 
 export interface PullImageMeta {
   url: string;
-  /** Назва файлу (з розширенням) */
+  /** Назва для показу (з розширенням) */
   name: string;
+  /** Ім'я файлу за URL (для порівняння); якщо немає, береться `name` */
+  fileKey?: string;
+  /** Додаткові прийнятні імена (напр. uuid-ім'я з раніших push) */
+  altKeys?: string[];
   sizeBytes: number | null;
   /** Розширення великими літерами без крапки (WEBP, JPG...) */
   ext: string;
@@ -42,13 +46,21 @@ export interface ImageMetaDiff {
   ext: boolean;
 }
 
+function imageNameMatches(a: PullImageMeta, b: PullImageMeta): boolean {
+  const stems = (m: PullImageMeta) =>
+    new Set([m.fileKey ?? m.name, m.name, ...(m.altKeys ?? [])].map(imageNameStem));
+  const sa = stems(a);
+  for (const s of stems(b)) if (sa.has(s)) return true;
+  return false;
+}
+
 export function diffImageMeta(a: PullImageMeta, b: PullImageMeta): ImageMetaDiff {
   const sizeDiffers =
     a.sizeBytes != null &&
     b.sizeBytes != null &&
     Math.abs(a.sizeBytes - b.sizeBytes) / Math.max(a.sizeBytes, b.sizeBytes) > SIZE_TOLERANCE;
   return {
-    name: imageNameStem(a.name) !== imageNameStem(b.name),
+    name: !imageNameMatches(a, b),
     size: sizeDiffers,
     ext: a.ext !== b.ext,
   };
@@ -59,6 +71,10 @@ export function imageSetsDiffer(local: PullImageMeta[], remote: PullImageMeta[])
   if (local.length !== remote.length) return true;
   return local.some((img, i) => {
     const d = diffImageMeta(img, remote[i]);
-    return d.name || d.size || d.ext;
+    // WordPress перестискає зображення при завантаженні: менший файл на WC не є розбіжністю,
+    // конфліктом вважаємо лише більший (WC має неоптимізовану версію)
+    const remoteLarger =
+      d.size && img.sizeBytes != null && remote[i].sizeBytes != null && remote[i].sizeBytes > img.sizeBytes;
+    return d.name || d.ext || remoteLarger;
   });
 }

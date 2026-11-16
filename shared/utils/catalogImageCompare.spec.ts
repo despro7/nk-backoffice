@@ -17,6 +17,8 @@ describe('catalogImageCompare', () => {
     expect(imageSetsDiffer([img('a.webp', 1000)], [img('a.jpg', 1000)])).toBe(true);
     expect(imageSetsDiffer([img('a.webp', 1000)], [img('b.webp', 1000)])).toBe(true);
     expect(imageSetsDiffer([img('a.webp', 1000)], [img('a.webp', 2000)])).toBe(true);
+    // WP перестиснув файл: менший розмір на WC не конфлікт
+    expect(imageSetsDiffer([img('a.webp', 2000)], [img('a.webp', 1000)])).toBe(false);
     expect(imageSetsDiffer([img('a.webp', 1000)], [])).toBe(true);
   });
 });

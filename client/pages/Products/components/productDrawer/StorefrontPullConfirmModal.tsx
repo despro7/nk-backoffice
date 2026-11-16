@@ -206,7 +206,7 @@ export function StorefrontPullConfirmModal({
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   /** Явний дозвіл відправити Backoffice на WooCommerce (push) для конфліктних полів. */
-  const [pushBoToWooEnabled, setPushBoToWooEnabled] = useState(false);
+  const [pushBoToWooEnabled, setPushBoToWooEnabled] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<WooPullPreviewResult | null>(null);
   const [dilovodPreview, setDilovodPreview] = useState<CatalogDilovodPreviewResult | null>(null);
@@ -259,7 +259,7 @@ export function StorefrontPullConfirmModal({
     setPreview(null);
     setDilovodPreview(null);
     setSourceByRowId({});
-    setPushBoToWooEnabled(false);
+    setPushBoToWooEnabled(true);
     void Promise.all([
       storefrontApi.pullPreview(goodId),
       catalogApi.fetchDilovodPreview(goodId).catch(() => null),
