@@ -21,6 +21,7 @@ import chatwootWebhookRoutes from './routes/chatwoot-webhooks.js';
 import chatwootBotRoutes from './routes/chatwoot-bot.js';
 import chatwootKnowledgeRoutes from './routes/chatwoot-knowledge.js';
 import llmRoutes from './routes/llm.js';
+import invoicesRoutes from './routes/invoices.js';
 import warehouseRoutes from './routes/warehouse.js';
 import ordersSyncRoutes from './routes/orders-sync.js';
 import { cronService, forceStopAllCronJobs } from './services/cronService.js';
@@ -253,6 +254,7 @@ export function createServer() {
   app.use('/api/chatwoot-bot', chatwootBotRoutes);
   app.use('/api/chatwoot-knowledge', chatwootKnowledgeRoutes);
   app.use('/api/llm', llmRoutes);
+  app.use('/api/invoices', invoicesRoutes);
 
   // Добавляем роуты для работы с перевозчиками
   app.use('/api/shipping', shippingRoutes);

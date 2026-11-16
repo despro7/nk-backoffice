@@ -34,6 +34,7 @@ const SettingsEquipment = lazyPage(() => import('./pages/SettingsEquipment'));
 const SettingsOrders = lazyPage(() => import('./pages/SettingsOrders'));
 const SettingsAdmin = lazyPage(() => import('./pages/SettingsAdmin'));
 const SettingsLlm = lazyPage(() => import('./pages/SettingsLlm'));
+const InvoicesPage = lazyPage(() => import('./pages/Invoices'));
 const SettingsNotifications = lazyPage(() => import('./pages/SettingsNotifications'));
 const SettingsChatwootBot = lazyPage(() => import('./pages/SettingsChatwootBot'));
 const ChatwootBotStatistics = lazyPage(() => import('./pages/ChatwootBotStatistics'));
@@ -906,6 +907,19 @@ export const appRoutes: AppRoute[] = [
     parent: 'settings',
     order: 9.8,
     permission: { name: 'admin' },
+  },
+  {
+    // Рахунки і облік часу: лише адмін (сторінка й /api/invoices)
+    path: '/invoices',
+    component: InvoicesPage,
+    title: 'Рахунки',
+    pageTitle: 'Рахунки | NK Backoffice',
+    navLabel: 'Рахунки',
+    icon: <DynamicIcon name="receipt-text" size={20} />,
+    inNav: true,
+    order: 90,
+    permission: { name: 'admin' },
+    hasOwnTitle: true,
   },
   {
     path: '/chatwoot-bot/statistics',

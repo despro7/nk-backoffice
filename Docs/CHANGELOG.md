@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-11-16 – Рахунки: генератор рахунку й акта, архів, дашборд обліку часу (admin)
+
+**Files:** `client/pages/Invoices/*`, `client/services/InvoicesService.ts`, `client/routes.config.tsx`, `server/routes/invoices.ts`, `server/modules/Invoices/{InvoicesService,PortionsService,NbuRateService,invoiceStores,historySeed}.ts`, `server/scripts/invoices-virtual-test.ts`, `server/index.ts`, `shared/types/invoices.ts`, `shared/utils/invoiceCalc.{ts,spec.ts}`
+
+- **Сторінка `/invoices`** (лише admin: роль + `settings.admin`), 3 таби в URL-hash: Дашборд, Архів рахунків, Новий рахунок. Налаштування (реквізити отримувача, послуга, призначення платежу, тариф, ставка години з історією, статуси, підпис, платники) – модалка за кнопкою праворуч від табів.
+- **Новий рахунок:** період за днем створення (1–15 або 16–кінець попереднього місяця, змінюється вручну), порції з логіки звіту продажів, сума = порції × тариф (тариф фіксується на рахунок, округлення до гривні), сума прописом українською, довільні рядки, пресети платників (накопичуються самі, стартові 4 ФОП із рахунків №097–109), внутрішня корекція без окремого рядка в PDF. PDF рахунок + акт №N/1 збирається на клієнті з запису архіву (`@react-pdf/renderer`); підпис зберігається в `settings_base` і віддається лише адмінським ендпоінтом.
+- **Дашборд** за формулами старої таблиці обліку часу: овердрафт, оплачені години, вартість годин, Δ; режими «На момент рахунку» (знімок) і «Живі дані»; курс USD з НБУ (можна виправити); фільтри періоду; діаграми (лінії / стовпчики / комбіновані, напівмісяці / місяці, грн / $); зведення по місяцях (порції, сума в день в грн і $, зміна); картки з індикацією; імпорт історії зі старої таблиці при першому відкритті.
+- **Дані** лише в `settings_base` (`invoices_settings`, `invoices_payers`, `invoices_archive`, `invoices_periods`, `invoices_signature`), нових таблиць немає.
+- **Перевірка:** `invoices-virtual-test.ts` порівнює порції з історією старої таблиці (точного збігу немає, див. документацію).
+
+**Документація:** `Docs/features/invoices.md`.
+
+---
+
 ## 2026-11-16 – Картка товару: зображення, склад, налаштування вітрини
 
 **Files:** `client/pages/Products/components/{ProductImageUpload,ImageMetaBadges,InlineImageName,CatalogImageGalleryLightbox,CatalogImagePreviewPopover,CatalogActionsMenu,CatalogContextMenu}.tsx`, `client/pages/Products/components/productDrawer/{ProductDrawer,ProductIngredientsTags,ProductPullTriSourceTable,StorefrontPullConfirmModal,ProductContentTab}.tsx`, `productDrawer/wrapSortingStrategy.ts`, `client/pages/{SettingsStorefront.tsx,storefrontSettingsTabs.ts,SettingsProductSets.tsx}`, `client/components/{storefront/CatalogImageSettingsCard.tsx,DesignSystemPatterns.tsx}`, `client/lib/tooltipStyles.ts`, `client/global.css`, `server/modules/Products/{CatalogMediaService,CatalogImageOptimizer,CatalogMediaProdSync,ProductsController}.ts`, `server/modules/Storefront/WooCommerceSyncService.ts`, `server/{index.ts,routes/storefront.ts}`, `shared/utils/{catalogImageName,catalogImageCompare,storefrontDescription}.ts`, `shared/types/{catalogImageSettings,storefront}.ts`, `package.json` (`sharp`)
