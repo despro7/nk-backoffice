@@ -3,6 +3,7 @@ import { salesDriveService } from '../services/salesDriveService.js';
 import { orderDatabaseService } from '../services/orderDatabaseService.js';
 import { ordersCacheService } from '../services/ordersCacheService.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { formatKyivDateTime, addDaysToYmd, kyivDayRangeExclusiveFromYmd, parseKyivDateTime, todayKyivYmd } from '../../shared/utils/kyivDateTime.js';
 import { prisma, getOrderSourceDetailed, getOrderSourceMaps, getReportingDayStartHour, getReportingDate, getReportingDateRange, logServer } from '../lib/utils.js';
 import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
 import { dilovodService } from '../services/dilovod/index.js';
@@ -211,26 +212,21 @@ function buildSetSeriesOptions(
 function buildChartDateKey(orderDate: Date, groupBy: string, reportingDate: string): string {
   switch (groupBy) {
     case 'hour': {
-      const realYear = orderDate.getFullYear();
-      const realMonth = String(orderDate.getMonth() + 1).padStart(2, '0');
-      const realDay = String(orderDate.getDate()).padStart(2, '0');
-      const realHour = String(orderDate.getHours()).padStart(2, '0');
-      return `${realYear}-${realMonth}-${realDay}T${realHour}`;
+      // Реальна година замовлення в Europe/Kyiv: `YYYY-MM-DDTHH`
+      return formatKyivDateTime(orderDate).slice(0, 13).replace(' ', 'T');
     }
     case 'week': {
-      const orderDateForWeek = new Date(reportingDate);
-      const weekStart = new Date(orderDateForWeek);
-      weekStart.setDate(orderDateForWeek.getDate() - orderDateForWeek.getDay() + 1);
-      return `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
+      // reportingDate = YYYY-MM-DD (календарна дата, без TZ): рахуємо в UTC
+      const base = new Date(`${reportingDate}T00:00:00Z`);
+      const weekStart = addDaysToYmd(reportingDate, 1 - base.getUTCDay());
+      return weekStart;
     }
     case 'month': {
-      const orderDateForMonth = new Date(reportingDate);
-      return `${orderDateForMonth.getFullYear()}-${String(orderDateForMonth.getMonth() + 1).padStart(2, '0')}`;
+      return reportingDate.slice(0, 7);
     }
     case 'day':
     default: {
-      const orderDateForDay = new Date(reportingDate);
-      return `${orderDateForDay.getFullYear()}-${String(orderDateForDay.getMonth() + 1).padStart(2, '0')}-${String(orderDateForDay.getDate()).padStart(2, '0')}`;
+      return reportingDate;
     }
   }
 }
@@ -247,34 +243,38 @@ function formatChartDateLabel(dateKey: string, groupBy: string): string {
   }
 
   if (groupBy === 'week') {
-    const weekStart = new Date(dateKey);
+    const weekStart = new Date(`${dateKey}T00:00:00Z`);
     const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 6);
+    weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
 
     const startLabel = weekStart.toLocaleDateString('uk-UA', {
       day: '2-digit',
       month: '2-digit',
+      timeZone: 'UTC',
     });
     const endLabel = weekEnd.toLocaleDateString('uk-UA', {
       day: '2-digit',
       month: '2-digit',
+      timeZone: 'UTC',
     });
 
     return `${startLabel} - ${endLabel}`;
   }
 
   if (groupBy === 'month') {
-    const date = new Date(`${dateKey}-01`);
+    const date = new Date(`${dateKey}-01T00:00:00Z`);
     return date.toLocaleDateString('uk-UA', {
       month: 'long',
       year: 'numeric',
+      timeZone: 'UTC',
     });
   }
 
-  const date = new Date(dateKey);
+  const date = new Date(`${dateKey}T00:00:00Z`);
   return date.toLocaleDateString('uk-UA', {
     day: '2-digit',
     month: '2-digit',
+    timeZone: 'UTC',
   });
 }
 
@@ -436,9 +436,8 @@ router.get('/weight-stats', authenticateToken, async (req, res) => {
       return res.json(cached.data);
     }
 
-    const aWeekAgo = new Date();
-    aWeekAgo.setDate(aWeekAgo.getDate() - 7);
-    aWeekAgo.setHours(0, 0, 0, 0);
+    // Початок доби 7 днів тому за Києвом
+    const aWeekAgo = kyivDayRangeExclusiveFromYmd(addDaysToYmd(todayKyivYmd(), -7))!.start;
 
     const weightStatuses = ['1', '2', '3'] as const;
 
@@ -3408,26 +3407,32 @@ router.get('/products/chart/status-details', authenticateToken, async (req, res)
     let dateStart: Date;
     let dateEnd: Date;
 
+    // Межі періоду: wall-clock Europe/Kyiv (узгоджено з ключами графіка)
+    const dayBounds = (ymd: string): { start: Date; end: Date } => {
+      const range = kyivDayRangeExclusiveFromYmd(ymd);
+      if (!range) throw new Error(`Invalid date: ${ymd}`);
+      return { start: range.start, end: new Date(range.endExclusive.getTime() - 1) };
+    };
+
     if (groupBy === 'day') {
-      dateStart = new Date(date as string + ' 00:00:00');
-      dateEnd = new Date(date as string + ' 23:59:59');
+      const bounds = dayBounds(date as string);
+      dateStart = bounds.start;
+      dateEnd = bounds.end;
     } else if (groupBy === 'week') {
-      const targetDate = new Date(date as string);
-      dateStart = new Date(targetDate);
-      dateStart.setDate(targetDate.getDate() - targetDate.getDay() + 1); // Понедельник
-      dateStart.setHours(0, 0, 0, 0);
-      dateEnd = new Date(dateStart);
-      dateEnd.setDate(dateStart.getDate() + 6);
-      dateEnd.setHours(23, 59, 59, 999);
+      const base = new Date(`${date as string}T00:00:00Z`);
+      const monday = addDaysToYmd(date as string, 1 - base.getUTCDay()); // Понедельник
+      dateStart = dayBounds(monday).start;
+      dateEnd = dayBounds(addDaysToYmd(monday, 6)).end;
     } else if (groupBy === 'month') {
-      const targetDate = new Date(date as string + '-01');
-      dateStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
-      dateEnd = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0);
-      dateEnd.setHours(23, 59, 59, 999);
+      const first = `${date as string}-01`;
+      const [yearPart, monthPart] = (date as string).split('-').map(Number);
+      const nextMonthFirst = new Date(Date.UTC(yearPart, monthPart, 1)).toISOString().slice(0, 10);
+      dateStart = dayBounds(first).start;
+      dateEnd = new Date(dayBounds(nextMonthFirst).start.getTime() - 1);
     } else {
-      // hour
-      dateStart = new Date(date as string + ':00:00');
-      dateEnd = new Date(date as string + ':59:59');
+      // hour: `YYYY-MM-DDTHH`
+      dateStart = parseKyivDateTime(`${date as string}:00:00`) as Date;
+      dateEnd = parseKyivDateTime(`${date as string}:59:59`) as Date;
     }
 
 

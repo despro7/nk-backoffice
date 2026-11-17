@@ -1,6 +1,7 @@
 import '../env.js';
 import { PrismaClient } from '@prisma/client';
 import { UserType } from '../types/auth.js';
+import { getKyivReportingDate, getKyivReportingDateRange } from '../../shared/utils/kyivDateTime.js';
 
 // Глобальна змінна для відстеження часу старту додатка
 const appStartTime = Date.now();
@@ -204,19 +205,7 @@ export async function getReportingDayStartHour(): Promise<number> {
  * @returns дата звітного дня у форматі YYYY-MM-DD
  */
 export function getReportingDate(orderDate: Date, dayStartHour: number = 0): string {
-  const date = new Date(orderDate);
-  const hour = date.getHours();
-  
-  // Якщо час замовлення >= dayStartHour, то це належить до наступного звітного дня
-  if (hour >= dayStartHour) {
-    date.setDate(date.getDate() + 1);
-  }
-  
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  
-  return `${year}-${month}-${day}`;
+  return getKyivReportingDate(new Date(orderDate), dayStartHour);
 }
 
 /**
@@ -231,17 +220,7 @@ export function getReportingDate(orderDate: Date, dayStartHour: number = 0): str
  * @returns об'єкт з початком та кінцем діапазону дат
  */
 export function getReportingDateRange(reportingDate: string, dayStartHour: number = 0): { start: Date; end: Date } {
-  const [year, month, day] = reportingDate.split('-').map(Number);
-  
-  // Початок звітного дня - це dayStartHour ПОПЕРЕДНЬОЇ дати (тобто 16.10 16:00)
-  const startDate = new Date(year, month - 1, day - 1, dayStartHour, 0, 0, 0);
-  
-  // Кінець звітного дня - це dayStartHour поточної дати мінус 1 секунда
-  // (тобто 17.10 15:59:59 для dayStartHour=16)
-  const endDate = new Date(year, month - 1, day, dayStartHour, 0, 0, 0);
-  endDate.setSeconds(endDate.getSeconds() - 1);
-  
-  return { start: startDate, end: endDate };
+  return getKyivReportingDateRange(reportingDate, dayStartHour);
 }
 
 

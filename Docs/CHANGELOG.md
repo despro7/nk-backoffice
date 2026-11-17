@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-11-17 – Звітний день: розрахунок за Europe/Kyiv, а не за поясом процесу
+
+**Files:** `shared/utils/kyivDateTime.{ts,spec.ts}`, `server/lib/utils.ts`, `server/routes/orders.ts`, `client/components/OrderStatusChip.tsx`, `client/pages/Invoices/{InvoicesDashboardTab,InvoiceSettingsModal}.tsx`
+
+- **Проблема:** `getReportingDate`, `getReportingDateRange`, ключі графіка й drill-down використовували `getHours()`, `setDate()`, `new Date(y, m, d, h)`, тобто локальний час процесу Node (або браузера). Поза `TZ=Europe/Kyiv` (наприклад `npm start`, dev, UTC-контейнер) звітна година зсувалась на 2-3 год, на переході DST – на 1 год. Порції в рахунках (`PortionsService`) беруть ті самі функції.
+- **Виправлення:** нові хелпери `getKyivReportingDate`, `getKyivReportingDateRange`, `kyivYmd`, `kyivHour`, `todayKyivYmd`, `addDaysToYmd`; `getReportingDate` / `getReportingDateRange` делегують їм (сигнатури без змін, `dayStartHour` 0 і 24 працюють як раніше).
+- **`orders.ts`:** `buildChartDateKey` (година за Києвом, день/тиждень/місяць у UTC-арифметиці над `YYYY-MM-DD`), підписи графіка (`timeZone: 'UTC'`), drill-down по годині/дню/тижню/місяцю та «тиждень тому» для статистики ваги – межі за Києвом.
+- **Клієнт:** `OrderStatusChip` (календарний день, звітна дата, перенос вихідних) рахує за Києвом; дашборд рахунків і модалка ставок беруть «сьогодні» через `todayKyivYmd()` (раніше пояс браузера / UTC-дата).
+- **Тести:** `kyivDateTime.spec.ts` – межа `dayStartHour`, 0/24, DST 25.10.2026, перехід місяця/року; весь набір проходить під `TZ=UTC`, `America/New_York`, `Europe/Kyiv`.
+- **Увага:** замовлення, збережені до 29.10.2026 (коміт `b42c87cc`), могли мати `orderDate` з іншим зсувом; звіти за той період можуть відрізнятись від нового розрахунку.
+
+**Документація:** `Docs/features/reporting-day/reporting-day-start-hour.md` – «Utility-функції» (часовий пояс), «Frontend».
+
+---
+
 ## 2026-11-16 – Рахунки: генератор рахунку й акта, архів, дашборд обліку часу (admin)
 
 **Files:** `client/pages/Invoices/*`, `client/services/InvoicesService.ts`, `client/routes.config.tsx`, `server/routes/invoices.ts`, `server/modules/Invoices/{InvoicesService,PortionsService,NbuRateService,invoiceStores,historySeed}.ts`, `server/scripts/invoices-virtual-test.ts`, `server/index.ts`, `shared/types/invoices.ts`, `shared/utils/invoiceCalc.{ts,spec.ts}`

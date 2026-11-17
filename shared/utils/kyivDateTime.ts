@@ -124,3 +124,57 @@ export function kyivDayRangeExclusiveFromYmd(dayYmd: string): { start: Date; end
   );
   return { start, endExclusive };
 }
+
+const pad2 = (value: number): string => String(value).padStart(2, '0');
+
+const formatYmd = (year: number, month: number, day: number): string =>
+  `${year}-${pad2(month)}-${pad2(day)}`;
+
+/** Календарний день Kyiv (`YYYY-MM-DD`) для моменту часу. */
+export function kyivYmd(date: Date): string {
+  const parts = getZonedParts(date, KYIV_TZ);
+  return formatYmd(parts.year, parts.month, parts.day);
+}
+
+/** Година доби Kyiv (0-23) для моменту часу. */
+export function kyivHour(date: Date): number {
+  return getZonedParts(date, KYIV_TZ).hour;
+}
+
+/** Сьогодні в Kyiv (`YYYY-MM-DD`). */
+export function todayKyivYmd(now: Date = new Date()): string {
+  return kyivYmd(now);
+}
+
+/** Додає дні до календарної дати `YYYY-MM-DD` (без впливу TZ процесу). */
+export function addDaysToYmd(ymd: string, days: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!match) return ymd;
+  const shifted = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + days));
+  return formatYmd(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, shifted.getUTCDate());
+}
+
+/**
+ * Звітна дата (`YYYY-MM-DD`) для моменту часу в Europe/Kyiv.
+ * Година >= `dayStartHour` належить наступному звітному дню
+ * (`dayStartHour` = 24 означає звичайний календарний день).
+ */
+export function getKyivReportingDate(date: Date, dayStartHour: number = 0): string {
+  const parts = getZonedParts(date, KYIV_TZ);
+  const ymd = formatYmd(parts.year, parts.month, parts.day);
+  return parts.hour >= dayStartHour ? addDaysToYmd(ymd, 1) : ymd;
+}
+
+/**
+ * Діапазон звітної дати в Europe/Kyiv: від `dayStartHour` попереднього дня
+ * до `dayStartHour` звітного дня мінус 1 секунда.
+ */
+export function getKyivReportingDateRange(
+  reportingDate: string,
+  dayStartHour: number = 0,
+): { start: Date; end: Date } {
+  const [year, month, day] = reportingDate.split('-').map(Number);
+  const start = zonedWallTimeToUtc(year, month, day - 1, dayStartHour, 0, 0);
+  const end = new Date(zonedWallTimeToUtc(year, month, day, dayStartHour, 0, 0).getTime() - 1000);
+  return { start, end };
+}

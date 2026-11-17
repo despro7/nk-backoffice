@@ -7,6 +7,7 @@ import { ToastService } from '@/services/ToastService';
 import { invoicesApi } from '@/services/InvoicesService';
 import { BTN_PRIMARY_BLUE } from '@/lib/buttonStyles';
 import { INVOICE_ORDER_STATUS_OPTIONS, type InvoicePayer, type InvoiceSettings } from '@shared/types/invoices';
+import { todayKyivYmd } from '@shared/utils/kyivDateTime';
 
 const SIGNATURE_MAX_BYTES = 400 * 1024;
 
@@ -211,7 +212,7 @@ export default function InvoiceSettingsModal({ isOpen, onClose }: { isOpen: bool
                   startContent={<DynamicIcon name="plus" size={16} />}
                   onPress={() => {
                     const last = settings.hourlyRates[settings.hourlyRates.length - 1];
-                    patch({ hourlyRates: [...settings.hourlyRates, { from: new Date().toISOString().slice(0, 10), usd: last?.usd ?? 20 }] });
+                    patch({ hourlyRates: [...settings.hourlyRates, { from: todayKyivYmd(), usd: last?.usd ?? 20 }] });
                   }}
                 >
                   Додати зміну ставки

@@ -34,12 +34,15 @@ getReportingDayStartHour(): Promise<number>
 
 // Розрахувати звітну дату замовлення
 getReportingDate(orderDate: Date, dayStartHour: number): string
-// якщо час >= dayStartHour → наступний день, інакше → поточний
+// якщо година (Europe/Kyiv) >= dayStartHour → наступний день, інакше → поточний
+// dayStartHour = 24 → звичайний календарний день
 
 // Розрахувати часовий діапазон для фільтрів
 getReportingDateRange(date: string, dayStartHour: number): { start: Date; end: Date }
-// range('2024-10-18', 16) → start: 2024-10-18T16:00:00, end: 2024-10-19T15:59:59.999
+// range('2024-10-18', 16) → start: 2024-10-17 16:00:00, end: 2024-10-18 15:59:59 (Europe/Kyiv)
 ```
+
+**Часовий пояс.** Усі розрахунки звітного дня йдуть за `Europe/Kyiv` незалежно від `TZ` процесу Node і пояса браузера. Реалізація в `shared/utils/kyivDateTime.ts` (`getKyivReportingDate`, `getKyivReportingDateRange`, `kyivYmd`, `todayKyivYmd`, `addDaysToYmd`), `getReportingDate` і `getReportingDateRange` лише делегують їй. Ключі графіка (`buildChartDateKey`) і drill-down у `orders.ts` також рахуються за Києвом. Не використовувати `getHours()`, `setHours()`, `new Date(y, m, d, h)` і `toISOString().slice(0, 10)` для бізнес-дат.
 
 ## Endpoint-и що використовують dayStartHour
 
@@ -66,4 +69,4 @@ const endRange   = getReportingDateRange(endDate, dayStartHour);
 
 Компонент `ReportingDayStartHourSettings.tsx` вбудований у `SettingsAdmin.tsx`.
 
-У `OrderStatusChip` (`client/components/OrderStatusChip.tsx`) опційний `dayStartHour` використовується, щоб порівняти «Підтверджено» і «На відправку» зі звітною датою (з переносом вихідних на понеділок). Деталі: `Docs/features/order-status-chip.md`.
+У `OrderStatusChip` (`client/components/OrderStatusChip.tsx`) опційний `dayStartHour` використовується (дати рахуються за Києвом через `shared/utils/kyivDateTime`), щоб порівняти «Підтверджено» і «На відправку» зі звітною датою (з переносом вихідних на понеділок). Деталі: `Docs/features/order-status-chip.md`.

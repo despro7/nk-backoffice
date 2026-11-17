@@ -16,6 +16,7 @@ import { ToastService } from '@/services/ToastService';
 import { invoicesApi } from '@/services/InvoicesService';
 import type { DashboardData, DashboardMode, DashboardMonthRow, DashboardRow } from '@shared/types/invoices';
 import { daysInclusive, formatHm, formatMoneyUa, parseHm } from '@shared/utils/invoiceCalc';
+import { todayKyivYmd } from '@shared/utils/kyivDateTime';
 import { InvoicesChartTooltip } from './InvoicesChartTooltip';
 
 const usd = (v: number): string => `${v < 0 ? '-' : ''}$${Math.abs(Math.round(v)).toLocaleString('uk-UA')}`;
@@ -120,8 +121,8 @@ const PRESET_OPTIONS: Array<{ key: PresetKey; label: string }> = [
 ];
 
 function todayCalendar(): CalendarDate {
-  const d = new Date();
-  return new CalendarDate(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  const [year, month, day] = todayKyivYmd().split('-').map(Number);
+  return new CalendarDate(year, month, day);
 }
 
 function presetRange(key: PresetKey): DateRange | null {

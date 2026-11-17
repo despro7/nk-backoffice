@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Chip, Popover, PopoverContent, PopoverTrigger, Tooltip } from "@heroui/react";
 import { DynamicIcon, type IconName } from "lucide-react/dynamic";
 import { getStatusColor, getStatusLabel } from "@/lib";
+import { addDaysToYmd, getKyivReportingDate, kyivYmd } from "@shared/utils/kyivDateTime";
 import { EVENT_TIMELINE_OVERLAY_CLASS, EventTimelineList } from "@/components/ui/EventTimelineList";
 
 export type OrderStatusHistoryEntry = {
@@ -26,58 +27,29 @@ const STATUS_CONFIRMED = "2";
 const STATUS_READY_TO_SHIP = "3";
 const STATUS_DEDUPE_WINDOW_MS = 60_000;
 
+/** Календарний день за Києвом (не за поясом браузера). */
 function toLocalDateKey(value: string | Date | null | undefined): string | null {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return kyivYmd(date);
 }
 
-function parseLocalDateKey(dateKey: string): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const date = new Date(year, month - 1, day);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function formatLocalDateKey(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-/** Звітна дата з урахуванням години початку звітного дня (як на сервері). */
+/** Звітна дата з урахуванням години початку звітного дня (як на сервері, Europe/Kyiv). */
 function getReportingDateKey(value: string | Date, dayStartHour: number): string | null {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-
-  if (date.getHours() >= dayStartHour) {
-    date.setDate(date.getDate() + 1);
-  }
-
-  return formatLocalDateKey(date);
+  return getKyivReportingDate(date, dayStartHour);
 }
 
 /** Якщо звітна дата випадає на сб/нд — переносимо на понеділок. */
 function skipWeekendsToMonday(dateKey: string): string {
-  const date = parseLocalDateKey(dateKey);
-  if (!date) return dateKey;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return dateKey;
 
-  const weekday = date.getDay(); // 0 = нд, 6 = сб
-  if (weekday === 6) {
-    date.setDate(date.getDate() + 2);
-  } else if (weekday === 0) {
-    date.setDate(date.getDate() + 1);
-  }
-
-  return formatLocalDateKey(date);
+  const weekday = new Date(`${dateKey}T00:00:00Z`).getUTCDay(); // 0 = нд, 6 = сб
+  if (weekday === 6) return addDaysToYmd(dateKey, 2);
+  if (weekday === 0) return addDaysToYmd(dateKey, 1);
+  return dateKey;
 }
 
 /** Прибирає підряд однакові статуси, якщо різниця в часі ≤ 1 хв. */
