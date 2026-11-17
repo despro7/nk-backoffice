@@ -41,6 +41,8 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
   const [lastTotalPortions, setLastTotalPortions] = useState<number>(0);
   const [recommendationMode, setRecommendationMode] = useState<BoxRecommendationMode>('spacious');
   const [transitionMode, setTransitionMode] = useState<boolean>(false);
+  // Економія реально змінила підбір: набір коробок відрізняється від підбору за сирими порціями
+  const [economyChangedBoxes, setEconomyChangedBoxes] = useState<boolean>(false);
   // const [activeBoxIndex, setActiveBoxIndex] = useState<number>(0); // Видалено локальний activeBoxIndex
 
   // Мемоізуємо функцію onBoxesChange щоб уникнути нескінченного циклу
@@ -238,6 +240,22 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
         
         // Автоматично вибираємо рекомендовані коробки
         const recommendedBoxes = recommendationsData.boxes || [];
+
+        // Режим економії: порівнюємо з підбором за сирими порціями, щоб позначати лише реальну економію
+        let changed = false;
+        if (portions < totalPortions) {
+          try {
+            const rawResponse = await apiCall(`/api/boxes/recommendations/${totalPortions}?mode=${recommendationMode}`);
+            if (rawResponse.ok) {
+              const rawData: BoxRecommendationsResponse = await rawResponse.json();
+              const signature = (list?: SettingsBoxes[]) => (list || []).map((b) => b.id).join(',');
+              changed = signature(rawData.boxes) !== signature(recommendedBoxes);
+            }
+          } catch {
+            // без порівняння лейбл просто не показуємо
+          }
+        }
+        setEconomyChangedBoxes(changed);
         
         // Спочатку встановлюємо коробки
         setSelectedBoxes(recommendedBoxes);
@@ -425,8 +443,8 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
     return selectedBoxes.every(box => box.qntTo >= portionsPerBox);
   }, [selectedBoxes, totalPortions]);
 
-  // Режим економії реально змінив підбір: ефективний обсяг менший за сирі порції
-  const economyApplied = recommendationPortions !== undefined && recommendationPortions < totalPortions;
+  // Режим економії реально змінив підбір коробок (а не лише зменшив ефективний обсяг)
+  const economyApplied = economyChangedBoxes;
 
   // Валідація місткості йде по обсягу, за яким підбиралась коробка (в економії це ефективний обсяг)
   const getBoxValidationStatus = useCallback((box: SettingsBoxes) => {
