@@ -41,6 +41,26 @@ describe('splitProductTitle', () => {
   });
 });
 
+describe('splitProductTitle long titles', () => {
+  it('keeps preposition at start of line2 for long title', () => {
+    const result = splitProductTitle('Пшенична локшина зі свининою в соусі теріякі', null);
+    expect(result.line1).toBe('Пшенична локшина');
+    expect(result.line2).toBe('зі свининою в соусі теріякі');
+  });
+
+  it('does not leave preposition at end of line1 in word-boundary fallback', () => {
+    const result = splitProductTitle('Дуже смачна запечена картопля з грибами і цибулею', null);
+    expect(result.line1.split(' ').pop()).not.toBe('з');
+    expect(`${result.line1} ${result.line2}`).toBe('Дуже смачна запечена картопля з грибами і цибулею');
+  });
+
+  it('normalizes NBSP before splitting', () => {
+    const result = splitProductTitle('Пшенична локшина\u00A0зі\u00A0свининою в соусі теріякі', null);
+    expect(result.line1).toBe('Пшенична локшина');
+    expect(result.line2).toBe('зі свининою в соусі теріякі');
+  });
+});
+
 describe('parseManualTitleBreak', () => {
   it('parses pipe separator', () => {
     expect(parseManualTitleBreak(`Печериці${TITLE_MANUAL_BREAK}в соусі`)).toEqual([

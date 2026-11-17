@@ -38,11 +38,8 @@ export function typographUk(text: string): string {
 export function typographProductLabelPayload(payload: ProductLabelPayload): ProductLabelPayload {
   return {
     ...payload,
-    title: {
-      ...payload.title,
-      line1: typographUk(payload.title.line1),
-      line2: typographUk(payload.title.line2),
-    },
+    // Заголовок не типографуємо: NBSP склеює «зі свининою в» у шматок ширший за поле.
+    title: payload.title,
     ingredientsText: typographUk(payload.ingredientsText),
     nutritionText: typographUk(payload.nutritionText),
     storageText: typographUk(payload.storageText),

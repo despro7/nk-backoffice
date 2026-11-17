@@ -12,10 +12,26 @@ function fontSizeForLine(text: string, max: number, min: number): number {
 /** Макс. символів у рядку заголовка етикетки (≈174px при Days One). */
 export const TITLE_LINE_MAX_CHARS = 22;
 
+/** Макс. символів у другому рядку (менший шрифт, тож вміщає більше). */
+export const TITLE_LINE2_MAX_CHARS = 28;
+
 /** Ручний роздільник рядків заголовка в редакторі або printName. */
 export const TITLE_MANUAL_BREAK = '|';
 
-const TITLE_PREP_RE = /\s+(?:в|зі?|на|з|та|для|без|по|від)\s+/iu;
+const TITLE_PREPOSITIONS = ['зі', 'із', 'в', 'у', 'на', 'з', 'та', 'для', 'без', 'по', 'від'];
+
+const TITLE_PREP_RE = new RegExp(`\\s+(?:${TITLE_PREPOSITIONS.join('|')})\\s+`, 'giu');
+
+const TITLE_PREP_SET = new Set(TITLE_PREPOSITIONS);
+
+/** Нерозривні пробіли в заголовку → звичайні, щоб розбиття і перенос працювали передбачувано. */
+function normalizeTitleSpaces(text: string): string {
+  return text.replace(/[\u00A0\u202F]/g, ' ');
+}
+
+function isPreposition(word: string): boolean {
+  return TITLE_PREP_SET.has(word.toLowerCase());
+}
 
 function buildTitleLayout(line1: string, line2: string, align: ProductLabelTitleLayout['align'] = 'center'): ProductLabelTitleLayout {
   return {
@@ -32,7 +48,7 @@ function isValidTitleSplit(line1: string, line2: string): boolean {
     line1.length >= 2 &&
     line2.length >= 2 &&
     line1.length <= TITLE_LINE_MAX_CHARS &&
-    line2.length <= TITLE_LINE_MAX_CHARS
+    line2.length <= TITLE_LINE2_MAX_CHARS
   );
 }
 
@@ -99,30 +115,63 @@ export function ensureSplitTitle(
 }
 
 function splitAtPreposition(text: string): [string, string] | null {
-  const match = text.match(TITLE_PREP_RE);
-  if (!match || match.index == null) return null;
+  let best: [string, string] | null = null;
+  let bestDiff = Infinity;
 
-  const line1 = text.slice(0, match.index).trim();
-  const line2 = text.slice(match.index).trim();
-  if (!isValidTitleSplit(line1, line2)) return null;
-  return [line1, line2];
+  for (const match of text.matchAll(TITLE_PREP_RE)) {
+    if (match.index == null) continue;
+    const line1 = text.slice(0, match.index).trim();
+    const line2 = text.slice(match.index).trim();
+    if (!isValidTitleSplit(line1, line2)) continue;
+
+    const diff = Math.abs(line1.length - line2.length);
+    if (diff < bestDiff) {
+      best = [line1, line2];
+      bestDiff = diff;
+    }
+  }
+
+  return best;
 }
 
+/**
+ * Розбиття за межами слів: найменше переповнення рядків, далі найрівніший баланс.
+ * Прийменник не залишається в кінці першого рядка (переходить у другий).
+ */
 function splitAtWordBoundary(text: string): [string, string] {
   const raw = text.trim();
   if (!raw) return ['', ''];
   if (raw.length <= TITLE_LINE_MAX_CHARS) return [raw, ''];
 
-  const mid = Math.floor(raw.length / 2);
-  let splitAt = raw.lastIndexOf(' ', mid);
-  if (splitAt < raw.length * 0.25) {
-    splitAt = raw.indexOf(' ', mid);
-  }
-  if (splitAt <= 0) {
-    splitAt = mid;
+  const words = raw.split(/\s+/);
+  if (words.length < 2) {
+    const mid = Math.floor(raw.length / 2);
+    return [raw.slice(0, mid), raw.slice(mid)];
   }
 
-  return [raw.slice(0, splitAt).trim(), raw.slice(splitAt).trim()];
+  type Candidate = { line1: string; line2: string; overflow: number; diff: number };
+  const candidates: Candidate[] = [];
+  for (let i = 1; i < words.length; i += 1) {
+    if (isPreposition(words[i - 1])) continue;
+    const line1 = words.slice(0, i).join(' ');
+    const line2 = words.slice(i).join(' ');
+    candidates.push({
+      line1,
+      line2,
+      overflow:
+        Math.max(0, line1.length - TITLE_LINE_MAX_CHARS) +
+        Math.max(0, line2.length - TITLE_LINE2_MAX_CHARS),
+      diff: Math.abs(line1.length - line2.length),
+    });
+  }
+
+  if (candidates.length === 0) {
+    const mid = Math.floor(words.length / 2);
+    return [words.slice(0, mid).join(' '), words.slice(mid).join(' ')];
+  }
+
+  candidates.sort((a, b) => a.overflow - b.overflow || a.diff - b.diff);
+  return [candidates[0].line1, candidates[0].line2];
 }
 
 /**
@@ -141,8 +190,8 @@ export function splitProductTitle(
     align: 'center',
   };
 
-  const trimmedPrint = printName?.trim() || '';
-  const trimmedName = name.trim();
+  const trimmedPrint = normalizeTitleSpaces(printName ?? '').trim();
+  const trimmedName = normalizeTitleSpaces(name).trim();
   const source = trimmedPrint || trimmedName;
   if (!source) return empty;
 

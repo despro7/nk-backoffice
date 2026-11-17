@@ -778,17 +778,26 @@ router.get('/batch-numbers', authenticateToken, async (req, res) => {
 
       for (const sku of cacheMissSkus) {
         const rawBatches = fetchedBySku[sku] ?? [];
+        const balanceBatches = await enrichBatchNamesFromCatalog(rawBatches);
         let filteredBatches = dedupeBatchesByStorage(
-          await enrichBatchNamesFromCatalog(
-            filterBatchesByStorageMode(rawBatches, dilovodConfig, {
-              targetStorageId,
-              shouldOnlySmallStorage,
-              shouldIncludeSmallStorage,
-            }),
-          ),
+          filterBatchesByStorageMode(balanceBatches, dilovodConfig, {
+            targetStorageId,
+            shouldOnlySmallStorage,
+            shouldIncludeSmallStorage,
+          }),
         );
         if (shouldIncludeNegativeQty) {
           filteredBatches = filterNonZeroBalanceBatches(filteredBatches);
+        } else {
+          // Як в одиночному /batch-numbers/:sku: додаємо каталожні партії з qty=0,
+          // інакше на дату без балансових рядків список порожній (розкомплектування).
+          filteredBatches = await enrichBatchesWithCatalogZeroBalance(sku, filteredBatches, {
+            includeNonPositiveQty: shouldIncludeNonPositiveQty,
+            storageId: targetStorageId,
+            firmId: finalFirmId,
+            allBalanceBatches: balanceBatches,
+            dilovodService,
+          });
         }
         batchesBySku[sku] = filteredBatches;
 
