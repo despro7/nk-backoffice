@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-11-17 – Комплектація: верстка позиції чек-листа в режимі налагодження
+
+**Files:** `client/components/OrderChecklistItem.tsx`
+
+- **Проблема:** у режимі налагодження обсяг порції й штрих-коди стояли в одному рядку праворуч поруч із лічильником, тому назва, склад комплекту й коефіцієнти компонентів стискались і обрізались.
+- **Виправлення:** службові дані винесено в окремий рядок під позицією (відступ під назву, пунктирна лінія зверху): «обсяг» для сканування за кількістю та штрих-коди/SKU, які переносяться на наступний рядок, кожен копіюється кліком. Основний рядок (назва, склад, лічильник) має ту саму ширину, що й поза налагодженням.
+
+**Документація:** змін не потребує.
+
+---
+
 ## 2026-11-17 – Режим економії коробок у налаштуваннях комплектації
 
 **Files:** `client/lib/orderAssemblyUtils.ts`, `client/lib/orderAssemblyEconomy.spec.ts`, `client/lib/__fixtures__/orderAssemblyRealData.json`, `client/hooks/useAssemblySettings.ts`, `client/components/{OrderAssemblySettings,BoxSelector,OrderAssemblyRightPanel,ShippingProvidersManager}.tsx`, `client/pages/{OrderView,SettingsOrderAssembly}.tsx`

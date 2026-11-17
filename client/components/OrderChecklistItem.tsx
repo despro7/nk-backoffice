@@ -347,7 +347,7 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
   const fillPercent = isByQuantityProduct && quantity > 0 ? (scannedCount / quantity) * 100 : 0;
 
   const itemStateClasses = cn(
-    'relative overflow-hidden p-3.5 rounded-sm flex items-center justify-between outline-1 outline-transparent transition-background transition-colors duration-300 animate-duration-[100ms]',
+    'relative overflow-hidden p-3.5 rounded-sm flex flex-col outline-1 outline-transparent transition-background transition-colors duration-300 animate-duration-[100ms]',
     {
       'bg-gray-50 text-neutral-900 cursor-pointer outline-1 outline-neutral-200': status === 'default',
       'bg-warning-400 outline-2 outline-warning-500 cursor-pointer': status === 'pending' || status === 'awaiting_confirmation',
@@ -496,6 +496,7 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
         />
       )}
 
+      <div className="relative flex items-center justify-between gap-4">
       <div className="flex items-center gap-4 min-w-0">
         {/* Індикатор статусу */}
         <div className={cn("w-6 h-6 shrink-0 rounded-sm flex items-center justify-center bg-transparent transition-colors duration-300", {
@@ -612,41 +613,47 @@ const OrderChecklistItem = ({ item, isBoxConfirmed, currentBoxTotalPortions, cur
         </div>
       </div>
       
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 shrink-0">
         {/* Індикатор помилки */}
         {status === 'error' && <DynamicIcon name="x" size={24} />}
 
-        {/* Відображається тільки в режимі відладки */}
-        {isDebugMode && (
-          <div className="flex">
-            {/* Обʼємна вага порції */}
-            <span className="text-[12px] tabular-nums ml-2 text-red-600">{isByQuantityProduct && displayRatio}</span>
-
-            {/* Штрих-код товару (fallback — SKU червоним) */}
-            {displayCode && (
-              <span
-                className={cn(
-                  'flex items-center gap-0.5 ml-4 tabular-nums cursor-pointer transition-colors',
-                  isSkuFallback
-                    ? 'text-red-500 hover:text-red-700'
-                    : 'text-neutral-400 hover:text-neutral-600'
-                )}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigator.clipboard.writeText(displayCode);
-                }}
-                title={isSkuFallback ? 'SKU (штрих-код відсутній)' : 'Click to copy'}
-              >
-                <DynamicIcon name="scan-barcode" size={14} />
-                <span className="text-[12px] leading-tight pt-[1px]">{displayCode}</span>
-              </span>
-            )}
-          </div>
-        )}
-        
         {/* Лічильник одиниць порцій */}
         <span className={`text-[18px] tabular-nums rounded-sm bg-gray-950/6 px-2 py-0.5`}>{isByQuantityProduct ? `${scannedCount}/${quantity}` : quantity}</span>
       </div>
+      </div>
+
+      {/* Режим відладки: службові дані окремим рядком, щоб не стискати назву й склад */}
+      {isDebugMode && (displayCode || (isByQuantityProduct && displayRatio !== undefined)) && (
+        <div className="relative mt-2 ml-10 pt-1.5 border-t border-dashed border-neutral-300/70 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] tabular-nums">
+          {isByQuantityProduct && (
+            <span className="inline-flex items-center gap-1 text-red-600" title="Обʼємна вага порції">
+              <DynamicIcon name="scale" size={12} />
+              обсяг: {displayRatio}
+            </span>
+          )}
+          {displayCode && (
+            <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-0.5 min-w-0">
+              <DynamicIcon name="scan-barcode" size={14} className={isSkuFallback ? 'text-red-500' : 'text-neutral-400'} />
+              {displayCode.split(', ').map((code) => (
+                <span
+                  key={code}
+                  className={cn(
+                    'cursor-pointer transition-colors',
+                    isSkuFallback ? 'text-red-500 hover:text-red-700' : 'text-neutral-400 hover:text-neutral-600'
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(code);
+                  }}
+                  title={isSkuFallback ? 'SKU (штрих-код відсутній)' : 'Click to copy'}
+                >
+                  {code}
+                </span>
+              ))}
+            </span>
+          )}
+        </div>
+      )}
     </div>
 
     <ConfirmModal
