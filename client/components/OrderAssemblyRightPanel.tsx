@@ -24,6 +24,8 @@ interface OrderAssemblyRightPanelProps {
   shipmentPayloadData?: unknown;
   showMonolithicAvailabilityBadge?: boolean;
   averagePortionWeight?: number; // Середня вага порції для розподілу по коробках
+  /** Обсяг для підбору коробки (у режимі економії з коефіцієнтами); за замовчуванням totalPortions */
+  recommendationPortions?: number;
   getWeightData: () => { expectedWeight: number | null; cumulativeTolerance: number };
   handleWeightChange: (weight: number | null) => void;
   isWeightWidgetActive: boolean;
@@ -54,6 +56,7 @@ export function OrderAssemblyRightPanel({
   monolithicDisplayStates,
   shipmentPayloadData,
   averagePortionWeight = 0.33,
+  recommendationPortions,
   getWeightData,
   handleWeightChange,
   isWeightWidgetActive,
@@ -202,6 +205,7 @@ export function OrderAssemblyRightPanel({
           {hasItems && !expandingSets && (
             <BoxSelector
               totalPortions={orderForAssembly.totalPortions}
+              recommendationPortions={recommendationPortions}
               averagePortionWeight={averagePortionWeight}
               onBoxesChange={handleBoxesChange}
               onActiveBoxChange={setActiveBoxIndex}

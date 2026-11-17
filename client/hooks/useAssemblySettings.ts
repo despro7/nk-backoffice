@@ -7,6 +7,8 @@ export interface AssemblySettings {
   boxInitialStatus: 'default' | 'pending';
   autoSelectNext: boolean;
   allowManualSelect: boolean;
+  /** Режим економії: підбір коробок за ефективним обсягом (порції × коефіцієнт) */
+  economyMode: boolean;
   successIndicationMs: number;
   successToastMs: number;
   errorIndicationMs: number;
@@ -23,6 +25,7 @@ const DEFAULT_ASSEMBLY_SETTINGS: AssemblySettings = {
   boxInitialStatus: 'default',
   autoSelectNext: true,
   allowManualSelect: false,
+  economyMode: false,
   successIndicationMs: 1500,
   successToastMs: 3000,
   errorIndicationMs: 1000,
@@ -60,6 +63,7 @@ export function useAssemblySettings(isAuthenticated: boolean = false): AssemblyS
           boxInitialStatus: (find('assembly_box_initial_status')?.value || DEFAULT_ASSEMBLY_SETTINGS.boxInitialStatus) as 'default' | 'pending',
           autoSelectNext: (find('assembly_auto_select_next')?.value ?? 'true') === 'true',
           allowManualSelect: (find('assembly_allow_manual_select')?.value ?? 'false') === 'true',
+          economyMode: (find('assembly_economy_mode')?.value ?? 'false') === 'true',
           successIndicationMs: parseInt(find('assembly_success_indication_ms')?.value) || DEFAULT_ASSEMBLY_SETTINGS.successIndicationMs,
           successToastMs: parseInt(find('assembly_success_toast_ms')?.value) || DEFAULT_ASSEMBLY_SETTINGS.successToastMs,
           errorIndicationMs: parseInt(find('assembly_error_indication_ms')?.value) || DEFAULT_ASSEMBLY_SETTINGS.errorIndicationMs,

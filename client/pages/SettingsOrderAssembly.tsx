@@ -9,11 +9,11 @@ const SettingsOrderAssembly: React.FC = () => {
   return (
     <div className="space-y-8">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <OrderAssemblySettings />
         <div className="space-y-8">
-          <OrderAssemblySettings />
+          <WeightToleranceSettings />
           <OrderSoundSettingsCard />
         </div>
-          <WeightToleranceSettings />
       </div>
 
       {/* Настройки коробок */}

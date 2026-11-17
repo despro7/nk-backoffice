@@ -14,6 +14,7 @@ interface OrderAssemblySettingsType {
   productScanMode: ProductScanMode;
   autoSelectNext: boolean;
   allowManualSelect: boolean;
+  economyMode: boolean;
   successIndicationMs: number;
   successToastMs: number;
   errorIndicationMs: number;
@@ -26,6 +27,7 @@ const DEFAULT_SETTINGS: OrderAssemblySettingsType = {
   productScanMode: 'single_per_item',
   autoSelectNext: true,
   allowManualSelect: false,
+  economyMode: false,
   successIndicationMs: 1500,
   successToastMs: 3000,
   errorIndicationMs: 1000,
@@ -41,6 +43,47 @@ const PRODUCT_SCAN_MODE_OPTIONS = [
   { value: 'single_per_item', label: 'Одне сканування на позицію' },
   { value: 'by_quantity', label: 'Відповідно до кількості товарів' },
 ] as const;
+
+const SettingsGroup: React.FC<{ icon: string; title: string; description?: string; children: React.ReactNode }> = ({ icon, title, description, children }) => (
+  <section className="space-y-3">
+    <div>
+      <p className="flex items-center gap-2 text-sm font-semibold text-default-900">
+        <DynamicIcon name={icon as any} size={16} className="text-default-500" /> {title}
+      </p>
+      {description && <p className="text-xs text-default-500 mt-0.5 ml-6">{description}</p>}
+    </div>
+    <div className="space-y-8 pt-3">{children}</div>
+  </section>
+);
+
+const SwitchRow: React.FC<{
+  title: string;
+  description?: string;
+  isSelected: boolean;
+  onValueChange: (val: boolean) => void;
+  highlighted?: boolean;
+}> = ({ title, description, isSelected, onValueChange, highlighted }) => (
+  <div
+    className={`flex items-start justify-between gap-4 rounded-lg border p-3 ${
+      highlighted ? 'border-default-300 bg-default-100' : 'border-default-200 bg-default-50'
+    }`}
+  >
+    <div className="min-w-0">
+      <p className="text-sm font-medium text-default-900">{title}</p>
+      {description && <p className="text-xs text-default-500 mt-1">{description}</p>}
+    </div>
+    <Switch size="sm" isSelected={isSelected} onValueChange={onValueChange} aria-label={title} />
+  </div>
+);
+
+const NotifyPanel: React.FC<{ icon: string; iconClass: string; title: string; children: React.ReactNode }> = ({ icon, iconClass, title, children }) => (
+  <div className="rounded-lg border border-default-200 bg-default-50 p-4">
+    <p className="flex items-center gap-2 text-sm font-semibold text-default-900 mb-3">
+      <DynamicIcon name={icon as any} size={16} className={iconClass} /> {title}
+    </p>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">{children}</div>
+  </div>
+);
 
 export const OrderAssemblySettings: React.FC = () => {
   const { apiCall } = useApi();
@@ -64,6 +107,7 @@ export const OrderAssemblySettings: React.FC = () => {
           productScanMode: (find('assembly_product_scan_mode')?.value as ProductScanMode) || DEFAULT_SETTINGS.productScanMode,
           autoSelectNext: (find('assembly_auto_select_next')?.value ?? 'true') === 'true',
           allowManualSelect: (find('assembly_allow_manual_select')?.value ?? 'false') === 'true',
+          economyMode: (find('assembly_economy_mode')?.value ?? 'false') === 'true',
           successIndicationMs: parseInt(find('assembly_success_indication_ms')?.value) || DEFAULT_SETTINGS.successIndicationMs,
           successToastMs: parseInt(find('assembly_success_toast_ms')?.value) || DEFAULT_SETTINGS.successToastMs,
           errorIndicationMs: parseInt(find('assembly_error_indication_ms')?.value) || DEFAULT_SETTINGS.errorIndicationMs,
@@ -100,6 +144,7 @@ export const OrderAssemblySettings: React.FC = () => {
     productScanMode:      { key: 'assembly_product_scan_mode',      description: 'Режим сканування товарів (single_per_item | by_quantity)', serialize: String },
     autoSelectNext:       { key: 'assembly_auto_select_next',       description: 'Автовибір наступного товару після успішного зважування', serialize: String },
     allowManualSelect:    { key: 'assembly_allow_manual_select',    description: 'Дозволити ручний вибір товару кліком',              serialize: String },
+    economyMode:          { key: 'assembly_economy_mode',           description: 'Режим економії: підбір коробок за обсягом з урахуванням коефіцієнтів порцій', serialize: String },
     successIndicationMs:  { key: 'assembly_success_indication_ms',  description: 'Час індикації success-статусу (мс)',                 serialize: String },
     successToastMs:       { key: 'assembly_success_toast_ms',       description: 'Час показу Toast при успіху (мс)',                   serialize: String },
     errorIndicationMs:    { key: 'assembly_error_indication_ms',    description: 'Час індикації error-статусу (мс)',                   serialize: String },
@@ -148,9 +193,10 @@ export const OrderAssemblySettings: React.FC = () => {
   }, []);
 
   return (
-    <Card className="hover:shadow-md transition-shadow">
-      <CardHeader className="border-b px-5">
+    <Card>
+      <CardHeader className="border-b px-5 flex-col items-start">
         <h3 className="font-semibold text-gray-900">Налаштування збирання замовлень</h3>
+        <p className="text-xs text-default-500 mt-0.5">Режим комплектації, сканування, коробки та сповіщення</p>
       </CardHeader>
       <CardBody className="p-5">
         {isLoading ? (
@@ -160,9 +206,9 @@ export const OrderAssemblySettings: React.FC = () => {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-6">
-              {/* Режим комплектації */}
-              <div className="space-y-2 col-span-2">
+            <div className="space-y-8">
+              {/* Основне */}
+              <SettingsGroup icon="sliders-horizontal" title="Режим і сканування">
                 <Select
                   selectedKeys={settings ? [settings.mode] : []}
                   onSelectionChange={(keys) => {
@@ -178,10 +224,7 @@ export const OrderAssemblySettings: React.FC = () => {
                   <SelectItem key="standard">Стандартний</SelectItem>
                   <SelectItem key="no_scales">Без вагів</SelectItem>
                 </Select>
-              </div>
 
-              {/* Початковий статус коробки */}
-              <div className="space-y-2 col-span-2">
                 <Select
                   selectedKeys={settings ? [settings.boxInitialStatus] : []}
                   onSelectionChange={(keys) => {
@@ -195,15 +238,10 @@ export const OrderAssemblySettings: React.FC = () => {
                   description="В якому стані буде коробка при відкритті замовлення"
                 >
                   {BOX_STATUS_OPTIONS.map((option) => (
-                    <SelectItem key={option.value}>
-                      {option.label}
-                    </SelectItem>
+                    <SelectItem key={option.value}>{option.label}</SelectItem>
                   ))}
                 </Select>
-              </div>
 
-              {/* Режим сканування товарів */}
-              <div className="space-y-2 col-span-2">
                 <Select
                   selectedKeys={settings ? [settings.productScanMode] : []}
                   onSelectionChange={(keys) => {
@@ -217,48 +255,51 @@ export const OrderAssemblySettings: React.FC = () => {
                   description="Визначає, скільки разів потрібно сканувати товар"
                 >
                   {PRODUCT_SCAN_MODE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value}>
-                      {option.label}
-                    </SelectItem>
+                    <SelectItem key={option.value}>{option.label}</SelectItem>
                   ))}
                 </Select>
-              </div>
+              </SettingsGroup>
 
-              {/* Автовибір наступного товару (не показувати в режимі Без вагів) */}
-              {settings?.mode !== 'no_scales' && (
-                <div className="col-span-2">
-                  <Switch
+              {/* Вибір товару */}
+              <SettingsGroup icon="mouse-pointer-click" title="Вибір товару">
+                {settings?.mode !== 'no_scales' && (
+                  <SwitchRow
+                    title="Автовибір наступного товару"
+                    description="Після успішного зважування вибирається наступна позиція"
                     isSelected={settings?.autoSelectNext ?? DEFAULT_SETTINGS.autoSelectNext}
                     onValueChange={(val) => setSettings(prev => prev ? { ...prev, autoSelectNext: val } : null)}
-                  >
-                    Автовибір наступного товару після успішного зважування
-                  </Switch>
-                </div>
-              )}
-
-              {/* Ручний вибір товару */}
-              <div className="col-span-2">
-                <Switch
+                  />
+                )}
+                <SwitchRow
+                  title="Ручний вибір товару кліком"
+                  description="Комірник може вибрати позицію вручну, не чекаючи сканування"
                   isSelected={settings?.allowManualSelect ?? DEFAULT_SETTINGS.allowManualSelect}
                   onValueChange={(val) => setSettings(prev => prev ? { ...prev, allowManualSelect: val } : null)}
-                >
-                  Дозволити ручний вибір товару кліком
-                </Switch>
-              </div>
+                />
+              </SettingsGroup>
 
-              {/* Повідомлення про успіх */}
-              <div className="col-span-2">
-                <p className="flex items-center gap-2 text-md font-bold text-gray-700 mb-3"><DynamicIcon name="check-circle" size={16} className="text-success-500" /> Повідомлення про успіх</p>
-                <div className="grid grid-cols-2 gap-4">
+              {/* Коробки */}
+              <SettingsGroup icon="package" title="Коробки" description="Підбір коробки та розподіл порцій">
+                <SwitchRow
+                  highlighted
+                  title="Режим економії коробок"
+                  description="Обсяг замовлення = порції × коефіцієнт (unitRatio, weightRatio комплекту). Якщо він вміщується в одну коробку, береться вона, а комплект не розрізається, навіть коли сирих порцій більше за місткість."
+                  isSelected={settings?.economyMode ?? DEFAULT_SETTINGS.economyMode}
+                  onValueChange={(val) => setSettings(prev => prev ? { ...prev, economyMode: val } : null)}
+                />
+              </SettingsGroup>
+
+              {/* Сповіщення */}
+              <SettingsGroup icon="bell" title="Сповіщення" description="Час індикації статусу та показу Toast, у мілісекундах">
+                <NotifyPanel icon="check-circle" iconClass="text-success-500" title="Успіх">
                   <NumberInput
                     value={settings?.successIndicationMs ?? DEFAULT_SETTINGS.successIndicationMs}
                     onValueChange={(num) => setSettings(prev => prev ? { ...prev, successIndicationMs: num } : null)}
                     min={0}
                     max={10000}
                     step={100}
-                    label="Час індикації success-статусу"
+                    label="Індикація статусу"
                     labelPlacement="outside"
-                    description="в мілісекундах"
                     className="w-full"
                   />
                   <NumberInput
@@ -267,27 +308,20 @@ export const OrderAssemblySettings: React.FC = () => {
                     min={0}
                     max={30000}
                     step={100}
-                    label="Час показу Toast"
+                    label="Показ Toast"
                     labelPlacement="outside"
-                    description="в мілісекундах"
                     className="w-full"
                   />
-                </div>
-              </div>
-
-              {/* Повідомлення про помилку */}
-              <div className="col-span-2">
-                <p className="flex items-center gap-2 text-md font-bold text-gray-700 mb-3"><DynamicIcon name="alert-triangle" size={16} className="text-danger-500" /> Повідомлення про помилку</p>
-                <div className="grid grid-cols-2 gap-4">
+                </NotifyPanel>
+                <NotifyPanel icon="alert-triangle" iconClass="text-danger-500" title="Помилка">
                   <NumberInput
                     value={settings?.errorIndicationMs ?? DEFAULT_SETTINGS.errorIndicationMs}
                     onValueChange={(num) => setSettings(prev => prev ? { ...prev, errorIndicationMs: num } : null)}
                     min={0}
                     max={10000}
                     step={100}
-                    label="Час індикації error-статусу"
+                    label="Індикація статусу"
                     labelPlacement="outside"
-                    description="в мілісекундах"
                     className="w-full"
                   />
                   <NumberInput
@@ -296,13 +330,12 @@ export const OrderAssemblySettings: React.FC = () => {
                     min={0}
                     max={30000}
                     step={100}
-                    label="Час показу Toast"
+                    label="Показ Toast"
                     labelPlacement="outside"
-                    description="в мілісекундах"
                     className="w-full"
                   />
-                </div>
-              </div>
+                </NotifyPanel>
+              </SettingsGroup>
             </div>
 
             <div className="flex space-x-3 mt-6">

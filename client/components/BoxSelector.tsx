@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Select, SelectItem, Switch, Card, CardBody, CardHeader, Button, cn, CardFooter } from '@heroui/react';
+import { Select, SelectItem, Switch, Card, CardBody, CardHeader, Button, Chip, cn, CardFooter } from '@heroui/react';
 import { useApi } from '../hooks/useApi';
 import { SettingsBoxes, BoxRecommendationsResponse, BoxRecommendationMode } from '../types/boxes';
 import { setCookie, getCookie, deleteCookie, areCookiesEnabled } from '../lib/cookieUtils';
@@ -8,6 +8,8 @@ import { LoggingService } from '../services/LoggingService';
 
 interface BoxSelectorProps {
   totalPortions: number;
+  /** Обсяг для запиту рекомендацій (режим економії); якщо не задано, використовується totalPortions */
+  recommendationPortions?: number;
   averagePortionWeight?: number; // Середня вага порції в кг
   onBoxesChange: (boxes: SettingsBoxes[], totalWeight: number, boxesInfo?: any) => void;
   onActiveBoxChange?: (activeBoxIndex: number) => void;
@@ -18,6 +20,7 @@ interface BoxSelectorProps {
 
 export const BoxSelector: React.FC<BoxSelectorProps> = ({
   totalPortions,
+  recommendationPortions,
   averagePortionWeight = 0.33, // За замовчуванням 330г
   onBoxesChange,
   onActiveBoxChange,
@@ -223,6 +226,8 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
   }, [memoizedOnBoxesChange, totalPortions, activeBoxIndex, distributePortionsAcrossBoxes, averagePortionWeight]);
 
   // Завантажуємо рекомендації
+  const portionsForRecommendation = recommendationPortions ?? totalPortions;
+
   const fetchRecommendations = useCallback(async (portions: number) => {
     try {
       const response = await apiCall(`/api/boxes/recommendations/${portions}?mode=${recommendationMode}`);
@@ -242,7 +247,8 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
         const totalWeight = recommendedBoxes.reduce((sum, b) => sum + Number(b.weight), 0);
         
         // Розумний розподіл порцій по коробках з урахуванням ваги
-        const portionsDistribution = distributePortionsAcrossBoxes(portions, recommendedBoxes, averagePortionWeight);
+        // Розподіл порцій (діапазони) завжди по сирих порціях замовлення
+        const portionsDistribution = distributePortionsAcrossBoxes(totalPortions, recommendedBoxes, averagePortionWeight);
         
         // Розраховуємо діапазони для кожної коробки
         const boxPortionsRanges = [];
@@ -260,7 +266,7 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
           boxes: recommendedBoxes,
           totalWeight,
           totalBoxes: recommendedBoxes.length,
-          portionsPerBox: Math.ceil(portions / recommendedBoxes.length), // Для сумісності
+          portionsPerBox: Math.ceil(totalPortions / recommendedBoxes.length), // Для сумісності
           portionsDistribution, // Масив індивідуального розподілу
           activeBoxIndex: 0,
           boxPortionsRanges
@@ -277,7 +283,7 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
       setLoading(false);
       setTransitionMode(false);
     }
-  }, [apiCall, memoizedOnBoxesChange, activeBoxIndex, recommendationMode]);
+  }, [apiCall, memoizedOnBoxesChange, activeBoxIndex, recommendationMode, totalPortions, averagePortionWeight, distributePortionsAcrossBoxes]);
 
   // Функція для оновлення рекомендацій при зміні режиму
   const handleModeChange = useCallback((newMode: BoxRecommendationMode) => {
@@ -344,25 +350,25 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
   // Завантажуємо рекомендації при зміні порцій або режиму
   useEffect(() => {
     if (shouldHideBoxes) return;
-    if (boxes.length === 0 || totalPortions <= 0 || loading) {
+    if (boxes.length === 0 || portionsForRecommendation <= 0 || loading) {
       return;
     }
 
     // Перевіряємо, чи змінились порції або режим
-    const shouldFetch = totalPortions !== lastTotalPortions || (recommendations && recommendations.mode !== recommendationMode);
+    const shouldFetch = portionsForRecommendation !== lastTotalPortions || (recommendations && recommendations.mode !== recommendationMode);
 
     if (shouldFetch) {
       // Якщо змінюється тільки режим, не показуємо повне завантаження
-      if (totalPortions === lastTotalPortions && recommendations) {
+      if (portionsForRecommendation === lastTotalPortions && recommendations) {
         setTransitionMode(true);
       } else {
         setLoading(true);
       }
       setError(null);
-      setLastTotalPortions(totalPortions);
-      fetchRecommendations(totalPortions);
+      setLastTotalPortions(portionsForRecommendation);
+      fetchRecommendations(portionsForRecommendation);
     }
-  }, [totalPortions, recommendationMode, fetchRecommendations, boxes.length, lastTotalPortions, loading, recommendations, shouldHideBoxes]);
+  }, [portionsForRecommendation, recommendationMode, fetchRecommendations, boxes.length, lastTotalPortions, loading, recommendations, shouldHideBoxes]);
 
   // Прибираємо окремий useEffect для режиму, оскільки він тепер обробляється вище
 
@@ -419,20 +425,24 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
     return selectedBoxes.every(box => box.qntTo >= portionsPerBox);
   }, [selectedBoxes, totalPortions]);
 
+  // Режим економії реально змінив підбір: ефективний обсяг менший за сирі порції
+  const economyApplied = recommendationPortions !== undefined && recommendationPortions < totalPortions;
+
+  // Валідація місткості йде по обсягу, за яким підбиралась коробка (в економії це ефективний обсяг)
   const getBoxValidationStatus = useCallback((box: SettingsBoxes) => {
     if (selectedBoxes.length === 0) return 'default';
-    const portionsPerBox = Math.ceil(totalPortions / selectedBoxes.length);
+    const portionsPerBox = Math.ceil(portionsForRecommendation / selectedBoxes.length);
     if (box.qntTo < portionsPerBox) {
       return 'danger';
     }
     return 'default';
-  }, [selectedBoxes.length, totalPortions]);
+  }, [selectedBoxes.length, portionsForRecommendation]);
 
   const hasInappropriateBoxes = useMemo(() => {
     if (selectedBoxes.length === 0) return false;
-    const portionsPerBox = Math.ceil(totalPortions / selectedBoxes.length);
+    const portionsPerBox = Math.ceil(portionsForRecommendation / selectedBoxes.length);
     return selectedBoxes.some(box => box.qntTo < portionsPerBox);
-  }, [selectedBoxes, totalPortions]);
+  }, [selectedBoxes, portionsForRecommendation]);
 
   if (loading) {
     return (
@@ -469,14 +479,26 @@ export const BoxSelector: React.FC<BoxSelectorProps> = ({
             className="flex-1 cursor-pointer"
             onClick={() => onActiveBoxChange?.(index)}
           >
-            <Card className={`transition-shadow duration-200 ease-in-out select-none ${isActive ? 'text-lime-700/95 ring-2 ring-lime-600/90' : ''} ${getBoxValidationStatus(box) === 'danger' ? 'ring-red-600/80! text-red-700' : ''}`}>
+            <Card className={`transition-shadow duration-200 ease-in-out select-none ${isActive ? (economyApplied ? 'text-sky-700/95 ring-2 ring-sky-700/90' : 'text-lime-700/95 ring-2 ring-lime-600/90') : ''} ${getBoxValidationStatus(box) === 'danger' ? 'ring-red-600/80! text-red-700' : ''}`}>
               <CardBody className="flex overflow-hidden">
                 <div className="flex flex-col gap-1">
-                  <span className={`font-semibold duration-200 flex items-center whitespace-nowrap gap-2`}>Коробка #{ index + 1 }</span>
+                  <span className={`font-semibold duration-200 flex items-center whitespace-nowrap gap-2`}>
+                    Коробка #{ index + 1 }
+                    {economyApplied && (
+                      <Chip
+                        size="sm"
+                        variant="flat"
+                        radius="sm"
+                        classNames={{ base: 'h-4 px-1 bg-sky-100', content: 'px-0 text-[10px] font-medium text-sky-700' }}
+                      >
+                        економія
+                      </Chip>
+                    )}
+                  </span>
                   {/* <span className={`text-xs opacity-70`}>{box.width}×{box.height}×{box.length} см</span> */}
                   <span className={`text-xs opacity-70`}>{`${box.marking} (${box.qntFrom}-${box.qntTo} порцій)`}</span>
                 </div>
-                <DynamicIcon name="package" size={46} strokeWidth={1.5} className={`absolute -right-3 top-1/2 -translate-y-1/2 transition duration-500 ${isActive ? 'opacity-25 text-lime-600' : 'opacity-5'}`} /> 
+                <DynamicIcon name="package" size={46} strokeWidth={1.5} className={`absolute -right-3 top-1/2 -translate-y-1/2 transition duration-500 ${isActive ? (economyApplied ? 'opacity-30 text-sky-700' : 'opacity-25 text-lime-600') : 'opacity-5'}`} /> 
                 {/* <Select
                   aria-label="Коробка"
                   labelPlacement='outside'

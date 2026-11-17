@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-11-17 – Режим економії коробок у налаштуваннях комплектації
+
+**Files:** `client/lib/orderAssemblyUtils.ts`, `client/lib/orderAssemblyEconomy.spec.ts`, `client/lib/__fixtures__/orderAssemblyRealData.json`, `client/hooks/useAssemblySettings.ts`, `client/components/{OrderAssemblySettings,BoxSelector,OrderAssemblyRightPanel,ShippingProvidersManager}.tsx`, `client/pages/{OrderView,SettingsOrderAssembly}.tsx`
+
+- **Проблема:** підбір коробки й розподіл по ній рахували сирі порції (`quantity × portionsPerItem`) і ігнорували коефіцієнти. Комплект на 37 порцій, де частина компонентів має `unitRatio` менший за 1, об'ємно вміщується в одну коробку на 36, але алгоритм брав дві й розрізав комплект (capacity-split).
+- **Налаштування:** `assembly_economy_mode` у `settings_base` (категорія `orders_interface`, за замовчуванням вимкнено), перемикач «Режим економії коробок» у `/settings/order-assembly`. Нових таблиць і серверних змін немає.
+- **Обсяг:** `getItemEffectiveCapacityPerUnit` / `getEffectiveTotalPortions`: для монолітного комплекту `portionsPerItem × weightRatio`, для звичайного товару `unitRatio`; не більше за сирі порції (економія ніколи не збільшує кількість коробок); підсумок округлюється вгору з допуском на похибку float.
+- **Підбір:** `OrderView` передає в `BoxSelector` `recommendationPortions`, і запит `/api/boxes/recommendations/:portions` іде з ефективним обсягом. Діапазони порцій у коробках лишаються по сирих порціях. Валідація місткості коробки теж по ефективному обсягу.
+- **Розподіл:** `combineBoxesWithItems(..., { economyMode })` рахує місткість у ефективних порціях, цілий монолітний комплект лишається в одній коробці без split. Залишок звичайних товарів при щільності 100% кладеться в коробку з найбільшим запасом, щоб дробові коефіцієнти не губили одиниці. Без прапорця поведінка не змінилась (тест порівнює результат побайтово).
+- **UI:** картка налаштувань розбита на групи (режим і сканування, вибір товару, коробки, сповіщення); блок звуків перенесено під налаштування похибки ваги; активна коробка в економії синя з лейблом «економія»; у провайдерах доставки прибрано сірі стани неактивних.
+- **Тести:** `orderAssemblyEconomy.spec.ts` (11 тестів): ефективні порції, економія вкл/викл, синтетичний перебір комплектів 30-45 порцій, прогін реальних комбінацій замовлень за 240 днів зі знімка БД (`__fixtures__`, лише sku/кількості). Реальний кейс: товар `07148` 37 порцій, ефективно 35, одна коробка замість двох.
+
+**Документація:** `Docs/features/monolithic-sets-handling.md` – розділ «Режим економії коробок».
+
+---
+
 ## 2026-11-17 – Звітний день: розрахунок за Europe/Kyiv, а не за поясом процесу
 
 **Files:** `shared/utils/kyivDateTime.{ts,spec.ts}`, `server/lib/utils.ts`, `server/routes/orders.ts`, `client/components/OrderStatusChip.tsx`, `client/pages/Invoices/{InvoicesDashboardTab,InvoiceSettingsModal}.tsx`

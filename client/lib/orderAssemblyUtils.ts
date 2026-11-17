@@ -869,6 +869,44 @@ export const expandProductSets = async (
   return result;
 };
 
+/** Допуск для порівняння дробових обсягів (режим економії). */
+const CAPACITY_EPS = 1e-6;
+
+/** Сирі порції позиції: кількість × portionsPerItem (без коефіцієнтів). */
+export const getItemRawPortions = (item: Pick<OrderChecklistItem, 'quantity' | 'portionsPerItem'>): number =>
+  item.portionsPerItem ? item.quantity * item.portionsPerItem : item.quantity;
+
+/**
+ * Обсяг однієї одиниці позиції в режимі економії.
+ * Монолітний комплект: portionsPerItem × weightRatio (сума порцій компонентів з їх unitRatio).
+ * Звичайний товар: unitRatio. Ніколи не більше за сирі порції, щоб режим економії
+ * не збільшував кількість коробок порівняно зі стандартним розрахунком.
+ */
+export const getItemEffectiveCapacityPerUnit = (
+  item: Pick<OrderChecklistItem, 'portionsPerItem'> & { weightRatio?: number; unitRatio?: number }
+): number => {
+  const isMonolithic = typeof item.portionsPerItem === 'number' && item.portionsPerItem > 0;
+  const raw = isMonolithic ? Number(item.portionsPerItem) : 1;
+  const ratio = isMonolithic ? item.weightRatio : item.unitRatio;
+  if (typeof ratio !== 'number' || !isFinite(ratio) || ratio <= 0) return raw;
+  return Math.min(raw, raw * ratio);
+};
+
+/** Ефективні порції позиції (кількість × обсяг однієї одиниці) для режиму економії. */
+export const getItemEffectivePortions = (item: OrderChecklistItem): number =>
+  item.quantity * getItemEffectiveCapacityPerUnit(item as any);
+
+/**
+ * Ефективні порції замовлення для підбору коробки в режимі економії.
+ * Округлення вгору (з допуском на похибку float): 36.0000001 лишається 36.
+ */
+export const getEffectiveTotalPortions = (items: OrderChecklistItem[]): number => {
+  const sum = items
+    .filter((item) => item.type !== 'box')
+    .reduce((acc, item) => acc + getItemEffectivePortions(item), 0);
+  return Math.ceil(sum - CAPACITY_EPS);
+};
+
 type PackingBoxState = {
   index: number;
   portionsCount: number;
@@ -888,7 +926,7 @@ const canFitWholeMonolithicUnit = (
   const freeHard = box.hardLimit - (box.portionsCount || 0);
   const freeCalc = Math.ceil(box.hardLimit - (box.portionsCalc || 0));
   const freeWeight = maxBoxWeight - box.currentWeight;
-  return freeHard >= portionsPerItem && freeCalc >= portionsPerItem && freeWeight >= weightPerUnit;
+  return freeHard + CAPACITY_EPS >= portionsPerItem && freeCalc + CAPACITY_EPS >= portionsPerItem && freeWeight >= weightPerUnit;
 };
 
 /**
@@ -1031,7 +1069,8 @@ export const combineBoxesWithItems = (
   boxes: any[], 
   items: OrderChecklistItem[], 
   isReadyToShip: boolean = false,
-  boxInitialStatus: 'default' | 'pending' | 'awaiting_confirmation' | 'done' = 'default'
+  boxInitialStatus: 'default' | 'pending' | 'awaiting_confirmation' | 'done' = 'default',
+  options: { economyMode?: boolean } = {}
 ): { checklistItems: OrderChecklistItem[]; unallocatedPortions: number; unallocatedItems: Array<{ name: string; quantity: number }>; boxStates?: any[] } => {
   // Перевіряємо, що у нас є валідні коробки
   if (!boxes || boxes.length === 0) {
@@ -1111,9 +1150,14 @@ export const combineBoxesWithItems = (
 
       // Якщо це монолітний набір — беремо raw portionsPerItem.
       // Для звичайних товарів залишаємо розрахунок через unitRatio.
-      const effectivePortionsPerItem = isMonolithicItem
-        ? Number(rawPortionsPerItem || 1)
-        : unitRatio;
+      const economyMode = options.economyMode === true;
+      // Режим економії: місткість рахуємо в ефективних порціях (з коефіцієнтами), інакше в сирих.
+      const capPerUnit = economyMode
+        ? getItemEffectiveCapacityPerUnit(item as any)
+        : (isMonolithicItem ? Number(rawPortionsPerItem || 1) : 1);
+      const effectivePortionsPerItem = economyMode
+        ? capPerUnit
+        : (isMonolithicItem ? Number(rawPortionsPerItem || 1) : unitRatio);
 
       // Distribute by physical units (sets or items). We'll track two measures on boxes:
       // - portionsCount: integer capacity units used (for limits). For monolithic sets this equals units * portionsPerItem, for ordinary items it's units.
@@ -1131,7 +1175,7 @@ export const combineBoxesWithItems = (
         unitsTotal >= 1 &&
         fullPortionsPerItem > 0 &&
         !boxStates.some((box) =>
-          canFitWholeMonolithicUnit(box, fullPortionsPerItem, weightPerUnit, MAX_BOX_WEIGHT)
+          canFitWholeMonolithicUnit(box, economyMode ? capPerUnit : fullPortionsPerItem, weightPerUnit, MAX_BOX_WEIGHT)
         )
       ) {
         LoggingService.orderAssemblyLog(
@@ -1164,26 +1208,50 @@ export const combineBoxesWithItems = (
         continue;
       }
           
+      // Режим економії: обсяг рахується впритул до місткості, тому дробові коефіцієнти можуть
+      // залишити 1-2 одиниці звичайного товару без місця (фрагментація). Кладемо залишок у коробку
+      // з найбільшим запасом (дозволяємо мінімальне перевищення), щоб не втрачати порції.
+      const forcePlaceRemainingUnits = (): boolean => {
+        if (!economyMode || isMonolithicItem || remainingUnits <= 0) return false;
+        const target = boxStates
+          .filter((box) => (MAX_BOX_WEIGHT - box.currentWeight) + CAPACITY_EPS >= weightPerUnit * remainingUnits)
+          .sort((x, y) => (y.hardLimit - (y.portionsCount || 0)) - (x.hardLimit - (x.portionsCount || 0)))[0];
+        if (!target) return false;
+        productItems.push({
+          ...item,
+          id: `product_${target.index}_${item.id}${partIndex > 0 ? `_part${partIndex}` : ''}`,
+          type: 'product' as const,
+          quantity: remainingUnits,
+          expectedWeight: weightPerUnit * remainingUnits,
+          boxIndex: target.index
+        });
+        target.portionsCount = (target.portionsCount || 0) + remainingUnits * capPerUnit;
+        target.portionsCalc = (target.portionsCalc || 0) + remainingUnits * effectivePortionsPerItem;
+        target.currentWeight += weightPerUnit * remainingUnits;
+        remainingUnits = 0;
+        return true;
+      };
+
       while (remainingUnits > 0) {
         // Шукаємо коробку, куди поміститься весь залишок товару цілком
         // Спочатку намагаємось в межах softLimit (рекомендований розподіл)
         // Compute required capacity in "portions" terms for the remaining units
-        const capacityNeededForRemaining = remainingUnits * (isMonolithicItem ? Number(item.portionsPerItem || 1) : 1);
+        const capacityNeededForRemaining = remainingUnits * capPerUnit;
         const calcNeededForRemaining = remainingUnits * (effectivePortionsPerItem || (isMonolithicItem ? Number(item.portionsPerItem || 1) : 1));
         // Перевіряємо, чи коробка має достатньо місця
         // Math.ceil для вільного простору у portionsCalc — стандартні математичні правила округлення
         const boxesWithEnoughRoom = boxStates.filter(box =>
-          (box.softLimit - (box.portionsCount || 0)) >= capacityNeededForRemaining &&
+          (box.softLimit - (box.portionsCount || 0)) + CAPACITY_EPS >= capacityNeededForRemaining &&
           (MAX_BOX_WEIGHT - box.currentWeight) >= weightPerUnit * remainingUnits &&
-          (Math.ceil(box.hardLimit - (box.portionsCalc || 0)) >= calcNeededForRemaining)
+          (Math.ceil(box.hardLimit - (box.portionsCalc || 0)) + CAPACITY_EPS >= calcNeededForRemaining)
         );
         
         // Якщо по softLimit не знайшли — пробуємо hardLimit (фізичний максимум qntTo)
         const boxesWithEnoughRoomHard = boxesWithEnoughRoom.length === 0
           ? boxStates.filter(box =>
-              (box.hardLimit - (box.portionsCount || 0)) >= capacityNeededForRemaining &&
+              (box.hardLimit - (box.portionsCount || 0)) + CAPACITY_EPS >= capacityNeededForRemaining &&
               (MAX_BOX_WEIGHT - box.currentWeight) >= weightPerUnit * remainingUnits &&
-              (Math.ceil(box.hardLimit - (box.portionsCalc || 0)) >= calcNeededForRemaining)
+              (Math.ceil(box.hardLimit - (box.portionsCalc || 0)) + CAPACITY_EPS >= calcNeededForRemaining)
             )
           : [];
         
@@ -1209,7 +1277,7 @@ export const combineBoxesWithItems = (
           });
 
           // Update box capacity: portionsCount uses physical portions (sets*portionsPerItem or units)
-          const capacityAdded = unitsToPlace * (isMonolithicItem ? Number(item.portionsPerItem || 1) : 1);
+          const capacityAdded = unitsToPlace * capPerUnit;
           // portionsCalc accumulates computed portions; for monolithic items we keep raw portions
           const calcAdded = unitsToPlace * (effectivePortionsPerItem || (item.portionsPerItem || 1));
 
@@ -1234,6 +1302,7 @@ export const combineBoxesWithItems = (
           }
           
           if (availableBoxes.length === 0) {
+            if (forcePlaceRemainingUnits()) break;
             console.warn(`⚠️ Не вдалося розподілити ${remainingUnits} одиниць товару "${item.name}"`);
             itemUnallocated = remainingUnits;
             totalUnallocated += remainingUnits;
@@ -1251,16 +1320,17 @@ export const combineBoxesWithItems = (
           const maxByUnitsWeight = weightPerUnit > 0 ? Math.floor(availableWeight / weightPerUnit) : freeSpace;
           // toAdd is capacity in portions; convert freeSpace (portions) to possible units to add based on item type
           // For monolithic sets, 1 unit consumes item.portionsPerItem portions; for ordinary item 1 unit consumes 1 portion.
-          const maxUnitsBySpace = isMonolithicItem ? Math.floor(freeSpace / Number(item.portionsPerItem || 1)) : freeSpace;
+          const maxUnitsBySpace = capPerUnit > 0 ? Math.floor(freeSpace / capPerUnit + CAPACITY_EPS) : freeSpace;
           // also cap by remaining *computed portions* vs remaining calc capacity
           // Math.ceil для вільного простору у portionsCalc — стандартні математичні правила округлення
           const calcAvailable = Math.max(0, Math.ceil(targetBox.hardLimit - (targetBox.portionsCalc || 0)));
-          const maxUnitsByCalc = (effectivePortionsPerItem > 0) ? Math.floor(calcAvailable / effectivePortionsPerItem) : maxUnitsBySpace;
+          const maxUnitsByCalc = (effectivePortionsPerItem > 0) ? Math.floor(calcAvailable / effectivePortionsPerItem + CAPACITY_EPS) : maxUnitsBySpace;
           const toAddUnits = Math.min(remainingUnits, maxUnitsBySpace, maxByUnitsWeight, maxUnitsByCalc);
 
-          const toAdd = toAddUnits * (isMonolithicItem ? Number(item.portionsPerItem || 1) : 1);
+          const toAdd = toAddUnits * capPerUnit;
           
           if (toAdd <= 0) {
+            if (forcePlaceRemainingUnits()) break;
             console.warn(`⚠️ Не вдалося розподілити ${remainingUnits} одиниць товару "${item.name}" - ліміти вичерпані`);
             itemUnallocated = remainingUnits;
             totalUnallocated += remainingUnits;
@@ -1282,7 +1352,7 @@ export const combineBoxesWithItems = (
 
           const perEffectiveForDisplay = effectivePortionsPerItem || item.portionsPerItem || 1;
           const displayQuantityUnits = unitsToPlace;
-          const capacityAddedUnits = unitsToPlace * (isMonolithicItem ? Number(item.portionsPerItem || 1) : 1);
+          const capacityAddedUnits = unitsToPlace * capPerUnit;
           const calcAdded = unitsToPlace * (effectivePortionsPerItem || (item.portionsPerItem || 1));
 
           productItems.push({

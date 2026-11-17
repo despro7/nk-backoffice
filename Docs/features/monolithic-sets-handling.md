@@ -80,10 +80,24 @@ Math.round((expectedWeight / quantity) * 1000) // г
 - коробок (`type === 'box'`);
 - монолітних наборів (`portionsPerItem` задано).
 
+## Режим економії коробок
+
+Налаштування `assembly_economy_mode` (`/settings/order-assembly`, за замовчуванням вимкнено).
+
+Коли воно ввімкнене, обсяг замовлення для підбору коробки рахується як порції × коефіцієнт, а не як сирі порції:
+
+- монолітний комплект: `portionsPerItem × weightRatio` (`weightRatio` = сума порцій компонентів з `unitRatio` / `portionsPerItem`);
+- звичайний товар: `unitRatio`;
+- на позицію не більше за сирі порції, підсумок округлюється вгору.
+
+Приклад: «Тиждень під ключ» (`07148`) має 37 порцій, ефективно 35. Запит рекомендацій іде з 35, береться одна коробка XL1 (25-36), комплект не розрізається. У `combineBoxesWithItems` параметр `{ economyMode: true }` рахує місткість у ефективних порціях, тому `canFitWholeMonolithicUnit` пропускає цілий комплект. Якщо коефіцієнти нічого не економлять (ефективно більше за місткість), split працює як раніше.
+
+У UI коробка в такому режимі синя з лейблом «економія». Тести: `client/lib/orderAssemblyEconomy.spec.ts`.
+
 ## Файли
 
 - `client/lib/orderAssemblyUtils.ts` — `expandProductRecursively()`, `combineBoxesWithItems()`
 - `client/types/orderAssembly.ts` — тип `OrderChecklistItem` з `portionsPerItem`
-- `client/pages/OrderView.tsx` — розрахунок `totalPortions`
+- `client/pages/OrderView.tsx` — розрахунок `totalPortions` і `recommendationPortions` (режим економії)
 - `client/components/OrderChecklist.tsx` — розрахунок `totalPackedPortions`
 - `client/components/OrderChecklistItem.tsx` — бейдж ваги порції (г)

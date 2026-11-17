@@ -8,7 +8,7 @@ import ErrorBoundary from '../components/ErrorBoundary';
 import { LoggingService } from '@/services/LoggingService';
 import { ToastService } from '@/services/ToastService';
 import type { OrderChecklistItem } from '../types/orderAssembly';
-import { expandProductSets, combineBoxesWithItems } from '@/lib/orderAssemblyUtils';
+import { expandProductSets, combineBoxesWithItems, getEffectiveTotalPortions } from '@/lib/orderAssemblyUtils';
 import { useWeightManagement } from '@/hooks/useWeightManagement';
 import { useBarcodeScanning } from '@/hooks/useBarcodeScanning';
 import { useOrderNavigation } from '@/hooks/useOrderNavigation';
@@ -199,11 +199,15 @@ export default function OrderView() {
     }
   }, [checklistItems, expandedItems, getForcedRegularSetSkus, order?.items, unallocatedItems]);
 
+  // ref: BoxSelector тримає застарілий колбек, тому режим економії читаємо з ref
+  const economyModeRef = useRef(false);
+  economyModeRef.current = assemblySettings.economyMode;
+
   const rebuildChecklistItems = useCallback((baseItems: OrderChecklistItem[], boxes: any[] = selectedBoxes, readyToShip: boolean = isReadyToShip) => {
     const itemsWithoutBoxes = baseItems.filter(item => item.type !== 'box');
 
     if (boxes.length > 0) {
-      const combined = combineBoxesWithItems(boxes, itemsWithoutBoxes, readyToShip, effectiveBoxInitialStatus);
+      const combined = combineBoxesWithItems(boxes, itemsWithoutBoxes, readyToShip, effectiveBoxInitialStatus, { economyMode: economyModeRef.current });
       setChecklistItems(combined.checklistItems);
       setUnallocatedPortions(combined.unallocatedPortions);
       setUnallocatedItems(combined.unallocatedItems);
@@ -243,7 +247,7 @@ export default function OrderView() {
 
     if (boxes.length > 0) {
       const itemsWithoutBoxes = processedItems.filter(item => item.type !== 'box');
-      const combined = combineBoxesWithItems(boxes, itemsWithoutBoxes, orderIsReadyToShip, effectiveBoxInitialStatus);
+      const combined = combineBoxesWithItems(boxes, itemsWithoutBoxes, orderIsReadyToShip, effectiveBoxInitialStatus, { economyMode: economyModeRef.current });
 
       if (combined && combined.checklistItems.length > 0) {
         setChecklistItems(combined.checklistItems);
@@ -743,6 +747,13 @@ export default function OrderView() {
     return assemblyItems.reduce((sum, item) => sum + getItemPortions(item), 0);
   }, [assemblyItems]);
   
+  // Режим економії: обсяг для підбору коробки = порції × коефіцієнт (округлено вгору)
+  const recommendationPortions = useMemo(() => {
+    if (!assemblySettings.economyMode) return totalPortions;
+    const effective = getEffectiveTotalPortions(assemblyItems);
+    return Math.min(totalPortions, Math.max(effective, 0));
+  }, [assemblySettings.economyMode, assemblyItems, totalPortions]);
+
   // Обчислюємо середню вагу порції для більш точного розподілу по коробках
   const averagePortionWeight = useMemo(() => {
     if (assemblyItems.length === 0 || totalPortions === 0) return 0.33;
@@ -943,6 +954,7 @@ export default function OrderView() {
         <OrderAssemblyRightPanel
           orderForAssembly={orderForAssembly}
           averagePortionWeight={averagePortionWeight}
+          recommendationPortions={recommendationPortions}
           getWeightData={getWeightData}
           handleWeightChange={handleWeightChange}
           isWeightWidgetActive={isWeightWidgetActive}
