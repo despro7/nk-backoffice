@@ -96,6 +96,13 @@ export const NOTIFICATION_DIRECT_EVENTS = [
     titlePattern: /Специфікацію (затверджено|відхилено)/i,
   },
   {
+    id: 'specChanged',
+    label: 'Специфікацію змінено',
+    hint: 'Специфікацію змінили без підтвердження. Отримують ті, хто затверджує, крім автора змін',
+    requires: 'action.products.approveSpec',
+    titlePattern: /Специфікацію змінено/i,
+  },
+  {
     id: 'techCardReview',
     label: 'Техкарта чекає на затвердження',
     hint: 'Чернетку техкарти подано на затвердження. Отримують ті, хто затверджує',

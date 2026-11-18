@@ -49,6 +49,12 @@ export const DEFAULT_NOTIFICATION_RULES: NotificationRuleDef[] = [
     output: { kind: 'task', group: 'products', level: 'info', visibility: 'show', actionLabel: 'Виправити специфікацію' },
   }),
   rule({
+    key: 'catalog-spec-changed',
+    name: 'Специфікацію змінено',
+    match: { categories: ['catalog_spec'], title: 'Специфікацію змінено' },
+    output: { kind: 'event', group: 'products', level: 'info', visibility: 'show', actionLabel: 'Відкрити товар' },
+  }),
+  rule({
     key: 'catalog-spec-approved',
     name: 'Специфікацію затверджено',
     match: { categories: ['catalog_spec'], title: 'затверджено' },

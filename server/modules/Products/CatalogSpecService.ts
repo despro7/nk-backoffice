@@ -612,7 +612,7 @@ export class CatalogSpecService {
     if (!actor.canApprove) {
       return this.saveDraft(goodId, content, text, actor.userId, { restoredFromVersion: version });
     }
-    await this.applyContent(goodId, content, {
+    const restoredVersion = await this.applyContent(goodId, content, {
       userId: actor.userId,
       source: 'rollback',
       authorId: actor.userId,
@@ -620,6 +620,8 @@ export class CatalogSpecService {
       auditAction: CATALOG_AUDIT_ACTIONS.SPEC_APPROVED,
       auditMeta: { comment: text, restoredFromVersion: version },
     });
+    const good = await prisma.catalogGood.findUnique({ where: { id: goodId }, select: { name: true } });
+    await this.notifyChanged(goodId, good?.name ?? goodId, actor.userId, restoredVersion);
     return this.getState(goodId);
   }
 
@@ -770,6 +772,7 @@ export class CatalogSpecService {
             goodId,
           });
         }
+        await this.notifyChanged(goodId, good.name, actor.userId, version);
       });
       // Лінива v1 до запису, щоб зафіксувати стан «до».
       await this.ensureBaseline(goodId, approved);
@@ -844,6 +847,23 @@ export class CatalogSpecService {
       });
     } catch (error) {
       logServer('[catalog-spec] notify approvers failed', { goodId, error });
+    }
+  }
+
+  /** Специфікацію змінено без підтвердження (затверджувач): сповіщення іншим затверджувачам. */
+  private async notifyChanged(goodId: string, goodName: string, actorId: number | null, version: number): Promise<void> {
+    try {
+      await this.notify({
+        recipients: await this.approverIds(),
+        actorId,
+        status: 'success',
+        event: 'specChanged',
+        title: 'Специфікацію змінено',
+        message: `«${goodName}» – версія ${version}`,
+        goodId,
+      });
+    } catch (error) {
+      logServer('[catalog-spec] notify changed failed', { goodId, error });
     }
   }
 
