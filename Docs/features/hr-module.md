@@ -408,6 +408,7 @@ Accordion у картках: `client/components/hr/HrAuditAccordion.tsx` (обо
 
 - Офіційна ставка: `accrued = rate × workHours / normHours`; офіційна погодинна: `rate × workHours`.
 - Gross-up для податків: `accrued / (1 − Σ withholdingRates)` для **`official_salary`** і **`hourly`** за активними `hr_tax_rules` (коди утримань з працівника — зазвичай `pdfo`, `military`). Реалізація: `payGroupAccruedIsNetToEmployee` у `server/modules/Hr/payrollCalc.ts`.
+- Нарахування за період (не `production`): `ставка × години / норма` рахується від загальних годин з одним округленням; різниця в копійки відносно суми окремо округлених тижнів додається до останнього тижня з нарахуванням, тому колонки тижнів сходяться з підсумком.
 - Застарілий UI «Формула Tabell 2026» (коефіцієнти 0.23 / 0.77) **видалено**; знімок у БД лишається сумісним (`extraRate: 0`, `grossDivisor: 1`).
 
 ### Фільтри груп

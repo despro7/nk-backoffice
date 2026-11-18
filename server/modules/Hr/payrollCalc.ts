@@ -406,6 +406,32 @@ export function calculatePayrollLine(input: PayrollCalcInput): PayrollCalcResult
     };
   });
 
+  if (!skipReason && !monthScoped) {
+    // Округлення по тижнях накопичує копійки: сума рахується від загальних годин,
+    // різниця потрапляє в останній тиждень з нарахуванням, щоб колонки сходилися.
+    const periodHours = input.weeks.reduce((sum, week) => sum + hoursInWeek(input.entries, week), 0);
+    const exactTotal = applyGroupAmounts(
+      input.payGroup,
+      input.rateKind,
+      input.rate,
+      periodHours,
+      input.normHours,
+      formula,
+    ).accrued;
+    const weeksTotal = roundMoney(weekAmounts.reduce((sum, week) => sum + Number(week.accrued), 0));
+    const diff = roundMoney(exactTotal - weeksTotal);
+    if (diff !== 0) {
+      for (let i = weekAmounts.length - 1; i >= 0; i -= 1) {
+        const week = weekAmounts[i];
+        if (Number(week.accrued) <= 0) continue;
+        const adjusted = moneyStr(Number(week.accrued) + diff);
+        week.accrued = adjusted;
+        week.toPay = moneyStr(Number(week.toPay) + diff);
+        break;
+      }
+    }
+  }
+
   const monthAmounts = skipReason
     ? { accrued: 0, extra: 0, toPay: 0 }
     : applyGroupAmounts(input.payGroup, input.rateKind, input.rate, workHours, input.normHours, formula);

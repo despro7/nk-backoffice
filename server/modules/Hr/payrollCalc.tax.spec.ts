@@ -96,4 +96,34 @@ describe('payrollCalc taxes', () => {
     expect(Number(result.employerTotalCost)).toBeCloseTo(6802.73 + 500 + 1606.6, 1);
     expect(Number(result.netToPay)).toBeCloseTo(5238.1, 1);
   });
+
+  it('повна норма за місяць: сума тижнів дорівнює ставці без втрати копійок', () => {
+    const weeks = [
+      { id: 'w1', label: '1', startDate: '2026-10-01', endDate: '2026-10-04', colSpan: 4 },
+      { id: 'w2', label: '2', startDate: '2026-10-05', endDate: '2026-10-11', colSpan: 7 },
+      { id: 'w3', label: '3', startDate: '2026-10-12', endDate: '2026-10-18', colSpan: 7 },
+      { id: 'w4', label: '4', startDate: '2026-10-19', endDate: '2026-10-25', colSpan: 7 },
+      { id: 'w5', label: '5', startDate: '2026-10-26', endDate: '2026-10-31', colSpan: 6 },
+    ];
+    const result = calculatePayrollLineWithTaxes({
+      payGroup: 'official_salary',
+      rateKind: 'salary',
+      rate: 20000,
+      normHours: 176,
+      weeks,
+      entries: [
+        { date: '2026-10-01', kind: 'work', hours: 16 },
+        { date: '2026-10-05', kind: 'work', hours: 40 },
+        { date: '2026-10-12', kind: 'work', hours: 40 },
+        { date: '2026-10-19', kind: 'work', hours: 40 },
+        { date: '2026-10-26', kind: 'work', hours: 40 },
+      ],
+      taxRules: DEFAULT_TAX_RULES,
+    });
+    expect(result.accruedAmount).toBe('20000.00');
+    expect(result.toPayAmount).toBe('20000.00');
+    const weekSum = result.weekAmounts.reduce((sum, week) => sum + Number(week.toPay), 0);
+    expect(weekSum.toFixed(2)).toBe('20000.00');
+    expect(result.netToPay).toBe('20000.00');
+  });
 });
