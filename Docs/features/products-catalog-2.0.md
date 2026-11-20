@@ -15,7 +15,7 @@
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | Джерело правди (SoT) | Dilovod (`catalogs.goods` + регістри цін/ШК + `tpGoods`)                                                                        |
 | Локальне дзеркало    | Таблиці `catalog_*` (швидке дерево / UI)                                                                                        |
-| Legacy `products`    | Комплектація (`expand/flatten`, `GET /api/products/:sku`) вже **не** читає (`CatalogOpsCache`); лишились числовий `id` і мертвий `DilovodSyncManager`; Products 2.0: **вузький dual-write** ops + явний **Legacy Update** + **TEMP** Legacy після «Синхронізувати гілку» |
+| Legacy `products`    | Читачів **немає** (з 2026-11-20: комплектація через `CatalogOpsCache`, `id` в `/api/products*` = `catalog_goods.id`); лишились лише писачі (dual-write); Products 2.0: **вузький dual-write** ops + явний **Legacy Update** + **TEMP** Legacy після «Синхронізувати гілку» |
 | `/product-sets`      | Без змін, співіснує в меню                                                                                                      |
 
 

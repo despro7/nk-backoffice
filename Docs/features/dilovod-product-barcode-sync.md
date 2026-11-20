@@ -8,6 +8,8 @@
 
 ## Потік синхронізації
 
+> **Застаріло.** `syncProductsWithDilovod()` давно лише проєктує `catalog_goods` → `products` (`catalogOpsLookup.projectToProductsCache`), без запитів у Dilovod. `DilovodSyncManager.syncProductsToDatabase()` видалено 2026-11-20. Нижче історичний опис legacy-потоку.
+
 1. `DilovodService.syncProductsWithDilovod()` збирає SKU з `catalog_goods` (піддерево «Готова продукція»).
 2. `getGoodsInfoWithSetsOptimized()`:
    - `getGoodsWithPrices` + `getGoodsFromCatalog`
@@ -106,7 +108,7 @@ Dilovod API
 | `server/services/dilovod/DilovodUtils.ts` | `isDilovodBarcodeActive`, `mapBarCodesByObjectId` |
 | `server/services/dilovod/DilovodTypes.ts` | `DilovodProduct.barcode`, `DilovodBarCodeResponse` |
 | `server/services/dilovod/DilovodService.ts` | збагачення ШК, `logSyncError(missing_barcode)` |
-| `server/services/dilovod/DilovodSyncManager.ts` | хеш + `prepareProductData.barcode` |
+| `server/services/dilovod/DilovodSyncManager.ts` | (legacy хеш видалено 2026-11-20; лишилось масове оновлення залишків) |
 | `client/components/NotificationBell.tsx` | title «Товар без штрих-коду» |
 | `client/pages/MetaLogs/hooks/useMetaLogs.ts` | фільтр `product_sync` → other |
 | `client/pages/MetaLogs/components/OtherMetaLogTable.tsx` | UI звіту |

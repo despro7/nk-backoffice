@@ -22,25 +22,16 @@ const productsEdit = requirePermission('products', 'edit', 'Редагувати
 const productsSync = requirePermission('products', 'sync', 'Синхронізувати товари з Dilovod');
 const productsSyncExport = requirePermission('products', 'syncExport', 'Синхронізація + експорт товарів у Dilovod');
 
+/** `:id` = `catalog_goods.id` (goodId) або SKU. Числовий legacy `products.id` більше не підтримується. */
 async function resolveCatalogGoodId(id: string): Promise<string | null> {
-  const numeric = parseInt(id, 10);
-  if (!Number.isNaN(numeric) && String(numeric) === String(id).trim()) {
-    const cache = await prisma.product.findUnique({
-      where: { id: numeric },
-      select: { sku: true, dilovodId: true },
-    });
-    if (cache?.dilovodId) return cache.dilovodId;
-    if (cache?.sku) {
-      const ops = await catalogOpsLookup.getBySku(cache.sku);
-      return ops?.dilovodId ?? null;
-    }
-  }
+  const key = String(id).trim();
+  if (!key) return null;
   const byId = await prisma.catalogGood.findUnique({
-    where: { id: String(id).trim() },
+    where: { id: key },
     select: { id: true, isGroup: true },
   });
   if (byId && !byId.isGroup) return byId.id;
-  const bySku = await catalogOpsLookup.getBySku(id);
+  const bySku = await catalogOpsLookup.getBySku(key);
   return bySku?.dilovodId ?? null;
 }
 

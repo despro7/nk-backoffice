@@ -17,11 +17,11 @@
 | ~~`ProductOpsCache`~~ | ✅ 2026-11-20: замінено на `CatalogOpsCache`, файл лишився невикористаним до видалення |
 | `applyStockBalances` / `deductSmallStock` | Dual-write залишків у обидві таблиці |
 | PUT `/api/products/:id/*` | Пише в `catalog_good`, потім `projectGood()` → знову в `products` |
-| `CatalogOpsProduct.id` | Numeric `products.id` для сумісності API |
-| `resolveCatalogGoodId` | Резолвить numeric id через `products` |
+| ~~`CatalogOpsProduct.id`~~ | ✅ 2026-11-20: `id` = `catalog_goods.id` (string) + поле `goodId` |
+| ~~`resolveCatalogGoodId`~~ | ✅ 2026-11-20: лише `goodId` або SKU, без `products` |
 | `DilovodGoodsCacheManager` | Рядок «Товари» в кеші Dilovod = проекція в `products` |
 | `SettingsProductSets` (`/product-sets`) | Legacy UI синхронізації/експорту (~2500 рядків) |
-| `DilovodSyncManager.syncProductsToDatabase` | **Мертвий код** (ніде не викликається) |
+| ~~`DilovodSyncManager.syncProductsToDatabase`~~ | ✅ 2026-11-20: видалено разом з `getProducts` / `getSyncStats` / `cleanupOldProducts` / `markOutdatedProducts` і обгортками |
 | Cron `sync-products` | Назва legacy, фактично — `projectToProductsCache` |
 
 **Важливо:** у Prisma **немає FK на `products`** — таблиця ізольована, її можна прибрати після міграції читачів/писачів.
@@ -72,7 +72,7 @@ Dilovod (SoT) → catalog_* (локальне дзеркало) → catalogOpsLo
 
 **Критерій:** order assembly і expand працюють без `prisma.product`; perf не гірше ±10%.
 
-**Статус (2026-11-20):** пункти 1–2 виконано. `CatalogOpsCache.reload()` бере `catalogOpsLookup.listAllLeavesForOps()` (усі листові товари з SKU, не лише «Готова продукція»: `products` містив і архів, техн. набори, коробки). Звірка на живих даних: 176 активних SKU через `flattenBatch`, розбіжностей логіки немає; reload приблизно як у старого кешу (0,5–1 с через тунель). Свідомо прийнято: 15 архівних наборів, склад яких був лише в `products`, більше не розгортаються (відкритих замовлень з ними немає). Пункт 3 (видалити `ProductOpsCache.ts`) після релізу без регресій. `CatalogOpsLookup.hydrate` ще читає `products` для числового `id` (фаза 3).
+**Статус (2026-11-20):** пункти 1–2 виконано. `CatalogOpsCache.reload()` бере `catalogOpsLookup.listAllLeavesForOps()` (усі листові товари з SKU, не лише «Готова продукція»: `products` містив і архів, техн. набори, коробки). Звірка на живих даних: 176 активних SKU через `flattenBatch`, розбіжностей логіки немає; reload приблизно як у старого кешу (0,5–1 с через тунель). Свідомо прийнято: 15 архівних наборів, склад яких був лише в `products`, більше не розгортаються (відкритих замовлень з ними немає). Пункт 3 (видалити `ProductOpsCache.ts`) після релізу без регресій. Числовий `id` прибрано у фазі 3 (див. нижче).
 
 ---
 
@@ -107,6 +107,8 @@ Dilovod (SoT) → catalog_* (локальне дзеркало) → catalogOpsLo
 5. **Backward compat** (1 реліз): `/api/products/:id` приймає і numeric legacy id, і goodId — з deprecation header.
 
 **Критерій:** жоден client-файл не використовує `product.id` як numeric для API calls.
+
+**Статус (2026-11-20):** зроблено простіше за план. `CatalogOpsProduct.id` став `catalog_goods.id` (string), `toApiShape` додатково віддає `goodId`; `legacyId` не вводили. `hydrate` більше не читає `products`. `resolveCatalogGoodId` приймає лише `goodId` або SKU; числовий legacy id **без** перехідного періоду (єдиний клієнт, `SettingsProductSets`, уже типізував `id` як string і бере його з `/api/products`). `listGoodsDict` / `DilovodDirectories.goods[].id` теж string. Після фази 1 і 3 таблицю `products` **ніхто не читає**: лишились тільки писачі (фаза 2).
 
 ---
 

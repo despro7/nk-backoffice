@@ -1188,48 +1188,6 @@ export class DilovodService {
     return this.cacheManager.forceRefreshCache();
   }
 
-  // ===== ФУНКЦІЇ СТАТИСТИКИ =====
-
-  // Отримання статистики синхронізації
-  async getSyncStats(): Promise<{
-    totalProducts: number;
-    productsWithSets: number;
-    lastSync: string | null;
-    categoriesCount: Array<{ name: string; count: number }>;
-  }> {
-    return this.syncManager.getSyncStats();
-  }
-
-  // Отримання товарів за фільтрами
-  async getProducts(filters: {
-    page?: number;
-    limit?: number;
-    search?: string;
-    category?: string;
-    hasSets?: boolean;
-  }): Promise<{
-    products: any[];
-    pagination: {
-      page: number;
-      limit: number;
-      total: number;
-      pages: number;
-    };
-  }> {
-    return this.syncManager.getProducts(filters);
-  }
-
-  // ===== ФУНКЦІЇ ОЧИСТКИ =====
-
-  // Очистка старих товарів
-  async cleanupOldProducts(daysOld?: number): Promise<{
-    success: boolean;
-    message: string;
-    deletedCount: number;
-  }> {
-    return this.syncManager.cleanupOldProducts(daysOld);
-  }
-
   // ===== ПРИВАТНІ МЕТОДИ =====
 
   /** Активні SKU з піддерева «Готова продукція» у catalog_goods. */

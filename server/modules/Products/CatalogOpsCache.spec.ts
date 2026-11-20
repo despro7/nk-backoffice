@@ -8,7 +8,7 @@ import { CatalogOpsCache, buildCatalogOpsIndex } from './CatalogOpsCache.js';
 function product(over: Partial<CatalogOpsProduct>): CatalogOpsProduct {
   const at = new Date('2026-01-01T00:00:00Z');
   return {
-    id: 0,
+    id: '1100300000000001',
     sku: '01001',
     name: 'Борщ',
     costPerItem: 100,
@@ -35,10 +35,15 @@ function product(over: Partial<CatalogOpsProduct>): CatalogOpsProduct {
   };
 }
 
+const shape = ({ stockBalanceByStockRaw: _raw, ...rest }: CatalogOpsProduct) => ({
+  ...rest,
+  goodId: rest.dilovodId,
+});
+
 describe('buildCatalogOpsIndex', () => {
   it('indexes by lowercase sku and Dilovod id, without raw stock field', () => {
     const p = product({ sku: 'AbC-1', dilovodId: '1100300000000009' });
-    const map = buildCatalogOpsIndex([p], ({ stockBalanceByStockRaw: _raw, ...rest }) => rest);
+    const map = buildCatalogOpsIndex([p], ({ stockBalanceByStockRaw: _raw, ...rest }) => ({ ...rest, goodId: rest.dilovodId }));
     expect(map.get('abc-1')?.sku).toBe('AbC-1');
     expect(map.get('1100300000000009')).toBe(map.get('abc-1'));
     expect(map.get('abc-1')).not.toHaveProperty('stockBalanceByStockRaw');
@@ -46,7 +51,7 @@ describe('buildCatalogOpsIndex', () => {
 
   it('keeps component without sku reachable by Dilovod id (sku = id)', () => {
     const p = product({ sku: '1100300000000042', dilovodId: '1100300000000042' });
-    const map = buildCatalogOpsIndex([p], (x) => x);
+    const map = buildCatalogOpsIndex([p], shape);
     expect(map.size).toBe(1);
     expect(map.get('1100300000000042')?.dilovodId).toBe('1100300000000042');
   });
@@ -54,7 +59,7 @@ describe('buildCatalogOpsIndex', () => {
   it('first record wins on key collision', () => {
     const a = product({ sku: 'X1', dilovodId: '1', name: 'A' });
     const b = product({ sku: 'x1', dilovodId: '2', name: 'B' });
-    const map = buildCatalogOpsIndex([a, b], (x) => x);
+    const map = buildCatalogOpsIndex([a, b], shape);
     expect(map.get('x1')?.name).toBe('A');
     expect(map.get('2')?.name).toBe('B');
   });

@@ -312,7 +312,7 @@ export interface DilovodDirectories {
   firms: DilovodFirm[];
   tradeChanels: DilovodTradeChanel[];
   deliveryMethods: DilovodDeliveryMethod[];
-  goods: Array<{ id: number; good_id: string; productNum: string; name: string | null; parent: string | null }>;
+  goods: Array<{ id: string; good_id: string; productNum: string; name: string | null; parent: string | null }>;
   /** Products 2.0 catalog dictionaries */
   units?: Array<{ id: string; name: string; code?: string | null }>;
   priceTypes?: Array<{ id: string; name: string; code?: string | null }>;

@@ -22,7 +22,8 @@ export interface CatalogOpsSetItem {
 }
 
 export interface CatalogOpsProduct {
-  id: number;
+  /** `catalog_goods.id` (Dilovod id). Раніше числовий `products.id`. */
+  id: string;
   sku: string;
   name: string;
   costPerItem: number | null;
@@ -153,7 +154,6 @@ function pickBarcode(row: CatalogRow): string | null {
 function toOpsProduct(
   row: CatalogRow,
   parentById: Map<string, { name: string; isGroup: boolean }>,
-  cacheIdBySku: Map<string, number>,
 ): CatalogOpsProduct | null {
   if (row.isGroup) return null;
   // Компоненти BOM часто без productNum — тоді ключ = Dilovod id (як у legacy set[].id)
@@ -169,7 +169,7 @@ function toOpsProduct(
       ? Math.max(1, Math.round(Number(row.packageRatio)))
       : 1;
   return {
-    id: cacheIdBySku.get(sku) ?? 0,
+    id: row.id,
     sku,
     name: row.name,
     costPerItem: prices.costPerItem,
@@ -402,7 +402,7 @@ export class CatalogOpsLookup {
     return mapping;
   }
 
-  async listGoodsDict(): Promise<Array<{ id: number; good_id: string; productNum: string; name: string | null; parent: string | null }>> {
+  async listGoodsDict(): Promise<Array<{ id: string; good_id: string; productNum: string; name: string | null; parent: string | null }>> {
     const all = await this.listFinishedProducts({ includeOutdated: true });
     return all.map((p) => ({
       id: p.id,
@@ -416,6 +416,7 @@ export class CatalogOpsLookup {
   toApiShape(p: CatalogOpsProduct) {
     return {
       id: p.id,
+      goodId: p.dilovodId,
       sku: p.sku,
       name: p.name,
       costPerItem: p.costPerItem,
@@ -606,9 +607,7 @@ export class CatalogOpsLookup {
     if (rows.length === 0) return [];
     const parentIds = [...new Set(rows.map((r) => r.parentId).filter((id): id is string => Boolean(id)))];
     const kitIds = rows.filter((r) => isKitAccPolicy(r.accPolicyId)).map((r) => r.id);
-    const skus = rows.map((r) => r.sku).filter((s): s is string => Boolean(s));
-
-    const [parents, kitComps, cache] = await Promise.all([
+    const [parents, kitComps] = await Promise.all([
       parentIds.length
         ? prisma.catalogGood.findMany({
             where: { id: { in: parentIds } },
@@ -621,9 +620,6 @@ export class CatalogOpsLookup {
             orderBy: { rowNum: 'asc' },
             include: { componentGood: { select: { sku: true, name: true } } },
           })
-        : Promise.resolve([]),
-      skus.length
-        ? prisma.product.findMany({ where: { sku: { in: skus } }, select: { id: true, sku: true } })
         : Promise.resolve([]),
     ]);
 
@@ -638,13 +634,11 @@ export class CatalogOpsLookup {
       byParent.set(c.parentGoodId, list);
     }
     const parentById = new Map(parents.map((p) => [p.id, p]));
-    const cacheIdBySku = new Map(cache.map((c) => [c.sku, c.id]));
     return rows
       .map((row) =>
         toOpsProduct(
           { ...row, components: byParent.get(row.id) ?? [] },
           parentById,
-          cacheIdBySku,
         ),
       )
       .filter((p): p is CatalogOpsProduct => p !== null);
