@@ -304,7 +304,33 @@ function NameCell({
   return (
     <div className="flex items-center gap-0.5 min-w-0 w-full pr-1" style={{ paddingLeft: `${row.depth * 16}px` }}>
       <div className="flex items-center gap-0.5 min-w-0 flex-1">
-        {hasChildren ? (
+        {showHistory ? (
+          // Клік по назві товару відкриває історію; шеврон (якщо є діти) згортає окремо.
+          <>
+            <button
+              type="button"
+              className="min-w-0 max-w-full text-left cursor-pointer rounded-sm decoration-dotted underline-offset-2 hover:underline hover:text-blue-600"
+              aria-label={`Історія «${row.label}»`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onShowHistory?.(row);
+              }}
+            >
+              {label}
+            </button>
+            {hasChildren ? (
+              <button
+                type="button"
+                className="inline-flex shrink-0 text-default-500 rounded-sm hover:opacity-80"
+                aria-expanded={expanded}
+                aria-label={expanded ? `Згорнути «${row.label}»` : `Розгорнути «${row.label}»`}
+                onClick={() => onToggle(row.id)}
+              >
+                <DynamicIcon name={expanded ? 'chevron-down' : 'chevron-right'} size={14} />
+              </button>
+            ) : null}
+          </>
+        ) : hasChildren ? (
           <button
             type="button"
             className="flex items-center gap-0.5 min-w-0 max-w-full text-left cursor-pointer rounded-sm hover:opacity-80"
@@ -344,32 +370,6 @@ function NameCell({
               }}
             >
               <DynamicIcon name="circle-minus" size={15} />
-            </button>
-          </Tooltip>
-        ) : null}
-        {showHistory ? (
-          <Tooltip
-            content="Історія змін за період"
-            placement="top"
-            delay={300}
-            showArrow={true}
-            classNames={{
-              base: 'before:bg-blue-500 before:rounded-[2px]',
-              content: 'bg-blue-500 border-0 text-white text-xs max-w-xs',
-            }}
-          >
-            <button
-              type="button"
-              className={`inline-flex shrink-0 items-center justify-center w-6 h-6 rounded-md text-default-400 hover:text-blue-500 hover:bg-blue-500/10 ${
-                alwaysShowExclude ? '' : 'opacity-0 group-hover/name:opacity-100 focus-visible:opacity-100'
-              }`}
-              aria-label={`Історія «${row.label}»`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onShowHistory?.(row);
-              }}
-            >
-              <DynamicIcon name="chart-area" size={15} />
             </button>
           </Tooltip>
         ) : null}
