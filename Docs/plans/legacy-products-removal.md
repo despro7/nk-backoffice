@@ -112,6 +112,10 @@ Dilovod (SoT) → catalog_* (локальне дзеркало) → catalogOpsLo
 
 **Статус (2026-11-20):** зроблено простіше за план. `CatalogOpsProduct.id` став `catalog_goods.id` (string), `toApiShape` додатково віддає `goodId`; `legacyId` не вводили. `hydrate` більше не читає `products`. `resolveCatalogGoodId` приймає лише `goodId` або SKU; числовий legacy id **без** перехідного періоду (єдиний клієнт, `SettingsProductSets`, уже типізував `id` як string і бере його з `/api/products`). `listGoodsDict` / `DilovodDirectories.goods[].id` теж string. Після фази 1 і 3 таблицю `products` **ніхто не читає**: лишились тільки писачі (фаза 2).
 
+**Статус клієнта (PR B, 2026-11-20):** з UI прибрано рядок «Legacy products» у звіті гілки, попередження в підтвердженні, `legacySyncMutation`, кнопку `POST /api/products/sync` у `OrderView` (тепер «Спробувати ще раз») і рядок/кнопку «Товари» в `DilovodCacheManager`. Лишилось серверне: роути `/api/products/sync*`, `sync-manual`, cron, `goods-cache`, поля `legacy*` у відповіді (PR C).
+
+---
+
 ---
 
 ### Фаза 4 — Консолідація UI (3–5 днів)

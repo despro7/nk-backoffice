@@ -129,18 +129,6 @@ export function useProductsCatalog() {
         orphansResolved: number;
         capped: boolean;
         maxDepth?: number;
-        legacySkuCount?: number;
-        legacyOutdatedCount?: number;
-        legacyError?: string | null;
-        legacySync?: {
-          success?: boolean;
-          message?: string;
-          createdProducts?: number;
-          updatedProducts?: number;
-          skippedProducts?: number;
-          syncedSets?: number;
-          errors?: string[];
-        } | null;
       }>('/api/catalog/refresh', {
         method: 'POST',
         body: JSON.stringify({
@@ -170,61 +158,6 @@ export function useProductsCatalog() {
     },
     onError: (err: Error) =>
       ToastService.show({ title: 'Помилка синхронізації', description: err.message, color: 'danger' }),
-  });
-
-  /** Legacy Dilovod sync → таблиця `products` (set/ціни/ШК/hash) по списку SKU. Force за замовчуванням. */
-  const legacySyncMutation = useMutation({
-    mutationFn: async (skus: string[]) => {
-      const res = await fetch('/api/products/sync-manual', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ skus, force: true }),
-      });
-      const json = (await res.json().catch(() => ({}))) as {
-        success?: boolean;
-        message?: string;
-        error?: string;
-        syncedProducts?: number;
-        syncedSets?: number;
-        createdProducts?: number;
-        updatedProducts?: number;
-        skippedProducts?: number;
-        outdatedProducts?: number;
-        errors?: string[];
-      };
-      if (!res.ok || json.success === false) {
-        throw new Error(json.error || json.message || `HTTP ${res.status}`);
-      }
-      return json;
-    },
-    onSuccess: (data) => {
-      const parts = [
-        data.createdProducts ? `створено ${data.createdProducts}` : null,
-        data.updatedProducts ? `оновлено ${data.updatedProducts}` : null,
-        data.skippedProducts ? `без змін ${data.skippedProducts}` : null,
-        data.outdatedProducts ? `архівних isOutdated ${data.outdatedProducts}` : null,
-        data.syncedSets ? `комплектів ${data.syncedSets}` : null,
-      ].filter(Boolean);
-      ToastService.show({
-        title: 'Синхронізація товарів завершена',
-        description: parts.length > 0 ? parts.join(', ') : data.message || 'Готово',
-        color: (data.errors?.length ?? 0) > 0 ? 'warning' : 'success',
-      });
-      if (data.errors && data.errors.length > 0) {
-        ToastService.show({
-          title: 'Є помилки синхронізації товарів',
-          description: data.errors.slice(0, 3).join('; '),
-          color: 'danger',
-        });
-      }
-    },
-    onError: (err: Error) =>
-      ToastService.show({
-        title: 'Помилка синхронізації товарів',
-        description: err.message,
-        color: 'danger',
-      }),
   });
 
   /** TEMP: Dilovod → Backoffice → SalesDrive → WooCommerce. */
@@ -565,7 +498,6 @@ export function useProductsCatalog() {
     closeDrawer,
     refreshBranchMutation,
     syncSelectedMutation,
-    legacySyncMutation,
     stockSyncMutation,
     refreshFullMutation,
     createMutation,

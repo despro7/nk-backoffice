@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-11-20 – Клієнт: прибрано Legacy-залишки з UI каталогу та комплектації
+
+**Files:** `client/pages/Products/components/CatalogSyncReportModal.tsx`, `client/pages/Products/index.tsx`, `client/pages/Products/useProductsCatalog.ts`, `client/pages/OrderView.tsx`, `client/components/DilovodCacheManager.tsx`
+
+- **Звіт «Синхронізувати гілку»:** прибрано рядок «Legacy products» і обробку `legacy*` помилок; типи `legacy*` видалено з `BranchSyncReportData` і `refreshBranchMutation`.
+- **Підтвердження синхронізації гілки:** прибрано попередження про тимчасовий Legacy Update у таблицю `products`.
+- **`useProductsCatalog`:** видалено невикористаний `legacySyncMutation` (`/api/products/sync-manual`).
+- **`OrderView`:** кнопка «Синхронізувати товари» (`POST /api/products/sync`) замінена на «Спробувати ще раз» (повторне завантаження замовлення без окремої синхронізації).
+- **`DilovodCacheManager`:** прибрано рядок довідника «Товари» і кнопку «Оновити товари» (goods-cache більше не потрібен, товари беруться з `catalog_*`).
+
+**Документація:** `Docs/plans/legacy-products-removal.md` (PR B виконано).
+
+---
+
 ## 2026-11-20 – Legacy `products`: припинено запис, видалено `ProductOpsCache`
 
 **Files:** `server/modules/Products/CatalogOpsLookup.ts`, `server/modules/Products/ProductsCatalogService.ts`, `server/modules/Products/ProductsController.ts`, `server/modules/Products/ProductOpsCache.ts` (видалено), `server/routes/products.ts`, `server/services/dilovod/DilovodService.ts`, `server/services/dilovod/DilovodGoodsCacheManager.ts`

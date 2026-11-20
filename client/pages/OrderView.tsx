@@ -548,32 +548,21 @@ export default function OrderView() {
     handlePrintTTN(order);
   }, [handlePrintTTN, order]);
 
-  // Функція для синхронізації товарів з Dilovod
-  const handleSyncProducts = useCallback(async () => {
+  // Повторне завантаження замовлення після помилки товарів (дані беруться з каталогу, окремої синхронізації немає)
+  const handleRetryProducts = useCallback(async () => {
     try {
       setLoading(true);
-      console.log('🔄 Початок синхронізації товарів з Dilovod...');
-      
-      const response = await apiCall('/api/products/sync', { method: 'POST' });
-      const result = await response.json();
-
-      if (result.success) {
-        console.log('✅ Синхронізація товарів завершена успішно');
-        // Повторно завантажуємо замовлення
-        setProductLoadError(null);
-        setShowProductErrorModal(false);
-        await fetchOrderDetails(externalId!, monolithicCategoryIds);
-      } else {
-        throw new Error(result.error || 'Помилка синхронізації товарів');
-      }
+      setProductLoadError(null);
+      setShowProductErrorModal(false);
+      await fetchOrderDetails(externalId!, monolithicCategoryIds);
     } catch (error) {
-      console.error('❌ Помилка синхронізації товарів:', error);
+      console.error('❌ Помилка повторного завантаження товарів:', error);
       const errorMsg = error instanceof Error ? error.message : 'Невідома помилка';
-      setProductLoadError(`Помилка синхронізації: ${errorMsg}`);
+      setProductLoadError(`Помилка завантаження: ${errorMsg}`);
     } finally {
       setLoading(false);
     }
-  }, [apiCall, externalId, monolithicCategoryIds]);
+  }, [externalId, monolithicCategoryIds]);
 
   // Завантажуємо деталі замовлення
   const fetchOrderDetails = async (id: string, monolithicIds?: number[], setModeOverrides: Record<string, boolean> = currentMonolithicDisplayOverrides, updateControlItems: boolean = true) => {
@@ -1039,7 +1028,7 @@ export default function OrderView() {
               </p>
 
               <p className="text-sm">
-                Спробуйте синхронізувати товари, натиснувши кнопку нижче. <b>Зачекайте поки синхронізація завершиться</b> (приблизно 20-30 секунд). Якщо помилка повториться, зверніться до адміністратора.
+                Спробуйте завантажити дані ще раз, натиснувши кнопку нижче. Якщо помилка повториться, зверніться до адміністратора.
               </p>
             </div>
           </ModalBody>
@@ -1047,11 +1036,11 @@ export default function OrderView() {
             <Button
               color="primary"
               isLoading={loading}
-              onPress={handleSyncProducts}
+              onPress={handleRetryProducts}
               className="bg-primary text-white"
             >
               <DynamicIcon name="refresh-cw" size={18} />
-              Синхронізувати товари
+              Спробувати ще раз
             </Button>
             <Button
               color="default"

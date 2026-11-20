@@ -42,12 +42,11 @@ interface CacheStatus {
   currency: CacheMetadata;
   accPolicies: CacheMetadata;
   users: CacheMetadata;
-  goods: CacheMetadata;
 }
 
 const CACHE_TYPE_ORDER: Array<keyof CacheStatus> = [
   'firms', 'accounts', 'storages', 'paymentForms', 'settlementsKinds', 'cashItems', 'ledgerAccounts', 'tradeChanels', 'deliveryMethods',
-  'units', 'priceTypes', 'currency', 'accPolicies', 'users', 'goods',
+  'units', 'priceTypes', 'currency', 'accPolicies', 'users',
 ];
 
 type CacheSortColumn = 'name' | 'status' | 'recordsCount' | 'lastUpdate';
@@ -64,7 +63,6 @@ const DEFAULT_CACHE_SORT: SortDescriptor = {
 
 export const DilovodCacheManager: React.FC = () => {
   // Стан для оновлення довідника товарів
-  const [updatingGoodsCache, setUpdatingGoodsCache] = useState(false);
   // Доступ до контексту довідників (опціонально, провайдер може бути відсутній під час міграції)
   const dirsCtx = (() => {
     try {
@@ -124,55 +122,6 @@ export const DilovodCacheManager: React.FC = () => {
     },
     [accPolicyColorMap, dilovodSettings, saveDilovodSettings]
   );
-
-  // Окрема функція для оновлення довідника товарів
-  const handleRefreshGoodsCache = async () => {
-    setUpdatingGoodsCache(true);
-    try {
-      // Свіжий список SKU з catalog_goods (Готова продукція)
-      const skusResp = await fetch('/api/dilovod/cache/fresh-skus', {
-        method: 'GET',
-        credentials: 'include'
-      });
-      const skusData = await skusResp.json();
-      const skus = skusData?.data || [];
-
-      const response = await fetch('/api/goods-cache/refresh', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ skuList: skus })
-      });
-
-      let data: any = null;
-      try {
-        const text = await response.text();
-        data = text ? JSON.parse(text) : null;
-      } catch {
-        throw new Error('Некоректна відповідь сервера (не JSON)');
-      }
-
-      if (response.ok && data && data.success && data.result) {
-        ToastService.show({
-          title: 'Довідник товарів успішно оновлено',
-          description: `Оновлено товарів: ${data.result.count}`,
-          color: 'success'
-        });
-        await fetchCacheStatus();
-      } else {
-        throw new Error(data?.error || 'Unknown error');
-      }
-    } catch (error) {
-      console.error('Error refreshing goods cache:', error);
-      ToastService.show({
-        title: 'Помилка оновлення довідника товарів',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        color: 'danger'
-      });
-    } finally {
-      setUpdatingGoodsCache(false);
-    }
-  };
 
   const [cacheStatus, setCacheStatus] = useState<CacheStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -272,8 +221,7 @@ export const DilovodCacheManager: React.FC = () => {
           priceTypes: 'priceTypes',
           currency: 'currencies',
           accPolicies: 'accPolicies',
-          users: 'users',
-          goods: 'goods'
+          users: 'users'
         };
         const apiKey = apiKeyMap[type];
         const data = result[apiKey] || [];
@@ -303,8 +251,7 @@ export const DilovodCacheManager: React.FC = () => {
           priceTypes: 'priceTypes',
           currency: 'currencies',
           accPolicies: 'accPolicies',
-          users: 'users',
-          goods: 'goods'
+          users: 'users'
         };
 
         const apiKey = apiKeyMap[type];
@@ -361,8 +308,6 @@ export const DilovodCacheManager: React.FC = () => {
         return 'book-open';
       case 'users':
         return 'users';
-      case 'goods':
-        return 'package-2';
     }
   };
 
@@ -397,17 +342,10 @@ export const DilovodCacheManager: React.FC = () => {
         return 'Облік (тип номенклатури)';
       case 'users':
         return 'Користувачі';
-      case 'goods':
-        return 'Товари';
     }
   };
 
   const handleRefreshDirectory = async (type: keyof CacheStatus) => {
-    if (type === 'goods') {
-      await handleRefreshGoodsCache();
-      return;
-    }
-
     setRefreshingType(type);
     try {
       const response = await fetch(`/api/dilovod/cache/refresh/${type}`, {
@@ -562,12 +500,6 @@ export const DilovodCacheManager: React.FC = () => {
           { key: 'name', label: 'Імʼя' },
           { key: 'code', label: 'Email' }
         ];
-      case 'goods':
-        return [
-          { key: 'productNum', label: 'Артикул (SKU)' },
-          { key: 'name', label: 'Назва' },
-          { key: 'good_id', label: 'good id' }
-        ];
     }
   };
 
@@ -581,20 +513,9 @@ export const DilovodCacheManager: React.FC = () => {
             size="sm"
             variant="bordered"
             color="primary"
-            onPress={handleRefreshGoodsCache}
-            isLoading={updatingGoodsCache}
-            isDisabled={loading || refreshing || refreshingType !== null}
-            startContent={!updatingGoodsCache && <DynamicIcon name="package" size={14} />}
-          >
-            {updatingGoodsCache ? 'Оновлення товарів...' : 'Оновити товари'}
-          </Button>
-          <Button
-            size="sm"
-            variant="bordered"
-            color="primary"
             onPress={refreshCache}
             isLoading={refreshing}
-            isDisabled={loading || updatingGoodsCache || refreshingType !== null}
+            isDisabled={loading || refreshingType !== null}
             startContent={!refreshing && <DynamicIcon name="refresh-cw" size={14} />}
           >
             {refreshing ? 'Оновлення...' : 'Оновити все'}
@@ -630,9 +551,8 @@ export const DilovodCacheManager: React.FC = () => {
               </TableHeader>
               <TableBody emptyContent="Немає довідників у кеші">
                 {sortedCacheRows.map(({ type, metadata }) => {
-                  const isRefreshingThis =
-                    refreshingType === type || (type === 'goods' && updatingGoodsCache);
-                  const busy = loading || refreshing || updatingGoodsCache || refreshingType !== null;
+                  const isRefreshingThis = refreshingType === type;
+                  const busy = loading || refreshing || refreshingType !== null;
 
                   return (
                     <TableRow

@@ -7,18 +7,6 @@ export type BranchSyncReportData = {
   orphansResolved: number;
   capped: boolean;
   maxDepth?: number;
-  legacySkuCount?: number;
-  legacyOutdatedCount?: number;
-  legacyError?: string | null;
-  legacySync?: {
-    success?: boolean;
-    message?: string;
-    createdProducts?: number;
-    updatedProducts?: number;
-    skippedProducts?: number;
-    syncedSets?: number;
-    errors?: string[];
-  } | null;
 };
 
 export type StockSyncReportData = {
@@ -107,11 +95,7 @@ export function CatalogSyncReportModal({ report, onClose }: CatalogSyncReportMod
   const warning =
     report.ok &&
     (report.op === 'branch'
-      ? Boolean(
-          report.branch?.capped ||
-            report.branch?.legacyError ||
-            (report.branch?.legacySync?.errors?.length ?? 0) > 0
-        )
+      ? Boolean(report.branch?.capped)
       : Boolean(
           (report.stock?.errors?.length ?? 0) > 0 ||
             !report.stock?.exported ||
@@ -130,8 +114,6 @@ export function CatalogSyncReportModal({ report, onClose }: CatalogSyncReportMod
         : 'Оновлення залишків не вдалось';
 
   const branchErrors = [
-    ...(report.branch?.legacyError ? [report.branch.legacyError] : []),
-    ...(report.branch?.legacySync?.errors ?? []),
     ...(report.error && !report.ok ? [report.error] : []),
   ];
   const stockErrors = [
@@ -203,29 +185,6 @@ export function CatalogSyncReportModal({ report, onClose }: CatalogSyncReportMod
                     ? `сиріт ${report.branch.orphansResolved}`
                     : null,
                   report.branch.capped ? 'ліміт глибини' : null,
-                ])}
-              />
-              <StepRow
-                ok={!report.branch.legacyError}
-                warn={Boolean(report.branch.legacyError || (report.branch.legacySync?.errors?.length ?? 0))}
-                label="Legacy products"
-                detail={joinParts([
-                  report.branch.legacySkuCount ? `${report.branch.legacySkuCount} SKU` : null,
-                  report.branch.legacySync?.createdProducts
-                    ? `створено ${report.branch.legacySync.createdProducts}`
-                    : null,
-                  report.branch.legacySync?.updatedProducts
-                    ? `оновлено ${report.branch.legacySync.updatedProducts}`
-                    : null,
-                  report.branch.legacySync?.skippedProducts
-                    ? `без змін ${report.branch.legacySync.skippedProducts}`
-                    : null,
-                  report.branch.legacySync?.syncedSets
-                    ? `комплектів ${report.branch.legacySync.syncedSets}`
-                    : null,
-                  report.branch.legacyOutdatedCount
-                    ? `архів ${report.branch.legacyOutdatedCount}`
-                    : null,
                 ])}
               />
               <ErrorList items={branchErrors} />

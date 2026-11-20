@@ -1233,13 +1233,6 @@ export default function ProductsPage() {
               </Select>
             )}
 
-            {!isAdmin && (
-              <p className="text-danger text-sm">
-                Після цього тимчасово виконається Legacy Update активних товарів гілки в таблицю{' '}
-                <b>products</b> (Dilovod <code>sync-manual</code>, force). Архівні лише позначаються{' '}
-                <code>isOutdated</code>, без запиту в Dilovod.
-              </p>
-            )}
             {branchEstimate.approxRecords > 100 ? (
               <p className="text-danger text-sm">
                 Приблизно {branchEstimate.approxRecords} записів у межах{' '}
