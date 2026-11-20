@@ -72,6 +72,7 @@ export const WAREHOUSE_STATEMENT_VALUE_TYPES = {
   goods: 'catalogs.goods',
   storages: 'catalogs.storages',
   firms: 'catalogs.firms',
+  goodParts: 'catalogs.goodParts',
 } as const;
 
 /**
@@ -204,6 +205,8 @@ export interface WarehouseStatementDirectoryItem {
   parentId?: string | null;
   /** Рівень вкладеності для UI (DFS, як дерево каталогу). */
   depth?: number;
+  /** Група в смітнику або в папці «Архів – …» (включно з нащадками). */
+  inactive?: boolean;
 }
 
 /** Як підписувати колонки в шапці таблиці. */
@@ -272,6 +275,8 @@ export interface WarehouseStatementQueryRequest {
   grouping: WarehouseStatementDimensionId[];
   columns: WarehouseStatementMetricId[];
   hideZeroQty?: boolean;
+  /** Не показувати товари з delMark, у смітнику або в папці «Архів – …». */
+  hideInactive?: boolean;
 }
 
 export type WarehouseStatementRowKind = 'total' | 'group' | 'leaf';
@@ -319,8 +324,133 @@ export interface WarehouseStatementConstructorPreset {
   grouping: WarehouseStatementDimensionId[];
   columns: WarehouseStatementMetricId[];
   hideZeroQty?: boolean;
+  /** Ховати архівні й видалені товари (`row.inactive`). */
+  hideInactive?: boolean;
   /** Повна назва / лише слот / слот бейджем під групою. */
   columnHeaderStyle?: WarehouseStatementColumnHeaderStyle;
   /** Закріпити рядок «Разом» під шапкою таблиці. */
   pinTotals?: boolean;
+}
+
+// --- Збережені пресети (settings_base) -------------------------------------
+
+export const WAREHOUSE_STATEMENT_PRESET_VISIBILITIES = ['private', 'public'] as const;
+export type WarehouseStatementPresetVisibility =
+  (typeof WAREHOUSE_STATEMENT_PRESET_VISIBILITIES)[number];
+
+export const WAREHOUSE_STATEMENT_PRESET_NAME_MAX = 80;
+
+/**
+ * Вміст збереженого пресету: стан конструктора + період.
+ * `periodPresetKey` (`lastMonth`, `today`…) має пріоритет: дати рахуються при застосуванні.
+ * `period` (довільні дати) живе лише в приватних пресетах; у публічних сервер його відкидає.
+ */
+export interface WarehouseStatementPresetSpec
+  extends Omit<WarehouseStatementConstructorPreset, 'period'> {
+  periodPresetKey?: string;
+  period?: WarehouseStatementPeriod;
+}
+
+export interface WarehouseStatementSavedPreset {
+  id: number;
+  name: string;
+  visibility: WarehouseStatementPresetVisibility;
+  ownerUserId: number;
+  ownerName: string;
+  spec: WarehouseStatementPresetSpec;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Пресет у відповіді API: `canEdit` = автор або admin. */
+export interface WarehouseStatementPresetView extends WarehouseStatementSavedPreset {
+  canEdit: boolean;
+  isOwn: boolean;
+}
+
+export interface WarehouseStatementPresetCreateRequest {
+  name: string;
+  visibility?: WarehouseStatementPresetVisibility;
+  spec: WarehouseStatementPresetSpec;
+}
+
+export interface WarehouseStatementPresetUpdateRequest {
+  name?: string;
+  visibility?: WarehouseStatementPresetVisibility;
+  spec?: WarehouseStatementPresetSpec;
+}
+
+// --- Історія товару (графік у відомості) -----------------------------------
+
+/** Максимальна довжина періоду історії, днів. */
+export const WAREHOUSE_STATEMENT_HISTORY_MAX_DAYS = 366;
+/** Довший період групується по тижнях. */
+export const WAREHOUSE_STATEMENT_HISTORY_DAILY_MAX_DAYS = 92;
+
+export interface WarehouseStatementHistoryRequest {
+  goodId: string;
+  startDate: string;
+  endDate: string;
+  /** Ключі = імена вимірів shape (склад / фірма), як у `POST /warehouse-statement`. */
+  dimensionFilters?: Record<string, string[]>;
+}
+
+export type WarehouseStatementHistoryBucket = 'day' | 'week';
+
+export interface WarehouseStatementHistoryTotals {
+  qtyStart: number;
+  qtyReceipt: number;
+  qtyExpense: number;
+  qtyFinal: number;
+  amountStart: number;
+  amountReceipt: number;
+  amountExpense: number;
+  amountFinal: number;
+}
+
+export interface WarehouseStatementHistoryPoint {
+  /** Перший день бакета, `YYYY-MM-DD`. */
+  date: string;
+  /** Останній день бакета (для тижня), `YYYY-MM-DD`. */
+  endDate: string;
+  qtyReceipt: number;
+  qtyExpense: number;
+  /** Залишок на кінець бакета. */
+  qtyEnd: number;
+  amountReceipt: number;
+  amountExpense: number;
+  amountEnd: number;
+}
+
+/** Документ руху товару за день (рядки регістру одного документа й складу згорнуті). */
+export interface WarehouseStatementHistoryDocument {
+  /** Dilovod id документа-реєстратора; для відкриття документа. */
+  recorderId: string | null;
+  label: string;
+  /** `YYYY-MM-DD` */
+  date: string;
+  /** `YYYY-MM-DD HH:mm:ss` */
+  dateTime: string;
+  /** Склад у відборі, по якому пройшов рух. */
+  storageLabel: string;
+  /** Інші склади цього ж документа (переміщення: звідки / куди). */
+  counterpartLabels: string[];
+  qtyReceipt: number;
+  qtyExpense: number;
+  amountReceipt: number;
+  amountExpense: number;
+}
+
+export interface WarehouseStatementHistoryResponse {
+  goodId: string;
+  label: string;
+  sku: string | null;
+  period: { startDate: string; endDate: string };
+  bucket: WarehouseStatementHistoryBucket;
+  totals: WarehouseStatementHistoryTotals;
+  points: WarehouseStatementHistoryPoint[];
+  /** Документи рухів за період, за часом. */
+  documents: WarehouseStatementHistoryDocument[];
+  /** Сума рухів не зійшлась з BAT або рядків забагато: графік приблизний. */
+  warning?: string;
 }

@@ -76,7 +76,7 @@ export class ProductMovementsService {
   async getMeta(): Promise<ProductMovementsMetaResponse> {
     const shape = await dilovodMetadataService.getRegisterShape('goods');
     const slim = toSlimShape(shape);
-    const resolved = resolveShapeNames(slim);
+    const resolved = resolveMovementShapeNames(slim);
     const storages = await this.loadStorages();
     const firms = await this.loadFirms();
 
@@ -97,7 +97,7 @@ export class ProductMovementsService {
   async query(body: ProductMovementsQueryRequest): Promise<ProductMovementsQueryResponse> {
     const shape = await dilovodMetadataService.getRegisterShape('goods');
     const slim = toSlimShape(shape);
-    const resolved = resolveShapeNames(slim);
+    const resolved = resolveMovementShapeNames(slim);
     const qtyName = resolved.qtyResourceName;
     if (!qtyName) {
       throw new ProductMovementsQueryError('Регістр goods без ресурсу кількості', 500);
@@ -719,7 +719,7 @@ function toSlimShape(shape: DilovodRegisterShape): WarehouseStatementRegisterSha
   };
 }
 
-function resolveShapeNames(shape: WarehouseStatementRegisterShape): ProductMovementsResolvedShape {
+export function resolveMovementShapeNames(shape: WarehouseStatementRegisterShape): ProductMovementsResolvedShape {
   const byVt = (vt: string) =>
     shape.dimensions.find((d) => warehouseStatementValueTypeIncludes(d.valueType, vt))?.name;
   const qty = shape.resources.find((f) => f.name === 'qty') ?? shape.resources[0];
@@ -761,7 +761,7 @@ function resolveShapeNames(shape: WarehouseStatementRegisterShape): ProductMovem
   };
 }
 
-function parseRegisterRows(resp: unknown): RawMovementRow[] {
+export function parseRegisterRows(resp: unknown): RawMovementRow[] {
   if (Array.isArray(resp)) {
     return resp as RawMovementRow[];
   }
@@ -826,7 +826,7 @@ function isCustomerReturnDocument(label: string): boolean {
   return text.includes('повернен') && text.includes('покупц');
 }
 
-function splitQty(
+export function splitQty(
   qty: number,
   recordType: unknown,
   documentLabel = '',
@@ -949,7 +949,7 @@ function stripDateFromDocumentLabel(label: string): string {
 }
 
 /** Назва документа з assembleLinks (__pr) або dot notation (number). */
-function resolveRecorderLabel(row: RawMovementRow): string {
+export function resolveRecorderLabel(row: RawMovementRow): string {
   const presentation = unwrapDilovodName(row.recorder__pr);
   if (presentation) return stripDateFromDocumentLabel(presentation);
 

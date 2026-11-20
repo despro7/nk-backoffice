@@ -5,6 +5,25 @@
 
 ---
 
+## 2026-11-20 – Відомість по складу: пресети, звірка з Dilovod, графік історії товару
+
+**Files:** `client/pages/Reports/ReportsWarehouseStatement/**` (нові `components/PresetBar.tsx`, `components/ProductHistoryDrawer.tsx`, `useWarehouseStatementPresets.ts`, `warehouseStatementUtils.spec.ts`), `client/pages/Reports/shared/constructor/HierarchicalReportTable.tsx`, `client/pages/Reports/shared/constructor/ReportConstructorPanel.tsx`, `client/pages/Reports/shared/filters/ReportMultiSelectFilter.tsx`, `client/pages/Reports/shared/filters/ReportSingleSelectFilter.tsx`, `server/modules/Reports/warehouseStatementPresets.ts` (+ spec), `server/services/dilovod/WarehouseStatementHistoryService.ts` (+ spec), `server/services/dilovod/WarehouseStatementService.ts`, `server/services/dilovod/ProductMovementsService.ts`, `server/routes/reports-warehouse.ts`, `shared/types/warehouseStatement.ts`
+
+- **Звірка з Dilovod:** «Ховати нульові залишки» відкидала кожен рядок регістру (склад + партія + фірма) з нульовим кінцевим залишком ще до підрахунку. Через це губилися рухи партій, «на початок» / прихід / витрата не збігались з Dilovod, а «на початок» змінювалась від кінця періоду. Тепер підсумки рахуються з усіх рядків, а галочка «Ховати порожні рядки» ховає лише рядок звіту, де всі адитивні колонки нульові.
+- **Станом на дату:** «на початок» завжди на початок дня (раніше без колонок руху дорівнювала кінцю).
+- **Пресети конструктора** на сервері (`settings_base`, `reports_warehouse_statement_presets`): приватні / публічні, змінює й видаляє автор або admin. Стандартний період зберігається ключем; довільні дати – лише в приватних. API `/api/reports/warehouse-statement/presets`, панель пресетів у шапці конструктора з позначкою «змінено».
+- **Чернетка й історія запусків** у localStorage окремо для кожного користувача (`draft.v5:{userId}`, `history.v1:{userId}`, до 10 запусків). Старий спільний ключ v4 мігрується один раз.
+- **«Приховати архівні й видалені»** (`hideInactive`, за замовчуванням увімкнено): товари з `delMark`, у смітнику або під папкою «Архів – …» (будь-якої глибини) відкидаються сервером; архівні групи ховаються зі списків груп і виключень груп.
+- **Назви партій** (`catalogs.goodParts`) резолвляться за `code`.
+- **Графік історії товару:** іконка біля назви товару відкриває drawer з плитками й графіком залишку / приходу / витрати по днях (по тижнях понад 92 дні), «Кількість / Собівартість», 7 / 30 / 90 днів або період звіту. Клік по дню або виділення діапазону показує документи з маршрутом «склад → склад». Новий `POST /api/reports/warehouse-statement/history`.
+- **Таблиця:** сортування по заголовках числових колонок, кнопка «згорнути / розгорнути всі групи», підказки дій у рядку зверху.
+- **Конструктор:** у згорнутому вигляді – до 3 назв і повний список у тултіпі, список колонок і виключень у тултіпі; блакитні чипи фільтрів (виключення лишились червоними); «Скинути всі» виключення товарів з підтвердженням.
+- Тести: пресети (права, видимість, період), серія історії (бакети), утиліти пресетів клієнта.
+
+**Документація:** `Docs/features/warehouse-statement.md` (період, підсумки, архівні, назви вимірів, пресети, чернетка, графік, UI), `Docs/features/product-movements.md` (точка входу з графіка, спільні helpers).
+
+---
+
 ## 2026-11-18 – Розрахунок ФОП: округлення місячної суми по тижнях
 
 **Files:** `server/modules/Hr/payrollCalc.ts`, `server/modules/Hr/payrollCalc.tax.spec.ts`

@@ -5,6 +5,26 @@ import type { ReportFilterOption } from "./ReportFilterTypes";
 /** HeroUI default 256px + 30%. */
 export const REPORT_FILTER_LISTBOX_HEIGHT = Math.round(256 * 1.3);
 
+export type ReportFilterChipColor =
+  | "default"
+  | "primary"
+  | "secondary"
+  | "success"
+  | "warning"
+  | "danger"
+  | "blue";
+
+/** Props для HeroUI Chip: `blue` не є кольором теми, тому через classNames (тон `BTN_PRIMARY_BLUE_FLAT`). */
+export function reportFilterChipProps(color: ReportFilterChipColor = "default") {
+  if (color === "blue") {
+    return {
+      color: "default" as const,
+      classNames: { base: "bg-blue-100 text-blue-700", closeButton: "text-blue-700" },
+    };
+  }
+  return { color };
+}
+
 interface ReportMultiSelectFilterProps {
   ariaLabel: string;
   placeholder: string;
@@ -22,7 +42,8 @@ interface ReportMultiSelectFilterProps {
   mode?: "select" | "autocomplete";
   showTags?: boolean;
   compactTrigger?: boolean;
-  chipColor?: "default" | "primary" | "secondary" | "success" | "warning" | "danger";
+  /** `blue` – обраний фільтр (відрізняється від червоних виключень). */
+  chipColor?: ReportFilterChipColor;
   onReset?: () => void;
   /** Викликається перед onChange / onReset, коли зникають обрані ключі. */
   onRemoved?: (removedKeys: string[], source: "chip" | "reset" | "list") => void;
@@ -243,7 +264,7 @@ export default function ReportMultiSelectFilter({
               key={option.key}
               size="sm"
               variant="flat"
-              color={chipColor}
+              {...reportFilterChipProps(chipColor)}
               onClose={() => removeKey(option.key)}
             >
               {option.label}
@@ -254,7 +275,7 @@ export default function ReportMultiSelectFilter({
               key={key}
               size="sm"
               variant="flat"
-              color={chipColor}
+              {...reportFilterChipProps(chipColor)}
               onClose={() => removeKey(key)}
             >
               {optionLabel(options, key)}

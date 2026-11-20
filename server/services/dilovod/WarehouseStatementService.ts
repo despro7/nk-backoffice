@@ -41,6 +41,7 @@ import { DilovodApiClient } from './DilovodApiClient.js';
 import { dilovodMetadataService } from './DilovodMetadataService.js';
 import type { DilovodRegisterField, DilovodRegisterShape } from './DilovodTypes.js';
 import { unwrapDilovodId, unwrapDilovodName } from './DilovodUtils.js';
+import { pickHumanBatchLabel } from '../../../shared/utils/dilovodBatchId.js';
 
 const DATE_YMD = /^\d{4}-\d{2}-\d{2}$/;
 const IL_CHUNK = 50;
@@ -150,7 +151,7 @@ export class WarehouseStatementService {
       throw new WarehouseStatementQueryError('Регістр goods без ресурсу кількості', 500);
     }
 
-    const period = this.resolvePeriod(body, slim, qty.name);
+    const period = this.resolvePeriod(body);
     this.assertScope(body, resolved);
 
     const grouping = this.sanitizeGrouping(body.grouping, slim);
@@ -201,13 +202,17 @@ export class WarehouseStatementService {
     });
 
     const filtered = this.filterLeaves(leaves, {
-      hideZeroQty: body.hideZeroQty === true,
-      qtyName: qty.name,
+      hideInactive: body.hideInactive === true,
       expenseKinds: body.expenseKinds,
     });
     const scoped = this.applyExclusions(filtered, body.exclusions, resolved, catalog);
+    // «Ховати порожні рядки» лише для відображення: рахуємо по рядку звіту (не по партії),
+    // тож рухи партій з нульовим кінцевим залишком не губляться, а підсумки = Dilovod.
+    const visible = body.hideZeroQty === true
+      ? this.dropEmptyRows(scoped, grouping, columns, slim, qty.name)
+      : scoped;
 
-    const rows = this.buildTree(scoped, grouping, columns, slim, qty.name, resolved.goodsDimensionName);
+    const rows = this.buildTree(visible, grouping, columns, slim, qty.name, resolved.goodsDimensionName);
     const totals = pickColumns(
       aggregateMetrics(scoped.map((leaf) => leaf.metrics), columns, slim, qty.name),
       columns,
@@ -218,21 +223,17 @@ export class WarehouseStatementService {
 
   private resolvePeriod(
     body: WarehouseStatementQueryRequest,
-    slim: WarehouseStatementRegisterShape,
-    qtyName: string,
   ): { startDate: string; endDate: string } {
     const period = body.period;
     if (!period || typeof period !== 'object' || !('mode' in period)) {
       throw new WarehouseStatementQueryError('Потрібно вказати період (dateRange або asOfDate)');
     }
 
-    const movementOn = this.hasMovementColumns(body.columns, slim, qtyName);
-
     if (period.mode === 'asOfDate') {
+      // Початок = залишок на початок дня, кінець = на кінець дня (як у Dilovod),
+      // незалежно від того, які колонки обрані.
       const day = assertYmd(period.asOfDate, 'asOfDate');
-      const endDate = `${day} 23:59:59`;
-      const startDate = movementOn ? `${day} 00:00:00` : endDate;
-      return { startDate, endDate };
+      return { startDate: `${day} 00:00:00`, endDate: `${day} 23:59:59` };
     }
 
     if (period.mode === 'dateRange') {
@@ -245,23 +246,6 @@ export class WarehouseStatementService {
     }
 
     throw new WarehouseStatementQueryError('Невідомий режим періоду');
-  }
-
-  private hasMovementColumns(
-    columns: WarehouseStatementMetricId[] | undefined,
-    slim: WarehouseStatementRegisterShape,
-    qtyName: string,
-  ): boolean {
-    const ids = new Set(columns ?? []);
-    if (ids.size === 0) return true;
-    for (const resource of slim.resources) {
-      const bat = warehouseStatementVirtualBatFields(resource.name);
-      if (ids.has(bat.receipt) || ids.has(bat.expense)) return true;
-    }
-    if (ids.has(warehouseStatementSalesValueMetricId('receipt'))) return true;
-    if (ids.has(warehouseStatementSalesValueMetricId('expense'))) return true;
-    const qtyBat = warehouseStatementVirtualBatFields(qtyName);
-    return ids.has(qtyBat.receipt) || ids.has(qtyBat.expense);
   }
 
   private assertScope(
@@ -469,7 +453,7 @@ export class WarehouseStatementService {
         groupRank: groupNode?.treeRank ?? Number.MAX_SAFE_INTEGER,
         groupSortPath: groupNode?.sortPath ?? [],
         goodRank: node?.sortOrder ?? Number.MAX_SAFE_INTEGER,
-        inactive: isCatalogInactive(node, catalog),
+        inactive: goodId ? isCatalogInactive(node, catalog) : false,
         metrics,
         expenseBreakdown,
       };
@@ -536,18 +520,16 @@ export class WarehouseStatementService {
   private filterLeaves(
     leaves: LeafRecord[],
     opts: {
-      hideZeroQty: boolean;
-      qtyName: string;
+      hideInactive: boolean;
       expenseKinds?: WarehouseStatementExpenseKind[];
     },
   ): LeafRecord[] {
-    const qtyFinal = warehouseStatementVirtualBatFields(opts.qtyName).final;
     const kinds = (opts.expenseKinds ?? []).filter((k) =>
       (WAREHOUSE_STATEMENT_EXPENSE_KINDS as readonly string[]).includes(k),
     );
 
     return leaves.filter((leaf) => {
-      if (opts.hideZeroQty && Math.abs(leaf.metrics[qtyFinal] ?? 0) < 1e-9) return false;
+      if (opts.hideInactive && leaf.inactive) return false;
       if (kinds.length > 0) {
         const sum = kinds.reduce((acc, kind) => acc + (leaf.expenseBreakdown?.[kind] ?? 0), 0);
         if (Math.abs(sum) < 1e-9) return false;
@@ -606,6 +588,48 @@ export class WarehouseStatementService {
       }
       return true;
     });
+  }
+
+  /**
+   * Прибирає рядки звіту (найглибший рівень групування), у яких усі адитивні колонки
+   * (BAT-слоти, вартість по цінах продажу) нульові. Ціна / собівартість одиниці /
+   * рентабельність не враховуються: вони ненульові й без руху.
+   */
+  private dropEmptyRows(
+    leaves: LeafRecord[],
+    grouping: WarehouseStatementDimensionId[],
+    columns: WarehouseStatementMetricId[],
+    slim: WarehouseStatementRegisterShape,
+    qtyName: string,
+  ): LeafRecord[] {
+    const additive = new Set<string>();
+    for (const resource of slim.resources) {
+      for (const id of Object.values(warehouseStatementVirtualBatFields(resource.name))) additive.add(id);
+    }
+    for (const slot of WAREHOUSE_STATEMENT_BAT_SLOTS) additive.add(warehouseStatementSalesValueMetricId(slot));
+    const qtyBat = warehouseStatementVirtualBatFields(qtyName);
+    const checked = columns.filter((id) => additive.has(id));
+    if (checked.length === 0) {
+      checked.push(qtyBat.start, qtyBat.receipt, qtyBat.expense, qtyBat.final);
+    }
+
+    const rowKey = (leaf: LeafRecord) =>
+      grouping.length > 0
+        ? grouping.map((dimId) => this.leafDim(leaf, dimId).valueId).join('\u0001')
+        : Object.values(leaf.dimValues).join('\u0001');
+
+    const sums = new Map<string, Record<string, number>>();
+    for (const leaf of leaves) {
+      const key = rowKey(leaf);
+      const acc = sums.get(key) ?? {};
+      for (const id of checked) acc[id] = (acc[id] ?? 0) + (leaf.metrics[id] ?? 0);
+      sums.set(key, acc);
+    }
+    const emptyKeys = new Set<string>();
+    for (const [key, acc] of sums) {
+      if (checked.every((id) => Math.abs(acc[id] ?? 0) < 1e-6)) emptyKeys.add(key);
+    }
+    return emptyKeys.size === 0 ? leaves : leaves.filter((leaf) => !emptyKeys.has(rowKey(leaf)));
   }
 
   private buildTree(
@@ -964,45 +988,73 @@ export class WarehouseStatementService {
     batRows: Record<string, unknown>[],
     slim: WarehouseStatementRegisterShape,
   ): Promise<void> {
-    const missing = new Set<string>();
+    const missingDirectory = new Set<string>();
+    const missingBatches = new Set<string>();
     for (const dim of slim.dimensions) {
-      const wanted =
+      const isDirectory =
         warehouseStatementValueTypeIncludes(dim.valueType, WAREHOUSE_STATEMENT_VALUE_TYPES.storages)
         || warehouseStatementValueTypeIncludes(dim.valueType, WAREHOUSE_STATEMENT_VALUE_TYPES.firms);
-      if (!wanted) continue;
+      const isBatch = warehouseStatementValueTypeIncludes(dim.valueType, WAREHOUSE_STATEMENT_VALUE_TYPES.goodParts);
+      if (!isDirectory && !isBatch) continue;
+      const target = isBatch ? missingBatches : missingDirectory;
       for (const row of batRows) {
         const id = str(row[dim.name]);
-        if (id && !labels.has(id)) missing.add(id);
+        if (id && !labels.has(id)) target.add(id);
       }
     }
-    if (missing.size === 0) return;
 
-    const ids = [...missing];
-    for (const from of ['catalogs.storages', 'catalogs.firms'] as const) {
-      try {
-        await this.api.ensureReady();
-        for (let i = 0; i < ids.length; i += IL_CHUNK) {
-          const chunk = ids.slice(i, i + IL_CHUNK);
-          const resp = await this.api.makeRequest<unknown>({
-            version: '0.25',
-            key: this.api.getApiKey(),
-            action: 'request',
-            params: {
-              from,
-              fields: { id: 'id', name: 'name', id__pr: 'id__pr' },
-              filters: [{ alias: 'id', operator: 'IL', value: chunk }],
-            },
-          });
-          const rows = Array.isArray(resp) ? resp : [];
-          for (const row of rows as Array<{ id?: unknown; name?: unknown; id__pr?: unknown }>) {
-            const id = unwrapDilovodId(row.id);
-            const name = unwrapDilovodName(row.name) || unwrapDilovodName(row.id__pr);
-            if (id && name) labels.set(id, name);
-          }
-        }
-      } catch (error) {
-        logServer(`WarehouseStatement: назви ${from}`, error);
+    const directoryIds = [...missingDirectory];
+    if (directoryIds.length > 0) {
+      for (const from of [WAREHOUSE_STATEMENT_VALUE_TYPES.storages, WAREHOUSE_STATEMENT_VALUE_TYPES.firms]) {
+        await this.fetchLabelsByIds(from, directoryIds, labels, (row) => {
+          const id = unwrapDilovodId(row.id);
+          const name = unwrapDilovodName(row.name) || unwrapDilovodName(row.id__pr);
+          return id && name ? [id, name] : null;
+        }, { id: 'id', name: 'name', id__pr: 'id__pr' });
       }
+    }
+
+    const batchIds = [...missingBatches];
+    if (batchIds.length > 0) {
+      // Канон назви партії: `code` (див. Docs/integrations/dilovod-metadata.md).
+      await this.fetchLabelsByIds(WAREHOUSE_STATEMENT_VALUE_TYPES.goodParts, batchIds, labels, (row) => {
+        const id = unwrapDilovodId(row.id);
+        if (!id) return null;
+        const label = pickHumanBatchLabel(id, unwrapDilovodName(row.code), unwrapDilovodName(row.id__pr));
+        return label ? [id, label] : null;
+      }, { id: 'id', code: 'code', id__pr: 'id__pr' });
+    }
+  }
+
+  private async fetchLabelsByIds(
+    from: string,
+    ids: string[],
+    labels: Map<string, string>,
+    pick: (row: Record<string, unknown>) => [string, string] | null,
+    fields: Record<string, string>,
+  ): Promise<void> {
+    try {
+      await this.api.ensureReady();
+      for (let i = 0; i < ids.length; i += IL_CHUNK) {
+        const chunk = ids.slice(i, i + IL_CHUNK);
+        const resp = await this.api.makeRequest<unknown>({
+          version: '0.25',
+          key: this.api.getApiKey(),
+          action: 'request',
+          params: {
+            from,
+            fields,
+            filters: [{ alias: 'id', operator: 'IL', value: chunk }],
+          },
+        });
+        const rows = Array.isArray(resp) ? resp : [];
+        for (const row of rows as Array<Record<string, unknown>>) {
+          const entry = pick(row);
+          if (entry && !labels.has(entry[0])) labels.set(entry[0], entry[1]);
+        }
+      }
+    } catch (error) {
+      logServer(`WarehouseStatement: назви ${from}`, error);
     }
   }
 
@@ -1059,9 +1111,17 @@ function isCatalogInactive(
 ): boolean {
   if (!node) return true;
   if (node.delMark) return true;
-  if (node.parentId === CATALOG_TRASH_ID) return true;
-  const parent = node.parentId ? catalog.get(node.parentId) : undefined;
-  if (parent && isArchiveFolderName(parent.name)) return true;
+  // Будь-який предок: смітник, папка «Архів – …» (також вкладені підпапки).
+  let parentId = node.parentId;
+  const seen = new Set<string>();
+  while (parentId && !seen.has(parentId)) {
+    if (parentId === CATALOG_TRASH_ID) return true;
+    seen.add(parentId);
+    const parent = catalog.get(parentId);
+    if (!parent) break;
+    if (isArchiveFolderName(parent.name)) return true;
+    parentId = parent.parentId;
+  }
   return false;
 }
 
@@ -1168,39 +1228,47 @@ function flattenCatalogGroups(
   const out: WarehouseStatementDirectoryItem[] = [];
   const seen = new Set<string>();
 
-  const walk = (parentKey: string, depth: number) => {
+  // Смітник і папки «Архів – …» разом з усіма нащадками: для фільтра «Приховати архівні».
+  const isInactiveGroup = (row: { id: string; name: string }) =>
+    row.id === CATALOG_TRASH_ID || isArchiveFolderName(row.name);
+
+  const walk = (parentKey: string, depth: number, parentInactive: boolean) => {
     const children = byParent.get(parentKey) ?? [];
     for (const child of children) {
       if (seen.has(child.id)) continue;
       seen.add(child.id);
+      const inactive = parentInactive || isInactiveGroup(child);
       out.push({
         id: child.id,
         name: child.name,
         parentId: isCatalogRootParent(child.parentId) ? null : child.parentId,
         depth,
+        ...(inactive ? { inactive: true } : {}),
       });
-      walk(child.id, depth + 1);
+      walk(child.id, depth + 1, inactive);
     }
   };
 
-  walk('__root__', 0);
+  walk('__root__', 0, false);
 
   for (const row of rows) {
     if (seen.has(row.id)) continue;
     seen.add(row.id);
+    const inactive = isInactiveGroup(row);
     out.push({
       id: row.id,
       name: row.name,
       parentId: isCatalogRootParent(row.parentId) ? null : row.parentId,
       depth: 0,
+      ...(inactive ? { inactive: true } : {}),
     });
-    walk(row.id, 1);
+    walk(row.id, 1, inactive);
   }
 
   return out;
 }
 
-function toSlimShape(shape: DilovodRegisterShape): WarehouseStatementRegisterShape {
+export function toSlimShape(shape: DilovodRegisterShape): WarehouseStatementRegisterShape {
   const slimField = (f: DilovodRegisterField): WarehouseStatementRegisterField => ({
     name: f.name,
     presentation: f.presentation,
@@ -1217,7 +1285,7 @@ function toSlimShape(shape: DilovodRegisterShape): WarehouseStatementRegisterSha
   };
 }
 
-function resolveShapeNames(shape: WarehouseStatementRegisterShape): WarehouseStatementResolvedShapeNames {
+export function resolveShapeNames(shape: WarehouseStatementRegisterShape): WarehouseStatementResolvedShapeNames {
   const byVt = (vt: string) =>
     shape.dimensions.find((d) => warehouseStatementValueTypeIncludes(d.valueType, vt))?.name;
   const qty = pickQtyResource(shape.resources);
@@ -1235,7 +1303,7 @@ function resolveShapeNames(shape: WarehouseStatementRegisterShape): WarehouseSta
   };
 }
 
-function pickQtyResource(
+export function pickQtyResource(
   resources: WarehouseStatementRegisterField[],
 ): WarehouseStatementRegisterField | undefined {
   const byName = resources.find((f) => f.name === 'qty');
@@ -1244,7 +1312,7 @@ function pickQtyResource(
   return byRole ?? resources[0];
 }
 
-function pickCostResource(
+export function pickCostResource(
   resources: WarehouseStatementRegisterField[],
 ): WarehouseStatementRegisterField | undefined {
   const money = resources.filter((field) => classifyResourceRole(field) === 'money');

@@ -30,6 +30,8 @@ interface StatementTableProps {
   collapseStorageGroup?: boolean;
   exclusions?: WarehouseStatementExclusion[];
   onExclude?: (row: HierarchicalTableRowView) => void;
+  /** Графік історії для рядка товару. */
+  onShowHistory?: (row: HierarchicalTableRowView) => void;
 }
 
 function shiftRowDepth(row: WarehouseStatementRow, delta: number): WarehouseStatementRow {
@@ -91,6 +93,7 @@ export default function StatementTable({
   collapseStorageGroup = false,
   exclusions,
   onExclude,
+  onShowHistory,
 }: StatementTableProps) {
   const alwaysShowExclude = useHasTouchScreen();
   const columns = useMemo<HierarchicalTableColumn[]>(() => {
@@ -167,6 +170,10 @@ export default function StatementTable({
       onPinTotalsChange={onPinTotalsChange}
       alwaysShowExclude={alwaysShowExclude}
       onExclude={onExclude}
+      onShowHistory={onShowHistory}
+      canShowHistory={(row) =>
+        Boolean(row.valueId && meta?.resolved.goodsDimensionName && row.dimensionId === meta.resolved.goodsDimensionName)}
+      sortable
       emptyMessage={
         hasGenerated
           ? 'Немає даних для відображення'

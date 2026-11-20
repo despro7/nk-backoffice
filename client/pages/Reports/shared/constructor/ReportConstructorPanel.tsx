@@ -40,7 +40,7 @@ export default function ReportConstructorPanel({
             {headerExtra}
           </div>
           {!isOpen && collapsedChips ? (
-            <div className="mt-2 flex flex-wrap gap-1.5">{collapsedChips}</div>
+            <div className="mt-4 flex flex-wrap gap-1.5">{collapsedChips}</div>
           ) : null}
         </div>
         <Button

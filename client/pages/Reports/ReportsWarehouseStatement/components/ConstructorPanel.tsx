@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
-import { Checkbox, Chip, Radio, RadioGroup } from '@heroui/react';
+import { useMemo, useState, type ReactNode } from 'react';
+import { Button, Checkbox, Chip, Radio, RadioGroup, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import {
   WAREHOUSE_STATEMENT_COLUMN_HEADER_STYLES,
   WAREHOUSE_STATEMENT_EXPENSE_KINDS,
@@ -31,6 +32,68 @@ import {
   syncProfitabilityColumn,
   UNIT_COST_COLUMN_TOOLTIP,
 } from '../warehouseStatementUtils';
+
+const COLLAPSED_LIST_LIMIT = 3;
+
+interface CollapsedChip {
+  key: string;
+  title?: string;
+  value: string;
+  /** Повний список для тултіпа (рядки). */
+  details?: string[];
+  color?: 'default' | 'danger';
+}
+
+/** «a, b, c +N»: перші кілька назв, решта в тултіпі. */
+function shortList(names: string[]): { value: string; details?: string[] } {
+  const head = names.slice(0, COLLAPSED_LIST_LIMIT).join(', ');
+  if (names.length <= COLLAPSED_LIST_LIMIT) {
+    return { value: head };
+  }
+  return { value: `${head} +${names.length - COLLAPSED_LIST_LIMIT}`, details: names };
+}
+
+function CollapsedChipView({ chip }: { chip: CollapsedChip }) {
+  const body = (
+    <Chip
+      size="sm"
+      variant="flat"
+      color={chip.color ?? 'default'}
+      className={chip.details?.length ? 'cursor-help' : undefined}
+    >
+      {chip.title ? (
+        <>
+          <span className="font-semibold">{chip.title}:</span> {chip.value}
+        </>
+      ) : (
+        chip.value
+      )}
+    </Chip>
+  );
+  if (!chip.details?.length) {
+    return body;
+  }
+  return (
+    <Tooltip
+      placement="bottom-start"
+      delay={200}
+      showArrow
+      classNames={{
+        base: 'before:bg-gray-700 before:rounded-[2px]',
+        content: 'bg-gray-700 border-0 text-white text-xs max-w-sm py-2',
+      }}
+      content={
+        <ul className="flex flex-col gap-0.5 max-h-72 overflow-y-auto">
+          {chip.details.map((line, index) => (
+            <li key={`${index}:${line}`}>{line}</li>
+          ))}
+        </ul>
+      }
+    >
+      {body}
+    </Tooltip>
+  );
+}
 
 const HEADER_STYLE_LABELS: Record<WarehouseStatementColumnHeaderStyle, string> = {
   full: 'Повні назви',
@@ -83,6 +146,7 @@ interface ConstructorPanelProps {
   onExpenseKindsChange: (kinds: WarehouseStatementExpenseKind[]) => void;
   onPriceTypeChange: (priceType: string | undefined) => void;
   onHideZeroQtyChange: (value: boolean) => void;
+  onHideInactiveChange: (value: boolean) => void;
   onGroupingChange: (ids: string[]) => void;
   onColumnsChange: (ids: string[]) => void;
   onColumnHeaderStyleChange: (style: WarehouseStatementColumnHeaderStyle) => void;
@@ -93,6 +157,8 @@ interface ConstructorPanelProps {
     label: string,
     restore: Partial<WarehouseStatementConstructorPreset>,
   ) => void;
+  /** Панель пресетів у шапці конструктора. */
+  headerExtra?: ReactNode;
 }
 
 export default function ConstructorPanel({
@@ -105,14 +171,31 @@ export default function ConstructorPanel({
   onExpenseKindsChange,
   onPriceTypeChange,
   onHideZeroQtyChange,
+  onHideInactiveChange,
   onGroupingChange,
   onColumnsChange,
   onColumnHeaderStyleChange,
   onPinTotalsChange,
   onExclusionsChange,
   onBeginUndo,
+  headerExtra,
 }: ConstructorPanelProps) {
   const [tab, setTab] = useState<ConstructorTabKey>('selection');
+  const [confirmResetExclusions, setConfirmResetExclusions] = useState(false);
+  const hideInactive = draft.hideInactive ?? true;
+
+  /** Групи для списків: при «Приховати архівні» без архіву / смітника (крім уже обраних). */
+  const groupOptionsFor = (selectedIds: string[]) => {
+    const keep = new Set(selectedIds);
+    return meta.groups
+      .filter((item) => !hideInactive || !item.inactive || keep.has(item.id))
+      .map((item) => ({ key: item.id, label: item.name, depth: item.depth ?? 0 }));
+  };
+  const groupFilterOptions = groupOptionsFor(draft.groupIds ?? []);
+  const groupExclusionIds = (draft.exclusions ?? [])
+    .filter((item) => item.dimensionId === WAREHOUSE_STATEMENT_SYNTHETIC_DIMENSION_GROUP)
+    .map((item) => item.valueId);
+  const groupExclusionOptions = groupOptionsFor(groupExclusionIds);
 
   const registerDimensions = useMemo(
     () => meta.dimensions.filter((item) => item.source === 'register'),
@@ -138,25 +221,33 @@ export default function ConstructorPanel({
   const headerStyle = draft.columnHeaderStyle ?? 'short';
 
   const collapsedChips = useMemo(() => {
-    const chips: Array<{ key: string; title?: string; value: string }> = [];
+    const chips: CollapsedChip[] = [];
     for (const dimension of registerDimensions) {
       const values = draft.dimensionFilters?.[dimension.id] ?? [];
       if (values.length === 0) {
         continue;
       }
       const items = directoryItemsForDimension(dimension.id, meta);
-      const names = values
-        .map((id) => items.find((item) => item.id === id)?.name ?? id)
-        .slice(0, 3);
-      const extra = values.length > 3 ? ` +${values.length - 3}` : '';
-      chips.push({
-        key: dimension.id,
-        title: dimension.presentation,
-        value: `${names.join(', ')}${extra}`,
-      });
+      const names = values.map((id) => items.find((item) => item.id === id)?.name ?? id);
+      chips.push({ key: dimension.id, title: dimension.presentation, ...shortList(names) });
     }
     if (draft.groupIds && draft.groupIds.length > 0) {
-      chips.push({ key: 'groups', title: 'Групи', value: String(draft.groupIds.length) });
+      const names = draft.groupIds.map((id) => meta.groups.find((group) => group.id === id)?.name ?? id);
+      chips.push({ key: 'groups', title: 'Групи', ...shortList(names) });
+    }
+    const exclusions = draft.exclusions ?? [];
+    if (exclusions.length > 0) {
+      const names = exclusions.map((item) => {
+        const label = item.label || item.valueId;
+        return item.dimensionId === WAREHOUSE_STATEMENT_SYNTHETIC_DIMENSION_GROUP ? `Група: ${label}` : label;
+      });
+      chips.push({
+        key: 'exclusions',
+        title: 'Виключено',
+        value: String(exclusions.length),
+        details: names,
+        color: 'danger',
+      });
     }
     if (draft.grouping.length > 0) {
       const labels = draft.grouping
@@ -164,12 +255,48 @@ export default function ConstructorPanel({
         .join(' → ');
       chips.push({ key: 'grouping', title: 'Групування результатів', value: labels });
     }
-    chips.push({ key: 'columns', title: 'Колонок', value: String(draft.columns.length) });
-    if (draft.hideZeroQty) {
-      chips.push({ key: 'zeros', value: 'Без нульових залишків' });
+    const selected = new Set(draft.columns);
+    const columnDetails = groupMetricsForConstructor(meta)
+      .map((group) => {
+        const labels = group.metrics
+          .filter((metric) => selected.has(metric.id))
+          .map((metric) => constructorMetricCheckboxLabel(metric, group.title));
+        return labels.length > 0 ? `${group.title}: ${labels.join(', ')}` : null;
+      })
+      .filter((line): line is string => line !== null);
+    chips.push({
+      key: 'columns',
+      title: 'Колонок',
+      value: String(draft.columns.length),
+      details: columnDetails,
+    });
+    if (draft.hideZeroQty ?? true) {
+      chips.push({ key: 'zeros', value: 'Без порожніх рядків' });
+    }
+    if (draft.hideInactive ?? true) {
+      chips.push({ key: 'inactive', value: 'Без архівних і видалених' });
     }
     return chips;
   }, [draft, meta, registerDimensions]);
+
+  const goodsExclusions = (draft.exclusions ?? []).filter(
+    (item) => item.dimensionId !== WAREHOUSE_STATEMENT_SYNTHETIC_DIMENSION_GROUP,
+  );
+
+  const clearGoodsExclusions = () => {
+    setConfirmResetExclusions(false);
+    if (goodsExclusions.length === 0) {
+      return;
+    }
+    onBeginUndo('Скинуто', `виключення товарів (${goodsExclusions.length})`, {
+      exclusions: [...(draft.exclusions ?? [])],
+    });
+    onExclusionsChange(
+      (draft.exclusions ?? []).filter(
+        (item) => item.dimensionId === WAREHOUSE_STATEMENT_SYNTHETIC_DIMENSION_GROUP,
+      ),
+    );
+  };
 
   const setOrderedColumns = (ids: string[]) => {
     onColumnsChange(orderColumnsByConstructor(syncProfitabilityColumn(draft.columns, ids), meta));
@@ -207,14 +334,22 @@ export default function ConstructorPanel({
 
   const selection = (
     <div className="flex flex-col gap-4">
-      
-      <Checkbox
-        size="sm"
-        isSelected={draft.hideZeroQty ?? true}
-        onValueChange={onHideZeroQtyChange}
-      >
-        Ховати нульові залишки
-      </Checkbox>
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <Checkbox
+          size="sm"
+          isSelected={draft.hideZeroQty ?? true}
+          onValueChange={onHideZeroQtyChange}
+        >
+          Ховати порожні рядки
+        </Checkbox>
+        <Checkbox
+          size="sm"
+          isSelected={draft.hideInactive ?? true}
+          onValueChange={onHideInactiveChange}
+        >
+          Приховати архівні й видалені
+        </Checkbox>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {registerDimensions.map((dimension) => {
@@ -243,6 +378,7 @@ export default function ConstructorPanel({
                 })
               }
               showTags
+              chipColor="blue"
               options={options}
               iconName={dimension.id === 'firm' ? 'users' : 'warehouse'}
               className="w-full"
@@ -275,6 +411,7 @@ export default function ConstructorPanel({
             )
           }
           showTags
+          chipColor="blue"
           options={WAREHOUSE_STATEMENT_EXPENSE_KINDS.map((kind) => ({
             key: kind,
             label: EXPENSE_KIND_LABELS[kind],
@@ -300,6 +437,7 @@ export default function ConstructorPanel({
               )
             }
             showTags
+            chipColor="blue"
             options={meta.priceTypes.map((item) => ({ key: item.id, label: item.name }))}
             iconName="badge-dollar-sign"
             className="w-full"
@@ -311,7 +449,7 @@ export default function ConstructorPanel({
           <ReportMultiSelectFilter
             ariaLabel="Групи товарів"
             placeholder="Групи товарів (всі)"
-            chipColor="danger"
+            chipColor="blue"
             selectedKeys={new Set(draft.groupIds ?? [])}
             onChange={(keys) => onGroupIdsChange(Array.from(keys))}
             onReset={() => onGroupIdsChange([])}
@@ -325,11 +463,7 @@ export default function ConstructorPanel({
             }
             showTags
             mode="autocomplete"
-            options={meta.groups.map((item) => ({
-              key: item.id,
-              label: item.name,
-              depth: item.depth ?? 0,
-            }))}
+            options={groupFilterOptions}
             iconName="folder-tree"
             className="w-full"
             size="md"
@@ -377,11 +511,7 @@ export default function ConstructorPanel({
             }
             showTags
             mode="autocomplete"
-            options={meta.groups.map((item) => ({
-              key: item.id,
-              label: item.name,
-              depth: item.depth ?? 0,
-            }))}
+            options={groupExclusionOptions}
             iconName="circle-minus"
             className="w-full"
             size="md"
@@ -389,38 +519,59 @@ export default function ConstructorPanel({
         ) : null}
       </div>
 
-      {(draft.exclusions ?? []).some(
-        (item) => item.dimensionId !== WAREHOUSE_STATEMENT_SYNTHETIC_DIMENSION_GROUP,
-      ) ? (
+      {goodsExclusions.length > 0 ? (
         <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-semibold text-default-700">Виключення товарів</span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-default-700">
+              Виключення товарів ({goodsExclusions.length})
+            </span>
+            <Button
+              size="sm"
+              variant="light"
+              color="danger"
+              className="h-6 min-w-0 px-2"
+              startContent={<DynamicIcon name="eraser" size={14} />}
+              onPress={() => setConfirmResetExclusions(true)}
+            >
+              Скинути всі
+            </Button>
+          </div>
           <div className="flex flex-wrap gap-1.5">
-            {(draft.exclusions ?? [])
-              .filter((item) => item.dimensionId !== WAREHOUSE_STATEMENT_SYNTHETIC_DIMENSION_GROUP)
-              .map((item) => (
-                <Chip
-                  key={`${item.dimensionId}:${item.valueId}`}
-                  size="sm"
-                  variant="flat"
-                  color="danger"
-                  onClose={() => {
-                    onBeginUndo('Прибрано', item.label || item.valueId, {
-                      exclusions: [...(draft.exclusions ?? [])],
-                    });
-                    onExclusionsChange(
-                      (draft.exclusions ?? []).filter(
-                        (entry) =>
-                          !(entry.dimensionId === item.dimensionId && entry.valueId === item.valueId),
-                      ),
-                    );
-                  }}
-                >
-                  {item.label || item.valueId}
-                </Chip>
-              ))}
+            {goodsExclusions.map((item) => (
+              <Chip
+                key={`${item.dimensionId}:${item.valueId}`}
+                size="sm"
+                variant="flat"
+                color="danger"
+                onClose={() => {
+                  onBeginUndo('Прибрано', item.label || item.valueId, {
+                    exclusions: [...(draft.exclusions ?? [])],
+                  });
+                  onExclusionsChange(
+                    (draft.exclusions ?? []).filter(
+                      (entry) =>
+                        !(entry.dimensionId === item.dimensionId && entry.valueId === item.valueId),
+                    ),
+                  );
+                }}
+              >
+                {item.label || item.valueId}
+              </Chip>
+            ))}
           </div>
         </div>
       ) : null}
+
+      <ConfirmModal
+        isOpen={confirmResetExclusions}
+        title="Скинути виключення товарів?"
+        message={`З відбору буде прибрано всі виключені товари (${goodsExclusions.length}). Після скидання дію можна скасувати кілька секунд.`}
+        confirmText="Скинути всі"
+        cancelText="Скасувати"
+        confirmColor="danger"
+        onConfirm={clearGoodsExclusions}
+        onCancel={() => setConfirmResetExclusions(false)}
+      />
     </div>
   );
 
@@ -523,16 +674,9 @@ export default function ConstructorPanel({
       selection={selection}
       grouping={grouping}
       columns={columns}
+      headerExtra={headerExtra}
       collapsedChips={collapsedChips.map((chip) => (
-        <Chip key={chip.key} size="sm" variant="flat">
-          {chip.title ? (
-            <>
-              <span className="font-semibold">{chip.title}:</span> {chip.value}
-            </>
-          ) : (
-            chip.value
-          )}
-        </Chip>
+        <CollapsedChipView key={chip.key} chip={chip} />
       ))}
     />
   );

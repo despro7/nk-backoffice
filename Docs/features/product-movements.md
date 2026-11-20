@@ -118,6 +118,7 @@ interface ProductMovementsOpenParams {
 | `/warehouse/movement-mob/:id` | Клік по назві партії в `MovementMobProductCard` (`autoGenerate: true`) |
 | `/warehouse/release-sets` | Кнопка «Рухи партії» в `ReleaseComponentBatchesPanel` |
 | `/products` (каталог) | «Рухи товару» в контекстному меню і меню «Дії» (один товар, не група): `dilovodGoodId` + `sku` (якщо є) + назва, без партії, `autoGenerate: true`. Працює і для інгредієнтів без SKU |
+| `/reports/warehouse-statement` | «Відкрити рухи» в графіку історії товару (`ProductHistoryDrawer`): `dilovodGoodId`, назва, період графіка, `storageId` якщо склад один, `autoGenerate: true` |
 
 ---
 
@@ -131,6 +132,7 @@ interface ProductMovementsOpenParams {
 - **Згортання комплектації** — перед групуванням по партії: `collapseProductMovementLines` (`shared/utils/productMovementCollapse.ts`) для документів комплектації/розукомплектування; кількість — `normalizePortionQty` (`productMovementQty.ts`).
 - **Резолв партій** — `extractGoodPartIdPresentation` / `extractBatchLabelFromGoodPartHeader` у `DilovodUtils.ts` (підтримка `id__pr`, `id.pr`, вкладених структур Dilovod).
 - Рядок руху: `date` (день) + `dateTime` (день+час з `period` Dilovod) для Tooltip у таблиці.
+- **Спільні helpers** (експорт для `WarehouseStatementHistoryService`, графік у відомості): `resolveMovementShapeNames` (атрибути `period` / `recorder` / `recordType`), `parseRegisterRows`, `splitQty` (прихід / витрата рядка, повернення від покупця як від'ємна витрата), `resolveRecorderLabel`. Зміна цих функцій впливає на обидва звіти.
 
 ### Обмеження
 

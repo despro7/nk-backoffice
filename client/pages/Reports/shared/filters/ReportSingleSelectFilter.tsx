@@ -5,6 +5,8 @@ import {
   REPORT_FILTER_ITEM_CLASS_NAMES,
   REPORT_FILTER_LISTBOX_HEIGHT,
   ReportFilterSelectedMark,
+  reportFilterChipProps,
+  type ReportFilterChipColor,
 } from "./ReportMultiSelectFilter";
 
 interface ReportSingleSelectFilterProps {
@@ -21,6 +23,7 @@ interface ReportSingleSelectFilterProps {
   iconSize?: number;
   size?: "sm" | "md" | "lg";
   showTags?: boolean;
+  chipColor?: ReportFilterChipColor;
   onReset?: () => void;
   onRemoved?: (removedKeys: string[], source: "chip" | "reset" | "list") => void;
   maxListboxHeight?: number;
@@ -38,6 +41,7 @@ export default function ReportSingleSelectFilter({
   popoverClassName,
   popoverProps,
   iconSize = 19,
+  chipColor = "default",
   size = "md",
   showTags = false,
   onReset,
@@ -115,7 +119,7 @@ export default function ReportSingleSelectFilter({
       </div>
       {showTags && selectedKey && selectedLabel ? (
         <div className="mt-1.5 flex flex-wrap gap-1">
-          <Chip size="sm" variant="flat" onClose={() => {
+          <Chip size="sm" variant="flat" {...reportFilterChipProps(chipColor)} onClose={() => {
             emitClear("chip");
             onChange(null);
           }}>

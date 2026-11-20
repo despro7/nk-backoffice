@@ -21,6 +21,57 @@ interface HierarchicalReportTableProps {
   onPinTotalsChange?: (value: boolean) => void;
   alwaysShowExclude?: boolean;
   onExclude?: (row: HierarchicalTableRowView) => void;
+  /** Сортування рядків (у межах кожного рівня) кліком по заголовку колонки. */
+  sortable?: boolean;
+  /** Кнопка «Історія» біля назви рядка (якщо `canShowHistory` дозволяє). */
+  onShowHistory?: (row: HierarchicalTableRowView) => void;
+  canShowHistory?: (row: HierarchicalTableRowView) => boolean;
+}
+
+type SortDirection = 'desc' | 'asc';
+
+interface SortState {
+  columnId: string;
+  direction: SortDirection;
+}
+
+/** Цикл кліку: немає → за спаданням → за зростанням → немає. */
+function nextSortState(current: SortState | null, columnId: string): SortState | null {
+  if (!current || current.columnId !== columnId) {
+    return { columnId, direction: 'desc' };
+  }
+  if (current.direction === 'desc') {
+    return { columnId, direction: 'asc' };
+  }
+  return null;
+}
+
+/**
+ * Сортує сусідні рядки на кожному рівні дерева. Рядки «Разом» лишаються першими,
+ * порожні значення завжди в кінці. Порядок рівних значень зберігається.
+ */
+function sortTreeRows(rows: HierarchicalTableRowView[], sort: SortState): HierarchicalTableRowView[] {
+  const factor = sort.direction === 'desc' ? -1 : 1;
+  const valueOf = (row: HierarchicalTableRowView) => {
+    const raw = row.values[sort.columnId];
+    return raw == null || !Number.isFinite(raw) ? null : raw;
+  };
+  const withChildren = rows.map((row) =>
+    row.children && row.children.length > 0 ? { ...row, children: sortTreeRows(row.children, sort) } : row,
+  );
+  const totals = withChildren.filter((row) => row.kind === 'total');
+  const rest = withChildren
+    .filter((row) => row.kind !== 'total')
+    .map((row, index) => ({ row, index, value: valueOf(row) }))
+    .sort((a, b) => {
+      if (a.value === null && b.value === null) return a.index - b.index;
+      if (a.value === null) return 1;
+      if (b.value === null) return -1;
+      if (a.value === b.value) return a.index - b.index;
+      return (a.value - b.value) * factor;
+    })
+    .map((item) => item.row);
+  return [...totals, ...rest];
 }
 
 interface FlatRow {
@@ -216,6 +267,8 @@ function NameCell({
   alwaysShowExclude,
   pinTotals,
   onPinTotalsChange,
+  onShowHistory,
+  canShowHistory,
 }: {
   row: HierarchicalTableRowView;
   hasChildren: boolean;
@@ -225,11 +278,14 @@ function NameCell({
   alwaysShowExclude?: boolean;
   pinTotals?: boolean;
   onPinTotalsChange?: (value: boolean) => void;
+  onShowHistory?: (row: HierarchicalTableRowView) => void;
+  canShowHistory?: (row: HierarchicalTableRowView) => boolean;
 }) {
   const isGroupLike = row.kind === 'group' || row.kind === 'total';
   const title = row.sku ? `${row.label} ・ ${row.sku}` : row.label;
   const canExclude = Boolean(onExclude && row.kind !== 'total' && row.dimensionId && row.valueId);
   const canPin = row.kind === 'total' && Boolean(onPinTotalsChange);
+  const showHistory = Boolean(onShowHistory && row.kind !== 'total' && (canShowHistory?.(row) ?? true));
 
   const label = (
     <div
@@ -267,7 +323,7 @@ function NameCell({
         {canExclude ? (
           <Tooltip
             content="Додати до списку виключення"
-            placement="right-end"
+            placement="top"
             color="secondary"
             delay={300}
             showArrow={true}
@@ -288,6 +344,32 @@ function NameCell({
               }}
             >
               <DynamicIcon name="circle-minus" size={15} />
+            </button>
+          </Tooltip>
+        ) : null}
+        {showHistory ? (
+          <Tooltip
+            content="Історія змін за період"
+            placement="top"
+            delay={300}
+            showArrow={true}
+            classNames={{
+              base: 'before:bg-blue-500 before:rounded-[2px]',
+              content: 'bg-blue-500 border-0 text-white text-xs max-w-xs',
+            }}
+          >
+            <button
+              type="button"
+              className={`inline-flex shrink-0 items-center justify-center w-6 h-6 rounded-md text-default-400 hover:text-blue-500 hover:bg-blue-500/10 ${
+                alwaysShowExclude ? '' : 'opacity-0 group-hover/name:opacity-100 focus-visible:opacity-100'
+              }`}
+              aria-label={`Історія «${row.label}»`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onShowHistory?.(row);
+              }}
+            >
+              <DynamicIcon name="chart-area" size={15} />
             </button>
           </Tooltip>
         ) : null}
@@ -335,9 +417,13 @@ export default function HierarchicalReportTable({
   onPinTotalsChange,
   alwaysShowExclude = false,
   onExclude,
+  sortable = false,
+  onShowHistory,
+  canShowHistory,
 }: HierarchicalReportTableProps) {
   const expandableIds = useMemo(() => collectExpandableIds(rows), [rows]);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [sort, setSort] = useState<SortState | null>(null);
   const [rowsSignature, setRowsSignature] = useState('');
   const [nameWidth, setNameWidth] = useState(readStoredNameWidth);
   const [nameWidthCap, setNameWidthCap] = useState(NAME_COL_MAX);
@@ -411,15 +497,23 @@ export default function HierarchicalReportTable({
     syncingScroll.current = false;
   }, []);
 
+  const activeSort = sortable && sort && columns.some((column) => column.id === sort.columnId) ? sort : null;
+
   const { bodyRows, pinnedTotals } = useMemo(() => {
+    const ordered = activeSort ? sortTreeRows(rows, activeSort) : rows;
     if (!pinTotals) {
-      return { bodyRows: rows, pinnedTotals: [] as HierarchicalTableRowView[] };
+      return { bodyRows: ordered, pinnedTotals: [] as HierarchicalTableRowView[] };
     }
     return {
-      bodyRows: rows.filter((row) => row.kind !== 'total'),
-      pinnedTotals: rows.filter((row) => row.kind === 'total'),
+      bodyRows: ordered.filter((row) => row.kind !== 'total'),
+      pinnedTotals: ordered.filter((row) => row.kind === 'total'),
     };
-  }, [pinTotals, rows]);
+  }, [activeSort, pinTotals, rows]);
+
+  const anyExpanded = expandableIds.some((id) => expanded.has(id));
+  const toggleAll = useCallback(() => {
+    setExpanded(anyExpanded ? new Set() : new Set(expandableIds));
+  }, [anyExpanded, expandableIds]);
 
   const flatRows = useMemo(() => flattenRows(bodyRows, expanded), [bodyRows, expanded]);
 
@@ -537,6 +631,36 @@ export default function HierarchicalReportTable({
     </colgroup>
   );
 
+  const renderNameHeader = () => (
+    <div className="flex items-center justify-between gap-1 min-w-0">
+      <span className="truncate">Найменування</span>
+      {expandableIds.length > 0 ? (
+        <Tooltip
+          content={anyExpanded ? 'Згорнути всі групи' : 'Розгорнути всі групи'}
+          placement="top"
+          delay={300}
+          showArrow={true}
+          classNames={{
+            base: 'before:bg-gray-700 before:rounded-[2px]',
+            content: 'bg-gray-700 border-0 text-white text-xs max-w-xs',
+          }}
+        >
+          <button
+            type="button"
+            className="inline-flex shrink-0 items-center justify-center w-6 h-6 rounded-md text-white/70 hover:text-white hover:bg-white/15 transition-colors duration-200"
+            aria-label={anyExpanded ? 'Згорнути всі групи' : 'Розгорнути всі групи'}
+            onClick={(event) => {
+              event.stopPropagation();
+              toggleAll();
+            }}
+          >
+            <DynamicIcon name={anyExpanded ? 'chevrons-down-up' : 'chevrons-up-down'} size={16} />
+          </button>
+        </Tooltip>
+      ) : null}
+    </div>
+  );
+
   const renderResizeHandle = () => (
     <NameColResizeHandle
       active={nameEdgeActive}
@@ -579,7 +703,7 @@ export default function HierarchicalReportTable({
                       }`}
                       style={nameColStyle}
                     >
-                      Найменування
+                      {renderNameHeader()}
                       {renderResizeHandle()}
                     </th>
                     {groupLabels.map((label, index) => {
@@ -615,15 +739,34 @@ export default function HierarchicalReportTable({
                       }`}
                       style={nameColStyle}
                     >
-                      Найменування
+                      {renderNameHeader()}
                       {renderResizeHandle()}
                     </th>
                   )}
                   {columns.map((column, index) => {
                     const last = index === columns.length - 1;
+                    const canSort = sortable && column.format !== 'text';
+                    const sortedBy = activeSort?.columnId === column.id ? activeSort.direction : null;
+                    const headerText = (
+                      <div
+                        className={`flex flex-col gap-0.5 ${
+                          column.align === 'left' ? 'items-start' : 'items-end'
+                        }`}
+                      >
+                        {column.label ? <span>{column.label}</span> : null}
+                        {column.badge ? (
+                          <span className="inline-flex items-center rounded-md bg-white/15 px-1.5 py-0.5 text-[10px] font-medium leading-tight text-white/80">
+                            {column.badge}
+                          </span>
+                        ) : null}
+                      </div>
+                    );
                     return (
                       <th
                         key={column.id}
+                        aria-sort={
+                          sortedBy === 'desc' ? 'descending' : sortedBy === 'asc' ? 'ascending' : undefined
+                        }
                         className={`bg-neutral-500 px-2 md:px-3 py-2 text-[13px] text-white whitespace-nowrap leading-tight ${
                           column.align === 'left' ? 'text-left' : 'text-right'
                         } ${headerBorderClass(isGroupEnd(columns, index), last, true)}`}
@@ -633,18 +776,25 @@ export default function HierarchicalReportTable({
                             column.align === 'left' ? 'justify-start' : 'justify-end'
                           }`}
                         >
-                          <div
-                            className={`flex flex-col gap-0.5 ${
-                              column.align === 'left' ? 'items-start' : 'items-end'
-                            }`}
-                          >
-                            {column.label ? <span>{column.label}</span> : null}
-                            {column.badge ? (
-                              <span className="inline-flex items-center rounded-md bg-white/15 px-1.5 py-0.5 text-[10px] font-medium leading-tight text-white/80">
-                                {column.badge}
-                              </span>
-                            ) : null}
-                          </div>
+                          {canSort ? (
+                            <button
+                              type="button"
+                              className="group/sort inline-flex items-center gap-1 rounded-sm cursor-pointer hover:text-white/85"
+                              aria-label={`Сортувати за «${[column.groupLabel, column.label, column.badge].filter(Boolean).join(' ')}»`}
+                              onClick={() => setSort((current) => nextSortState(current, column.id))}
+                            >
+                              <DynamicIcon
+                                name={sortedBy === 'asc' ? 'arrow-up' : sortedBy === 'desc' ? 'arrow-down' : 'arrow-up-down'}
+                                size={12}
+                                className={`shrink-0 ${
+                                  sortedBy ? 'text-white' : 'text-white/0 group-hover/sort:text-white/60'
+                                }`}
+                              />
+                              {headerText}
+                            </button>
+                          ) : (
+                            headerText
+                          )}
                         </div>
                       </th>
                     );
@@ -721,6 +871,8 @@ export default function HierarchicalReportTable({
                           alwaysShowExclude={alwaysShowExclude}
                           pinTotals={pinTotals}
                           onPinTotalsChange={onPinTotalsChange}
+                          onShowHistory={onShowHistory}
+                          canShowHistory={canShowHistory}
                         />
                         {renderResizeHandle()}
                       </td>

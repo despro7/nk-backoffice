@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import type { DateRange } from '@react-types/datepicker';
 import { CalendarDate, getLocalTimeZone, today } from '@internationalized/date';
 import { useApi } from '@/hooks/useApi';
+import { useAuth } from '@/contexts/auth-context';
 import { parseUrlHash, useUrlHashSync } from '@/hooks/useUrlHashSync';
 import type {
   WarehouseStatementColumnHeaderStyle,
@@ -15,6 +16,8 @@ import type {
   WarehouseStatementMetaResponse,
   WarehouseStatementMetricId,
   WarehouseStatementPeriodMode,
+  WarehouseStatementPresetSpec,
+  WarehouseStatementPresetVisibility,
   WarehouseStatementQueryRequest,
   WarehouseStatementQueryResponse,
   WarehouseStatementRow,
@@ -30,14 +33,21 @@ import {
   defaultPeriod,
   hasRequiredScope,
   isQueryResponse,
-  loadConstructorPreset,
+  loadDraftEnvelope,
+  loadHistory,
   matchDatePresetKey,
   parseYmdToCalendarDate,
   periodFromHash,
   periodToDateRange,
   readApiError,
-  saveConstructorPreset,
+  saveDraftEnvelope,
   sanitizePreset,
+  clearHistory as clearStoredHistory,
+  directoryItemsForDimension,
+  draftFromPresetSpec,
+  presetSpecFromDraft,
+  pushHistory,
+  type WarehouseStatementHistoryEntry,
   unwrapPayload,
   groupMetricsForConstructor,
   metricColumnHeader,
@@ -47,6 +57,41 @@ import {
   WAREHOUSE_STATEMENT_AS_OF_PRESETS,
   WAREHOUSE_STATEMENT_DEFAULT_PERIOD_PRESET,
 } from './warehouseStatementUtils';
+
+function formatYmd(value: string): string {
+  const [year, month, day] = value.split('-');
+  return year && month && day ? `${day}.${month}.${year}` : value;
+}
+
+function describeForHistory(
+  draft: WarehouseStatementConstructorPreset,
+  meta: WarehouseStatementMetaResponse,
+  datePresetKey: string | null,
+): string {
+  const parts: string[] = [];
+  const presetLabel = datePresetKey && datePresetKey !== 'custom'
+    ? createStandardDatePresets().find((item) => item.key === datePresetKey)?.label
+    : undefined;
+  if (presetLabel) {
+    parts.push(presetLabel);
+  } else if (draft.period.mode === 'asOfDate') {
+    parts.push(`на ${formatYmd(draft.period.asOfDate)}`);
+  } else {
+    parts.push(`${formatYmd(draft.period.startDate)} – ${formatYmd(draft.period.endDate)}`);
+  }
+  const storageName = meta.resolved.storageDimensionName;
+  const storages = storageName ? (draft.dimensionFilters?.[storageName] ?? []) : [];
+  if (storages.length > 0) {
+    const items = directoryItemsForDimension(storageName as string, meta);
+    const names = storages.slice(0, 2).map((id) => items.find((item) => item.id === id)?.name ?? id);
+    parts.push(names.join(', ') + (storages.length > 2 ? ` +${storages.length - 2}` : ''));
+  }
+  const groups = draft.groupIds?.length ?? 0;
+  if (groups > 0) {
+    parts.push(`груп: ${groups}`);
+  }
+  return parts.join(' · ');
+}
 
 function flattenRows(rows: WarehouseStatementRow[]): WarehouseStatementRow[] {
   const result: WarehouseStatementRow[] = [];
@@ -64,6 +109,10 @@ function flattenRows(rows: WarehouseStatementRow[]): WarehouseStatementRow[] {
 
 export default function useWarehouseStatement(meta: WarehouseStatementMetaResponse | null) {
   const { apiCall } = useApi();
+  const { user } = useAuth();
+  const userKey = user?.id ?? 'anon';
+  const [activePresetId, setActivePresetId] = useState<number | null>(null);
+  const [history, setHistory] = useState<WarehouseStatementHistoryEntry[]>([]);
   const [draft, setDraft] = useState<WarehouseStatementConstructorPreset | null>(null);
   const [submittedRequest, setSubmittedRequest] = useState<WarehouseStatementQueryRequest | null>(null);
   const [runToken, setRunToken] = useState(0);
@@ -93,21 +142,49 @@ export default function useWarehouseStatement(meta: WarehouseStatementMetaRespon
       return;
     }
     appliedMetaRef.current = true;
-    let next = sanitizePreset(loadConstructorPreset(), meta);
+    const stored = loadDraftEnvelope(userKey);
+    setActivePresetId(stored?.activePresetId ?? null);
+    setHistory(loadHistory(userKey));
+    let next = sanitizePreset(stored?.preset ?? null, meta);
     const params = parseUrlHash(window.location.hash);
     if ([...params.keys()].length > 0) {
       next = sanitizePreset(applyWarehouseStatementHash(next, params, meta), meta);
     }
     setDraft(next);
     syncPeriodUi(next.period);
-  }, [meta, syncPeriodUi]);
+  }, [meta, syncPeriodUi, userKey]);
 
   useEffect(() => {
     if (!draft) {
       return;
     }
-    saveConstructorPreset(draft);
-  }, [draft]);
+    saveDraftEnvelope(userKey, { preset: draft, activePresetId });
+  }, [activePresetId, draft, userKey]);
+
+  /** Застосувати збережений пресет або знімок з історії. */
+  const applySpec = useCallback((spec: WarehouseStatementPresetSpec, presetId: number | null) => {
+    if (!meta) {
+      return;
+    }
+    const next = draftFromPresetSpec(spec, draft?.period ?? defaultPeriod(), meta);
+    setDraft(next);
+    syncPeriodUi(next.period);
+    if (spec.periodPresetKey) {
+      setDatePresetKey(spec.periodPresetKey);
+    }
+    setActivePresetId(presetId);
+  }, [draft?.period, meta, syncPeriodUi]);
+
+  const currentSpec = useCallback(
+    (visibility: WarehouseStatementPresetVisibility): WarehouseStatementPresetSpec | null =>
+      draft ? presetSpecFromDraft(draft, datePresetKey, visibility) : null,
+    [datePresetKey, draft],
+  );
+
+  const clearHistory = useCallback(() => {
+    clearStoredHistory(userKey);
+    setHistory([]);
+  }, [userKey]);
 
   useUrlHashSync(
     draft && meta ? buildWarehouseStatementHashValues(draft, meta, datePresetKey) : {},
@@ -247,6 +324,10 @@ export default function useWarehouseStatement(meta: WarehouseStatementMetaRespon
     patchDraft({ hideZeroQty });
   }, [patchDraft]);
 
+  const setHideInactive = useCallback((hideInactive: boolean) => {
+    patchDraft({ hideInactive });
+  }, [patchDraft]);
+
   const setColumnHeaderStyle = useCallback((columnHeaderStyle: WarehouseStatementColumnHeaderStyle) => {
     patchDraft({ columnHeaderStyle });
   }, [patchDraft]);
@@ -360,10 +441,15 @@ export default function useWarehouseStatement(meta: WarehouseStatementMetaRespon
       columns: orderColumnsByConstructor(draft.columns, meta),
     });
     setSubmittedRequest(request);
+    setHistory(pushHistory(userKey, {
+      at: new Date().toISOString(),
+      spec: presetSpecFromDraft(draft, datePresetKey, 'private'),
+      summary: describeForHistory(draft, meta, datePresetKey),
+    }));
     setRunToken((current) => current + 1);
     setHasGenerated(true);
     setConstructorOpen(false);
-  }, [draft, meta]);
+  }, [datePresetKey, draft, meta, userKey]);
 
   const exportToExcel = useCallback(() => {
     const data = query.data;
@@ -496,6 +582,7 @@ export default function useWarehouseStatement(meta: WarehouseStatementMetaRespon
     setExpenseKinds,
     setPriceType,
     setHideZeroQty,
+    setHideInactive,
     setColumnHeaderStyle,
     setPinTotals,
     setExclusions,
@@ -507,7 +594,15 @@ export default function useWarehouseStatement(meta: WarehouseStatementMetaRespon
     dismissActionUndo,
     generate,
     exportToExcel,
+    activePresetId,
+    setActivePresetId,
+    applySpec,
+    currentSpec,
+    history,
+    clearHistory,
     result,
+    /** Період останнього «Сформувати» (таблиця показує саме його). */
+    submittedPeriod: submittedRequest?.period ?? null,
     loading: query.isFetching,
     error: query.error instanceof Error ? query.error.message : null,
   };

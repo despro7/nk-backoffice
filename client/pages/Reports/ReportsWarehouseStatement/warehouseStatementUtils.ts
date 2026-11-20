@@ -20,6 +20,8 @@ import {
   type WarehouseStatementMetaResponse,
   type WarehouseStatementMetricMeta,
   type WarehouseStatementPeriod,
+  type WarehouseStatementPresetSpec,
+  type WarehouseStatementPresetVisibility,
   type WarehouseStatementQueryRequest,
   type WarehouseStatementQueryResponse,
   type WarehouseStatementRow,
@@ -27,7 +29,11 @@ import {
 import { formatCalendarDateValue } from '../shared/ReportsSharedUtils';
 import { createStandardDatePresets } from '@/lib/dateReportingUtils';
 
-export const WAREHOUSE_STATEMENT_PRESET_STORAGE_KEY = 'nk.warehouseStatement.constructorPreset.v4';
+/** Застарілий спільний ключ (до розділення по користувачах). */
+export const WAREHOUSE_STATEMENT_LEGACY_PRESET_STORAGE_KEY = 'nk.warehouseStatement.constructorPreset.v4';
+const DRAFT_STORAGE_PREFIX = 'nk.warehouseStatement.draft.v5';
+const HISTORY_STORAGE_PREFIX = 'nk.warehouseStatement.history.v1';
+export const WAREHOUSE_STATEMENT_HISTORY_LIMIT = 10;
 export const WAREHOUSE_STATEMENT_DEFAULT_PERIOD_PRESET = 'lastMonth';
 export const WAREHOUSE_STATEMENT_AS_OF_PRESETS = new Set(['today', 'yesterday']);
 
@@ -104,24 +110,171 @@ export function matchDatePresetKey(range: DateRange | null): string | null {
   return 'custom';
 }
 
-export function loadConstructorPreset(): WarehouseStatementConstructorPreset | null {
+/** Чернетка конструктора в localStorage: окремо для кожного користувача. */
+export interface WarehouseStatementDraftEnvelope {
+  preset: WarehouseStatementConstructorPreset;
+  /** Збережений пресет, з якого походить чернетка. */
+  activePresetId?: number | null;
+}
+
+/** Знімок «Сформувати» для швидкого повтору. */
+export interface WarehouseStatementHistoryEntry {
+  at: string;
+  spec: WarehouseStatementPresetSpec;
+  summary: string;
+}
+
+function userStorageKey(prefix: string, userId: number | string): string {
+  return `${prefix}:${userId}`;
+}
+
+function readJson<T>(key: string): T | null {
   try {
-    const raw = window.localStorage.getItem(WAREHOUSE_STATEMENT_PRESET_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    return JSON.parse(raw) as WarehouseStatementConstructorPreset;
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
   } catch {
     return null;
   }
 }
 
-export function saveConstructorPreset(preset: WarehouseStatementConstructorPreset): void {
+function writeJson(key: string, value: unknown): void {
   try {
-    window.localStorage.setItem(WAREHOUSE_STATEMENT_PRESET_STORAGE_KEY, JSON.stringify(preset));
+    window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // quota / private mode — ігноруємо
+    // quota / private mode: ігноруємо
   }
+}
+
+/**
+ * Чернетка користувача. Якщо її ще немає, один раз забирає старий спільний ключ v4.
+ */
+export function loadDraftEnvelope(userId: number | string): WarehouseStatementDraftEnvelope | null {
+  const own = readJson<WarehouseStatementDraftEnvelope>(userStorageKey(DRAFT_STORAGE_PREFIX, userId));
+  if (own && own.preset && typeof own.preset === 'object') {
+    return own;
+  }
+  const legacy = readJson<WarehouseStatementConstructorPreset>(WAREHOUSE_STATEMENT_LEGACY_PRESET_STORAGE_KEY);
+  try {
+    window.localStorage.removeItem(WAREHOUSE_STATEMENT_LEGACY_PRESET_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+  return legacy && typeof legacy === 'object' ? { preset: legacy, activePresetId: null } : null;
+}
+
+export function saveDraftEnvelope(userId: number | string, envelope: WarehouseStatementDraftEnvelope): void {
+  writeJson(userStorageKey(DRAFT_STORAGE_PREFIX, userId), envelope);
+}
+
+export function loadHistory(userId: number | string): WarehouseStatementHistoryEntry[] {
+  const list = readJson<WarehouseStatementHistoryEntry[]>(userStorageKey(HISTORY_STORAGE_PREFIX, userId));
+  return Array.isArray(list) ? list.filter((item) => item && item.spec && item.at) : [];
+}
+
+/** Додає знімок на початок, прибирає ідентичний попередній, тримає ліміт. */
+export function pushHistory(
+  userId: number | string,
+  entry: WarehouseStatementHistoryEntry,
+): WarehouseStatementHistoryEntry[] {
+  const signature = presetSpecSignature(entry.spec);
+  const next = [
+    entry,
+    ...loadHistory(userId).filter((item) => presetSpecSignature(item.spec) !== signature),
+  ].slice(0, WAREHOUSE_STATEMENT_HISTORY_LIMIT);
+  writeJson(userStorageKey(HISTORY_STORAGE_PREFIX, userId), next);
+  return next;
+}
+
+export function clearHistory(userId: number | string): void {
+  try {
+    window.localStorage.removeItem(userStorageKey(HISTORY_STORAGE_PREFIX, userId));
+  } catch {
+    // ignore
+  }
+}
+
+/** Ключ стандартного періоду, який можна зберегти відносно (не `custom`). */
+export function relativePeriodKey(datePresetKey: string | null | undefined): string | undefined {
+  if (!datePresetKey || datePresetKey === 'custom') {
+    return undefined;
+  }
+  return createStandardDatePresets().some((item) => item.key === datePresetKey) ? datePresetKey : undefined;
+}
+
+/** Період зі стандартного ключа (`lastMonth`, `today`…) на сьогодні. */
+export function periodFromPresetKey(presetKey: string | null | undefined): WarehouseStatementPeriod | null {
+  if (!presetKey || presetKey === 'custom') {
+    return null;
+  }
+  const found = createStandardDatePresets().find((item) => item.key === presetKey);
+  if (!found) {
+    return null;
+  }
+  const range = found.getRange();
+  const end = range.end as { year: number; month: number; day: number };
+  if (WAREHOUSE_STATEMENT_AS_OF_PRESETS.has(presetKey)) {
+    return { mode: 'asOfDate', asOfDate: calendarValueToYmd(end) };
+  }
+  return {
+    mode: 'dateRange',
+    startDate: calendarValueToYmd(range.start as { year: number; month: number; day: number }),
+    endDate: calendarValueToYmd(end),
+  };
+}
+
+/**
+ * Чернетка → вміст пресету. Стандартний період зберігається ключем;
+ * довільні дати лише в приватному пресеті.
+ */
+export function presetSpecFromDraft(
+  draft: WarehouseStatementConstructorPreset,
+  datePresetKey: string | null,
+  visibility: WarehouseStatementPresetVisibility,
+): WarehouseStatementPresetSpec {
+  const { period, ...rest } = draft;
+  const periodPresetKey = relativePeriodKey(datePresetKey);
+  if (periodPresetKey) {
+    return { ...rest, periodPresetKey };
+  }
+  return visibility === 'private' ? { ...rest, period } : { ...rest };
+}
+
+/** Вміст пресету → чернетка. Без періоду в пресеті лишається поточний. */
+export function draftFromPresetSpec(
+  spec: WarehouseStatementPresetSpec,
+  currentPeriod: WarehouseStatementPeriod,
+  meta: WarehouseStatementMetaResponse,
+): WarehouseStatementConstructorPreset {
+  const { periodPresetKey, period, ...rest } = spec;
+  const nextPeriod = periodFromPresetKey(periodPresetKey) ?? period ?? currentPeriod;
+  return sanitizePreset({ ...rest, period: nextPeriod }, meta);
+}
+
+/**
+ * Стабільний підпис для порівняння «змінено / ні».
+ * Порядок ключів фіксований; підписи виключень і порядок фільтрів не впливають.
+ */
+export function presetSpecSignature(spec: WarehouseStatementPresetSpec): string {
+  const sortList = (list: string[] | undefined) => [...(list ?? [])].sort();
+  const filters = Object.keys(spec.dimensionFilters ?? {})
+    .sort()
+    .filter((key) => (spec.dimensionFilters?.[key]?.length ?? 0) > 0)
+    .map((key) => [key, sortList(spec.dimensionFilters?.[key])]);
+  return JSON.stringify([
+    spec.periodPresetKey ?? null,
+    spec.periodPresetKey ? null : (spec.period ?? null),
+    filters,
+    sortList(spec.groupIds),
+    (spec.exclusions ?? []).map((item) => `${item.dimensionId}:${item.valueId}`).sort(),
+    sortList(spec.expenseKinds),
+    spec.priceType ?? null,
+    spec.grouping,
+    spec.columns,
+    spec.hideZeroQty ?? true,
+    spec.hideInactive ?? true,
+    spec.columnHeaderStyle ?? 'short',
+    spec.pinTotals ?? true,
+  ]);
 }
 
 export function sanitizeIdList(ids: string[] | undefined, allowed: Set<string>, fallback: string[]): string[] {
@@ -186,6 +339,7 @@ export function sanitizePreset(
     grouping,
     columns,
     hideZeroQty: preset?.hideZeroQty ?? true,
+    hideInactive: preset?.hideInactive ?? true,
     columnHeaderStyle: sanitizeColumnHeaderStyle(preset?.columnHeaderStyle),
     pinTotals: preset?.pinTotals ?? true,
   };
@@ -197,6 +351,7 @@ export function buildQueryRequest(preset: WarehouseStatementConstructorPreset): 
     grouping: preset.grouping,
     columns: preset.columns,
     hideZeroQty: preset.hideZeroQty ?? true,
+    hideInactive: preset.hideInactive ?? true,
   };
 
   if (preset.dimensionFilters && Object.keys(preset.dimensionFilters).length > 0) {
@@ -669,21 +824,9 @@ export function joinHashIds(ids: string[] | undefined): string | undefined {
 }
 
 export function periodFromHash(params: URLSearchParams): WarehouseStatementPeriod | null {
-  const presetKey = params.get('period');
-  if (presetKey && presetKey !== 'custom') {
-    const found = createStandardDatePresets().find((item) => item.key === presetKey);
-    if (found) {
-      const range = found.getRange();
-      const end = range.end as { year: number; month: number; day: number };
-      if (WAREHOUSE_STATEMENT_AS_OF_PRESETS.has(presetKey)) {
-        return { mode: 'asOfDate', asOfDate: calendarValueToYmd(end) };
-      }
-      return {
-        mode: 'dateRange',
-        startDate: calendarValueToYmd(range.start as { year: number; month: number; day: number }),
-        endDate: calendarValueToYmd(end),
-      };
-    }
+  const fromKey = periodFromPresetKey(params.get('period'));
+  if (fromKey) {
+    return fromKey;
   }
   const asOf = params.get('asOf');
   if (params.get('mode') === 'asOf' && asOf) {
@@ -734,6 +877,7 @@ export function buildWarehouseStatementHashValues(
     ek: joinHashIds(preset.expenseKinds),
     pt: preset.priceType,
     z: preset.hideZeroQty === false ? 0 : undefined,
+    ia: preset.hideInactive === false ? 0 : undefined,
   };
 }
 
@@ -772,6 +916,7 @@ export function applyWarehouseStatementHash(
   const hashedPeriod = periodFromHash(params);
   const priceType = params.get('pt');
   const zeros = params.get('z');
+  const inactive = params.get('ia');
 
   return {
     ...preset,
@@ -782,5 +927,6 @@ export function applyWarehouseStatementHash(
     expenseKinds: sanitizeExpenseKinds(splitHashIds(params.get('ek')) as WarehouseStatementExpenseKind[]),
     priceType: priceType && meta.priceTypes.some((item) => item.id === priceType) ? priceType : undefined,
     hideZeroQty: zeros === '0' ? false : true,
+    hideInactive: inactive === '0' ? false : true,
   };
 }
