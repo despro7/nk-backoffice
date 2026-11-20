@@ -26,7 +26,6 @@ const DesignSystem = lazyPage(() => import('./pages/DesignSystem'));
 const OrderView = lazyPage(() => import('./pages/OrderView'));
 const SettingsTestAuth = lazyPage(() => import('./pages/SettingsTestAuth'));
 const SettingsProfile = lazyPage(() => import('./pages/SettingsProfile'));
-const SettingsProductSets = lazyPage(() => import('./pages/SettingsProductSets'));
 const ProductsPage = lazyPage(() => import('./pages/Products'));
 const ProductsAuditPage = lazyPage(() => import('./pages/Products/ProductsAuditPage'));
 const SettingsOrderAssembly = lazyPage(() => import('./pages/SettingsOrderAssembly'));
@@ -856,21 +855,6 @@ export const appRoutes: AppRoute[] = [
     inNav: false,
     order: 8,
     permission: { name: 'productsAudit', label: 'Журнал змін каталогу' },
-  },
-  {
-    path: '/product-sets',
-    component: SettingsProductSets,
-    title: 'Товари (кеш / експорт)',
-    pageTitle: 'Товари (кеш) | NK Backoffice',
-    navLabel: 'Товари і комплекти',
-    icon: <DynamicIcon name="shopping-bag" size={20} className="max-w-full max-h-full" />,
-    inNav: false,
-    // parent: 'settings',
-    order: 9,
-    permission: {
-      name: 'productSets',
-      label: 'Товари (кеш / експорт) — застарілий',
-    },
   },
   {
     path: '/settings/admin',

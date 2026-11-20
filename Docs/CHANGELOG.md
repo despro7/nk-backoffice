@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-11-20 – Видалено застарілу сторінку «Товари (кеш / експорт)» і legacy-роути синхронізації
+
+**Files:** `client/pages/SettingsProductSets.tsx` (видалено), `client/routes.config.tsx`, `server/routes/products.ts`, `server/modules/Products/ProductsCatalogService.ts`, `server/services/dilovod/DilovodService.ts`
+
+- **Сторінка `/product-sets`** (`SettingsProductSets`) видалена разом із маршрутом. Її функції покриває `/products` (каталог 2.0).
+- **Роути `POST /api/products/sync`, `/sync/cancel`, `/sync-manual`** видалено: єдиним клієнтом була ця сторінка. Разом з ними прибрано `partitionCatalogSkusByArchive` і статичні `registerSyncAbortController` / `cancelCurrentSync` у `DilovodService`.
+- **Лишено навмисно:** `/api/products/sync-stock` (використовує `useWarehouseMovement`) і `/sync-stock-chain` (використовує Products): це жива синхронізація залишків, нової заміни в коді немає. Також `/sync-and-export` і `?sync=true` у `/stock/balance` (без клієнта в репозиторії).
+- Право `page.productSets` у `shared/constants/permissions.ts` не чіпали (записи ролей у БД).
+
+**Документація:** `Docs/plans/legacy-products-removal.md` (фаза 4).
+
+---
+
 ## 2026-11-20 – Сервер: прибрано cron синхронізації `products` і goods-cache
 
 **Files:** `server/services/cronService.ts`, `server/routes/dilovod.ts`, `server/index.ts`, `server/routes/goods-cache.ts` (видалено), `server/services/dilovod/DilovodGoodsCacheManager.ts` (видалено), `server/services/dilovod/DilovodService.goods.ts` (видалено), `server/services/dilovod/DilovodService.ts`, `server/services/dilovod/DilovodCacheService.ts`, `server/modules/Products/ProductsController.ts`

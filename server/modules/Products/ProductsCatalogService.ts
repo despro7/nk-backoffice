@@ -668,29 +668,6 @@ export class ProductsCatalogService {
     );
   }
 
-  /**
-   * TEMP: архівні SKU лише isOutdated у `products`; решта йде в Dilovod sync-manual.
-   */
-  async partitionCatalogSkusByArchive(skus: string[]): Promise<{
-    activeSkus: string[];
-    archivedSkus: string[];
-  }> {
-    const unique = [...new Set(skus.map((s) => s.trim()).filter(Boolean))];
-    if (unique.length === 0) return { activeSkus: [], archivedSkus: [] };
-
-    const rows = await prisma.catalogGood.findMany({
-      where: { isGroup: false, sku: { in: unique } },
-      select: { sku: true, parentId: true },
-    });
-    const split = await this.splitSkusByArchiveParent(rows);
-    const known = new Set([...split.activeSkus, ...split.archivedSkus]);
-    const unknown = unique.filter((sku) => !known.has(sku));
-    return {
-      activeSkus: [...split.activeSkus, ...unknown],
-      archivedSkus: split.archivedSkus,
-    };
-  }
-
   private async splitSkusByArchiveParent(
     rows: Array<{ sku: string | null; parentId: string | null }>
   ): Promise<{ activeSkus: string[]; archivedSkus: string[] }> {

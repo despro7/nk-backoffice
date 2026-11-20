@@ -139,6 +139,8 @@ Dilovod (SoT) → catalog_* (локальне дзеркало) → catalogOpsLo
 
 **Критерій:** одна сторінка «Товари» (`/products`), без legacy cache UI.
 
+**Статус (2026-11-20):** сторінку `SettingsProductSets` і роути `/api/products/sync`, `/sync/cancel`, `/sync-manual` видалено. Залишки (`/sync-stock`, `/sync-stock-chain`) лишаються: це не legacy `products`, а жива синхронізація залишків. Далі: фаза 5, потім `DROP TABLE products`.
+
 ---
 
 ### Фаза 5 — Cleanup backend (2–3 дні)

@@ -33,29 +33,8 @@ import {
 } from '../../modules/Products/ingredientStockSync.js';
 
 export class DilovodService {
-  // Глобальний AbortController для поточної синхронізації товарів
-  static currentSyncAbortController: AbortController | null = null;
   /** Один раз обходимо старий кеш складів без виробничого цеху. */
   private static storagesLegacyCacheBusted = false;
-
-  /**
-   * Реєструє зовнішній AbortController як поточний для синхронізації.
-   * Викликати до запуску syncProductsWithDilovod, щоб cancelCurrentSync() міг його скасувати.
-   */
-  static registerSyncAbortController(controller: AbortController): void {
-    DilovodService.currentSyncAbortController = controller;
-  }
-
-  // Статичний метод для скасування поточної синхронізації
-  static cancelCurrentSync(): boolean {
-    if (DilovodService.currentSyncAbortController) {
-      console.log('🔻 Скасовуємо поточну синхронізацію через API запит');
-      DilovodService.currentSyncAbortController.abort();
-      DilovodService.currentSyncAbortController = null;
-      return true;
-    }
-    return false;
-  }
 
   // Публичный метод для получения конфигурації API (для використання в контролерах)
   getDilovodConfig() {
@@ -538,9 +517,6 @@ export class DilovodService {
         syncedSets: 0,
         errors: [errorMessage]
       };
-    } finally {
-      // Очищаємо глобальний AbortController після завершення синхронізації
-      DilovodService.currentSyncAbortController = null;
     }
   }
 
