@@ -145,12 +145,66 @@ function headerBorderClass(groupEnd: boolean, last: boolean, dark = false): stri
   return 'border-b border-r border-r-default-200';
 }
 
-function metricColMinWidth(column: HierarchicalTableColumn): number {
-  if (column.format === 'percent') return 72;
-  const headerLen = (column.label?.length ?? 0) + (column.badge ? 4 : 0);
-  const byHeader = Math.min(156, 20 + headerLen * 8);
-  const byFormat = column.format === 'money' ? 120 : 88;
-  return Math.max(byFormat, byHeader);
+/** Горизонтальні відступи комірки (`px-3`) + рамка + запас. */
+const CELL_CHROME_PX = 30;
+const PERCENT_COL_WIDTH = 72;
+
+let measureContext: CanvasRenderingContext2D | null | undefined;
+
+/** Ширина тексту в px (canvas); без canvas – оцінка по кількості символів. */
+function measureTextWidth(text: string, font: string): number {
+  if (measureContext === undefined) {
+    measureContext = typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null;
+  }
+  if (!measureContext) {
+    return text.length * 8.2;
+  }
+  measureContext.font = font;
+  return measureContext.measureText(text).width;
+}
+
+/**
+ * Ширина колонки за найдовшим значенням (усі рядки дерева, жирний шрифт «Разом»)
+ * і заголовком. `table-fixed` роздає вільне місце пропорційно цим ширинам, тож
+ * колонки з довшими числами отримують більше місця, а не навпаки.
+ */
+function computeColumnWidths(
+  columns: HierarchicalTableColumn[],
+  rows: HierarchicalTableRowView[],
+): Map<string, number> {
+  const family =
+    typeof document !== 'undefined' ? getComputedStyle(document.body).fontFamily || 'sans-serif' : 'sans-serif';
+  const valueFont = `600 14px ${family}`;
+  const headerFont = `500 13px ${family}`;
+  const longest = new Map<string, number>();
+
+  const visit = (items: HierarchicalTableRowView[]) => {
+    for (const row of items) {
+      for (const column of columns) {
+        if (column.format === 'percent' || column.format === 'text') continue;
+        const text = formatConstructorNumber(row.values[column.id], column.format === 'money' ? 'money' : 'qty');
+        const width = measureTextWidth(text, valueFont);
+        if (width > (longest.get(column.id) ?? 0)) longest.set(column.id, width);
+      }
+      if (row.children?.length) visit(row.children);
+    }
+  };
+  visit(rows);
+
+  const widths = new Map<string, number>();
+  for (const column of columns) {
+    if (column.format === 'percent') {
+      widths.set(column.id, PERCENT_COL_WIDTH);
+      continue;
+    }
+    const header = Math.max(
+      measureTextWidth(column.label ?? '', headerFont),
+      column.badge ? measureTextWidth(column.badge, `500 10px ${family}`) + 12 : 0,
+    ) + 16; // іконка сортування
+    const content = Math.max(longest.get(column.id) ?? 0, measureTextWidth('0,00', valueFont));
+    widths.set(column.id, Math.ceil(Math.max(header, content) + CELL_CHROME_PX));
+  }
+  return widths;
 }
 
 function NameColumnScrollShadow({
@@ -377,7 +431,7 @@ function NameCell({
       {canPin ? (
         <Tooltip
           content={pinTotals ? 'Відкріпити рядок «Разом»' : 'Закріпити рядок «Разом»'}
-          placement="right-end"
+          placement="top"
           delay={300}
           showArrow={true}
           classNames={{
@@ -389,7 +443,7 @@ function NameCell({
             type="button"
             className={`inline-flex shrink-0 items-center justify-center w-6 h-6 rounded-md bg-transparent transition-colors duration-200 ${
               pinTotals
-                ? 'text-primary hover:bg-primary/10'
+                ? 'text-default-500 hover:text-primary hover:bg-primary/10'
                 : 'text-default-400 hover:text-primary hover:bg-primary/10'
             }`}
             aria-pressed={pinTotals}
@@ -510,6 +564,8 @@ export default function HierarchicalReportTable({
     };
   }, [activeSort, pinTotals, rows]);
 
+  const columnWidths = useMemo(() => computeColumnWidths(columns, rows), [columns, rows]);
+
   const anyExpanded = expandableIds.some((id) => expanded.has(id));
   const toggleAll = useCallback(() => {
     setExpanded(anyExpanded ? new Set() : new Set(expandableIds));
@@ -603,7 +659,7 @@ export default function HierarchicalReportTable({
   const nameBg = (isTotal: boolean) => (isTotal ? 'bg-default-50' : 'bg-white');
   const hasData = rows.length > 0;
   const tableMinWidth =
-    displayNameWidth + columns.reduce((sum, column) => sum + metricColMinWidth(column), 0);
+    displayNameWidth + columns.reduce((sum, column) => sum + (columnWidths.get(column.id) ?? 88), 0);
 
   useEffect(() => {
     const header = headerScrollRef.current;
@@ -625,14 +681,15 @@ export default function HierarchicalReportTable({
     <colgroup>
       <col style={nameColStyle} />
       {columns.map((column) => {
-        const width = metricColMinWidth(column);
+        const width = columnWidths.get(column.id) ?? 88;
         return <col key={column.id} style={{ width, minWidth: width }} />;
       })}
     </colgroup>
   );
 
   const renderNameHeader = () => (
-    <div className="flex items-center justify-between gap-1 min-w-0">
+    // `pr-1` як у NameCell: кнопка «згорнути всі» стоїть рівно над pin у рядку «Разом».
+    <div className="flex items-center justify-between gap-1 min-w-0 pr-1">
       <span className="truncate">Найменування</span>
       {expandableIds.length > 0 ? (
         <Tooltip
