@@ -16,7 +16,6 @@ import { catalogOpsLookup } from '../../modules/Products/CatalogOpsLookup.js';
 import { isKitAccPolicy } from '../../modules/Products/ProductsTypes.js';
 import { syncSettingsService } from '../syncSettingsService.js';
 import { dilovodCacheService, type CacheType } from './DilovodCacheService.js';
-import { DilovodGoodsCacheManager } from './DilovodGoodsCacheManager.js';
 import { compactMetaLogData, DILOVOD_PRODUCTION_WORKSHOP_STORAGE_ID, isActiveDilovodStorage, mapBarCodesByObjectId, resolveCatalogStockFirmId } from './DilovodUtils.js';
 import { pluralize } from '../../lib/utils.js';
 import { pickHumanBatchLabel } from '../../../shared/utils/dilovodBatchId.js';
@@ -58,13 +57,6 @@ export class DilovodService {
     return false;
   }
 
-  // Goods cache manager
-  public goodsCacheManager: DilovodGoodsCacheManager;
-
-  async getGoodsCacheStatus() {
-    return await this.goodsCacheManager.getStatus();
-  }
-
   // Публичный метод для получения конфигурації API (для використання в контролерах)
   getDilovodConfig() {
     return this.apiClient.getConfig();
@@ -80,9 +72,6 @@ export class DilovodService {
     return Number(balance.storages?.[storageId] ?? 0);
   }
 
-  async refreshGoodsCache(skuList?: string[]) {
-    return await this.goodsCacheManager.refresh(skuList);
-  }
   /**
    * Експортувати замовлення в Dilovod (створити документ saleOrder)
    */
@@ -290,7 +279,6 @@ export class DilovodService {
     this.cacheManager = new DilovodCacheManager();
     this.dataProcessor = new DilovodDataProcessor(this.apiClient);
     this.syncManager = new DilovodSyncManager();
-    this.goodsCacheManager = new DilovodGoodsCacheManager();
   }
 
   /**

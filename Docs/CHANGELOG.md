@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-11-20 – Сервер: прибрано cron синхронізації `products` і goods-cache
+
+**Files:** `server/services/cronService.ts`, `server/routes/dilovod.ts`, `server/index.ts`, `server/routes/goods-cache.ts` (видалено), `server/services/dilovod/DilovodGoodsCacheManager.ts` (видалено), `server/services/dilovod/DilovodService.goods.ts` (видалено), `server/services/dilovod/DilovodService.ts`, `server/services/dilovod/DilovodCacheService.ts`, `server/modules/Products/ProductsController.ts`
+
+- **Cron «sync products»** (`startProductsSync` / `stopProductsSync` / `restartProductsSync`) видалено: після припинення запису в `products` він лише скидав ops-знімок. Знімок і так скидається при змінах каталогу та має TTL 120 с. Зі `cronService.getStatus()` прибрано `isProductsSyncRunning` / `hasProductsSyncJob`.
+- **`/api/goods-cache`** (`status`, `refresh`) і `DilovodGoodsCacheManager` видалено; `getAllCacheStatus` більше не віддає `goods`.
+- **`POST /api/catalog/refresh`** (гілка) більше не повертає поля `legacy*`.
+- **Лишилось (фаза 4):** `/api/products/sync`, `/sync/cancel`, `/sync-manual`, `/sync-stock`, `/sync-and-export` потрібні застарілій сторінці `SettingsProductSets`; прибрати разом з нею. Окремо: `DROP TABLE products` і `model Product` у Prisma (незворотно, лише після підтвердження).
+
+**Документація:** `Docs/plans/legacy-products-removal.md`, `Docs/features/products-catalog-2.0.md`.
+
+---
+
 ## 2026-11-20 – Клієнт: прибрано Legacy-залишки з UI каталогу та комплектації
 
 **Files:** `client/pages/Products/components/CatalogSyncReportModal.tsx`, `client/pages/Products/index.tsx`, `client/pages/Products/useProductsCatalog.ts`, `client/pages/OrderView.tsx`, `client/components/DilovodCacheManager.tsx`

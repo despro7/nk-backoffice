@@ -30,7 +30,6 @@ import { roleService } from './services/RoleService.js';
 import shippingRoutes from './routes/shipping.js';
 import shippingProvidersRoutes from './routes/shipping-providers.js';
 import qzTrayRoutes from './routes/qz-tray.js';
-import goodsCacheRouter from './routes/goods-cache.js';
 import { dilovodRouter } from './routes/dilovod.js';
 import cashInRouter from './routes/dilovod-cash-in.js';
 import bankStatementRouter from './routes/dilovod-bank-statement.js';
@@ -262,12 +261,6 @@ export function createServer() {
 
   // QZ Tray routes
   app.use("/api/qz-tray", qzTrayRoutes);
-
-  // Goods cache routes
-  app.use('/api/goods-cache', goodsCacheRouter);
-
-  // Goods cache routes
-  app.use('/api/goods-cache', goodsCacheRouter);
 
   // Dilovod routes
   app.use("/api/dilovod", dilovodRouter);

@@ -276,34 +276,14 @@ export class DilovodCacheService {
   /**
    * Отримати статус всіх кешів
    */
-  async getAllCacheStatus(): Promise<Record<CacheType | 'goods', CacheMetadata>> {
+  async getAllCacheStatus(): Promise<Record<CacheType, CacheMetadata>> {
     const statuses: Record<string, CacheMetadata> = {};
 
     for (const type of CACHE_TYPES) {
       statuses[type] = await this.getCacheMetadata(type);
     }
 
-    // Додаємо статус довідника товарів на основі products.dilovodGood
-    try {
-      const { DilovodService } = await import('./DilovodService.js');
-      const dilovodService = new DilovodService();
-      const goodsStatus = await dilovodService.getGoodsCacheStatus();
-      
-      statuses['goods'] = {
-        lastUpdate: goodsStatus.lastSync,
-        recordsCount: goodsStatus.count,
-        isValid: goodsStatus.lastSync ? (new Date().getTime() - new Date(goodsStatus.lastSync).getTime()) / (1000 * 60 * 60) < this.CACHE_TTL_HOURS : false
-      };
-    } catch (error) {
-      console.log('❌ Помилка отримання статусу довідника товарів:', error);
-      statuses['goods'] = {
-        lastUpdate: null,
-        recordsCount: 0,
-        isValid: false
-      };
-    }
-
-    return statuses as Record<CacheType | 'goods', CacheMetadata>;
+    return statuses as Record<CacheType, CacheMetadata>;
   }
 }
 

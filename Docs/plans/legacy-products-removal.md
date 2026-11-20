@@ -116,6 +116,8 @@ Dilovod (SoT) → catalog_* (локальне дзеркало) → catalogOpsLo
 
 ---
 
+**Статус сервера (PR C, 2026-11-20):** видалено cron `startProductsSync`, `/api/goods-cache`, `DilovodGoodsCacheManager`, поля `legacy*` у відповіді `/api/catalog/refresh`. Лишились `/api/products/sync*` і `sync-manual` (їх викликає `SettingsProductSets`, фаза 4), `listSkusForLegacySync` і `partitionCatalogSkusByArchive` (потрібні цим роутам). Далі: фаза 4, потім `DROP TABLE products`.
+
 ---
 
 ### Фаза 4 — Консолідація UI (3–5 днів)

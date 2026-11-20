@@ -211,7 +211,7 @@ Dilovod повертає `description: { uk, ru }`. Раніше `String(obj)` �
 
 - **Legacy Update** (`POST /api/products/sync-manual`): кнопки прибрано з UI 2026-11-16; з 2026-11-20 endpoint лише скидає ops-знімок (`catalogOpsLookup.refreshOpsSnapshot`), без запису в `products`. Архівні SKU відкидаються.
 - **TEMP після «Синхронізувати гілку»**: прибрано 2026-11-20. Відповідь `POST /api/catalog/refresh` з `folderId` ще містить `legacySkuCount` / `legacyOutdatedCount` / `legacySync` / `legacyError` (нулі / `null`) для сумісності клієнта.
-- `syncProductsWithDilovod` (cron «sync products», `/api/products/sync`, `/sync-and-export`, `/stock/balance?sync=true`) і goods-cache refresh теж лише скидають знімок.
+- `syncProductsWithDilovod` (`/api/products/sync`, `/sync-and-export`, `/stock/balance?sync=true`) теж лише скидає знімок. Cron «sync products» і `/api/goods-cache` видалено.
 
 «Синхронізувати з Діловодом» по `ids` і «Синхронізувати гілку» оновлюють лише `catalog_*` (гілка: structure-refresh з вибором глибини).
 

@@ -934,11 +934,6 @@ router.post('/refresh', ...authOnly, async (req, res) => {
           orphansResolved: data.orphansResolved,
           capped: data.capped,
           maxDepth: data.maxDepth,
-          // Legacy `products` більше не оновлюється; поля лишені для сумісності клієнта.
-          legacySkuCount: 0,
-          legacyOutdatedCount: 0,
-          legacySync: null,
-          legacyError: null,
         },
       });
       return;

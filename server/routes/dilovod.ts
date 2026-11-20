@@ -400,7 +400,6 @@ router.post('/settings', authenticateToken, dilovodWriteSettings, async (req, re
     // Для зміни лише кольорів типів — без reload API / restart cron
     if (!onlyColorMap) {
       await dilovodService.reloadApiConfig();
-      void cronService.restartProductsSync();
       void cronService.restartStockSync();
       void cronService.restartOrderSync();
     }

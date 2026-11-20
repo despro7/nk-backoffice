@@ -105,7 +105,6 @@ export type LegacyStockChainResult = {
 
 export class CronService {
   private syncJob: cron.ScheduledTask | null = null;
-  private productsSyncJob: cron.ScheduledTask | null = null;
   private stockSyncJob: cron.ScheduledTask | null = null;
   private statusCheckJob: cron.ScheduledTask | null = null;
   private warehouseAutoFinalizeJob: cron.ScheduledTask | null = null;
@@ -118,7 +117,6 @@ export class CronService {
   private chatwootBotTopicsSyncJob: cron.ScheduledTask | null = null;
   private llmUsageLogCleanupJob: cron.ScheduledTask | null = null;
   private isTaskRunning = false;
-  private isProductsSyncRunning = false;
   private isStockSyncRunning = false;
   private isStatusCheckRunning = false;
   private static instance: CronService | null = null;
@@ -246,82 +244,6 @@ export class CronService {
     console.log('🔄 Restarting order sync cron job with updated settings...');
     this.stopOrderSync();
     await this.startOrderSync();
-  }
-
-  // ─── Products Sync Job (тільки syncProductsWithDilovod) ──────────────────
-
-  async startProductsSync(): Promise<void> {
-    if (!isAutomaticSyncEnabled()) {
-      console.log('ℹ️  Products sync cron is disabled in development (NODE_ENV=development).');
-      return;
-    }
-
-    if (this.productsSyncJob) {
-      console.log('⚠️  Products sync cron job already running.');
-      return;
-    }
-
-    let cronExpression: string | null;
-    try {
-      const config = await loadDilovodSettingsFromDB();
-      cronExpression = intervalToCronExpression(config.productsInterval, config.productsHour ?? 6, config.productsMinute ?? 0);
-    } catch (err) {
-      console.error('⚠️  Could not read Dilovod products sync settings, using fallback schedule:', err);
-      cronExpression = '0 6,14,22 * * *';
-    }
-
-    if (cronExpression === null) {
-      console.log('ℹ️  Products sync is disabled (productsInterval = "none sync"). Cron job not started.');
-      return;
-    }
-
-    console.log(`🕐 Products sync schedule: "${cronExpression}"`);
-
-    this.productsSyncJob = cron.schedule(cronExpression, async () => {
-      if (this.isProductsSyncRunning) {
-        console.log('⏳ Previous products sync is still running, skipping this scheduled run.');
-        return;
-      }
-
-      this.isProductsSyncRunning = true;
-      const startTime = Date.now();
-      console.log('🕐 [products-sync] Syncing products from Dilovod...');
-      try {
-        const result = await this.dilovodService.syncProductsWithDilovod();
-        const duration = Date.now() - startTime;
-        if (result.success) {
-          console.log(`✅ [products-sync] Done in ${duration}ms: ${result.syncedProducts} products, ${result.syncedSets} sets`);
-        } else {
-          console.warn(`⚠️ [products-sync] Completed with errors in ${duration}ms: ${result.message}`);
-        }
-      } catch (error) {
-        console.error('❌ [products-sync] Failed:', error);
-      } finally {
-        this.isProductsSyncRunning = false;
-      }
-    }, { timezone: "Europe/Kyiv" });
-
-    this.productsSyncJob.start();
-    cronJobsRegistry.add(this.productsSyncJob);
-    console.log(`✅ Products sync cron job started (${cronExpression}, Kyiv time).`);
-  }
-
-  stopProductsSync(): void {
-    if (this.productsSyncJob) {
-      this.productsSyncJob.stop();
-      if (typeof (this.productsSyncJob as any).destroy === 'function') {
-        (this.productsSyncJob as any).destroy();
-      }
-      cronJobsRegistry.delete(this.productsSyncJob);
-      this.productsSyncJob = null;
-      console.log('🛑 Products sync cron job stopped.');
-    }
-  }
-
-  async restartProductsSync(): Promise<void> {
-    console.log('🔄 Restarting products sync cron job with updated settings...');
-    this.stopProductsSync();
-    await this.startProductsSync();
   }
 
   // ─── Stock Sync Job (залишки → SD export → WP sync) ──────────────────────
@@ -626,8 +548,6 @@ export class CronService {
   getStatus(): {
     isRunning: boolean;
     hasSyncJob: boolean;
-    isProductsSyncRunning: boolean;
-    hasProductsSyncJob: boolean;
     isStockSyncRunning: boolean;
     hasStockSyncJob: boolean;
     isStatusCheckRunning: boolean;
@@ -639,8 +559,6 @@ export class CronService {
     return {
       isRunning: this.isTaskRunning,
       hasSyncJob: isCronJobActive,
-      isProductsSyncRunning: this.isProductsSyncRunning,
-      hasProductsSyncJob: this.productsSyncJob !== null,
       isStockSyncRunning: this.isStockSyncRunning,
       hasStockSyncJob: this.stockSyncJob !== null,
       isStatusCheckRunning: this.isStatusCheckRunning,
@@ -658,7 +576,6 @@ export class CronService {
     }
 
     void this.startOrderSync();
-    void this.startProductsSync();
     void this.startStockSync();
     this.startOrderStatusCheck();
     this.startWarehouseAutoFinalize();
@@ -671,7 +588,6 @@ export class CronService {
 
   stopAll(): void {
     this.stopOrderSync();
-    this.stopProductsSync();
     this.stopStockSync();
     this.stopOrderStatusCheck();
     this.stopWarehouseAutoFinalize();
