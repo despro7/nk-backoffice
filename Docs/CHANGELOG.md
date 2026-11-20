@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-11-20 – Комплектація: ops-знімок товарів з каталогу замість legacy `products`
+
+**Files:** `server/modules/Products/CatalogOpsCache.ts` (+ spec), `server/modules/Products/CatalogOpsLookup.ts`, `server/services/expandService.ts`, `server/routes/products.ts`
+
+- **`CatalogOpsCache`** замінив `ProductOpsCache` у `POST /api/expand/flatten` і `GET /api/products/:sku`: той самий API і TTL 120 с, але знімок будується з `catalog_*` (`listAllLeavesForOps`: усі листові товари з SKU, включно з архівом), без читання таблиці `products`.
+- Значення: актуальні з каталогу назва, вага, категорія, порядок, порції (раніше частина бралась із застарілої копії в `products`). Товари без SKU, як і раніше, добирає `catalogOpsLookup.getBySkus`.
+- Інвалідація (`applyStockBalances`, `deductSmallStock`, `projectToProductsCache`) переведена на новий кеш; `invalidate()` під час завантаження не кешує застарілий знімок.
+- Свідомо: 15 архівних наборів, склад яких був лише в `products`, більше не розгортаються у страви.
+- `ProductOpsCache.ts` лишився без використання до видалення.
+- Тести: індекс, TTL, дедуплікація завантаження, інвалідація.
+
+**Документація:** `Docs/features/expand-flatten-calc.md`, `Docs/features/products-catalog-2.0.md`, `Docs/features/order-assembly/dynamic-monolithic-order-payload.md`, `Docs/plans/legacy-products-removal.md` (фаза 1).
+
+---
+
 ## 2026-11-20 – Відомість по складу: пресети, звірка з Dilovod, графік історії товару
 
 **Files:** `client/pages/Reports/ReportsWarehouseStatement/**` (нові `components/PresetBar.tsx`, `components/ProductHistoryDrawer.tsx`, `useWarehouseStatementPresets.ts`, `warehouseStatementUtils.spec.ts`), `client/pages/Reports/shared/constructor/HierarchicalReportTable.tsx`, `client/pages/Reports/shared/constructor/ReportConstructorPanel.tsx`, `client/pages/Reports/shared/filters/ReportMultiSelectFilter.tsx`, `client/pages/Reports/shared/filters/ReportSingleSelectFilter.tsx`, `server/modules/Reports/warehouseStatementPresets.ts` (+ spec), `server/services/dilovod/WarehouseStatementHistoryService.ts` (+ spec), `server/services/dilovod/WarehouseStatementService.ts`, `server/services/dilovod/ProductMovementsService.ts`, `server/routes/reports-warehouse.ts`, `shared/types/warehouseStatement.ts`

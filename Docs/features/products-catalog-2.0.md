@@ -15,7 +15,7 @@
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | Джерело правди (SoT) | Dilovod (`catalogs.goods` + регістри цін/ШК + `tpGoods`)                                                                        |
 | Локальне дзеркало    | Таблиці `catalog_*` (швидке дерево / UI)                                                                                        |
-| Legacy `products`    | Читається Orders / Warehouse / Reports; Products 2.0: **вузький dual-write** ops + явний **Legacy Update** + **TEMP** Legacy після «Синхронізувати гілку» |
+| Legacy `products`    | Комплектація (`expand/flatten`, `GET /api/products/:sku`) вже **не** читає (`CatalogOpsCache`); лишились числовий `id` і мертвий `DilovodSyncManager`; Products 2.0: **вузький dual-write** ops + явний **Legacy Update** + **TEMP** Legacy після «Синхронізувати гілку» |
 | `/product-sets`      | Без змін, співіснує в меню                                                                                                      |
 
 
@@ -92,22 +92,23 @@ server/modules/Products/
   catalogFinishedProductsFolder.ts  # піддерево «Готова продукція» (WC compare gate)
   ProductsTypes.ts            # + isArchiveFolderName, extractUkName
   CatalogOpsLookup.ts         # ops-форма legacy `products` з `catalog_*`
-  ProductOpsCache.ts          # in-memory знімок для комплектації (TTL 2 хв)
+  CatalogOpsCache.ts          # in-memory знімок для комплектації з catalog_* (TTL 2 хв)
+  ProductOpsCache.ts          # legacy-попередник, не використовується (до видалення)
   skuUtils.ts                 # allocateNextSku + race-safe retry
   barcodeUtils.ts             # EAN-13 серія 22… + check digit + allocateNextEan13
 ```
 
 Підключення: `server/routes/catalog.ts` → `server/index.ts` (`/api/catalog`).
 
-### Операційний знімок для комплектації (`ProductOpsCache`)
+### Операційний знімок для комплектації (`CatalogOpsCache`)
 
 Гарячий шлях відкриття замовлення **не** ходить у `catalog_*` по кожному SKU.
 
 | Шар | Роль |
 | --- | --- |
 | `catalog_*` | SoT назв, BOM комплектів (`accPolicy` kit), залишків |
-| `products` | Тонке дзеркало (вага, SKU, dual-write) |
-| `ProductOpsCache` | Знімок у памʼяті на **120 с**: рядки `products` + `stockBalanceByStock` з `catalog_goods` + `set` лише для облікової політики «комплект» |
+| `products` | Тонке дзеркало (dual-write), знімком **не** читається |
+| `CatalogOpsCache` | Знімок у памʼяті на **120 с**: усі листові `catalog_goods` з SKU у ops-формі `toApiShape`; `set` лише для облікової політики «комплект» |
 
 Рецептура звичайного товару (`spec` / BOM страви) **не** є `set` і не розгортається в чек-листі. `POST /api/expand/flatten` і `GET /api/products/:sku` читають знімок. Інвалідація: `applyStockBalances`, `deductSmallStock`, `projectToProductsCache`.
 

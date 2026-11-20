@@ -11,34 +11,34 @@
 ## Потік
 
 1. Клієнт: `POST /api/expand/flatten` з SKU рядків замовлення (`client/lib/orderAssemblyUtils.ts`).
-2. Сервер: `ExpandService.flattenBatch` читає `productOpsCache` (не live-JOIN усіх BOM).
+2. Сервер: `ExpandService.flattenBatch` читає `catalogOpsCache` (не live-JOIN усіх BOM).
 3. Відповідь: `products[sku|dilovodId]` + `calc: { sumPortionsOne, weightKgOne }`.
 4. Клієнт сіє спільний кеш (`client/lib/productLookupCache.ts`) для чек-листа й `GET /api/products/:sku` більше не потрібен на прогрітому шляху.
 
-## `ProductOpsCache` (`server/modules/Products/ProductOpsCache.ts`)
+## `CatalogOpsCache` (`server/modules/Products/CatalogOpsCache.ts`)
 
-TTL **120 с**, один reload на процес (спільний `inflight`).
+TTL **120 с**, один reload на процес (спільний `inflight`). Legacy-таблицю `products` **не** читає.
 
-Завантаження:
+Завантаження: `catalogOpsLookup.listAllLeavesForOps()`, тобто всі листові `catalog_goods` з SKU (включно з архівом і смітником) + ціни, ШК, компоненти комплектів, батьківські папки. Форма значення = `catalogOpsLookup.toApiShape`. Індекс за SKU і Dilovod id (lowercase).
 
-1. Усі рядки `products` (ops-поля: вага, `unitRatio`, barcode, JSON `set` як fallback).
-2. Паралельно:
-   - `catalog_goods.stockBalanceByStock` по `dilovodId` товарів;
-   - комплекти (`accPolicyId = CATALOG_ACC_POLICY_KIT`) з `catalog_good_components`.
+- `set` лише для облікової політики «комплект» (`catalog_good_components`); рецептура non-kit у `set` не потрапляє.
+- Товари без SKU (сировина) у знімок не йдуть: промах добирає `catalogOpsLookup.getBySkus`.
+- Архівні набори без компонентів у каталозі (склад жив лише в `products`) не розгортаються: свідомо прийнято 2026-11-20.
+- `invalidate()` під час завантаження: знімок віддається запиту, але не кешується.
 
-Накладання: залишок і `set` комплектів — з каталогу (актуальні). Рецептура non-kit у `set` не потрапляє.
+Попередник `ProductOpsCache` (рядки `products` + накладання з каталогу) лишився у коді без використання до видалення (`Docs/plans/legacy-products-removal.md`).
 
-Інвалідація (`productOpsCache.invalidate()`):
+Інвалідація (`catalogOpsCache.invalidate()`):
 
 - `CatalogOpsLookup.applyStockBalances`
 - `CatalogOpsLookup.deductSmallStock`
 - `CatalogOpsLookup.projectToProductsCache`
 
-Лог: `ProductOpsCache: products=…, kits=…, keys=…, time=…ms`. Далі `flattenBatch … time=` має бути мілісекунди, поки знімок живий.
+Лог: `CatalogOpsCache: goods=…, keys=…, time=…ms`. Далі `flattenBatch … time=` має бути мілісекунди, поки знімок живий.
 
 ## `GET /api/products/:sku`
 
-Спочатку знімок (`productOpsCache.get`), якщо промах — `catalogOpsLookup.getBySku`. Lookup за SKU **або** Dilovod id.
+Спочатку знімок (`catalogOpsCache.get`), якщо промах, `catalogOpsLookup.getBySku`. Lookup за SKU **або** Dilovod id.
 
 ## Клієнтський кеш
 
@@ -58,4 +58,4 @@ Payload відвантаження: `Docs/features/order-assembly/dynamic-monoli
 
 - Відкрити замовлення з комплектом на залишку → рядок набору + «В наявності», без інгредієнтів страв.
 - Вкладений комплект без залишку → рекурсивне розгортання до страв, не до spec BOM.
-- Лог: перше відкриття після TTL — `ProductOpsCache`; наступні — `flattenBatch time=0…tens ms`.
+- Лог: перше відкриття після TTL: `CatalogOpsCache`; наступні: `flattenBatch time=0…tens ms`.

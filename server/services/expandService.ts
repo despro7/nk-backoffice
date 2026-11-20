@@ -1,6 +1,6 @@
 import { logServer } from '../lib/utils.js';
 import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
-import { productOpsCache, type OpsCachedProduct } from '../modules/Products/ProductOpsCache.js';
+import { catalogOpsCache, type CatalogOpsCachedProduct } from '../modules/Products/CatalogOpsCache.js';
 
 export class ExpandService {
   /**
@@ -20,7 +20,7 @@ export class ExpandService {
     try {
       const initial = Array.from(new Set(skus.map(s => String(s).trim().toLowerCase()))).filter(Boolean);
 
-      const snap = await productOpsCache.getMap();
+      const snap = await catalogOpsCache.getMap();
 
       const toFetch = new Set(initial);
       const fetched = new Set<string>();
@@ -30,7 +30,7 @@ export class ExpandService {
         const batch = Array.from(toFetch).filter(s => !fetched.has(s)).slice(0, CHUNK_SIZE);
         if (batch.length === 0) break;
 
-        const putParsed = (parsed: OpsCachedProduct, requestKey: string) => {
+        const putParsed = (parsed: CatalogOpsCachedProduct, requestKey: string) => {
           const copy = { ...parsed };
           const skuKey = String(copy.sku ?? requestKey).trim().toLowerCase();
           result[skuKey] = copy;
@@ -73,7 +73,7 @@ export class ExpandService {
               fetched.add(sku);
               continue;
             }
-            putParsed(catalogOpsLookup.toApiShape(p) as OpsCachedProduct, sku);
+            putParsed(catalogOpsLookup.toApiShape(p), sku);
           }
         }
 

@@ -6,7 +6,7 @@ import { handleDilovodApiError } from '../services/dilovod/DilovodUtils.js';
 import { salesDriveService } from '../services/salesDriveService.js';
 import { buildExportPayload } from '../services/productExportHelper.js';
 import { catalogOpsLookup } from '../modules/Products/CatalogOpsLookup.js';
-import { productOpsCache } from '../modules/Products/ProductOpsCache.js';
+import { catalogOpsCache } from '../modules/Products/CatalogOpsCache.js';
 import { productsCatalogService } from '../modules/Products/ProductsCatalogService.js';
 import { CATALOG_AUDIT_ACTIONS } from '../../shared/types/catalogAudit.js';
 import { trackCatalogAction } from '../modules/Products/catalogAuditHttp.js';
@@ -347,7 +347,7 @@ router.get('/categories-mapping', authenticateToken, async (req, res) => {
 router.get('/:sku', authenticateToken, async (req, res) => {
   try {
     const { sku } = req.params;
-    const cached = await productOpsCache.get(sku);
+    const cached = await catalogOpsCache.get(sku);
     if (cached) {
       return res.json(cached);
     }

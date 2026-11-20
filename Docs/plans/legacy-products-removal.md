@@ -14,7 +14,7 @@
 | Шар | Що робить |
 |-----|-----------|
 | `projectToProductsCache` | Проекція `catalog_goods → products` (основний dual-write) |
-| `ProductOpsCache` | Читає `prisma.product.findMany()`, збагачує з catalog |
+| ~~`ProductOpsCache`~~ | ✅ 2026-11-20: замінено на `CatalogOpsCache`, файл лишився невикористаним до видалення |
 | `applyStockBalances` / `deductSmallStock` | Dual-write залишків у обидві таблиці |
 | PUT `/api/products/:id/*` | Пише в `catalog_good`, потім `projectGood()` → знову в `products` |
 | `CatalogOpsProduct.id` | Numeric `products.id` для сумісності API |
@@ -71,6 +71,8 @@ Dilovod (SoT) → catalog_* (локальне дзеркало) → catalogOpsLo
 3. Видалити `ProductOpsCache.ts`.
 
 **Критерій:** order assembly і expand працюють без `prisma.product`; perf не гірше ±10%.
+
+**Статус (2026-11-20):** пункти 1–2 виконано. `CatalogOpsCache.reload()` бере `catalogOpsLookup.listAllLeavesForOps()` (усі листові товари з SKU, не лише «Готова продукція»: `products` містив і архів, техн. набори, коробки). Звірка на живих даних: 176 активних SKU через `flattenBatch`, розбіжностей логіки немає; reload приблизно як у старого кешу (0,5–1 с через тунель). Свідомо прийнято: 15 архівних наборів, склад яких був лише в `products`, більше не розгортаються (відкритих замовлень з ними немає). Пункт 3 (видалити `ProductOpsCache.ts`) після релізу без регресій. `CatalogOpsLookup.hydrate` ще читає `products` для числового `id` (фаза 3).
 
 ---
 

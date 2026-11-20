@@ -4,7 +4,7 @@
  */
 
 import { prisma } from '../../lib/utils.js';
-import { productOpsCache } from './ProductOpsCache.js';
+import { catalogOpsCache } from './CatalogOpsCache.js';
 import {
   CATALOG_FINISHED_PRODUCTS_FOLDER_ID,
   CATALOG_PRICE_TYPE_RETAIL_ID,
@@ -298,6 +298,19 @@ export class CatalogOpsLookup {
     return filtered;
   }
 
+  /**
+   * Листові товари каталогу з SKU (включно з архівом і смітником) для ops-знімка `CatalogOpsCache`.
+   * Ширше за `listFinishedProducts`: комплектація шукає і складники, і коробки, і техн. набори.
+   * Товари без SKU (сировина) у знімок не йдуть: їх точково добирає `getBySkus` (fallback `expandService`).
+   */
+  async listAllLeavesForOps(): Promise<CatalogOpsProduct[]> {
+    const rows = await prisma.catalogGood.findMany({
+      where: { isGroup: false, NOT: { sku: null } },
+      select: opsSelect,
+    });
+    return this.hydrate(rows);
+  }
+
   async search(params: {
     search?: string;
     category?: string;
@@ -475,7 +488,7 @@ export class CatalogOpsLookup {
         errors.push(err instanceof Error ? err.message : String(err));
       }
     }
-    productOpsCache.invalidate();
+    catalogOpsCache.invalidate();
     return { updated, skipped, errors };
   }
 
@@ -500,7 +513,7 @@ export class CatalogOpsLookup {
         data: { stockBalanceByStock: json },
       });
     }
-    productOpsCache.invalidate();
+    catalogOpsCache.invalidate();
   }
 
   async projectToProductsCache(skus?: string[]): Promise<{
@@ -565,7 +578,7 @@ export class CatalogOpsLookup {
     }
 
     const syncedProducts = created + updated;
-    productOpsCache.invalidate();
+    catalogOpsCache.invalidate();
     return {
       success: errors.length === 0,
       message: `Оброблено ${list.length} товарів з каталогу (створено ${created}, оновлено ${updated})`,
