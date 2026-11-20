@@ -250,16 +250,15 @@ async function techCardForGood(
 
 export class ProductsCatalogService {
   /**
-   * Dual-write ops-полів catalog → products (за dilovodId або sku).
-   * Не чіпає set / dilovodDataHash.
+   * Скинути ops-знімок комплектації (`CatalogOpsCache`) після зміни ops-полів у `catalog_*`.
+   * Dynamic import: уникаємо циклу CatalogOpsLookup ↔ ProductsCatalogService.
    */
-  async syncCatalogOpsFieldsToProducts(goodId: string): Promise<void> {
+  async invalidateOpsSnapshot(): Promise<void> {
     try {
-      const { catalogOpsLookup } = await import('./CatalogOpsLookup.js');
-      await catalogOpsLookup.projectGood(goodId);
+      const { catalogOpsCache } = await import('./CatalogOpsCache.js');
+      catalogOpsCache.invalidate();
     } catch (err) {
-      logServer('[ProductsCatalogService] syncCatalogOpsFieldsToProducts failed', {
-        goodId,
+      logServer('[ProductsCatalogService] invalidateOpsSnapshot failed', {
         error: err instanceof Error ? err.message : String(err),
       });
     }
@@ -690,15 +689,6 @@ export class ProductsCatalogService {
       activeSkus: [...split.activeSkus, ...unknown],
       archivedSkus: split.archivedSkus,
     };
-  }
-
-  async markLegacyProductsOutdatedBySku(skus: string[]): Promise<number> {
-    if (skus.length === 0) return 0;
-    const result = await prisma.product.updateMany({
-      where: { sku: { in: skus } },
-      data: { isOutdated: true },
-    });
-    return result.count;
   }
 
   private async splitSkusByArchiveParent(
@@ -1255,7 +1245,7 @@ export class ProductsCatalogService {
       throw new Error('Не вдалося застосувати жодного поля з Діловода');
     }
 
-    await this.syncCatalogOpsFieldsToProducts(id);
+    await this.invalidateOpsSnapshot();
     return { appliedFields };
   }
 
@@ -1758,7 +1748,7 @@ export class ProductsCatalogService {
       });
     }
 
-    await this.syncCatalogOpsFieldsToProducts(dilovodId);
+    await this.invalidateOpsSnapshot();
 
     const stagingSessionId = input.stagingSessionId?.trim();
     if (stagingSessionId && !isGroup) {
@@ -2126,7 +2116,7 @@ export class ProductsCatalogService {
       });
     }
 
-    await this.syncCatalogOpsFieldsToProducts(id);
+    await this.invalidateOpsSnapshot();
 
     const detail = await this.getGoodDetail(id);
     if (!detail) throw new Error('Товар оновлено, але локальна картка недоступна');
@@ -2218,7 +2208,7 @@ export class ProductsCatalogService {
     }
 
     if (!item.isGroup) {
-      await this.syncCatalogOpsFieldsToProducts(id);
+      await this.invalidateOpsSnapshot();
     }
 
     return { id, sortOrder: newSortOrder };
@@ -2515,6 +2505,8 @@ export class ProductsCatalogService {
       });
       void wooCommerceSyncService.unpublishArchivedGoods(clean);
     }
+    // Архівація / відновлення змінює батька (категорія, isOutdated) в ops-знімку.
+    await this.invalidateOpsSnapshot();
   }
 
   async archiveGoods(ids: string[]): Promise<{ archived: number; archiveFolderId: string | null }> {
@@ -2678,6 +2670,7 @@ export class ProductsCatalogService {
 
     const result = await productsLocalSync.syncGoodsBatch(payloads);
     logServer(`[ProductsCatalogService] refresh done upserted=${result.upserted}`);
+    await this.invalidateOpsSnapshot();
     return result;
   }
 
@@ -2751,6 +2744,7 @@ export class ProductsCatalogService {
     logServer(
       `[ProductsCatalogService] folder refresh done upserted=${upserted} orphans=${orphansResolved} capped=${capped} folders=${visitedFolderIds.length}`
     );
+    await this.invalidateOpsSnapshot();
     return {
       upserted,
       orphansResolved,

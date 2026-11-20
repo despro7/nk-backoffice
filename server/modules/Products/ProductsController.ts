@@ -40,9 +40,7 @@ import {
   canViewCatalogItem,
   normalizeCatalogFolderId,
 } from '../../../shared/utils/catalogFolderAccess.js';
-import { DilovodService, dilovodService } from '../../services/dilovod/DilovodService.js';
 import { ProductBatchInputError, warehouseBatchesService } from '../Warehouse/WarehouseBatchesService.js';
-import type { DilovodSyncResult } from '../../services/dilovod/DilovodTypes.js';
 import {
   catalogMediaService,
   CATALOG_MEDIA_ACCEPT,
@@ -929,38 +927,6 @@ router.post('/refresh', ...authOnly, async (req, res) => {
         maxDepth: Number.isFinite(maxDepth) ? maxDepth : undefined,
       });
 
-      // TEMP: після refresh гілки — force Legacy Update в таблицю `products`.
-      // Прибрати, коли відмовимось від legacy products.
-      let legacySkuCount = 0;
-      let legacyOutdatedCount = 0;
-      let legacySync: DilovodSyncResult | null = null;
-      let legacyError: string | null = null;
-      try {
-        const { activeSkus, archivedSkus } =
-          await productsCatalogService.listSkusInFolderSubtree(folderId, {
-            visitedFolderIds: data.visitedFolderIds,
-          });
-        legacySkuCount = activeSkus.length + archivedSkus.length;
-        legacyOutdatedCount = await productsCatalogService.markLegacyProductsOutdatedBySku(
-          archivedSkus
-        );
-        if (activeSkus.length > 0) {
-          const abortController = new AbortController();
-          DilovodService.registerSyncAbortController(abortController);
-          req.on('close', () => abortController.abort());
-          legacySync = await dilovodService.syncProductsWithDilovod(
-            'manual',
-            activeSkus,
-            abortController.signal,
-            { force: true }
-          );
-        }
-      } catch (legacyErr) {
-        legacyError =
-          legacyErr instanceof Error ? legacyErr.message : String(legacyErr);
-        logServer('[ProductsCatalog] TEMP legacy sync after branch refresh failed', legacyErr);
-      }
-
       res.json({
         success: true,
         data: {
@@ -968,10 +934,11 @@ router.post('/refresh', ...authOnly, async (req, res) => {
           orphansResolved: data.orphansResolved,
           capped: data.capped,
           maxDepth: data.maxDepth,
-          legacySkuCount,
-          legacyOutdatedCount,
-          legacySync,
-          legacyError,
+          // Legacy `products` більше не оновлюється; поля лишені для сумісності клієнта.
+          legacySkuCount: 0,
+          legacyOutdatedCount: 0,
+          legacySync: null,
+          legacyError: null,
         },
       });
       return;

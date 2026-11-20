@@ -19,13 +19,13 @@ export class DilovodGoodsCacheManager {
 
   async refresh(forcedSkuList?: string[]) {
     try {
-      logServer('[GoodsCache] Проекція catalog_goods → products...');
+      logServer('[GoodsCache] Оновлення ops-знімка каталогу...');
       let skuList = forcedSkuList;
       if (!skuList || skuList.length === 0) {
         const { activeSkus, archivedSkus } = await productsCatalogService.listSkusForLegacySync();
         skuList = [...activeSkus, ...archivedSkus];
       }
-      const result = await catalogOpsLookup.projectToProductsCache(skuList);
+      const result = await catalogOpsLookup.refreshOpsSnapshot(skuList);
       logServer(`[GoodsCache] Оновлено кеш товарів: ${result.syncedProducts}`);
       return { count: result.syncedProducts };
     } catch (error) {
@@ -48,7 +48,7 @@ export class DilovodGoodsCacheManager {
 
   async updateGoodsCache(goods: Array<{ good_id: string; productNum: string; name?: string; parent?: string | null }>) {
     const skus = goods.map((g) => g.productNum).filter(Boolean);
-    const result = await catalogOpsLookup.projectToProductsCache(skus);
+    const result = await catalogOpsLookup.refreshOpsSnapshot(skus);
     return result.syncedProducts;
   }
 }

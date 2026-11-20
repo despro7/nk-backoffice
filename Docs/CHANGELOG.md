@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-11-20 – Legacy `products`: припинено запис, видалено `ProductOpsCache`
+
+**Files:** `server/modules/Products/CatalogOpsLookup.ts`, `server/modules/Products/ProductsCatalogService.ts`, `server/modules/Products/ProductsController.ts`, `server/modules/Products/ProductOpsCache.ts` (видалено), `server/routes/products.ts`, `server/services/dilovod/DilovodService.ts`, `server/services/dilovod/DilovodGoodsCacheManager.ts`
+
+- **Таблиця `products` більше не пишеться:** видалено проєкцію `catalog_goods → products` (`projectToProductsCache`, `projectGood`), подвійний запис залишків (`applyStockBalances`, `deductSmallStock`), `markLegacyProductsOutdatedBySku`.
+- **«Синхронізувати гілку»:** прибрано TEMP Legacy Update після structure-refresh. Поля `legacy*` у відповіді лишились (нулі / `null`) для сумісності клієнта.
+- **`syncProductsWithDilovod`** (cron «sync products», `/api/products/sync`, `/sync-manual`, `/sync-and-export`, `/stock/balance?sync=true`) і goods-cache refresh: новий `catalogOpsLookup.refreshOpsSnapshot` лише скидає ops-знімок і повертає підсумок у старій формі.
+- **Скидання `CatalogOpsCache`** замість dual-write: після створення / редагування / pull з Dilovod / reorder товару, архівації та відновлення, `refreshFromDilovod`, `refreshFolderFromDilovod`, PUT `/api/products/:id/*`.
+- `ProductOpsCache.ts` видалено: після припинення запису в `products` відкат на нього втратив сенс.
+- Після цього в `server/` немає жодного звернення до `prisma.product`; таблиця чекає на видалення.
+
+**Документація:** `Docs/plans/legacy-products-removal.md` (фаза 2), `Docs/features/products-catalog-2.0.md` (межі відповідальності, скидання знімка, історія legacy-синхронізації), `Docs/features/expand-flatten-calc.md` (інвалідація), `Docs/features/dilovod-product-barcode-sync.md`.
+
+---
+
 ## 2026-11-20 – `/api/products`: `id` = goodId каталогу, видалено мертвий legacy-sync
 
 **Files:** `server/modules/Products/CatalogOpsLookup.ts`, `server/modules/Products/CatalogOpsCache.spec.ts`, `server/modules/Notifications/NotificationDocumentService.ts`, `server/routes/products.ts`, `server/services/dilovod/DilovodSyncManager.ts`, `server/services/dilovod/DilovodService.ts`, `shared/types/dilovod.ts`

@@ -505,14 +505,14 @@ export class DilovodService {
 
       console.log(`✅ Отримано ${skus.length} SKU для синхронізації`);
 
-      console.log('\n📋 Крок 2: Проекція catalog_goods → кеш products...');
+      console.log('\n📋 Крок 2: Оновлення ops-знімка каталогу (без запису в products)...');
       if (signal?.aborted) {
         const err: Error & { name?: string } = new Error('Запит скасовано');
         err.name = 'AbortError';
         throw err;
       }
 
-      const syncResult = await catalogOpsLookup.projectToProductsCache(skus);
+      const syncResult = await catalogOpsLookup.refreshOpsSnapshot(skus);
 
       console.log('\n✅ === СИНХРОНІЗАЦІЯ ЗАВЕРШЕНА ===');
       console.log(`Результат: ${syncResult.message}`);

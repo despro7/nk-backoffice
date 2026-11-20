@@ -378,7 +378,7 @@ router.put('/:id/weight', authenticateToken, productsEdit, async (req, res) => {
         data: { weight: weight / 1000 },
       }),
     );
-    await catalogOpsLookup.projectGood(goodId);
+    catalogOpsCache.invalidate();
     const product = await catalogOpsLookup.getByDilovodIds([goodId]);
     res.json({
       success: true,
@@ -409,7 +409,7 @@ router.put('/:id/manual-order', authenticateToken, productsEdit, async (req, res
       where: { id: goodId },
       data: { sortOrder: manualOrder },
     });
-    await catalogOpsLookup.projectGood(goodId);
+    catalogOpsCache.invalidate();
     const product = [...(await catalogOpsLookup.getByDilovodIds([goodId])).values()][0];
     res.json({ success: true, product: product ? catalogOpsLookup.toApiShape(product) : null });
   } catch (error) {
@@ -439,7 +439,7 @@ router.put('/:id/unit-ratio', authenticateToken, productsEdit, async (req, res) 
         data: { unitRatio },
       }),
     );
-    await catalogOpsLookup.projectGood(goodId);
+    catalogOpsCache.invalidate();
     const product = [...(await catalogOpsLookup.getByDilovodIds([goodId])).values()][0];
     res.json({ success: true, product: product ? catalogOpsLookup.toApiShape(product) : null });
   } catch (error) {
@@ -478,7 +478,7 @@ router.put('/:id/barcode', authenticateToken, productsEdit, async (req, res) => 
         data: { goodId, code, goodPart: '', activity: true },
       });
     }
-    await catalogOpsLookup.projectGood(goodId);
+    catalogOpsCache.invalidate();
     const product = [...(await catalogOpsLookup.getByDilovodIds([goodId])).values()][0];
     res.json({ success: true, product: product ? catalogOpsLookup.toApiShape(product) : null });
   } catch (error) {
@@ -507,7 +507,7 @@ router.put('/:id/portions-per-box', authenticateToken, productsEdit, async (req,
       where: { id: goodId },
       data: { packageRatio: value },
     });
-    await catalogOpsLookup.projectGood(goodId);
+    catalogOpsCache.invalidate();
     const product = [...(await catalogOpsLookup.getByDilovodIds([goodId])).values()][0];
     console.log(`✅ [Products] portionsPerBox updated for ${product?.sku}: ${value}`);
     res.json({ success: true, product: product ? catalogOpsLookup.toApiShape(product) : null });
@@ -604,16 +604,13 @@ router.post('/sync-manual', authenticateToken, productsSync, async (req, res) =>
 
     const { activeSkus, archivedSkus } =
       await productsCatalogService.partitionCatalogSkusByArchive(cleanedSkus);
-    const outdatedCount =
-      await productsCatalogService.markLegacyProductsOutdatedBySku(archivedSkus);
+    // Legacy `products` більше не пишемо: архівні лише відкидаються.
+    const outdatedCount = 0;
 
     if (activeSkus.length === 0) {
       return res.json({
         success: true,
-        message:
-          outdatedCount > 0
-            ? `Архівні товари позначено як застарілі (${outdatedCount})`
-            : 'Немає активних SKU для Dilovod sync-manual',
+        message: 'Немає активних SKU для оновлення',
         syncedProducts: 0,
         syncedSets: 0,
         createdProducts: 0,

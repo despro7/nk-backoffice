@@ -1,6 +1,6 @@
 /**
  * Операційний lookup товарів з catalog_* (сумісна форма legacy `products`).
- * `products` лишається кешем; читачі мають ходити сюди.
+ * Таблицю `products` не читає й не пише.
  */
 
 import { prisma } from '../../lib/utils.js';
@@ -470,20 +470,14 @@ export class CatalogOpsLookup {
     for (let i = 0; i < toUpdate.length; i += CHUNK) {
       const chunk = toUpdate.slice(i, i + CHUNK);
       try {
-        await prisma.$transaction([
-          ...chunk.map((item) =>
+        await prisma.$transaction(
+          chunk.map((item) =>
             prisma.catalogGood.update({
               where: { id: item.dilovodId },
               data: { stockBalanceByStock: item.json },
             })
           ),
-          ...chunk.map((item) =>
-            prisma.product.updateMany({
-              where: { sku: item.sku },
-              data: { stockBalanceByStock: item.json },
-            })
-          ),
-        ]);
+        );
         updated += chunk.length;
       } catch (err) {
         errors.push(err instanceof Error ? err.message : String(err));
@@ -509,15 +503,16 @@ export class CatalogOpsLookup {
         where: { id: p.dilovodId },
         data: { stockBalanceByStock: json },
       });
-      await prisma.product.updateMany({
-        where: { sku: p.sku },
-        data: { stockBalanceByStock: json },
-      });
     }
     catalogOpsCache.invalidate();
   }
 
-  async projectToProductsCache(skus?: string[]): Promise<{
+  /**
+   * Наступник legacy-проєкції `catalog_goods → products`: нічого не пише, лише скидає
+   * ops-знімок і повертає підсумок у формі `DilovodSyncResult` для старих викликачів
+   * (cron, `/api/products/sync*`, goods-cache).
+   */
+  async refreshOpsSnapshot(skus?: string[]): Promise<{
     success: boolean;
     message: string;
     syncedProducts: number;
@@ -528,79 +523,20 @@ export class CatalogOpsLookup {
     errors: string[];
   }> {
     const list = skus?.length
-      ? [...(await this.getBySkus(skus)).values()].filter((p, i, arr) => arr.findIndex((x) => x.sku === p.sku) === i)
+      ? uniqueOps(await this.getBySkus(skus))
       : await this.listFinishedProducts({ includeOutdated: true });
-    let created = 0;
-    let updated = 0;
-    let syncedSets = 0;
-    const errors: string[] = [];
-
-    for (const p of list) {
-      try {
-        const data = {
-          name: p.name,
-          costPerItem: p.costPerItem,
-          currency: p.currency,
-          categoryId: p.categoryId,
-          categoryName: p.categoryName,
-          set: p.set && p.set.length > 0 ? JSON.stringify(p.set) : null,
-          additionalPrices: p.additionalPrices ? JSON.stringify(p.additionalPrices) : null,
-          stockBalanceByStock: p.stockBalanceByStockRaw,
-          dilovodId: p.dilovodId,
-          parent: p.parent,
-          weight: p.weight,
-          manualOrder: p.manualOrder ?? 0,
-          unitRatio: p.unitRatio ?? 1,
-          barcode: p.barcode,
-          isOutdated: p.isOutdated,
-          portionsPerBox: p.portionsPerBox,
-          lastSyncAt: new Date(),
-        };
-        const existing = await prisma.product.findUnique({ where: { sku: p.sku }, select: { id: true } });
-        if (existing) {
-          await prisma.product.update({ where: { sku: p.sku }, data });
-          updated += 1;
-        } else {
-          await prisma.product.create({ data: { sku: p.sku, ...data } });
-          created += 1;
-        }
-        if (p.set && p.set.length > 0) syncedSets += 1;
-      } catch (err) {
-        errors.push(`${p.sku}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-
-    const catalogSkus = new Set(list.map((p) => p.sku));
-    if (!skus?.length && catalogSkus.size > 0) {
-      await prisma.product.updateMany({
-        where: { sku: { notIn: [...catalogSkus] } },
-        data: { isOutdated: true },
-      });
-    }
-
-    const syncedProducts = created + updated;
     catalogOpsCache.invalidate();
+    const syncedSets = list.filter((p) => p.set && p.set.length > 0).length;
     return {
-      success: errors.length === 0,
-      message: `Оброблено ${list.length} товарів з каталогу (створено ${created}, оновлено ${updated})`,
-      syncedProducts,
+      success: true,
+      message: `Ops-знімок каталогу оновлено: ${list.length} товарів`,
+      syncedProducts: list.length,
       syncedSets,
-      createdProducts: created,
-      updatedProducts: updated,
-      skippedProducts: 0,
-      errors,
+      createdProducts: 0,
+      updatedProducts: 0,
+      skippedProducts: list.length,
+      errors: [],
     };
-  }
-
-  async projectGood(goodId: string): Promise<void> {
-    const row = await prisma.catalogGood.findUnique({
-      where: { id: goodId },
-      select: opsSelect,
-    });
-    if (!row || row.isGroup || !row.sku) return;
-    const [p] = await this.hydrate([row]);
-    if (!p) return;
-    await this.projectToProductsCache([p.sku]);
   }
 
   private async hydrate(rows: CatalogGoodOpsRow[]): Promise<CatalogOpsProduct[]> {

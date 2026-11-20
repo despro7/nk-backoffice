@@ -15,13 +15,13 @@
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | Джерело правди (SoT) | Dilovod (`catalogs.goods` + регістри цін/ШК + `tpGoods`)                                                                        |
 | Локальне дзеркало    | Таблиці `catalog_*` (швидке дерево / UI)                                                                                        |
-| Legacy `products`    | Читачів **немає** (з 2026-11-20: комплектація через `CatalogOpsCache`, `id` в `/api/products*` = `catalog_goods.id`); лишились лише писачі (dual-write); Products 2.0: **вузький dual-write** ops + явний **Legacy Update** + **TEMP** Legacy після «Синхронізувати гілку» |
+| Legacy `products`    | З 2026-11-20 **не читається й не пишеться** (комплектація через `CatalogOpsCache`, `id` в `/api/products*` = `catalog_goods.id`); чекає на видалення |
 | `/product-sets`      | Без змін, співіснує в меню                                                                                                      |
 
 
 Мутації: спочатку Dilovod → потім sync у `catalog_*`. UI читає з локального дзеркала; повний/частковий re-pull — `POST /api/catalog/refresh`.
 
-Залишки в картці / таблиці: з `catalog_goods.stockBalanceByStock`; при create/update також dual-write у `products`. Склади залежать від гілки, див. «Залишки по складах».
+Залишки в картці / таблиці: з `catalog_goods.stockBalanceByStock`. Склади залежать від гілки, див. «Залишки по складах».
 
 ---
 
@@ -46,7 +46,7 @@
 | Поле                  | Призначення                                                                 |
 | --------------------- | --------------------------------------------------------------------------- |
 | `sortOrder`           | Ручний порядок siblings у папці; інтервал **крок 10**; індекс `(parentId, sortOrder)` |
-| `unitRatio`           | Коеф. порцій; dual-write → `products.unitRatio` (Admin UI у Drawer)         |
+| `unitRatio`           | Коеф. порцій (Admin UI у Drawer)                                            |
 | `stockBalanceByStock` | JSON залишків (формат залежить від гілки, див. «Залишки по складах»); дзеркало з Dilovod stock sync |
 
 `catalog_good_components.note` — примітка рядка специфікації продукції ↔ Dilovod `tpGoods.remark` (varchar до 150 у gateway; у БД до 512). **Не використовується** для товарних наборів (`accPolicy` kit) у UI/save.
@@ -84,7 +84,7 @@ Hard-delete не робимо: archive/trash → `setDelMark` + зміна `pare
 ```
 server/modules/Products/
   ProductsController.ts       # Express routes /api/catalog/*
-  ProductsCatalogService.ts   # orchestration + getDictionaries + reorder + dual-write ops
+  ProductsCatalogService.ts   # orchestration + getDictionaries + reorder + скидання ops-знімка
   ProductsDilovodGateway.ts   # Dilovod + fetchCachedDict + remark↔note
   ProductsLocalSync.ts        # catalog_* (+ preserve local ops; merge note)
   CatalogMediaService.ts      # зображення товару
@@ -93,7 +93,6 @@ server/modules/Products/
   ProductsTypes.ts            # + isArchiveFolderName, extractUkName
   CatalogOpsLookup.ts         # ops-форма legacy `products` з `catalog_*`
   CatalogOpsCache.ts          # in-memory знімок для комплектації з catalog_* (TTL 2 хв)
-  ProductOpsCache.ts          # legacy-попередник, не використовується (до видалення)
   skuUtils.ts                 # allocateNextSku + race-safe retry
   barcodeUtils.ts             # EAN-13 серія 22… + check digit + allocateNextEan13
 ```
@@ -107,10 +106,9 @@ server/modules/Products/
 | Шар | Роль |
 | --- | --- |
 | `catalog_*` | SoT назв, BOM комплектів (`accPolicy` kit), залишків |
-| `products` | Тонке дзеркало (dual-write), знімком **не** читається |
 | `CatalogOpsCache` | Знімок у памʼяті на **120 с**: усі листові `catalog_goods` з SKU у ops-формі `toApiShape`; `set` лише для облікової політики «комплект» |
 
-Рецептура звичайного товару (`spec` / BOM страви) **не** є `set` і не розгортається в чек-листі. `POST /api/expand/flatten` і `GET /api/products/:sku` читають знімок. Інвалідація: `applyStockBalances`, `deductSmallStock`, `projectToProductsCache`.
+Рецептура звичайного товару (`spec` / BOM страви) **не** є `set` і не розгортається в чек-листі. `POST /api/expand/flatten` і `GET /api/products/:sku` читають знімок. Інвалідація: `applyStockBalances`, `deductSmallStock`, `refreshOpsSnapshot`, зміни картки (див. «Скидання ops-знімка після змін»).
 
 Деталі: `Docs/features/expand-flatten-calc.md`.
 
@@ -196,424 +194,26 @@ Dilovod повертає `description: { uk, ru }`. Раніше `String(obj)` �
 - Виключаються групи, `delMark`, елементи в смітнику; ACL — `canViewCatalogItem` на кожного батька.
 - UI: `UsedInSection` (lazy `useQuery`), не входить у `getGoodDetail`.
 
-### Dual-write ops → `products`
+### Скидання ops-знімка після змін
 
-`ProductsCatalogService.syncCatalogOpsFieldsToProducts(goodId)` після create/update/reorder (для не-груп):
-
-| catalog_goods        | products            |
-| -------------------- | ------------------- |
-| `unitRatio`          | `unitRatio`         |
-| `weight` (кг→г)      | `weight`            |
-| `packageRatio`       | `portionsPerBox`    |
-| `sortOrder`          | `manualOrder`       |
-| `stockBalanceByStock`| `stockBalanceByStock` |
-
-Match: `dilovodId = catalog id` або `sku`. **Не** чіпає `set`, `dilovodDataHash`, ціни тощо.
-
-### Інтервальне сортування (`POST /reorder`)
-
-- Siblings у межах одного `parentId` (root = `null`/`"0"`/`""`).
-- Тіло: `{ parentId, id, beforeId?, afterId? }`.
-- Алгоритм: `computeIntervalSortOrder(prev, next)`; якщо щілини немає → `rebalanceSortOrders` усіх siblings кроком 10.
-- UI: DnD папок у дереві; DnD товарів у таблиці (grip); кнопка «Ручний порядок» скидає column-sort.
-
-### Архів і `delMark`
-
-Папка архіву визначається за іменем: `/^Архів\s*[–-]/` (`isArchiveFolderName`).
-
-
-| Операція                                | Parent                       | Dilovod                                      | Локально                            |
-| --------------------------------------- | ---------------------------- | -------------------------------------------- | ----------------------------------- |
-| «В архів» (`/goods/archive`)            | папка «Архів – {parentName}» | `saveObject` + `setDelMark`                  | `parentId` + `delMark=true`         |
-| Move **в** архів (`/goods/move`)        | обрана архівна папка         | `saveObject` + `setDelMark`                  | те саме                             |
-| Move **з** архіву в звичайну папку      | нова папка                   | `saveObject` з `delMark: 0`                  | `delMark=false`                     |
-| «Відновити з архіву» (`/goods/restore`) | батько папки-архіву          | `clearDelMark` = `saveObject` з `delMark: 0` | `parentId` батька + `delMark=false`, `archivedAt=null` |
-| Trash                                   | `CATALOG_TRASH_ID`           | `setDelMark`                                 | `delMark=true`                      |
-
-Локально при archive/move в архів також пишеться **`archivedAt`** (дата операції); при restore — скидається. У таблиці каталогу архівний товар показує бейдж з tooltip (дата архівації).
-
-
-`ProductsDilovodGateway.clearDelMark(params)` — обгортка над `saveObject` із примусовим `header.delMark = 0`.
-
-### Sync і пагінація Dilovod
-
-- `fetchAllGoods`: `limit: { offset, count }` (окремий top-level `offset` Dilovod ігнорує).
-- Дедуп по `id` + safety-cap сторінок — захист від зациклення.
-- `ProductsLocalSync.syncGoodsBatch`: чанки по 10, timeout tx 60s (повний refresh ~700+ рядків).
-- ШК з `goodPart` тягне **окремий** запит gateway; legacy `getBarCodesByObjectIds` не змінюється.
-
-
-
-### SKU
-
-`skuUtils.allocateNextSku` + retry при колізії в Dilovod (`saveGoodWithSkuRetry`).
-
-UI: кнопка `dices` у полі SKU → `GET /api/catalog/sku/next?parentId=&excludeId=`.
-
-### Штрихкоди (EAN-13 серія `22…`)
-
-Внутрішні коди формату **`22XXXXXXXXXXC`** (приклад: `2200000000224`). Остання цифра — GS1 check digit.
-
-Алгоритм `GET /api/catalog/barcode/next`:
-
-1. `ProductsDilovodGateway.fetchAllBarcodeCodes` – пагінація `sliceLast` / `barCodes` (лише `activity !== "0"`) + усі коди серії `22…` з локальної `catalog_good_barcodes`.
-2. `pickLatestEan13` — max серед кодів з префіксом **`22`** (зовнішні EAN на кшталт `482…` ігноруються).
-3. Body (12 цифр) + 1 → `ean13CheckDigit` → повний код.
-4. `isBarcodeTakenAnywhere` (локальна таблиця, будь-яка партія / статус, + активний у Dilovod) + in-process mutex / retry (`barcodeUtils.allocateNextEan13`).
-5. Якщо серії `22…` ще немає — seed body `220000000000` → `2200000000002`.
-
-UI у `ProductDrawer` (секція «Штрихкоди»):
-
-- Поле **Код**: `endContent`-кнопка генерації (жовтий фон при loading, tooltip «Генерувати ШК»).
-- Якщо поле вже заповнене → `ConfirmModal` «Замінити?» перед запитом.
-- Поле **Номер партії**: read-only; клік відкриває `BatchNumbersAutocomplete` через `useBatchNumbers` → `GET /api/warehouse/batch-numbers/:sku?includeSmallStorage=true` (ГП + малий склад, `qty > 0`); у кожному рядку — помітка складу зберігання (`storageDisplayName`).
-- Потрібен непорожній `form.sku`; інакше toast.
-- `onSelect`: `goodPart = batchId`, `goodPartName = batchNumber`.
-- Окремого Input «Партія (ID)» немає; у **debug mode** (`useDebug`) ID показується маленьким бейджем у полі номера партії.
-- **Ручне сортування** рядків (як у «Цінах»): кнопка біля заголовка при ≥2 ШК, DnD `@hello-pangea/dnd` (`barcodesSectionSort.ts`); порядок зберігається при save картки (локальний snapshot `catalog_good_barcodes` за `id asc`). Рядки **`barcodeKind: box`** не перетягуються.
-- **`barcodeKind`:** `portion` — партійні ШК (Dilovod / sync ERP); **`box`** — локальний ШК коробки (`CatalogBoxBarcodeService`, не пишеться в Dilovod). У картці box read-only (без генерації EAN, без зміни партії); кнопка «Генерувати ШК» — лише для **нових** порційних рядків (`isNew`). Іконка коробки — `BarcodeKindIcon` лише для box; порційні без іконки. Detail API (`readGoodDetailFromLocal`) віддає `barcodeKind` у barcodes DTO.
-
-### Створення партії з картки
-
-Кнопка **«Створити партію»** у секції «Штрихкоди і партії» (збережений товар, не група і не комплект). Модалка `CreateProductBatchModal`:
-
-- **Походження:** «Власне виробництво» / «Зовнішній товар (надходження)» – змінює лише підпис дати («Дата виробництва» / «Дата надходження»). За замовчуванням «виробництво» для продукції зі специфікацією, інакше «надходження».
-- **Дата** (сьогодні за Києвом) і **термін придатності** (обовʼязковий, не раніше дати).
-- **Назва партії:** `YMMDD` без префіксів (`61113` = 13.11.2026), `shared/utils/productBatchName.ts`. Зайнятість перевіряється лише серед партій цього товару (той самий код на різних товарах – норма). Партія за цей день уже є – попередження з ТП і ШК кожної партії та обовʼязковий вибір: використати наявну (ШК реєструється, якщо його немає) або створити нову `YMMDD-N`.
-- **API:** `GET /api/catalog/goods/:id/batches/preview?date=YYYY-MM-DD`, `POST /api/catalog/goods/:id/batches` (`{ date, expiration, reuseBatchId? }`), право редагування розділу каталогу. Сервіс: `WarehouseBatchesService.previewProductBatch` / `createProductBatch`.
-- **Запис:** партія одразу створюється в Dilovod (`catalogs.goodParts`, `code` = назва, `date`, `expiration`), далі порційний ШК серії `22…` записується в регістр `barCodes` з `goodPart` і в `catalog_good_barcodes`. Виділення + запис ШК серіалізовані в процесі, перед записом – контрольна перевірка унікальності.
-- **Збій ШК:** партія вже в Dilovod, відповідь з `barcodeError`; у картку додається рядок з партією без коду (згенерувати ШК і зберегти товар).
-- Рядок з успішно зареєстрованим ШК додається в картку без позначки «змінено».
-
-### Наліпки для друку
-
-Вкладка **«Наліпки»** у `ProductDrawer`: PDF-етикетки 100×100 мм для обраної партії (тип «Порція»), чернетка, версії, автопоказ **останньої збереженої чернетки** (інакше — партія останнього PDF), друк (браузер / QZ). API: `/api/products/:goodId/labels/*`.  
-Тексти наліпки типографуються через **`typograf`** (`shared/utils/typograph.ts`) — неразривні пробіли, лапки, одиниці виміру.  
-Повний опис: **`Docs/features/product-labels.md`**.
-
-### Модерація специфікації
-
-Специфікація = BOM (`catalog_good_components`) + `specQty`. Зміни затверджує роль із правом `action.products.approveSpec` (seed `admin`, `boss`). Код: `server/modules/Products/CatalogSpecService.ts`, типи `shared/types/catalogSpec.ts`, порівняння `shared/utils/catalogSpecContent.ts`.
-
-**Таблиці:**
-
-| Таблиця | Що |
-| --- | --- |
-| `catalog_spec_drafts` | чернетка, одна на товар (`goodId` unique): `baseVersion`, `specQty`, `componentsJson`, `comment`, `status` (`pending` / `rejected`), `restoredFromVersion`, автор, хто редагував, хто відхилив і причина |
-| `catalog_spec_versions` | затверджені версії (`goodId` + `version` unique): вміст, `source` (`initial` / `ui` / `dilovod` / `rollback`), коментар, автор, хто затвердив, `contentReviewPending` |
-
-**Збереження картки (`PUT /goods/:id`)** – `CatalogSpecService.prepareUpdate()` до запису:
-
-- специфікація не змінилась – звичайне збереження без spec-полів;
-- **є право затвердження** – запис у Dilovod як раніше + нова версія `ui`; лінива v1 фіксується перед записом;
-- **немає права** – `components` / `specQty` прибираються з запиту, решта полів зберігається, специфікація йде в чернетку. Потрібен `specComment` (інакше 400 `SPEC_COMMENT_REQUIRED`);
-- є чернетка, а редактор змінив чинну специфікацію, не відкривши чернетку – 409 `SPEC_DRAFT_EXISTS`. Редагування відкритої чернетки позначається `specDraftEdit: true`.
-
-**Редагування чернетки без окремого відкриття** (налаштування «Виробництво → Чернетки специфікацій», `settings_base.production_spec_draft_auto_edit`, JSON boolean, за замовчуванням `false`, поле `specDraftAutoEdit` у `/api/production/settings`). Вимкнено: поки є чернетка, BOM у картці заблоковано до кнопки «Редагувати» у віджеті модерації. Увімкнено: для того, хто має `action.products.editSpec` (не в режимі перегляду), `ProductDrawer` одразу завантажує чернетку (на затвердженні або відхилену) в редактор і робить її базою для `isDirty`; збереження йде в ту саму чернетку з `specDraftEdit: true`. Свіжа чернетка (новий `updatedAt`) підтягується, лише якщо картку не змінено; чернетку видалено чи затверджено – редактор повертається до чинної специфікації. Серверна модерація не змінюється.
-
-**Затвердження:** вміст чернетки записується через `updateGood` (Dilovod + локально), нова версія, чернетка видаляється. Якщо чинна версія ≠ `baseVersion` чернетки – 409 `SPEC_DRAFT_STALE`, повтор із `force: true`. Відхилення – статус `rejected` + причина; автор виправляє чернетку, і вона знову `pending`.
-
-**Версії й відкат:** v1 створюється ліниво (перша зміна, перше відкриття історії). Відкат: затверджувач – одразу нова версія `rollback`; інші – чернетка з `restoredFromVersion`. Поки є чернетка, відкат недоступний.
-
-**Зміни з Dilovod:** якщо sync / pull (`source = dilovod`) змінив специфікацію, `CatalogGoodAuditService` викликає `onExternalSpecChange` → версія `dilovod` (приймається автоматично). Новий товар з Dilovod версії не отримує до першої зміни.
-
-**Склад / КБЖВ:** нова версія ставить `contentReviewPending`. У вкладці «Опис і зображення» банер «Склад / КБЖВ у описі можуть не відповідати новій специфікації» з «Перегенерувати» (склад зі специфікації) і «Перевірено». Позначка знімається, коли зберігають змінені склад або КБЖВ, або вручну.
-
-**Сповіщення** (`meta_logs`, категорія `catalog_spec`): нова / оновлена чернетка – усім активним затверджувачам (крім автора); затвердження й відхилення – автору. `data.recipients` обмежує, кому видно сповіщення; `data.link` – перехід у картку.
-
-**API:**
-
-| Метод | Шлях | Право | Опис |
-| --- | --- | --- | --- |
-| GET | `/api/catalog/spec-drafts` | доступ до каталогу | усі чернетки (позначки, «На затвердженні») |
-| GET | `/api/catalog/goods/:id/spec` | перегляд товару | чинна версія, чернетка, `contentReviewPending` |
-| PUT | `/api/catalog/goods/:id/spec-draft` | `editSpec` | створити / оновити чернетку (`components`, `specQty`, `comment`) |
-| DELETE | `/api/catalog/goods/:id/spec-draft` | автор або `approveSpec` | видалити чернетку |
-| POST | `/api/catalog/goods/:id/spec-draft/approve` | `approveSpec` | затвердити (`force`) |
-| POST | `/api/catalog/goods/:id/spec-draft/reject` | `approveSpec` | відхилити (`reason`) |
-| GET | `/api/catalog/goods/:id/spec-versions` | перегляд товару | історія версій |
-| POST | `/api/catalog/goods/:id/spec-versions/:version/restore` | `editSpec` або `approveSpec` | відкат (`comment`) |
-| POST | `/api/catalog/goods/:id/spec/content-reviewed` | `storefront.edit` | зняти позначку «Склад / КБЖВ» |
-
-**UI:** віджет версії в заголовку «Специфікація товару» (`productDrawer/SpecModerationPanel.tsx`): чип `vN` (сірий; жовтий – на затвердженні; червоний – відхилено), поповер з деталями чернетки і діями (порівняти, редагувати, затвердити, відхилити, видалити), «Історія версій» – модалка з відмінностями від чинної та відновленням. Поки є чернетка, BOM у картці заблоковано, доки її не відкрито для редагування. Без права затвердження «Зберегти» зі зміненим BOM просить коментар. У таблиці каталогу – позначка біля назви, у тулбарі – «На затвердженні (N)» (`components/SpecDraftsMenu.tsx`).
-
-### Журнал змін товарів
-
-Хто, що і коли змінив у товарі. Пишеться в загальну таблицю `audit_log` (`entityType: catalog_good`, `entityId` = Dilovod id товару).
-
-**Як пишеться.** `CatalogGoodAuditService.track()` (`server/modules/Products/CatalogGoodAuditService.ts`) знімає знімок товару до дії, виконує її, знімає знімок після і пише різницю (`shared/utils/catalogGoodAuditDiff.ts`). Знімок: скалярні поля (назва, SKU, папка, одиниця, вага, `specQty`, тип, описи, склад/КБЖВ, брутто, коеф. порцій, шаблони наліпок, дата архівації…), склад (BOM), ціни, штрихкоди, зображення.
-
-- Склад порівнюється за `componentGoodId`, а не за `rowNum` – перестановка рядків не дає шуму.
-- Довгі тексти (> 300 символів) і `storefrontDescriptionDoc` – лише позначка «змінено», без значень.
-- Порожнє збереження (без різниці) не пишеться.
-- Вкладені `track()` поглинаються зовнішнім (`AsyncLocalStorage`): Dilovod-sync всередині «Зберегти» не дає окремого запису.
-
-**Джерело (`source`):** `ui` – дія користувача; `bulk` – масова дія (> 1 товару, імпорт з вітрини пакетом); `dilovod` – pull/sync з Dilovod (`ProductsLocalSync.syncGood` / `syncGoodsBatch`, у т.ч. live-pull при відкритті картки – без користувача, якщо зміни прийшли «ззовні»).
-
-**Дії** (`CATALOG_AUDIT_ACTIONS`, `shared/types/catalogAudit.ts`): `created`, `updated`, `duplicated`, `moved`, `type_changed`, `archived`, `restored`, `trashed`, `images_changed`, `label_template_changed`, `label_published` (з версією й партією), `storefront_pull`, `dilovod_pull`, `dilovod_sync`, `legacy_field_changed` (`/api/products/:id/weight|unit-ratio`); модерація специфікації: `spec_draft_saved`, `spec_draft_discarded`, `spec_approved`, `spec_rejected`, `spec_version_recorded` (див. «Модерація специфікації»).
-
-**Не логуються:** автоматичні ШК коробок/партій зі складських операцій (`CatalogBoxBarcodeService`, `WarehouseBatchesService`), залишки (`stockBalanceByStock`), `sortOrder`, `wooLastSyncedAt`.
-
-**API:**
-
-| Метод | Шлях | Опис |
-| --- | --- | --- |
-| GET | `/api/catalog/goods/:id/audit?cursor&limit` | журнал одного товару |
-| GET | `/api/catalog/audit?from&to&q&goodId&userId&action&source&cursor&limit` | загальний журнал; `q` – пошук товару за назвою/SKU |
-| GET | `/api/catalog/audit/users` | користувачі з записами (для фільтра) |
-
-Пагінація курсором по `id` (новіші зверху), відповідь `{ items, nextCursor }`. Право – `action.products.viewAudit`.
-
-**UI:** вкладка **«Історія»** в `ProductDrawer` (`ProductHistoryTab.tsx`, лише в режимі редагування); сторінка **`/products/audit`** (`ProductsAuditPage.tsx`, право `page.main.productsAudit`) – період, пошук товару, користувач, дія, джерело; клік по назві відкриває картку (`#good=<id>`). Кнопка «Журнал змін» у `CatalogToolbar`. Рядок запису – `components/audit/CatalogAuditEntry.tsx` (іконка дії за кольором: редагування синє, видалення червоне, чернетка жовта; праворуч дата й автор; зміни сіткою «поле | значення»), людські підписи – `shared/utils/catalogGoodAuditFormat.ts` (одиниці, типи цін і обʼєктів – з довідників Dilovod).
-
----
-
-
-
-## Frontend
-
-```
-client/pages/Products/
-  index.tsx
-  useProductsCatalog.ts         # treeItems + treeItemsFull, dictionariesQuery, restore/reorder/legacySync mutations
-  ProductsTypes.ts              # CatalogTreeItemData.archiveChildId + dict re-exports
-  ProductsUtils.ts              # buildTreeItems, resolveCatalogItemLocation, goodTypeLabel, …
-  components/
-    CatalogTree.tsx             # DnD move + sibling reorder (лінія вставки)
-    CatalogTable.tsx            # GP-колонки, пошук: категорія + «В замовленнях», SortDescriptor, goods DnD grip
-    BarcodeKindIcon.tsx         # іконка коробки для box-ШК (картка + popover узгодження)
-    PullFieldBarcodesComparePopover.tsx
-    CatalogBreadcrumbs.tsx      # у пошуку: лише Каталог > Пошук
-    CatalogToolbar.tsx          # пошук, «Додати обʼєкт», «Оновити залишки», «На затвердженні», «Журнал змін»
-    CatalogActionsMenu.tsx      # «Дії»: Рухи товару, Синхронізувати гілку (+ TEMP Legacy), вибірковий Legacy, archive/trash
-    CatalogContextMenu.tsx      # Рухи товару, fromTrash / fromArchive (і в пошуку)
-    MoveToFolderModal.tsx
-    ProductDrawer.tsx           # футер: Оновити Legacy; Tabs kind, BOM, UsedIn, техкарта, unitRatio Admin, Наліпки, …
-    productDrawer/
-      FieldDirtyMarker.tsx      # жовта іконка «Незбережені зміни» біля поля / вкладки
-      productDrawerUtils.ts     # snapshot baseline, getDrawerDirtyFields, mergeStorefrontFieldsIntoDrawerBaseline
-      BomSection.tsx            # специфікація / склад; сортування, DnD, втрати %, техкарта
-      bomSectionSort.ts         # сортування колонок + reorder рядків BOM
-      UsedInSection.tsx         # зворотний BOM (де використовується інгредієнт / продукція)
-      PricesSection.tsx
-      BarcodesSection.tsx
-      RequisitesSection.tsx
-    ProductLabelsTab.tsx        # генерація PDF-етикеток (див. product-labels.md)
-    DescriptionEditor.tsx
-    ArchiveConfirmModal.tsx
-    TrashDrawer.tsx             # ПКМ → context menu «Відновити»
-```
-
-Маршрут у `client/routes.config.tsx`: `/products`, nav «Товари 2.0», опційний `navBadge: { label: 'NEW', color: 'danger', until: '…' }`.
-
-### URL hash (папка / пошук / картка)
-
-Стан навігації каталогу синхронізується з `window.location.hash` через `useUrlHashSync` (див. `Docs/architecture/url-hash-sync.md`). Підключення: `useProductsCatalog.ts`.
-
-| Ключ     | Коли є в hash                         | Відновлення                          |
-| -------- | ------------------------------------- | ------------------------------------ |
-| `folder` | обрана папка ≠ корінь (`root`)        | `setSelectedFolderId`                |
-| `q`      | непорожній пошук (після trim)         | `setSearchQuery`                     |
-| `good`   | відкрита картка в режимі **edit**     | `openEdit` (`editingId` + `drawerMode`) |
-
-Не пишеться: selection, confirm-модалки, create-drawer, sync overlay, ручний DnD-режим.
-
-Приклади: `#folder=11003…`, `#q=курка`, `#folder=11003…&q=курка&good=11003…`.
-
-Запис — `history.replaceState` (Back не крокує по кожній зміні папки). Поділитися виглядом — скопіювати URL з браузера.
-
-Залежності UI: `@headless-tree/core`, `@headless-tree/react`, `@tiptap/react` (+ starter-kit, extension-link).
-
-### UI: ProductDrawer
-
-- Тип обʼєкта: Tabs **Продукція / Товарні набори / Група / Інший** (`DrawerObjectKind` ↔ `accPolicyId` / `isGroup`).
-- BOM (`BomSection`):
-  - **Права:** редагування BOM / `specQty` – окремий ключ `action.products.editSpec` (seed лише admin; не залежить від ACL папки). Без `action.products.approveSpec` зміни йдуть у чернетку на затвердження (див. «Модерація специфікації»). Упаковка (вага, порції в коробці) – за ACL папки. Деталі: [`woocommerce-storefront-phase1.md`](./woocommerce-storefront-phase1.md#права-доступу-rbac).
-  - **Продукція** — «Специфікація товару»; qty через `NumberInputFromNumber` (див. `Docs/architecture/number-input.md`); **примітка** (Chip + Popover, Dilovod remark); мікро-конфірм видалення примітки (іконка → «Видалити?» → clear).
-  - **Продукція** — колонка **% втрат** (`cookingLossPercent`, локально). При наведенні на `%` – іконка `split`, клік відкриває `BomLossSplitPopover`: типи втрат (Select з довідника) і % кожного. З розбивкою поле read-only і показує суму, суфікс – завжди `split`; для послідовної формули Popover показує ефективний %. Довідник і формула – `useProductionSettings` (`GET /api/production/settings`), налаштування – `/settings/production`. Підсвітка підозрілої qty (`isSuspiciousBomIngredientQty`); кнопка переносу тексту з дужок назви в примітку (`extractParenthesizedTextFromName`).
-  - **Продукція** — сортування колонок (назва, втрати, qty, од. вим.) + опційне **ручне сортування** перетягуванням (`bomSectionSort.ts`, `@hello-pangea/dnd`); адаптивний layout рядків BOM на вузьких екранах.
-  - **Ціни** — опційне **ручне сортування** рядків (`pricesSectionSort.ts`, `@hello-pangea/dnd`).
-  - **Продукція** – кнопка **«Техкарта»** (лише збережений товар і право `page.production.techcards`) відкриває `TechCardDrawer` з модуля «Виробництво» (`client/pages/Production/`): склад за чинною специфікацією, розрахунок на N порцій, втрати за типами, PDF / Excel / друк (`buildTechCardRows` у `ProductsUtils.ts`). Показує збережені дані, не незбережені правки картки. Див. `Docs/plans/production-techcards.md`.
-  - **Товарні набори** — «Склад комплекту»; qty `StepperInput`; **без** примітки та втрат (`note: null` у save).
-  - **Підрахунок у заголовку складу:** `N поз. / X страв / Y порцій`. **Страви** = сума `qty` прямих позицій; **порції** = рекурсивно через вкладені набори (`catalogKitPortions`, `componentNestedPortionCount` з detail/search). Рецептура страви не розгортається.
-  - **Військова ціна** набору: `основа − 5 × Y порцій` (`expectedMilitaryPrice` / `withSyncedDerivedPrices`), не від кількості страв.
-  - **Push WC:** meta `_total_quantity_portions` = Y (повні порції комплекту).
-- **Зворотний BOM** (`UsedInSection`, лише edit, між BOM і цінами):
-  - **Інгредієнт** (`other`) — «Використовується в стравах» (`GET …/used-in?scope=products`).
-  - **Продукція** (`good`) — «Використовується в комплектах» (`scope=kits`).
-  - Секція не рендериться, якщо список порожній / loading / error; клік по рядку відкриває батьківську картку у стеку drawer.
-- `unitRatio` — поле лише для Admin (продукція).
-- Одиниці / типи цін / валюти — Select з `GET /dictionaries`.
-- **Tri-source sync (BO / WC / Dilovod):**
-  - При відкритті edit-картки з SKU — фонова перевірка конфліктів: `GET …/dilovod-preview` + (за правом pull) `POST /api/storefront/woo/pull-preview`.
-  - Банер **«Узгодити»** якщо є відмінності Dilovod і/або WC (WC лише в гілці «Готова продукція»).
-  - Модалка `CatalogOpenSyncModal` → `StorefrontPullConfirmModal`: таблиця `ProductPullTriSourceTable`, фільтр «Лише відмінності / Усі поля», застосування Dilovod + WC окремо; push BO→WC лише коли `wcCompareEnabled !== false` і ввімкнено перемикач «Відправити BO на WC» (за замовчуванням увімкнений; `countTriSyncChoicesToPushToWoo` рахує конфліктні поля з обраним не WC); рядок **«Штрихкоди і партії»**:
-    - банер і `conflicts` — лише **порційні** ШК BO ↔ Dilovod (`catalogBarcodePreviewPortionLines`, на сервері `localPortionBarcodeLines` у `previewGoodFromDilovod` / `barcodeCount` у snapshot); локальні **box**-ШК, яких немає в ERP, **не** вважаються розбіжністю;
-    - колонка BO у tri-source — лічильник порційних; ERP — `proposedBarcodes`;
-    - клік по «N поз.» — `PullFieldBarcodesComparePopover` (повні списки BO включно з box, іконки `barcodeKind`; Dilovod — порційні; жовтим — лише в одному джерелі); preview API: `localBarcodes` / `proposedBarcodes` у `CatalogDilovodPreviewResult` (`barcodeKind` у рядках preview);
-    - вибір колонки **Діловод** + «Застосувати» — поле `barcodes` у `applyDilovodPull` (заміна локального snapshot з ERP, без зміни WC).
-  - Після **«Застосувати»** — оновлення картки, опційний push на WC, потім **`onReconcileComplete`** → повторний preview (банер «Узгодити» зникає, якщо конфліктів немає).
-  - Toast після узгодження: окремі рядки для Dilovod pull, завантаження з WC, відправки на WC.
-  - Семантичне порівняння `storefrontDescriptionDoc` (HTML/plain `_nk_storage`, coalesce override; diff блоків за **blockId** + маркетинг) — `storefrontDescription*.ts`, `storefrontDescriptionDocDiff.ts`; pull apply нормалізує doc (`normalizeStorefrontDescriptionDoc`).
-  - Popover порівняння doc: `PullFieldStorefrontDocComparePopover` + `StorefrontDocJsonCompareView` (inline diff, спільний scroll).
-- **Меню «Дії» картки:** Payload (debug), «Відновити зі смітника», «Синхронізувати з Dilovod» (`onSyncFromDilovod` → `requestSyncFromDilovod([id])`), «Відкрити товар на сайті», «Інспектувати на сайті», «Завантажити з сайту» (звичайний колір), «Синхронізувати з сайтом» (зелений).
-- **Склад (`ProductIngredientsTags`):** текст із комами при вставці / після коми розкладається на теги (`splitIngredientsInput`, коми в дужках не ділять). Вкладений склад – тег `назва (a, b, c)` у `productIngredientsJson` (`string[]`, без міграції; `normalizeIngredientTag` канонізує пробіл перед `(` і `, ` між дочірніми, тому етикетка/вітрина виводять `соус (a, b)` навіть для старих значень; `parseIngredientGroup` / `buildIngredientGroupTag`): група з дочірніми тегами, клік редагує, ✕ видаляє, DnD лише в межах батька. DnD – `wrapSortingStrategy` + `DragOverlay`.
-- **Legacy fullDescription (admin)** – акордеон лише коли поле не порожнє (без урахування HTML-тегів).
-- **Зображення в картці:** `ProductImageUpload` — галерея **PhotoSwipe** (`CatalogImageGalleryLightbox`; caption: назва + `W × H px · вага · ФОРМАТ` на темній напівпрозорій підкладці); на мініатюрах при hover бейджі метаданих (`ImageMetaBadges`) і кнопки «автоназва» та «оптимізувати» (Tooltip `dark`); завантаження до 30 МБ з автостисненням, правила назв, оптимізація й дзеркалювання на прод – див. [`woocommerce-storefront-phase1.md`](./woocommerce-storefront-phase1.md#зображення-каталогу); під час lightbox drawer не закривається (`photoswipeOverlay.ts` + `isDismissable={false}` на HeroUI `Drawer`, не React Aria `shouldCloseOnInteractOutside`).
-- **Detail fetch:** `fetchCatalogGoodDetail(…, { livePull: false })` для швидкого відкриття drawer без блокуючого Dilovod live-pull.
-
-### UI: CatalogTable (список)
-
-- Колонка **«Зобр.»** одразу після **SKU** (іконка + `imageCount` з `_count.images`).
-- DTO рядка: `primaryImageUrl`, `imagePreviewUrls` (до 24 файлів, primary → `sortOrder`); абсолютні URL через `mediaPublicBaseUrl` з storefront settings + fallback на origin.
-- Tooltip на **назві товару** — прев’ю головного зображення + назва.
-- Клік по лічильнику зображень — `CatalogImagePreviewPopover` (сітка 3×3, lightbox); той самий компонент, що в tri-source таблиці pull.
-- **Підказки ⚠️** біля назви (і «Вага» в колонці ваги): `catalogAttentionLabels` з API (`getCatalogCardAttentionLabels` / `catalogListAttentionEnrichment`) — обовʼязкові реквізити, некоректна військова ціна, порожній контент вітрини (зображення, короткий опис; КБЖУ і склад лише для продукції, не для наборів), підозрілий `specQty` для продукції з BOM. Рахуються лише для товарів у гілці «Готова продукція» з підгрупами (`isFinishedProduct` у DTO, `getFinishedProductsFolderIds`); для інгредієнтів, матеріалів, НМА, малоцінки тощо підказок немає.
-- Копіювання SKU — кнопка в комірці (`SkuCopyCell`).
-- На вузьких екранах таблиця в обгортці `overflow-x-auto` (горизонтальний scroll).
-- Опис — `DescriptionEditor` (не name).
-- ШК: генерація EAN-13 (`/barcode/next`) + вибір партії (reuse Movement `BatchNumbersAutocomplete`); див. секцію «Штрихкоди» вище.
-- Unsaved: snapshot form + BOM + prices + barcodes + images + objectKind/parentId → `getDrawerDirtyFields` → `isDirty` → `useUnsavedGuard` + `UnsavedChangesModal` при закритті Drawer / навігації / beforeunload.
-- **Dirty-маркери:** `FieldDirtyMarker` (жовта дискетка) на змінених полях і заголовках вкладок (Основні, BOM, ціни, штрихкоди, опис і зображення). Lazy hydration вкладки «Опис і зображення» не затирає dirty інших вкладок (`mergeStorefrontFieldsIntoDrawerBaseline`); TipTap editor чекає `onInitialSettled` перед фіксацією baseline.
-- Смітник у картці: `parentId === CATALOG_TRASH_ID` → кнопка «Відновити» (move picker).
-- Футер (edit, є SKU): зліва **Оновити Legacy** → той самий confirm / `legacySyncMutation`, що в toolbar і context menu.
-
-### Залишки по складах
-
-Набір складів залежить від гілки товару (`resolveCatalogStockBranch`, `getFinishedProductsFolderIds` / `getIngredientsFolderIds` у `catalogFinishedProductsFolder.ts`; на клієнті `isInFinishedProductsBranch` / `isInIngredientsBranch`):
-
-| Гілка | Склади | Бейдж | `stockBalanceByStock` |
-| --- | --- | --- | --- |
-| «Готова продукція» | Склад готової продукції / Малий склад (`dilovod_main_storage_id` / `dilovod_small_storage_id`) | **ГП** / **МС** | `{"1":ГП,"2":МС}` (слоти), dual-write у `products` |
-| «Інгредієнти» (`CATALOG_INGREDIENTS_FOLDER_ID`) | Склад сировини/пакування `1100700000001018` / Виробництво продукції `1100700000001020` | **СП** / **ВП** | ключі = id складів Dilovod; лише `catalog_goods` |
-| Інші | – | – | залишки не показуються |
-
-- Парсинг: `parseCatalogStockJson` (`shared/utils/catalogStock.ts`) → `mainStock` / `smallStock` / `rawStock` / `productionStock`; картка отримує `stock.branch`.
-- `StockBadge` (`ms` / `gp` / `sp` / `vp`) з `withTooltip` показує повну назву складу (таблиця, картка). Біля СП / ВП – одиниця виміру товару (`mainUnitId` → довідник одиниць, `resolveUnitName`), qty до 3 знаків (`formatStockQty`).
-- **Оновлення:** «Оновити залишки» / cron (`runLegacyStockSyncChain`): ГП/МС – `getBalanceBySkuList` (фільтр за SKU); інгредієнти – `updateIngredientStockBalancesInDatabase`: **один** запит `balance/goods` на 500 товарів за id товару (більшість інгредієнтів без SKU) і двома складами (`ingredientStockSync.ts`). Незмінені записи не перезаписуються. Складські сценарії (експорт переміщень, випуск наборів) залишки інгредієнтів не оновлюють.
-- **ФОП:** налаштування Dilovod «Залишки в каталозі» (`dilovod_stock_firm_scope`): `all` (за замовчуванням) – сума по всіх ФОП, `default` – лише «Фірма за замовчуванням». Діє на ГП/МС і СП/ВП; читається з БД перед кожним оновленням (`resolveCatalogStockFirmId`). ГП/МС далі експортуються в SalesDrive і на сайт.
-
-### UI: тип у таблиці
-
-`goodTypeLabel(item, accPolicies?)`:
-
-- папка → «Група» / «Архів»;
-- інакше назва з довідника `accPolicies` за `accPolicyId`;
-- fallback без довідника: `…1001` → «Продукція», kit/`…1031` → «Товарні набори», інакше «Товар».
-
-### UI: дерево, таблиця, breadcrumbs
-
-На `useTouchUi()` (viewport `< lg` або `(any-pointer: coarse)`) aside з деревом ховається; те саме дерево в плаваючій **`ActionBubble`** (`id="catalog"`). Деталі: `Docs/architecture/action-bubble.md`.
-
-**Дерево (**`CatalogTree`**)** — nested-рендер через `tree.getRootItem()`:
-
-- Root «Каталог» завжди видимий і **завжди розгорнутий** (без chevron / без collapse / без DnD drag).
-- Chevron лише у папок із дочірніми папками.
-- Клік по **неактивній** папці → select + expand (якщо згорнута); **згортання** — лише клік по вже активній папці або по chevron.
-- Клік по **chevron** → лише expand/collapse, **без** зміни `selectedFolderId` і без reload таблиці.
-- Vertical lines (`border-l`) — для вкладених рівнів; у дітей root лінії немає.
-- Плавне розкриття: CSS `grid-template-rows` + `transition`.
-- **DnD:** drop на папку/root = **move** (`requestMove`); drop між siblings (лінія above/below) = **reorder** (`POST /reorder`).
-
-**Архіви в sidebar-дереві:**
-
-- `buildTreeItems(nodes)` за замовчуванням `hideArchives: true`: папки «Архів – …» лишаються в map (для breadcrumbs / lookup), але знімаються з `children`; id пишеться в `archiveChildId` батька.
-- У пункті меню батька — іконка `archive` + Tooltip «Відкрити архів» → `onSelectFolder(archiveChildId)`.
-- `treeItemsFull` = `buildTreeItems(nodes, { hideArchives: false })` — для picker / перевірок `isArchiveFolderId`.
-
-**Таблиця** — діти поточної папки; рядки-папки з іменем архіву **приховані** (доступ лише через іконку в дереві або breadcrumbs).
-
-- Гілка «Готова продукція»: колонки weight, packageRatio, unitRatio (Admin), ГП/МС, «В замовленнях»; stats з `/api/orders/products/stats?status=1|2|9&splitMonolithic=true`.
-- Гілка «Інгредієнти» (з підгрупами): колонки залишків **СП** / **ВП** з одиницею виміру товару; інші гілки (Матеріали, НМА тощо) колонок залишків не мають. Див. «Залишки по складах».
-- **«Рухи товару»** (контекстне меню і «Дії», один товар): звіт рухів по товару без партії ([`product-movements.md`](./product-movements.md)).
-- **«В замовленнях»:** комплекти (`products.set`) — кількість наборів з рядків замовлення; звичайні товари — порції з `processedItems` мінус компоненти наборів (та сама логіка, що звіт відвантажень, але без `payload.shipment.bySku`).
-- **Пошук** (`q` ≥ 2): колонки **Категорія** (`parentName`, клік → папка) і **В замовленнях** (навіть поза гілкою ГП). Клік по сумі або кольоровій цифрі відкриває модалку замовлень.
-- Column `SortDescriptor`; кнопка **«Ручний порядок»** біля breadcrumbs скидає на `sortOrder`.
-- **DnD товарів:** grip поза кнопкою назви; `stopPropagation` на pointerDown; reorder siblings через `/reorder` (у пошуку вимкнено).
-
-**Breadcrumbs**
-
-- Звичайний режим: шлях від root до `selectedFolderId` (крошка «Архів – …» видима всередині архіву).
-- **Пошук:** лише `Каталог > Пошук: «…»` (без шляху поточної папки); клік по «Каталог» скидає пошук через `navigateToFolder`.
-
-### UI: архів / смітник / відновлення / move picker
-
-Розташування елемента: `resolveCatalogItemLocation(row, treeItems)` → `trash` | `archive` | `normal` (за `parentId` / імʼям батька).
-
-- Усередині архівної папки **або** коли всі обрані — архівні (у т.ч. з **пошуку**): toolbar/context menu → **«Відновити з архіву»** замість «В архів».
-- Елементи зі смітника (ПКМ у таблиці/пошуку/`TrashDrawer`, toolbar): **«Відновити»** замість «Видалити» → `MoveToFolderModal` (`isRestore`, дерево без архівів).
-- Context menu: **«Перемістити в…»** → `MoveToFolderModal` з **повним** деревом (архіви як окремі папки); blocked = обрані ids + нащадки. Зі смітника move також іде через restore-picker.
-- Confirm перед move (DnD) попереджає про деактивацію, якщо ціль — архів.
-- Restore з архіву → confirm → `POST /goods/restore`.
-
-### UI: ProductOrdersModal
-
-Спільна модалка: `client/components/modals/ProductOrdersModal.tsx` (таби конфігуруються пропом `tabs`).
-
-| Контекст | Таби |
-| --- | --- |
-| Каталог `/products` | Всі \| Нові \| Підтверджені \| На утриманні; `GET /api/orders/products/orders?sku=&status=1,2,9&splitMonolithic=true` (для наборів — кількість комплектів) |
-| Звіт відвантажень | Звичайні порції \| У складі монолітних наборів (`hideTabs` для плоского монолітного списку) |
-
-Навігація між товарами: контрол у хедері **перед SKU** (↑/↓ + `n / total`); стрілки клавіатури лишаються. Футера немає.
-
-### UI: DnD і підтвердження
-
-- **Move:** drop на папку / root (з дерева або таблиці via `application/x-catalog-ids`). Root **не** можна тягнути.
-- **Reorder:** siblings у дереві (папки) і таблиці (товари); `POST /reorder`.
-- Drag preview: `createCatalogDragPreview` — кастомний `setDragImage`, кілька елементів стовпчиком.
-- Перед мутаціями — confirm:
-  - move (після drop) → `ConfirmModal` (+ текст про деактивацію, якщо ціль архів)
-  - move via picker → одразу `moveMutation` з попередженням у модалці
-  - archive → `ArchiveConfirmModal`
-  - restore → `ConfirmModal`
-  - trash / duplicate → `ConfirmModal`
-
-
-
-### Корінь каталогу Dilovod (`parentId`)
-
-У Dilovod елементи кореня мають `parent = "0"`. Локально:
-
-- `ProductsDilovodGateway.mapObjectToLocal`: `"0"` / `""` → `null`.
-- `GET /folder/root/children` і `getFolderChildren(null)` шукають `parentId IN (null, "0", "")`.
-- `buildTreeItems` також мапить `"0"` / відсутній parent → `CATALOG_ROOT_ID`.
-
----
-
-
+З 2026-11-20 Products 2.0 у `products` **не** пише. Замість dual-write `ProductsCatalogService.invalidateOpsSnapshot()` скидає `CatalogOpsCache` після `createGood`, `updateGood`, `applyDilovodPull`, `reorderSibling`, архівації / відновлення (`setArchivedAt`), `refreshFromDilovod` і `refreshFolderFromDilovod`. PUT `/api/products/:id/*` скидають знімок напряму. Решта змін (ШК коробок, партії) підхоплюється через TTL 120 с.
 
 ## Межі відповідальності vs legacy
 
 
 | Домен                       | Відповідальність                                                                                         |
 | --------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Products 2.0                | Каталог Dilovod → `catalog_*`, CRUD/дерево/ШК; **вузький dual-write** ops у `products`; **Legacy Update** (див. нижче) |
-| Legacy Dilovod product sync | Основний власник таблиці `products` (ціни, `set[]`, barcode, stock sync); звичайний sync **не** force     |
-| SettingsProductSets         | Як раніше (`/product-sets`); Phase 2 — поступовий cutover споживачів на `catalog_*`                      |
+| Products 2.0                | Каталог Dilovod → `catalog_*`, CRUD/дерево/ШК; ops-знімок комплектації (`CatalogOpsCache`) |
+| Legacy `products`           | **Не читається й не пишеться** (2026-11-20). Таблиця чекає на видалення (`Docs/plans/legacy-products-removal.md`) |
+| SettingsProductSets         | Як раніше (`/product-sets`), але працює поверх `catalog_*` через `/api/products`                         |
 
+### Legacy-синхронізація (історія)
 
-⚠️ Автоматичний write-through усієї картки з Products 2.0 у `products` **заборонений** (раніше затирав `set` у комплектів). Дозволені лише:
+- **Legacy Update** (`POST /api/products/sync-manual`): кнопки прибрано з UI 2026-11-16; з 2026-11-20 endpoint лише скидає ops-знімок (`catalogOpsLookup.refreshOpsSnapshot`), без запису в `products`. Архівні SKU відкидаються.
+- **TEMP після «Синхронізувати гілку»**: прибрано 2026-11-20. Відповідь `POST /api/catalog/refresh` з `folderId` ще містить `legacySkuCount` / `legacyOutdatedCount` / `legacySync` / `legacyError` (нулі / `null`) для сумісності клієнта.
+- `syncProductsWithDilovod` (cron «sync products», `/api/products/sync`, `/sync-and-export`, `/stock/balance?sync=true`) і goods-cache refresh теж лише скидають знімок.
 
-1. `syncCatalogOpsFieldsToProducts` (ops після create/update/reorder);
-2. явна дія користувача **Legacy Update** → `POST /api/products/sync-manual`;
-3. **TEMP:** після «Синхронізувати гілку» (`POST /api/catalog/refresh` з `folderId`, опційно `maxDepth`) — Legacy Update активних SKU **лише відвіданих** папок. Прибрати після відмови від `products`.
-
-### Legacy Update (Products 2.0 → `products`)
-
-Явне (або TEMP після refresh гілки) оновлення legacy через Dilovod product sync (не dual-write картки).
-
-| Що | Деталі |
-| --- | --- |
-| UI | **Прибрано з UI** (2026-11-16): пунктів «Оновити legacy cache» у картці, меню та контекстному меню більше немає. `legacySyncMutation` і `POST /api/products/sync-manual` лишились |
-| Клієнт | `legacySyncMutation` → `POST /api/products/sync-manual` з `{ skus, force: true }` |
-| Сервер (вибірково) | `partitionCatalogSkusByArchive` → архівні: `products.isOutdated = true`; активні: `dilovodService.syncProductsWithDilovod('manual', …, { force })` |
-| **TEMP гілка** | Після `refreshFolderFromDilovod` (`maxDepth`: 0 = поточна папка): SKU з `visitedFolderIds` → ті самі правила; відповідь: `legacySkuCount`, `legacyOutdatedCount`, `legacySync`, `maxDepth` |
-| Force | Ігнорує `dilovodDataHash` — завжди `update` / `create` |
-| Поля sync | name, ціни, category, `set`, `portionsPerBox`, barcode, hash, `lastSyncAt`; weight при force через `determineWeightByCategory` |
-| Архів | **Без** Dilovod: лише `isOutdated`, щоб не ловити зайві помилки API |
-
-«Синхронізувати з Діловодом» по `ids` як і раніше оновлює лише `catalog_*`. «Синхронізувати гілку» = structure-refresh `catalog_*` з вибором глибини **плюс TEMP Legacy** у межах цієї глибини.
+«Синхронізувати з Діловодом» по `ids` і «Синхронізувати гілку» оновлюють лише `catalog_*` (гілка: structure-refresh з вибором глибини).
 
 ---
 
@@ -622,14 +222,13 @@ client/pages/Products/
 ## Типові операції
 
 1. Перший запуск UI без даних → **Refresh Dilovod** (`POST /api/catalog/refresh`); довідники — `/settings/dilovod` «Оновити все» або перший `GET /dictionaries`.
-2. Створення/редагування → Dilovod `saveObject` (+ регістри) → `ProductsLocalSync.syncGood` → dual-write ops у `products`.
+2. Створення/редагування → Dilovod `saveObject` (+ регістри) → `ProductsLocalSync.syncGood` → скидання ops-знімка.
 3. Відкриття картки → live-pull header + prices + barcodes + **BOM** (з `remark`/`note`); зворотний BOM — окремий lazy `GET /goods/:id/used-in` у `UsedInSection`.
 4. Archive / Trash → зміна `parent` + `setDelMark`.
 5. Restore з архіву → батьківська папка архіву + `delMark: 0`; зі смітника → move picker.
 6. DnD: drop на папку = move; між siblings = `POST /reorder`.
 7. Навігація: дерево (іконка архіву), breadcrumbs або open папки з таблиці; у пошуку — restore за `parentId` рядка. URL hash: `folder` / `q` / `good`.
-8. **Legacy Update** (вибірково або TEMP після sync гілки) → активні SKU → `sync-manual` force; архівні → `products.isOutdated`.
-9. Пошук → категорія / «В замовленнях» → модалка замовлень товару.
+8. Пошук → категорія / «В замовленнях» → модалка замовлень товару.
 
 ---
 

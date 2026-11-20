@@ -72,7 +72,7 @@ Dilovod (SoT) → catalog_* (локальне дзеркало) → catalogOpsLo
 
 **Критерій:** order assembly і expand працюють без `prisma.product`; perf не гірше ±10%.
 
-**Статус (2026-11-20):** пункти 1–2 виконано. `CatalogOpsCache.reload()` бере `catalogOpsLookup.listAllLeavesForOps()` (усі листові товари з SKU, не лише «Готова продукція»: `products` містив і архів, техн. набори, коробки). Звірка на живих даних: 176 активних SKU через `flattenBatch`, розбіжностей логіки немає; reload приблизно як у старого кешу (0,5–1 с через тунель). Свідомо прийнято: 15 архівних наборів, склад яких був лише в `products`, більше не розгортаються (відкритих замовлень з ними немає). Пункт 3 (видалити `ProductOpsCache.ts`) після релізу без регресій. Числовий `id` прибрано у фазі 3 (див. нижче).
+**Статус (2026-11-20):** пункти 1–2 виконано. `CatalogOpsCache.reload()` бере `catalogOpsLookup.listAllLeavesForOps()` (усі листові товари з SKU, не лише «Готова продукція»: `products` містив і архів, техн. набори, коробки). Звірка на живих даних: 176 активних SKU через `flattenBatch`, розбіжностей логіки немає; reload приблизно як у старого кешу (0,5–1 с через тунель). Свідомо прийнято: 15 архівних наборів, склад яких був лише в `products`, більше не розгортаються (відкритих замовлень з ними немає). Пункт 3: `ProductOpsCache.ts` видалено разом з фазою 2 (після неї `products` не оновлюється, тож відкат на нього не мав сенсу). Числовий `id` прибрано у фазі 3 (див. нижче).
 
 ---
 
@@ -89,6 +89,8 @@ Dilovod (SoT) → catalog_* (локальне дзеркало) → catalogOpsLo
 5. **Cron** `sync-products` — або видалити, або замінити no-op / invalidate cache.
 
 **Критерій:** у логах/коді **нуль** `prisma.product.create|update|delete`.
+
+**Статус (2026-11-20):** виконано. `projectToProductsCache` / `projectGood` / `markLegacyProductsOutdatedBySku` видалено; `syncProductsWithDilovod` і goods-cache викликають `catalogOpsLookup.refreshOpsSnapshot` (лише скидає `CatalogOpsCache` і повертає підсумок у старій формі). Замість dual-write після змін картки, архівації та refresh з Dilovod скидається ops-знімок (`ProductsCatalogService.invalidateOpsSnapshot`). TEMP-блок після «Синхронізувати гілку» прибрано, поля `legacy*` у відповіді лишились нулями до чистки UI. Cron і роути `/api/products/sync*` поки лишились (фаза 4/5). `grep prisma.product` у `server/` = 0.
 
 ---
 

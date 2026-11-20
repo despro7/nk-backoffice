@@ -26,13 +26,14 @@ TTL **120 с**, один reload на процес (спільний `inflight`).
 - Архівні набори без компонентів у каталозі (склад жив лише в `products`) не розгортаються: свідомо прийнято 2026-11-20.
 - `invalidate()` під час завантаження: знімок віддається запиту, але не кешується.
 
-Попередник `ProductOpsCache` (рядки `products` + накладання з каталогу) лишився у коді без використання до видалення (`Docs/plans/legacy-products-removal.md`).
+Попередник `ProductOpsCache` (рядки `products` + накладання з каталогу) видалено 2026-11-20.
 
 Інвалідація (`catalogOpsCache.invalidate()`):
 
 - `CatalogOpsLookup.applyStockBalances`
 - `CatalogOpsLookup.deductSmallStock`
-- `CatalogOpsLookup.projectToProductsCache`
+- `CatalogOpsLookup.refreshOpsSnapshot` (cron «sync products», `/api/products/sync*`, goods-cache)
+- `ProductsCatalogService.invalidateOpsSnapshot` (зміни картки, архів, refresh з Dilovod) і PUT `/api/products/:id/*`
 
 Лог: `CatalogOpsCache: goods=…, keys=…, time=…ms`. Далі `flattenBatch … time=` має бути мілісекунди, поки знімок живий.
 

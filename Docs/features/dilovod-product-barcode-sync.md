@@ -8,7 +8,7 @@
 
 ## Потік синхронізації
 
-> **Застаріло.** `syncProductsWithDilovod()` давно лише проєктує `catalog_goods` → `products` (`catalogOpsLookup.projectToProductsCache`), без запитів у Dilovod. `DilovodSyncManager.syncProductsToDatabase()` видалено 2026-11-20. Нижче історичний опис legacy-потоку.
+> **Застаріло.** `syncProductsWithDilovod()` без запитів у Dilovod; з 2026-11-20 лише скидає ops-знімок (`catalogOpsLookup.refreshOpsSnapshot`), у `products` нічого не пише. `DilovodSyncManager.syncProductsToDatabase()` видалено 2026-11-20. Нижче історичний опис legacy-потоку.
 
 1. `DilovodService.syncProductsWithDilovod()` збирає SKU з `catalog_goods` (піддерево «Готова продукція»).
 2. `getGoodsInfoWithSetsOptimized()`:
