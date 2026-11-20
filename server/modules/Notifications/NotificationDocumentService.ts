@@ -5,6 +5,7 @@
  */
 
 import { prisma } from '../../lib/utils.js';
+import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
 import type {
   NotificationDocument,
   NotificationDocumentItem,
@@ -161,21 +162,21 @@ export function computeTotals(items: NotificationDocumentItem[], lookup: SetLook
   return { positions: top.length, dishes, portions };
 }
 
-/** Склади наборів з таблиці products (з вкладеними наборами). */
+/** Склади комплектів з каталогу (`catalog_good_components`, з вкладеними наборами). */
 async function loadSetLookup(skus: string[]): Promise<SetLookup> {
   const sets = new Map<string, Array<{ sku: string; qty: number }> | null>();
   let pending = [...new Set(skus)];
   for (let depth = 0; pending.length > 0 && depth < 5; depth++) {
-    const products = await prisma.product.findMany({ where: { sku: { in: pending } }, select: { sku: true, set: true } });
-    for (const sku of pending) sets.set(sku, null);
+    const found = await catalogOpsLookup.getBySkus(pending);
     const next: string[] = [];
-    for (const p of products) {
-      const composition = asArray(p.set)
-        .map(asObject)
-        .map((c) => ({ sku: str(c.id) ?? '', qty: num(c.quantity) }))
+    for (const sku of pending) {
+      sets.set(sku, null);
+      const p = found.get(sku) ?? found.get(sku.toLowerCase());
+      const composition = (p?.set ?? [])
+        .map((c) => ({ sku: c.id, qty: num(c.quantity) }))
         .filter((c) => c.sku && c.qty > 0);
       if (composition.length === 0) continue;
-      sets.set(p.sku, composition);
+      sets.set(sku, composition);
       for (const c of composition) if (!sets.has(c.sku)) next.push(c.sku);
     }
     pending = [...new Set(next)];
@@ -278,10 +279,7 @@ async function loadWriteOffAttempt(data: Json, base: NotificationDocument): Prom
   const header = asObject(payload.header);
   const rows = asArray(asObject(payload.tableParts).tpGoods).map(asObject);
   const goodIds = [...new Set(rows.map((r) => str(r.good)).filter((v): v is string => Boolean(v)))];
-  const products = goodIds.length
-    ? await prisma.product.findMany({ where: { dilovodId: { in: goodIds } }, select: { dilovodId: true, sku: true, name: true } })
-    : [];
-  const byId = new Map(products.map((p) => [p.dilovodId, p]));
+  const byId = goodIds.length ? await catalogOpsLookup.getBySkus(goodIds) : new Map();
   const items: NotificationDocumentItem[] = rows.map((r) => {
     const product = byId.get(str(r.good) ?? '');
     return { sku: product?.sku ?? null, name: product?.name ?? `Товар ${str(r.good) ?? ''}`, quantity: num(r.qty), batch: null };

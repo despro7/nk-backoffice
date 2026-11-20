@@ -7,12 +7,13 @@
 
 ## 2026-11-20 – `/api/products`: `id` = goodId каталогу, видалено мертвий legacy-sync
 
-**Files:** `server/modules/Products/CatalogOpsLookup.ts`, `server/modules/Products/CatalogOpsCache.spec.ts`, `server/routes/products.ts`, `server/services/dilovod/DilovodSyncManager.ts`, `server/services/dilovod/DilovodService.ts`, `shared/types/dilovod.ts`
+**Files:** `server/modules/Products/CatalogOpsLookup.ts`, `server/modules/Products/CatalogOpsCache.spec.ts`, `server/modules/Notifications/NotificationDocumentService.ts`, `server/routes/products.ts`, `server/services/dilovod/DilovodSyncManager.ts`, `server/services/dilovod/DilovodService.ts`, `shared/types/dilovod.ts`
 
 - **`id` у відповідях `/api/products*`** (і в `CatalogOpsCache`) тепер `catalog_goods.id` (string) замість числового `products.id`; додано поле `goodId`. Раніше товари, яких не було в `products`, отримували `id: 0`, і їхні PUT у `SettingsProductSets` не працювали.
 - **`PUT /api/products/:id/*`** (вага, порядок, коефіцієнт, ШК, порції в коробці): `:id` = goodId або SKU. Числовий legacy id більше не приймається.
 - `CatalogOpsLookup.hydrate` більше не читає `products`. Разом з попереднім записом: таблицю `products` **ніхто не читає**, лишились лише писачі.
 - `DilovodDirectories.goods[].id` тепер string (goodId).
+- **Сповіщення про документи** (`NotificationDocumentService`): склад наборів для підрахунку порцій і назви товарів у неуспішному списанні тепер з каталогу (`catalogOpsLookup.getBySkus`), а не з `products`.
 - **Видалено мертвий код:** `DilovodSyncManager.syncProductsToDatabase`, `getProducts`, `getSyncStats`, `cleanupOldProducts`, `markOutdatedProducts` і обгортки в `DilovodService` (викликів не було).
 
 **Документація:** `Docs/plans/legacy-products-removal.md` (фаза 3, quick wins), `Docs/features/products-catalog-2.0.md`, `Docs/features/dilovod-product-barcode-sync.md` (позначка «застаріло»).
