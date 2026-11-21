@@ -21,6 +21,14 @@
 
 ---
 
+## 2026-11-22 – Ops `currency` віддає код `UAH`
+
+**Files:** `server/modules/Products/CatalogOpsLookup.ts`
+
+- Ops-форма товару (`/api/products*`, `CatalogOpsCache`) повертала в `currency` Dilovod id валюти з `catalog_good_prices`; тепер, як і колишній `products`, завжди `UAH`. Поле ніхто в клієнті не читає.
+
+---
+
 ## 2026-11-21 – Видалено legacy-таблицю `products`
 
 **Files:** `prisma/schema.prisma`, `prisma/migrations/20261121230000_drop_legacy_products_table/migration.sql`, `scripts/set-unitRatio-from-gradations.cjs` (видалено)

@@ -128,9 +128,9 @@ function mapPrices(row: CatalogRow): {
 } {
   let costPerItem: number | null = null;
   const additional: Array<{ priceType: string; priceValue: string }> = [];
-  let currency = 'UAH';
+  // `catalog_good_prices.currency` зберігає Dilovod id валюти; ops-форма (як колишній `products`) віддає код.
+  const currency = 'UAH';
   for (const p of row.prices) {
-    if (p.currency) currency = p.currency;
     if (p.priceType === CATALOG_PRICE_TYPE_RETAIL_ID) {
       costPerItem = Number(p.price) || 0;
     } else if (Number(p.price) > 0) {
