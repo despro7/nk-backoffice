@@ -336,13 +336,13 @@ export default function SetSearchPanel({
         </div>
       )}
 
-      {!loading && results.length === 0 && hasSearched && query.trim() !== '' && (
+      {!hasSelectedSet && !loading && results.length === 0 && hasSearched && query.trim() !== '' && (
         <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-900">
           {emptyMessage}
         </div>
       )}
 
-      {results.length > 0 && (
+      {!hasSelectedSet && results.length > 0 && (
         <div className="space-y-3">
           {results.map((product: any) => (
             <Button

@@ -46,6 +46,7 @@
 ### Сторінка звіту
 
 - **Фільтри** — `ProductMovementsFilters`: товар (Autocomplete + останні запити), партія, склад, фірма, пресет періоду + DateRangePicker.
+  - **Перемикач «Інв. набори»** (всередині поля товару, без лейбла, Tooltip «Шукати також в інвентаризаційних наборах (_rebatch)»): додає другий запит `GET /api/catalog/search?underFolderId=CATALOG_INVENTORY_SETS_FOLDER_ID`; результати зливаються з пошуком у «Готовій продукції», дублі за SKU/id відкидаються. За замовчуванням вимкнений, не зберігається між відкриттями.
 - **Останні запити** — `localStorage` ключ `product-movements-recent-searches-v1`, максимум **10** записів.
 - **Заголовок звіту** — `ProductMovementsReportHeader`: зліва назва/SKU/період/склад (`showIdentity`); справа компактні віджети `ProductMovementsSummaryCards`:
   1. **Партії** — `всього / без рухів` (групи з `lines.length === 0`);

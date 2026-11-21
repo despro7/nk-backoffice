@@ -5,6 +5,9 @@ interface Props {
   onPreview?: () => void;
   onSend?: () => void;
   onCancel?: () => void;
+  /** Ліворуч: повернення на попередній крок (коригування, крок 2 → крок 1). */
+  onBack?: () => void;
+  backLabel?: string;
   sendDisabled?: boolean;
   previewDisabled?: boolean;
   sendLabel?: string;
@@ -15,13 +18,29 @@ export default function ActionsBar({
   onPreview,
   onSend,
   onCancel,
+  onBack,
+  backLabel = 'Повернутися на крок 1',
   sendDisabled = false,
   previewDisabled = false,
   sendLabel = 'Створити випуск',
   sendLoading = false,
 }: Props) {
   return (
-    <div className="flex justify-end gap-3">
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        {typeof onBack === 'function' && (
+          <Button
+            color="warning"
+            variant="light"
+            size="lg"
+            onPress={onBack}
+            startContent={<DynamicIcon name="arrow-left" className="w-5 h-5" />}
+          >
+            {backLabel}
+          </Button>
+        )}
+      </div>
+      <div className="flex justify-end gap-3">
       {/** Optional cancel button (clears inputs) */}
       {typeof onCancel === 'function' && (
         <Button color="default" size="lg" onPress={onCancel}>
@@ -50,6 +69,7 @@ export default function ActionsBar({
       >
         {sendLabel}
       </Button>
+      </div>
     </div>
   );
 }

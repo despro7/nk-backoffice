@@ -85,6 +85,15 @@ interface BatchCacheEntry {
 /** Кеш: ключ → { data, timestamp, ttl } */
 const batchCache = new Map<string, BatchCacheEntry>();
 
+/**
+ * Скидає кеш партій. Викликається після операцій, що змінюють залишки партій у Dilovod
+ * (комплектування, редагування, видалення): кеш «старих» дат живе 12 год і інакше
+ * показував би партії так, ніби документа не існує.
+ */
+export function invalidateBatchNumbersCache(): void {
+  batchCache.clear();
+}
+
 /** TTL для "старих" дат (> 30 хвилин тому) — 12 годин */
 const BATCH_CACHE_TTL_LONG  = 12 * 60 * 60 * 1000;
 /** TTL для "свіжих" дат (≤ 30 хвилин тому) або без дати — 5 хвилин */
@@ -93,7 +102,7 @@ const BATCH_CACHE_TTL_SHORT = 5 * 60 * 1000;
 const BATCH_CACHE_OLD_THRESHOLD_MS = 30 * 60 * 1000;
 
 /**
- * Генерує ключ кешу: sku:firmId:YYYY-MM-DD_HH:mm (округлення до хвилини)
+ * Генерує ключ кешу: sku:firmId:YYYY-MM-DD_HH:mm:ss (з секундами: документ може бути проведений о :21, а баланс на :20 інший)
  * Якщо дата не передана — використовується токен "now"
  */
 type BatchStorageMode = 'all' | 'exclude-small' | 'small-only';
@@ -116,7 +125,7 @@ function buildBatchCacheKey(
     return `${sku}:${firmPart}:${storageMode}:${storagePart}:${qtyPart}:${expirationPart}:now`;
   }
   const pad = (n: number) => n.toString().padStart(2, '0');
-  const datePart = `${asOfDate.getFullYear()}-${pad(asOfDate.getMonth() + 1)}-${pad(asOfDate.getDate())}_${pad(asOfDate.getHours())}:${pad(asOfDate.getMinutes())}`;
+  const datePart = `${asOfDate.getFullYear()}-${pad(asOfDate.getMonth() + 1)}-${pad(asOfDate.getDate())}_${pad(asOfDate.getHours())}:${pad(asOfDate.getMinutes())}:${pad(asOfDate.getSeconds())}`;
   return `${sku}:${firmPart}:${storageMode}:${storagePart}:${qtyPart}:${expirationPart}:${datePart}`;
 }
 

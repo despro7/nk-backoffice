@@ -593,32 +593,57 @@ export default function useReleaseSets() {
     let cancelled = false;
     const timer = setTimeout(async () => {
       try {
-        const response = await fetch('/api/warehouse/stock-snapshot', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            skus,
-            storageId,
-            firmId: returns.receiveFirmId ?? undefined,
-            asOfDate: asOfDate ?? undefined,
-          }),
-        });
-        if (!response.ok || cancelled) return;
+        const fetchSnapshot = async (date?: string | null) => {
+          const response = await fetch('/api/warehouse/stock-snapshot', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              skus,
+              storageId,
+              firmId: returns.receiveFirmId ?? undefined,
+              asOfDate: date ?? undefined,
+            }),
+          });
+          if (!response.ok) return null;
+          const result = await response.json().catch(() => null);
+          return result?.success && typeof result.stocks === 'object' && result.stocks != null
+            ? result.stocks as Record<string, { selectedStock?: number }>
+            : null;
+        };
 
-        const json = await response.json().catch(() => null);
-        if (!json?.success || typeof json.stocks !== 'object' || json.stocks == null) return;
+        const asOfStocks = await fetchSnapshot(asOfDate);
+        if (!asOfStocks || cancelled) return;
+        // Розкомплектування: доступно не більше, ніж на дату документа І ніж зараз
+        // (інакше пізніші розкомплектування вже списали набір, а на дату він ще "є").
+        const currentStocks = operationKey === 'goodUnKit' && asOfDate
+          ? await fetchSnapshot(null)
+          : null;
+        if (cancelled) return;
+        const json = { stocks: asOfStocks, currentStocks };
 
         setItems((prev) => prev.map((item) => {
           const stock = json.stocks[item.setSku];
-          const qty = Number(stock?.selectedStock ?? 0);
+          const asOfQty = Number(stock?.selectedStock ?? 0);
+          const currentQty = json.currentStocks
+            ? Number(json.currentStocks[item.setSku]?.selectedStock ?? 0)
+            : null;
+          const qty = currentQty != null && Number.isFinite(currentQty)
+            ? Math.min(asOfQty, currentQty)
+            : asOfQty;
           const itemQty = Number(item.quantity ?? 0);
           const availableQuantity = Number.isFinite(qty) && qty > 0
             ? qty
-            : (item.isCorrectionSet && Number.isFinite(itemQty) && itemQty > 0 ? itemQty : null);
+            : (item.isCorrectionSet && operationKey !== 'goodUnKit' && Number.isFinite(itemQty) && itemQty > 0 ? itemQty : null);
+          // Розкомплектування: кількість не може перевищувати живий залишок.
+          const clampedQuantity = operationKey === 'goodUnKit' && item.isCorrectionSet
+            && Number.isFinite(itemQty) && itemQty > (availableQuantity ?? 0)
+            ? (availableQuantity ?? 0)
+            : item.quantity;
           return {
             ...item,
             availableQuantity,
+            quantity: clampedQuantity,
           };
         }));
       } catch {
@@ -632,6 +657,7 @@ export default function useReleaseSets() {
     };
   }, [
     itemsSkuSignature,
+    operationKey,
     selectedStorage,
     defaultSmallStorageId,
     returns.receiveFirmId,
@@ -803,6 +829,7 @@ export default function useReleaseSets() {
       quantity: safeQuantity,
       componentsSnapshot: formSnapshotFromStored(storedSnapshot, safeQuantity, quantityMode),
       availableQuantity: null,
+      sourceSku: first?.source_sku ? String(first.source_sku) : null,
       isCorrectionSet: Boolean(correctionSession),
     }] : []);
     setComponentBatches(allocationsFromReleaseItem(first));
@@ -1085,6 +1112,16 @@ export default function useReleaseSets() {
       sourceSku,
       isCorrectionSet: true,
     }, addSetContext);
+  };
+
+  /** Комплектування коригування, яке створене, але ще не розкомплектоване (для кроку 2 → крок 1). */
+  const fetchOpenCorrectionKit = async (setSku: string, sessionId?: string | null): Promise<any | null> => {
+    const url = new URL('/api/warehouse/releases/batch-correction/open-kit', window.location.origin);
+    if (setSku) url.searchParams.set('setSku', setSku);
+    if (sessionId) url.searchParams.set('sessionId', sessionId);
+    const resp = await fetch(url.toString(), { credentials: 'include' });
+    const json = await resp.json().catch(() => ({}));
+    return resp.ok && json?.success ? (json.record ?? null) : null;
   };
 
   const ensureCorrectionSessionId = (): string | null => {
@@ -1645,6 +1682,7 @@ export default function useReleaseSets() {
     loadLastKitBatches,
     transitionToCorrectionUnkitStep,
     selectCorrectionProduct,
+    fetchOpenCorrectionKit,
     startRebatchWizard,
     buildRebatchSku,
     storages,

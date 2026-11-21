@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-11-21 – Коригування партійного обліку: повернення на крок 1, живий залишок, звірка з Dilovod
+
+**Files:** `client/features/product-movements/components/ProductMovementsFilters.tsx`, `client/pages/Warehouse/WarehouseReleaseSets/ReleaseSetsMainFlow.tsx`, `.../components/ActionsBar.tsx`, `.../components/ReleaseItemsPanel.tsx`, `.../components/SetSearchPanel.tsx`, `.../useReleaseSets.ts`, `server/modules/Warehouse/SetReleaseController.ts`, `server/modules/Warehouse/WarehouseController.ts`, `server/modules/Warehouse/releaseDilovodVerification.ts` (+ `.spec.ts`), `server/modules/Warehouse/SetReleaseController.batches.spec.ts`
+
+- **Крок 2 (розкомплектування):** залишок набору = мінімум із залишку на дату документа та поточного; fallback «залишок = кількість» лишився лише для kit; кількість у полі обрізається до живого залишку; після вибору набору інші результати пошуку ховаються.
+- **«Повернутися на крок 1»:** нова кнопка зліва в `ActionsBar` (warning, light). Відкриває на редагування створений, але нерозкомплектований kit цього товару (`GET /batch-correction/open-kit`), а після «Зберегти зміни» повертає на крок 2.
+- **Редагування проведеного документа:** залишки партій беруться на початок хвилини дати документа, щоб не враховувати його власне списання («По обліку: 0» і обнулена кількість).
+- **Фікс втрати віртуальних партій:** `PATCH` відфільтровував партії «Розукомплектування …» з `tpGoods`; тепер у сесії коригування вони лишаються (юніт-тест).
+- **Звірка з Dilovod:** після `send` / `PATCH` читається документ і порівнюється з відправленим; розбіжність → `dilovodVerification` + жовтий тост (не блокує).
+- **Кеш `/batch-numbers`:** ключ з секундами, скидання кешу після send / `PATCH` / `DELETE`.
+- **Рухи по товару:** перемикач «Інв. набори» в полі товару додає пошук в інвентаризаційних наборах (`_rebatch`).
+
+**Документація:** `Docs/features/warehouse-release-sets.md`, `Docs/features/product-movements.md`.
+
+---
+
 ## 2026-11-20 – Видалено застарілу сторінку «Товари (кеш / експорт)» і legacy-роути синхронізації
 
 **Files:** `client/pages/SettingsProductSets.tsx` (видалено), `client/routes.config.tsx`, `server/routes/products.ts`, `server/modules/Products/ProductsCatalogService.ts`, `server/services/dilovod/DilovodService.ts`

@@ -34,6 +34,21 @@ Switch у шапці сторінки. Двокроковий wizard:
 2. **Крок 2 (correctionUnkit):** розкладка з набору по цільових партіях; надлишок → нова партія «Коригування обліку {ДАТА}» через `createGoodPartBatch`.
    - `mergeNegativeBatchesForUnkit` також автопідставляє мінусові віртуальні document-партії (для зведення).
 
+#### Крок 2: залишок набору та кількість (2026-11-21)
+
+- Пошук (`SetSearchPanel`) бере `availableQuantity` з кешу `stockBalanceByStock`, але одразу після вибору `useReleaseSets` питає живий залишок `POST /api/warehouse/stock-snapshot`. Для `goodUnKit` доступне = **мінімум** із залишку на дату документа та поточного (інакше пізніші розкомплектування вже списали набір, а на дату він ще «є»).
+- Fallback «залишок = кількість у полі» діє лише для kit; для unkit живий 0 показується як 0.
+- Кількість у полі **обрізається** до живого залишку (лише вниз); партії перераховує наявний ефект синхронізації кількості.
+- Після вибору набору список інших результатів пошуку ховається (їх не можна обрати).
+
+#### Повернення на крок 1 (2026-11-21)
+
+- Кнопка «Повернутися на крок 1» (`ActionsBar`, зліва, `warning` + `variant="light"`) показується лише на кроці 2 після вибору набору **і** якщо є створене, але ще не розкомплектоване комплектування цього товару.
+- `GET /api/warehouse/releases/batch-correction/open-kit?setSku=&sessionId=` повертає останній активний kit сесії (або `_rebatch`-набору); якщо в сесії вже є активний unkit, повертає `null`. Кнопка також враховує `canEditWarehouseReleaseHistory`.
+- Натискання викликає `beginEdit(record)`: відкривається звичайне редагування запису (банер «Редагування №…», «Зберегти зміни»). Якщо на кроці 2 вже розкладені партії, спершу підтвердження.
+- Після «Зберегти зміни» (лише коли редагування відкрито цією кнопкою, а не з вкладки «Історія») викликається `transitionToCorrectionUnkitStep`: майстер повертається на крок 2 цього товару.
+- При редагуванні **проведеного** документа залишки партій беруться на **початок хвилини** дати документа (`editingExistingDocument` у `ReleaseItemsPanel`), інакше «По обліку» вже не містить власного списання документа, а кількість обнулялась.
+
 #### Пошук товарів у correction (2026-10-09)
 
 - **Крок 1 (kit):** `SetSearchPanel` показує лише звичайні товари — без груп (`isGroup`), без комплектів (`set.length > 0`), без SKU `_rebatch`.
@@ -139,6 +154,12 @@ Switch у шапці сторінки. Двокроковий wizard:
 | `linkReleaseCorrectionPairs.ts` | matchKey, partition, plan/audit, merge candidates |
 | `releaseHistoryListQuery.ts` | Фільтри/сорт для list API |
 
+### Звірка документа з Dilovod і віртуальні партії (2026-11-21)
+
+- Після `POST /send` і `PATCH /:id` сервер читає документ з Dilovod (`getObject`) і звіряє `tpGoods` з відправленим (`releaseDilovodVerification.ts`: сума по товару + явні `goodPart`). Відповідь містить `dilovodVerification` `{ ok, issues, expectedQty, actualQty }`; розбіжність додається до `warnings`, UI показує жовтий тост (20 с). Звірка **не блокує** (документ уже збережений); помилка читання не ламає процес.
+- `extractComponentBatchesFromReleaseRecord` у сесії коригування **не відфільтровує** системні партії («Розукомплектування …» тощо). Раніше `PATCH` викидав їх з `tpGoods`, і після повторного збереження вони «поверталися» на залишок (K-000699: `kitQty` 12, у документі лише 5). `last-kit-batches` лишено зі старою фільтрацією.
+- Кеш `/batch-numbers`: ключ тепер з секундами (`…HH:mm:ss`), і кеш **скидається** (`invalidateBatchNumbersCache`) після send, `PATCH` і `DELETE` комплектування. Раніше кеш «старих» дат (12 год) показував баланс до документа.
+
 ### Рефреш залишків при мета-змінах (2026-10-16)
 
 - Зміна **дати / складу / фірми** перезапитує залишки набору (`availableQuantity` через `/stock-snapshot` + `asOfDate`) і партій компонентів (bulk batch-numbers).
@@ -168,6 +189,7 @@ Switch у шапці сторінки. Двокроковий wizard:
 | Dilovod | `DilovodGoodPartsService.ts`, `DilovodApiClient.findGoodPartsByOwnerIds` |
 | Типи | `shared/types/warehouseRelease.ts` |
 | Валідація | `releaseBatchValidation.ts` |
+| Звірка з Dilovod | `releaseDilovodVerification.ts` (+ `.spec.ts`) |
 | Kyiv datetime | `shared/utils/kyivDateTime.ts` |
 | Dilovod remark | `shared/utils/warehouseReleaseRemark.ts` |
 
@@ -184,6 +206,7 @@ Switch у шапці сторінки. Двокроковий wizard:
 - Fail (відповідь Dilovod або exception) → запис у `meta_logs` через `logSetReleaseSendFailure` (`logMetaDilovodExport`, category `dilovod`).
 | GET | `/api/warehouse/releases/last-kit-batches` | Партії останнього kit |
 | GET | `/api/warehouse/releases/batch-correction/search-sets` | Пошук наборів для correction |
+| GET | `/api/warehouse/releases/batch-correction/open-kit` | Створений, але нерозкомплектований kit сесії/набору (повернення на крок 1) |
 | POST | `/api/warehouse/releases/batch-correction/ensure-set` | Інвентаризаційний `_rebatch`-набір |
 | POST | `/api/warehouse/releases/batch-correction/fill-batches` | Автозаповнення партій |
 | POST | `/api/warehouse/batches/create` | Створення партії (surplus / correction) |

@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Autocomplete, AutocompleteItem, Input, Select, SelectItem } from '@heroui/react';
+import { Autocomplete, AutocompleteItem, Input, Select, SelectItem, Switch, Tooltip } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { DateRange } from '@react-types/datepicker';
 import { getLocalTimeZone, today } from '@internationalized/date';
-import { CATALOG_FINISHED_PRODUCTS_FOLDER_NAME } from '@shared/types/catalog';
+import {
+  CATALOG_FINISHED_PRODUCTS_FOLDER_NAME,
+  CATALOG_INVENTORY_SETS_FOLDER_ID,
+} from '@shared/types/catalog';
 import { useBatchNumbers, type BatchNumber } from '@/pages/Warehouse/WarehouseMovement/hooks/useBatchNumbers';
 import ReportDateRangeFilter from '@/pages/Reports/shared/filters/ReportDateRangeFilter';
 import {
@@ -74,11 +77,14 @@ function BatchOptionContent({ batch }: { batch: BatchNumber }) {
 
 async function searchCatalogProducts(
   q: string,
-  options?: { underFolderName?: string },
+  options?: { underFolderName?: string; underFolderId?: string },
 ): Promise<CatalogSearchItem[]> {
   const params = new URLSearchParams({ q });
   if (options?.underFolderName) {
     params.set('underFolderName', options.underFolderName);
+  }
+  if (options?.underFolderId) {
+    params.set('underFolderId', options.underFolderId);
   }
   const res = await fetch(`/api/catalog/search?${params.toString()}`, { credentials: 'include' });
   const json = await res.json();
@@ -180,6 +186,7 @@ export default function ProductMovementsFilters({
   const { batches, loading: batchesLoading, fetchBatches } = useBatchNumbers();
   const [productMenuOpen, setProductMenuOpen] = useState(false);
   const [productSearchQuery, setProductSearchQuery] = useState('');
+  const [includeInventorySets, setIncludeInventorySets] = useState(false);
   const [productOptions, setProductOptions] = useState<CatalogSearchItem[]>([]);
   const [recentSearches, setRecentSearches] = useState(() => loadProductMovementsRecentSearches(meta));
   const [batchQuery, setBatchQuery] = useState('');
@@ -335,12 +342,25 @@ export default function ProductMovementsFilters({
       return;
     }
     const handle = window.setTimeout(() => {
-      void searchCatalogProducts(productSearchQuery.trim(), {
-        underFolderName: CATALOG_FINISHED_PRODUCTS_FOLDER_NAME,
-      }).then(setProductOptions);
+      const query = productSearchQuery.trim();
+      const requests = [
+        searchCatalogProducts(query, { underFolderName: CATALOG_FINISHED_PRODUCTS_FOLDER_NAME }),
+        ...(includeInventorySets
+          ? [searchCatalogProducts(query, { underFolderId: CATALOG_INVENTORY_SETS_FOLDER_ID })]
+          : []),
+      ];
+      void Promise.all(requests).then((groups) => {
+        const seen = new Set<string>();
+        setProductOptions(groups.flat().filter((item) => {
+          const key = item.sku || item.id;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        }));
+      });
     }, 250);
     return () => window.clearTimeout(handle);
-  }, [productMenuOpen, productSearchQuery]);
+  }, [includeInventorySets, productMenuOpen, productSearchQuery]);
 
   useEffect(() => {
     if (!filters.sku) return;
@@ -432,6 +452,25 @@ export default function ProductMovementsFilters({
               isVirtualized={false}
               size={compact ? 'sm' : 'md'}
               startContent={<DynamicIcon name="package" size={16} className="text-default-400" />}
+              endContent={(
+                <Tooltip content="Шукати також в інвентаризаційних наборах (_rebatch)" placement="top">
+                  <div
+                    className="flex items-center"
+                    onMouseDown={(event) => event.preventDefault()}
+                  >
+                    <Switch
+                      size="sm"
+                      aria-label="Шукати також в інвентаризаційних наборах"
+                      isSelected={includeInventorySets}
+                      onValueChange={setIncludeInventorySets}
+                      classNames={{
+                        wrapper: 'mr-0 h-5 w-8 bg-default-400/50 px-0.5 group-data-[hover=true]:bg-default-400/80 group-data-[selected=true]:bg-primary',
+                        thumb: 'h-3.5 w-3.5 group-data-[selected=true]:ml-3',
+                      }}
+                    />
+                  </div>
+                </Tooltip>
+              )}
               listboxProps={{
                 emptyContent: recentSearchesEmptyContent,
                 classNames: {

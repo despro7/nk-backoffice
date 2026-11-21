@@ -13,6 +13,7 @@ import { DynamicIcon } from 'lucide-react/dynamic';
 import { ConfirmModal } from '@/components/modals/ConfirmModal';
 import { useDebug } from '@/contexts/debug-context';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
+import { canEditWarehouseReleaseHistory } from '@shared/utils/releaseHistoryAccess';
 import { PayloadPreviewModal } from '@/components/modals/PayloadPreviewModal';
 import { ToastService } from '@/services/ToastService';
 import ReleaseSendConfirmModal from './components/ReleaseSendConfirmModal';
@@ -34,6 +35,7 @@ type PendingSimpleConfirm =
   | { type: 'correctionOn' }
   | { type: 'correctionOff' }
   | { type: 'operationChange'; nextKey: 'goodKit' | 'goodUnKit' }
+  | { type: 'backToKitStep' }
   | { type: 'fillBatches'; sku: string };
 
 export function ReleaseSetsMainFlow({
@@ -41,7 +43,7 @@ export function ReleaseSetsMainFlow({
   onRebatchLaunchConsumed,
 }: ReleaseSetsMainFlowProps) {
   const { isDebugMode } = useDebug();
-  const { isAdmin } = useRoleAccess();
+  const { isAdmin, user } = useRoleAccess();
   const rs = useReleaseSets();
   const rebatchEntryConsumedRef = React.useRef<string | null>(null);
   const [operDate, setOperDate] = React.useState<string | null>(null);
@@ -57,6 +59,10 @@ export function ReleaseSetsMainFlow({
   const [isForceDeleting, setIsForceDeleting] = React.useState(false);
   const [showClearConfirm, setShowClearConfirm] = React.useState(false);
   const [pendingSimpleConfirm, setPendingSimpleConfirm] = React.useState<PendingSimpleConfirm | null>(null);
+  /** Створене, але ще не розкомплектоване комплектування цього товару (для кроку 2 → крок 1). */
+  const [openKitRecord, setOpenKitRecord] = React.useState<any | null>(null);
+  /** id комплектування, відкритого кнопкою «Повернутися на крок 1»: після збереження повертаємо на крок 2. */
+  const [returnToUnkitEditId, setReturnToUnkitEditId] = React.useState<number | null>(null);
   const [isSimpleConfirmBusy, setIsSimpleConfirmBusy] = React.useState(false);
   const [isSavingEdit, setIsSavingEdit] = React.useState(false);
   const [searchResetSignal, setSearchResetSignal] = React.useState(0);
@@ -209,6 +215,31 @@ export function ReleaseSetsMainFlow({
     setIsForceDeleting(false);
   };
 
+  const activeSetSku = rs.items[0]?.setSku ?? null;
+  React.useEffect(() => {
+    if (!rs.correctionMode || rs.correctionStep !== 2 || !activeSetSku || rs.editingRelease) {
+      setOpenKitRecord(null);
+      return;
+    }
+    let cancelled = false;
+    void rs.fetchOpenCorrectionKit(activeSetSku, rs.correctionSessionId).then((record) => {
+      if (cancelled) return;
+      const allowed = record && canEditWarehouseReleaseHistory({
+        isAdmin: isAdmin(),
+        createdAt: record.createdAt,
+        createdBy: record.createdBy,
+        currentUserId: user?.id,
+      });
+      setOpenKitRecord(allowed ? record : null);
+    }).catch(() => {
+      if (!cancelled) setOpenKitRecord(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rs.correctionMode, rs.correctionStep, activeSetSku, rs.correctionSessionId, rs.editingRelease]);
+
   const handleOperationChange = (key: string) => {
     const nextKey = key === 'goodUnKit' ? 'goodUnKit' : 'goodKit';
     if (nextKey === rs.operationKey) return;
@@ -221,6 +252,23 @@ export function ReleaseSetsMainFlow({
     rs.setOperationKey(nextKey);
     setOperDate(null);
     resetTransientUi();
+  };
+
+  const runBackToKitStep = () => {
+    if (!openKitRecord) return;
+    const nextDate = rs.beginEdit(openKitRecord);
+    if (nextDate) setOperDate(nextDate);
+    setReturnToUnkitEditId(Number(openKitRecord.id));
+    setSearchResetSignal((value) => value + 1);
+    resetTransientUi();
+  };
+
+  const handleBackToKitStep = () => {
+    if (rs.componentBatches.length > 0) {
+      setPendingSimpleConfirm({ type: 'backToKitStep' });
+      return;
+    }
+    runBackToKitStep();
   };
 
   const handleCorrectionSwitch = (enabled: boolean) => {
@@ -254,12 +302,26 @@ export function ReleaseSetsMainFlow({
   const handleSaveEdit = async () => {
     setIsSavingEdit(true);
     try {
+      const backToUnkit = returnToUnkitEditId != null
+        && rs.editingRelease?.id === returnToUnkitEditId
+        && rs.correctionMode;
+      const snapshot = backToUnkit ? rs.items[0] ?? null : null;
+      const baseDate = operDate ?? rs.returns?.returnDate ?? null;
       const result = await rs.saveEditedRelease();
       ToastService.show({
         title: result?.unchanged ? 'Без змін' : 'Комплектування оновлено',
         description: result?.unchanged ? undefined : 'Зміни збережено в історії та в Dilovod, якщо документ уже відправлений.',
         color: 'success',
       });
+      notifyDilovodMismatch(result?.dilovodVerification);
+      setReturnToUnkitEditId(null);
+      if (backToUnkit && snapshot) {
+        const shiftedDate = rs.transitionToCorrectionUnkitStep(snapshot, baseDate);
+        setOperDate(shiftedDate ?? baseDate);
+        setSearchResetSignal((value) => value + 1);
+        resetTransientUi();
+        return;
+      }
       setOperDate(null);
       setPageTab('history');
     } catch (error) {
@@ -292,6 +354,20 @@ export function ReleaseSetsMainFlow({
     }
   };
 
+  /** Dilovod зберіг документ не так, як ми відправили (напр. відкинув рядки з віртуальними партіями). */
+  const notifyDilovodMismatch = (verification: { ok?: boolean; issues?: string[] } | null | undefined) => {
+    if (!verification || verification.ok !== false) return;
+    ToastService.show({
+      title: 'Документ у Dilovod не збігається з відправленим',
+      description: [
+        ...(verification.issues ?? []),
+        'Перевірте партії: рядки з віртуальними партіями (документи) Dilovod міг не зберегти.',
+      ].join('\n'),
+      color: 'warning',
+      timeout: 20000,
+    });
+  };
+
   const handleConfirmSend = async () => {
     setIsSendingRelease(true);
     try {
@@ -310,6 +386,7 @@ export function ReleaseSetsMainFlow({
       });
       setSendResult(result ?? null);
       if (result?.success) {
+        notifyDilovodMismatch(result.dilovodVerification);
         const snapshot = sendSnapshot ?? rs.items[0] ?? null;
         const isCorrectionKitStep = rs.correctionMode && rs.operationKey === 'goodKit';
 
@@ -390,6 +467,9 @@ export function ReleaseSetsMainFlow({
           setOperDate(null);
           resetTransientUi();
           break;
+        case 'backToKitStep':
+          runBackToKitStep();
+          break;
         case 'fillBatches': {
           const result = await rs.applyFillBatches(pendingSimpleConfirm.sku);
           ToastService.show({
@@ -442,6 +522,12 @@ export function ReleaseSetsMainFlow({
           title: 'Змінити тип операції?',
           message: 'Введені набори та партії буде скинуто.',
           confirmText: 'Змінити',
+        };
+      case 'backToKitStep':
+        return {
+          title: 'Повернутися на крок 1?',
+          message: 'Партії, розкладені на кроці 2, буде скинуто. Відкриється створене комплектування цього товару для редагування.',
+          confirmText: 'Повернутися',
         };
       case 'fillBatches': {
         const storageName = rs.selectedStorageName ?? rs.selectedStorage ?? '—';
@@ -593,6 +679,7 @@ export function ReleaseSetsMainFlow({
               lastKitPrefillInfo={rs.lastKitPrefillInfo}
               correctionMode={rs.correctionMode}
               correctionStep={rs.correctionStep}
+              editingExistingDocument={Boolean(rs.editingRelease)}
               onFillAllBatches={
                 rs.correctionMode && rs.correctionStep === 1 && correctionSourceSku
                   ? () => setPendingSimpleConfirm({ type: 'fillBatches', sku: correctionSourceSku })
@@ -605,6 +692,7 @@ export function ReleaseSetsMainFlow({
             onPreview={isDebugMode && isAdmin() ? handleShowPayloadPreview : undefined}
             onSend={rs.editingRelease ? () => void handleSaveEdit() : handleOpenSendConfirm}
             onCancel={rs.items.length > 0 ? () => setShowClearConfirm(true) : undefined}
+            onBack={rs.correctionMode && rs.correctionStep === 2 && rs.items.length > 0 && openKitRecord ? handleBackToKitStep : undefined}
             sendLabel={rs.editingRelease ? 'Зберегти зміни' : sendButtonLabel}
             sendLoading={isSavingEdit}
             sendDisabled={rs.items.length === 0 || isSavingEdit || sendDisabled}
@@ -665,6 +753,7 @@ export function ReleaseSetsMainFlow({
             }
           }}
           onEdit={(record) => {
+            setReturnToUnkitEditId(null);
             const nextDate = rs.beginEdit(record);
             if (nextDate) setOperDate(nextDate);
             setPageTab('main');

@@ -33,6 +33,8 @@ interface Props {
   previewComponents?: ReleasePreviewComponent[];
   lastKitPrefillInfo?: { releaseId: number | null; dilovodDocId: string | null } | null;
   correctionMode?: boolean;
+  /** Редагуємо вже проведений документ: залишки беремо на мить ДО нього, щоб не враховувати його власне списання. */
+  editingExistingDocument?: boolean;
   correctionStep?: number | null;
   onFillAllBatches?: () => void;
 }
@@ -51,6 +53,7 @@ export default function ReleaseItemsPanel({
   previewComponents = [],
   lastKitPrefillInfo = null,
   correctionMode = false,
+  editingExistingDocument = false,
   correctionStep = null,
   onFillAllBatches,
 }: Props) {
@@ -213,10 +216,15 @@ export default function ReleaseItemsPanel({
     return aggregatedRows.reduce((sum, row) => sum + Number(row.total ?? 0), 0);
   }, [aggregatedRows]);
 
-  const selectedDateTime = useMemo(
-    () => parseLocalDate(returns?.operDate ?? returns?.returnDate),
-    [returns?.operDate, returns?.returnDate],
-  );
+  const selectedDateTime = useMemo(() => {
+    const parsed = parseLocalDate(returns?.operDate ?? returns?.returnDate);
+    if (!parsed || !editingExistingDocument) return parsed;
+    // Документ у Dilovod має дату з секундами (напр. 00:42:18), а в формі видно лише хвилини.
+    // Баланс на початок хвилини ще не містить його списання (на точну мить документа він теж без нього).
+    const startOfMinute = new Date(parsed.getTime());
+    startOfMinute.setSeconds(0, 0);
+    return startOfMinute;
+  }, [returns?.operDate, returns?.returnDate, editingExistingDocument]);
 
   useEffect(() => {
     let cancelled = false;
