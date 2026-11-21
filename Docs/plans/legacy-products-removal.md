@@ -141,6 +141,8 @@ Dilovod (SoT) → catalog_* (локальне дзеркало) → catalogOpsLo
 
 **Статус (2026-11-20):** сторінку `SettingsProductSets` і роути `/api/products/sync`, `/sync/cancel`, `/sync-manual` видалено. Залишки (`/sync-stock`, `/sync-stock-chain`) лишаються: це не legacy `products`, а жива синхронізація залишків. Далі: фаза 5, потім `DROP TABLE products`.
 
+**Статус (2026-11-21):** `model Product` видалено, міграція `20261121230000_drop_legacy_products_table` створена, чекає застосування (`prisma migrate deploy` після дампу таблиці). Це завершує видалення legacy `products`.
+
 ---
 
 ### Фаза 5 — Cleanup backend (2–3 дні)

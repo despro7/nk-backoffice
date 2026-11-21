@@ -21,6 +21,18 @@
 
 ---
 
+## 2026-11-21 – Видалено legacy-таблицю `products`
+
+**Files:** `prisma/schema.prisma`, `prisma/migrations/20261121230000_drop_legacy_products_table/migration.sql`, `scripts/set-unitRatio-from-gradations.cjs` (видалено)
+
+- **`model Product` видалено** зі схеми Prisma; міграція `DROP TABLE products`. Перевірено: у БД немає FK, views, тригерів і процедур на цю таблицю, у коді немає звернень до `prisma.product`.
+- Разовий скрипт `scripts/set-unitRatio-from-gradations.cjs` (єдиний, що ще читав `prisma.product`) видалено.
+- **Застосування:** міграцію створено вручну (немає прав на shadow DB) і **ще не застосовано**. Перед `npx prisma migrate deploy` зробіть дамп: `mysqldump serv_backoffice products > products_backup.sql` (322 рядки, 320 KB).
+
+**Документація:** `Docs/plans/legacy-products-removal.md` (завершення міграції).
+
+---
+
 ## 2026-11-20 – Видалено застарілу сторінку «Товари (кеш / експорт)» і legacy-роути синхронізації
 
 **Files:** `client/pages/SettingsProductSets.tsx` (видалено), `client/routes.config.tsx`, `server/routes/products.ts`, `server/modules/Products/ProductsCatalogService.ts`, `server/services/dilovod/DilovodService.ts`

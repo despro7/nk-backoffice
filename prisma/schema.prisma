@@ -178,38 +178,6 @@ model OrdersHistory {
   @@map("orders_history")
 }
 
-model Product {
-  id                  Int      @id @default(autoincrement())
-  sku                 String   @unique
-  name                String
-  costPerItem         Float?
-  currency            String   @default("UAH")
-  categoryId          Int?
-  categoryName        String?
-  set                 String?  @db.LongText
-  additionalPrices    String?  @db.LongText
-  stockBalanceByStock String?  @db.LongText
-  dilovodId           String?
-  parent              String?
-  lastSyncAt          DateTime @default(now())
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  weight              Int?
-  manualOrder         Int?     @default(0)
-  unitRatio           Float?   @default(1)
-  barcode             String?
-  dilovodDataHash     String?  @db.VarChar(64)
-  isOutdated          Boolean  @default(false)
-  portionsPerBox      Int      @default(24)
-
-  @@index([sku])
-  @@index([categoryId])
-  @@index([lastSyncAt])
-  @@index([manualOrder])
-  @@index([isOutdated])
-  @@map("products")
-}
-
 model SettingsBoxes {
   id          Int      @id @default(autoincrement())
   name        String
@@ -538,7 +506,7 @@ model meta_logs {
   @@index([initiatedBy])
 }
 
-// model goods_cache removed — data moved to products.dilovodGood via backfill migration
+// model goods_cache removed (дані пізніше перенесені в catalog_*)
 
 // NOTE: `goods_cache` was removed in a safe migration after backfill.
 // If you need to restore it, check the migration history.
@@ -579,9 +547,9 @@ model CatalogGood {
   wooLastSyncedAt          DateTime?
   /// Локальний порядок siblings (інтервал крок 10); не в Dilovod
   sortOrder                Int       @default(0)
-  /// Локальний коеф. порцій; dual-write → products.unitRatio
+  /// Локальний коеф. порцій
   unitRatio                Float?    @default(1)
-  /// Дзеркало products.stockBalanceByStock JSON {"1":GP,"2":МС}
+  /// Залишки по складах, JSON {"1":GP,"2":МС}
   stockBalanceByStock      String?   @db.LongText
   syncedAt                 DateTime  @default(now())
   updatedAt                DateTime  @updatedAt
