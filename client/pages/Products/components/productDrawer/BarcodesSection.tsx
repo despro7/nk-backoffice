@@ -9,6 +9,7 @@ import { FieldDirtyMarker } from './FieldDirtyMarker';
 import { reorderBarcodeRows, sortBarcodeEntries } from './barcodesSectionSort';
 import { RowDeleteButton } from './RowDeleteButton';
 import { StockBadge } from '@/components/StockBadge';
+import { useIsMobile } from '@/hooks/useTouchUi';
 import { useProductBatchStock, type BatchStock } from './useProductBatchStock';
 
 function BatchStockInline({ stock, loading }: { stock: BatchStock | undefined; loading: boolean }) {
@@ -21,10 +22,10 @@ function BatchStockInline({ stock, loading }: { stock: BatchStock | undefined; l
   return (
     <span className="inline-flex shrink-0 items-center gap-1 text-xs tabular-nums text-default-600">
       <StockBadge variant="gp" size="9px" withTooltip />
-      {stock.gp}
+      <span className={stock.gp < 0 ? 'text-danger' : undefined}>{stock.gp}</span>
       <span className="text-default-300">/</span>
       <StockBadge variant="ms" size="9px" withTooltip />
-      {stock.ms}
+      <span className={stock.ms < 0 ? 'text-danger' : undefined}>{stock.ms}</span>
     </span>
   );
 }
@@ -164,6 +165,7 @@ export function BarcodesSection({
   showBatchStock = false,
 }: BarcodesSectionProps) {
   const { stockByBatch, loading: stockLoading } = useProductBatchStock(sku, showBatchStock);
+  const isMobile = useIsMobile();
   const [listSortEnabled, setListSortEnabled] = useState(false);
   const sortedEntries = useMemo(() => sortBarcodeEntries(barcodes), [barcodes]);
   const canManualReorder = listSortEnabled && !isReadOnly;
@@ -187,6 +189,10 @@ export function BarcodesSection({
   ) => {
     const isBox = b.barcodeKind === 'box';
     const rowLocked = isReadOnly || isBox;
+    const batchStock =
+      showBatchStock && !isBox && b.goodPart ? (
+        <BatchStockInline stock={stockByBatch[b.goodPart]} loading={stockLoading} />
+      ) : null;
 
     const fieldsGrid = (
       <>
@@ -216,6 +222,8 @@ export function BarcodesSection({
             />
           }
         />
+        {/* Click on wrapper (not Input) so taps on end content also open the picker */}
+        <div className="min-w-0" onClick={() => !rowLocked && onOpenBatchPicker(idx)}>
         <Input
           size="md"
           aria-label="Номер партії"
@@ -230,18 +238,17 @@ export function BarcodesSection({
               : 'cursor-pointer border-1 border-default-200',
             input: isBox ? 'cursor-default py-2' : 'cursor-pointer py-2',
           }}
-          onClick={() => !rowLocked && onOpenBatchPicker(idx)}
+          description={isMobile ? batchStock : undefined}
           endContent={
-            <span className="flex items-center gap-2">
-              {showBatchStock && b.goodPart ? (
-                <BatchStockInline stock={stockByBatch[b.goodPart]} loading={stockLoading} />
-              ) : null}
+            <span className="pointer-events-none flex items-center gap-2">
+              {isMobile ? null : batchStock}
               {isBox ? null : (
                 <DynamicIcon name="chevrons-up-down" size={14} className="shrink-0 text-default-400" />
               )}
             </span>
           }
         />
+        </div>
         <BarcodeBatchMovementsButton
           sku={sku}
           productName={productName}
