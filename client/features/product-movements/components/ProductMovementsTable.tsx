@@ -21,6 +21,8 @@ interface ProductMovementsTableProps {
   loading: boolean;
   hasGenerated: boolean;
   compact?: boolean;
+  /** Викликається після видалення документа з drawer (перегенерувати звіт). */
+  onDocumentDeleted?: () => void;
 }
 
 type TableRowItem =
@@ -84,7 +86,15 @@ function OldBatchesAccordion({ groups }: { groups: ProductMovementsGroup[] }) {
   );
 }
 
-function GroupBlock({ group, compact = false }: { group: ProductMovementsGroup; compact?: boolean }) {
+function GroupBlock({
+  group,
+  compact = false,
+  onDocumentDeleted,
+}: {
+  group: ProductMovementsGroup;
+  compact?: boolean;
+  onDocumentDeleted?: () => void;
+}) {
   const { open: openDocumentEdit } = useWarehouseDocumentEditDrawer();
   const groupTitle = formatGroupDisplayLabel(group.label);
 
@@ -178,6 +188,7 @@ function GroupBlock({ group, compact = false }: { group: ProductMovementsGroup; 
                             openDocumentEdit({
                               dilovodDocumentId: line.documentId!,
                               documentLabel: line.documentLabel,
+                              onDeleted: onDocumentDeleted,
                             });
                           }}
                         >
@@ -213,6 +224,7 @@ export default function ProductMovementsTable({
   loading,
   hasGenerated,
   compact = false,
+  onDocumentDeleted,
 }: ProductMovementsTableProps) {
   if (loading) {
     return (
@@ -244,7 +256,12 @@ export default function ProductMovementsTable({
       ) : null}
       <OldBatchesAccordion groups={oldBatchGroups} />
       {movementGroups.map((group) => (
-        <GroupBlock key={group.groupKey} group={group} compact={compact} />
+        <GroupBlock
+          key={group.groupKey}
+          group={group}
+          compact={compact}
+          onDocumentDeleted={onDocumentDeleted}
+        />
       ))}
     </div>
   );

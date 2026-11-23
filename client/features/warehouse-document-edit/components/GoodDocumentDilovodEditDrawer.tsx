@@ -12,6 +12,7 @@ import ReasonSelector from '@/pages/Warehouse/WarehouseWriteOff/components/Reaso
 import ActionsBar from '@/pages/Warehouse/WarehouseReleaseSets/components/ActionsBar';
 import { ToastService } from '@/services/ToastService';
 import { formatKyivDateTime } from '@shared/utils/kyivDateTime';
+import DocumentDrawerFooter from './DocumentDrawerFooter';
 import DilovodDocumentViewSections from './DilovodDocumentViewSections';
 
 const SURPLUS_REASONS = [
@@ -31,6 +32,7 @@ interface GoodDocumentDilovodEditDrawerProps {
   loading: boolean;
   error: string | null;
   onClose: () => void;
+  onDeleted?: () => void;
   onSaved?: () => void;
 }
 
@@ -43,6 +45,7 @@ export default function GoodDocumentDilovodEditDrawer({
   error,
   onClose,
   onSaved,
+  onDeleted,
 }: GoodDocumentDilovodEditDrawerProps) {
   const returns = useWarehouseReturns();
   const writeoffHook = useWarehouseWriteOff({ returns });
@@ -179,8 +182,17 @@ export default function GoodDocumentDilovodEditDrawer({
       maxWidth={1200}
       resizeAriaLabel="Змінити ширину панелі редагування документа"
       footer={
-        canSave ? (
+        <DocumentDrawerFooter
+          kind={variant}
+          localId={variant === 'surplus' ? context?.local.surplusHistoryId : context?.local.writeOffHistoryId}
+          onDeleted={() => {
+            onDeleted?.();
+            onClose();
+          }}
+        >
+        {canSave ? (
           <ActionsBar
+            size="md"
             sendLabel="Зберегти зміни"
             onSend={() => void handleSave()}
             onCancel={onClose}
@@ -188,8 +200,9 @@ export default function GoodDocumentDilovodEditDrawer({
             sendLoading={docHook.isSubmitting}
           />
         ) : (
-          <Button variant="light" onPress={onClose}>Закрити</Button>
-        )
+          <Button variant="light" size="md" onPress={onClose}>Закрити</Button>
+        )}
+        </DocumentDrawerFooter>
       }
     >
       {body}

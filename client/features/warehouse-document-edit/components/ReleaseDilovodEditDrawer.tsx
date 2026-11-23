@@ -7,6 +7,7 @@ import WarehouseDetails from '@/pages/Warehouse/shared/WarehouseDetails';
 import ReleaseItemsPanel from '@/pages/Warehouse/WarehouseReleaseSets/components/ReleaseItemsPanel';
 import ActionsBar from '@/pages/Warehouse/WarehouseReleaseSets/components/ActionsBar';
 import { ToastService } from '@/services/ToastService';
+import DocumentDrawerFooter from './DocumentDrawerFooter';
 import DilovodDocumentViewSections from './DilovodDocumentViewSections';
 
 const DRAWER_WIDTH_KEY = 'warehouse-document-edit-drawer-width-v1';
@@ -19,6 +20,7 @@ interface ReleaseDilovodEditDrawerProps {
   loading: boolean;
   error: string | null;
   onClose: () => void;
+  onDeleted?: () => void;
 }
 
 export default function ReleaseDilovodEditDrawer({
@@ -28,6 +30,7 @@ export default function ReleaseDilovodEditDrawer({
   loading,
   error,
   onClose,
+  onDeleted,
 }: ReleaseDilovodEditDrawerProps) {
   const rs = useReleaseSets();
   const [initialized, setInitialized] = useState(false);
@@ -127,8 +130,17 @@ export default function ReleaseDilovodEditDrawer({
       maxWidth={1200}
       resizeAriaLabel="Змінити ширину панелі редагування документа"
       footer={
-        canSave ? (
+        <DocumentDrawerFooter
+          kind="release"
+          localId={context?.local.releaseSetId}
+          onDeleted={() => {
+            onDeleted?.();
+            onClose();
+          }}
+        >
+        {canSave ? (
           <ActionsBar
+            size="md"
             onSend={() => void handleSave()}
             onCancel={onClose}
             sendLabel="Зберегти зміни"
@@ -136,8 +148,9 @@ export default function ReleaseDilovodEditDrawer({
             sendDisabled={saving || rs.items.length === 0}
           />
         ) : (
-          <Button variant="light" onPress={onClose}>Закрити</Button>
-        )
+          <Button variant="light" size="md" onPress={onClose}>Закрити</Button>
+        )}
+        </DocumentDrawerFooter>
       }
     >
       {body}

@@ -298,6 +298,18 @@ export type KitOutputBatchResult = {
   dryRun?: boolean;
 };
 
+/** Фільтр за товаром (sku або Dilovod productId); порожній фільтр повертає все. */
+export function filterBatchItemsByProduct(
+  items: WarehouseBatchListItem[],
+  product?: { sku?: string | null; productId?: string | null },
+): WarehouseBatchListItem[] {
+  const sku = product?.sku?.trim();
+  const productId = product?.productId?.trim();
+  if (!sku && !productId) return items;
+  return items.filter((item) => (sku ? item.sku === sku : true)
+    && (productId ? item.productId === productId : true));
+}
+
 /** Помилка вхідних даних створення партії товару (HTTP 400). */
 export class ProductBatchInputError extends Error {}
 
@@ -318,6 +330,9 @@ export class WarehouseBatchesService {
     batchKinds?: WarehouseBatchKind[] | string | string[];
     limit?: number;
     forceRefresh?: boolean;
+    /** Лише партії цього товару (за кешем повного списку, без додаткових запитів у Dilovod). */
+    sku?: string | null;
+    productId?: string | null;
   }): Promise<{
     items: WarehouseBatchListItem[];
     onlyWithStock: boolean;
@@ -333,7 +348,10 @@ export class WarehouseBatchesService {
 
     const fullItems = await this.getFullItems(Boolean(options?.forceRefresh));
 
-    const items = fullItems
+    const items = filterBatchItemsByProduct(fullItems, {
+      sku: options?.sku,
+      productId: options?.productId,
+    })
       .filter((item) => kindSet.has(item.batchKind)
         && matchesNegativeMode(item.totalQuantity, negativeMode, onlyWithStock))
       .slice(0, limit);

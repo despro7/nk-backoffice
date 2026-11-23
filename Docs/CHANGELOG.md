@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-11-23 – Видалення документа з drawer рухів, менші кнопки, залишок по партії в рядках ШК, «Оновити залишки» в картці товару
+
+**Files:** `client/features/warehouse-document-edit/**` (`hooks/useWarehouseDocumentDelete.ts`, `components/DocumentDrawerFooter.tsx`, drawer-и видів документів, `types.ts`), `client/pages/Warehouse/WarehouseReleaseSets/components/ActionsBar.tsx`, `client/features/product-movements/components/ProductMovementsTable.tsx`, `.../ProductMovementsDrawer.tsx`, `client/pages/Reports/ReportsProductMovements/index.tsx`, `client/pages/Products/components/productDrawer/BarcodesSection.tsx`, `.../useProductBatchStock.ts`, `.../ProductDrawer.tsx`, `server/modules/Warehouse/WarehouseBatchesService.ts` (+ `WarehouseBatchesService.filter.spec.ts`), `server/modules/Warehouse/WarehouseController.ts`, `server/modules/Products/ProductsController.ts`, `server/services/dilovod/DilovodService.ts` (+ `DilovodService.refreshStock.spec.ts`)
+
+- **Видалення документа (admin):** зліва у футері drawer для переміщення, списання, оприбуткування, комплектування і повернення (відвантаження та невідомі типи без видалення). Підтвердження; якщо Діловод не знаходить документ, друге підтвердження локального видалення (`forceLocal`). Підтримано `canDeleteLocal` і `canForceDelete` (повернення).
+- **Після видалення:** тост, закриття drawer, перегенерація звіту рухів (`onDeleted` / `onDocumentDeleted`).
+- **Кнопки:** `ActionsBar` отримав `size` (за замовчуванням `lg`); у drawer документів `md`.
+- **`GET /api/warehouse/batches`:** нові query `sku` і `productId` (фільтр по кешу повного списку, без додаткових запитів у Dilovod).
+- **Картка товару:** у кожному рядку ШК показується залишок ГП / МС партії (лише готова продукція; `–` без даних).
+- **«Оновити залишки» в меню «Дії» картки товару:** `POST /api/catalog/goods/:id/stock/refresh` тягне з Dilovod залишки лише відкритого товару (`DilovodService.refreshStockForGood`): ГП/МС за SKU для готової продукції (немає рядка в Dilovod: 0), СП/ВП за id для інгредієнтів; інші товари: 400. Для ГП скидається кеш `GET /warehouse/batches`, щоб оновились залишки в рядках ШК. У картці оновлюються лише `stock`, незбережені зміни форми не губляться.
+- **Причина, чому синхронізація не оновлювала залишки:** «Синхронізувати з Dilovod» і live-pull картки не передають `stockBalanceByStock`; залишки пише лише масовий `updateStockBalancesInDatabase` (cron, `sync-stock-chain`, після переміщення / комплектування). `getBalanceBySkuList` тепер приймає необовʼязковий список SKU.
+
+**Документація:** `Docs/features/warehouse-batches.md`.
+
+---
+
 ## 2026-11-21 – Коригування партійного обліку: повернення на крок 1, живий залишок, звірка з Dilovod
 
 **Files:** `client/features/product-movements/components/ProductMovementsFilters.tsx`, `client/pages/Warehouse/WarehouseReleaseSets/ReleaseSetsMainFlow.tsx`, `.../components/ActionsBar.tsx`, `.../components/ReleaseItemsPanel.tsx`, `.../components/SetSearchPanel.tsx`, `.../useReleaseSets.ts`, `server/modules/Warehouse/SetReleaseController.ts`, `server/modules/Warehouse/WarehouseController.ts`, `server/modules/Warehouse/releaseDilovodVerification.ts` (+ `.spec.ts`), `server/modules/Warehouse/SetReleaseController.batches.spec.ts`

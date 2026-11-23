@@ -134,6 +134,11 @@ export default function ReportsProductMovementsPage() {
           result={query.result}
           loading={query.loading}
           hasGenerated={query.hasGenerated}
+          onDocumentDeleted={
+            query.generatedFilters
+              ? () => query.generate(query.generatedFilters!, meta)
+              : undefined
+          }
         />
       </div>
     </div>

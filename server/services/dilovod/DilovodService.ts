@@ -24,13 +24,17 @@ import { recordOrderDilovodDocuments, syncOrderDilovodDocumentsOfType, toOrderDi
 import { reconcileOrderShipmentsSafe } from '../orderShipments.js';
 import { formatKyivDateTime, parseKyivDateTime } from '../../../shared/utils/kyivDateTime.js';
 import { dilovodRefId } from './dilovodContractPerson.js';
-import { INGREDIENT_STOCK_STORAGE_IDS } from '../../../shared/utils/catalogStock.js';
+import { INGREDIENT_STOCK_STORAGE_IDS, type CatalogStockBranch } from '../../../shared/utils/catalogStock.js';
+import { resolveCatalogStockBranch } from '../../modules/Products/catalogFinishedProductsFolder.js';
 import {
   aggregateIngredientStockRows,
   applyIngredientStockChanges,
   diffIngredientStock,
   listIngredientGoodsForStock,
 } from '../../modules/Products/ingredientStockSync.js';
+
+/** Помилка вхідних даних точкового оновлення залишків (HTTP 400). */
+export class StockRefreshInputError extends Error {}
 
 export class DilovodService {
   /** Один раз обходимо старий кеш складів без виробничого цеху. */
@@ -662,14 +666,14 @@ export class DilovodService {
     }
   }
 
-  // Отримання залишків товарів за списком SKU
-  async getBalanceBySkuList(): Promise<DilovodStockBalance[]> {
+  // Отримання залишків товарів за списком SKU (без аргументу: усі ГП з каталогу, включаючи застарілі)
+  async getBalanceBySkuList(onlySkus?: string[]): Promise<DilovodStockBalance[]> {
     try {
       console.log('Отримуємо залишки товарів за списком SKU...');
 
-      // Отримуємо SKU всіх товарів з бази даних (включаючи застарілі)
-      const list = await catalogOpsLookup.listFinishedProducts({ includeOutdated: true });
-      const skus = list.map((p) => p.sku);
+      const skus = onlySkus
+        ? [...new Set(onlySkus.map((s) => s.trim()).filter(Boolean))]
+        : (await catalogOpsLookup.listFinishedProducts({ includeOutdated: true })).map((p) => p.sku);
       if (skus.length === 0) {
         console.log('Не знайдено товарів у базі даних');
         return [];
@@ -985,6 +989,33 @@ export class DilovodService {
         errors: [error instanceof Error ? error.message : 'Невідома помилка']
       };
     }
+  }
+
+  /**
+   * Точкове оновлення залишків одного товару в `catalog_goods` (кнопка «Оновити залишки» в картці).
+   * ГП/МС для готової продукції за SKU, СП/ВП для інгредієнтів за id товару.
+   */
+  async refreshStockForGood(goodId: string): Promise<{ branch: CatalogStockBranch; updated: boolean }> {
+    const good = await prisma.catalogGood.findUnique({
+      where: { id: goodId },
+      select: { id: true, sku: true, isGroup: true, parentId: true },
+    });
+    if (!good || good.isGroup) throw new StockRefreshInputError('Товар не знайдено');
+
+    const branch = await resolveCatalogStockBranch(good.parentId);
+    if (branch === 'ingredient') {
+      await this.fetchStockForGoods([good.id]);
+      return { branch, updated: true };
+    }
+    if (branch === 'finished') {
+      const sku = good.sku?.trim();
+      if (!sku) throw new StockRefreshInputError('Товар без SKU: залишки ГП/МС рахуються за артикулом');
+      const balances = await this.getBalanceBySkuList([sku]);
+      const result = await this.syncManager.updateProductStockBalancesBulk(balances);
+      if (result.errors.length > 0) throw new Error(result.errors.join('; '));
+      return { branch, updated: result.updated > 0 };
+    }
+    throw new StockRefreshInputError('Залишки ведуться лише для готової продукції та інгредієнтів');
   }
 
   /**

@@ -8,6 +8,26 @@ import type { BarcodeRow, RowDeleteKind } from './productDrawerTypes';
 import { FieldDirtyMarker } from './FieldDirtyMarker';
 import { reorderBarcodeRows, sortBarcodeEntries } from './barcodesSectionSort';
 import { RowDeleteButton } from './RowDeleteButton';
+import { StockBadge } from '@/components/StockBadge';
+import { useProductBatchStock, type BatchStock } from './useProductBatchStock';
+
+function BatchStockInline({ stock, loading }: { stock: BatchStock | undefined; loading: boolean }) {
+  if (loading) {
+    return <span className="h-3 w-14 shrink-0 animate-pulse rounded bg-default-200" aria-label="Завантаження залишку" />;
+  }
+  if (!stock) {
+    return <span className="shrink-0 text-xs text-default-400">–</span>;
+  }
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 text-xs tabular-nums text-default-600">
+      <StockBadge variant="gp" size="9px" withTooltip />
+      {stock.gp}
+      <span className="text-default-300">/</span>
+      <StockBadge variant="ms" size="9px" withTooltip />
+      {stock.ms}
+    </span>
+  );
+}
 
 function BarcodeBatchMovementsButton({
   sku,
@@ -123,6 +143,8 @@ interface BarcodesSectionProps {
   /** Створити партію в Dilovod з ШК (лише для збереженого товару, не комплекту) */
   onCreateBatch?: () => void;
   isReadOnly?: boolean;
+  /** Показувати залишок ГП/МС по партії (лише готова продукція). */
+  showBatchStock?: boolean;
 }
 
 export function BarcodesSection({
@@ -139,7 +161,9 @@ export function BarcodesSection({
   onRowDeleteConfirm,
   onCreateBatch,
   isReadOnly = false,
+  showBatchStock = false,
 }: BarcodesSectionProps) {
+  const { stockByBatch, loading: stockLoading } = useProductBatchStock(sku, showBatchStock);
   const [listSortEnabled, setListSortEnabled] = useState(false);
   const sortedEntries = useMemo(() => sortBarcodeEntries(barcodes), [barcodes]);
   const canManualReorder = listSortEnabled && !isReadOnly;
@@ -208,9 +232,14 @@ export function BarcodesSection({
           }}
           onClick={() => !rowLocked && onOpenBatchPicker(idx)}
           endContent={
-            isBox ? null : (
-              <DynamicIcon name="chevrons-up-down" size={14} className="shrink-0 text-default-400" />
-            )
+            <span className="flex items-center gap-2">
+              {showBatchStock && b.goodPart ? (
+                <BatchStockInline stock={stockByBatch[b.goodPart]} loading={stockLoading} />
+              ) : null}
+              {isBox ? null : (
+                <DynamicIcon name="chevrons-up-down" size={14} className="shrink-0 text-default-400" />
+              )}
+            </span>
           }
         />
         <BarcodeBatchMovementsButton

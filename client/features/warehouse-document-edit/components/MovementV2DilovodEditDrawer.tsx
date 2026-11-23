@@ -7,6 +7,7 @@ import { useRoleAccess } from '@/hooks/useRoleAccess';
 import useWarehouseMovementV2 from '@/pages/Warehouse/WarehouseMovementV2/useWarehouseMovementV2';
 import MovementV2EditorPanel from '@/pages/Warehouse/WarehouseMovementV2/components/MovementV2EditorPanel';
 import ActionsBar from '@/pages/Warehouse/WarehouseReleaseSets/components/ActionsBar';
+import DocumentDrawerFooter from './DocumentDrawerFooter';
 import { useMovementV2SendFlow } from '@/pages/Warehouse/WarehouseMovementV2/hooks/useMovementV2SendFlow';
 
 const WIDTH_STORAGE_KEY = 'warehouse-document-edit-drawer-width-v1';
@@ -23,6 +24,7 @@ interface MovementV2DilovodEditDrawerProps {
   title: string;
   dilovodDocumentId: string;
   onClose: () => void;
+  onDeleted?: () => void;
 }
 
 export default function MovementV2DilovodEditDrawer({
@@ -30,6 +32,7 @@ export default function MovementV2DilovodEditDrawer({
   title,
   dilovodDocumentId,
   onClose,
+  onDeleted,
 }: MovementV2DilovodEditDrawerProps) {
   const { isDebugMode } = useDebug();
   const { isAdmin } = useRoleAccess();
@@ -72,22 +75,32 @@ export default function MovementV2DilovodEditDrawer({
 
   const editorReady = !loading && !error;
 
-  const footer = editorReady ? (
-    <div className="flex w-full justify-end">
-      <ActionsBar
-      onPreview={isDebugMode && isAdmin() ? () => void sendFlow.handleShowPayload() : undefined}
-      onSend={() => void sendFlow.sendAndFinalize()}
-      onCancel={onClose}
-      sendLabel="Зберегти та відправити"
-      sendLoading={sendFlow.isSendingToDilovod || mov.isSaving}
-      sendDisabled={mov.summaryItems.length === 0 || sendFlow.isSendingToDilovod || mov.isSaving}
-      previewDisabled={mov.summaryItems.length === 0}
-      />
-    </div>
-  ) : (
-    <Button variant="light" onPress={onClose}>
-      Закрити
-    </Button>
+  const footer = (
+    <DocumentDrawerFooter
+      kind="goodMoving"
+      localId={mov.savedDraft?.id}
+      onDeleted={() => {
+        onDeleted?.();
+        onClose();
+      }}
+    >
+      {editorReady ? (
+        <ActionsBar
+          size="md"
+          onPreview={isDebugMode && isAdmin() ? () => void sendFlow.handleShowPayload() : undefined}
+          onSend={() => void sendFlow.sendAndFinalize()}
+          onCancel={onClose}
+          sendLabel="Зберегти та відправити"
+          sendLoading={sendFlow.isSendingToDilovod || mov.isSaving}
+          sendDisabled={mov.summaryItems.length === 0 || sendFlow.isSendingToDilovod || mov.isSaving}
+          previewDisabled={mov.summaryItems.length === 0}
+        />
+      ) : (
+        <Button variant="light" size="md" onPress={onClose}>
+          Закрити
+        </Button>
+      )}
+    </DocumentDrawerFooter>
   );
 
   let body: ReactNode;

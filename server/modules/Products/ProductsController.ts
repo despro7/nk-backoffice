@@ -305,6 +305,31 @@ router.post('/goods/:id/batches', ...authOnly, async (req, res) => {
   }
 });
 
+// POST /api/catalog/goods/:id/stock/refresh – живі залишки одного товару з Dilovod у catalog_goods
+router.post('/goods/:id/stock/refresh', ...authOnly, async (req, res) => {
+  try {
+    const perms = await assertCanUseCatalogApi(req, res);
+    if (!perms) return;
+    const goodId = String(req.params.id);
+    const { dilovodService, StockRefreshInputError } = await import('../../services/dilovod/DilovodService.js');
+    try {
+      const data = await dilovodService.refreshStockForGood(goodId);
+      // Залишки по партіях у картці читаються з кешу GET /warehouse/batches
+      if (data.branch === 'finished') warehouseBatchesService.clearListCache();
+      logServer(`[ProductsCatalog] stock refresh user=${catalogAuditUserId(req)} good=${goodId} branch=${data.branch} updated=${data.updated}`);
+      res.json({ success: true, data });
+    } catch (error) {
+      if (error instanceof StockRefreshInputError) {
+        res.status(400).json({ success: false, error: error.message });
+        return;
+      }
+      throw error;
+    }
+  } catch (error) {
+    handleError(res, error, 'POST /goods/:id/stock/refresh');
+  }
+});
+
 // GET /api/catalog/goods/:id/used-in?scope=products|kits
 router.get('/goods/:id/used-in', ...authOnly, async (req, res) => {
   try {

@@ -645,8 +645,12 @@ router.get('/batches', authenticateToken, async (req, res) => {
         : undefined;
     const limit = req.query.limit ? Number(req.query.limit) : undefined;
     const forceRefresh = req.query.force === 'true';
+    const sku = typeof req.query.sku === 'string' ? req.query.sku : undefined;
+    const productId = typeof req.query.productId === 'string' ? req.query.productId : undefined;
 
     const result = await warehouseBatchesService.list({
+      sku,
+      productId,
       onlyWithStock,
       negativeMode,
       batchKinds,

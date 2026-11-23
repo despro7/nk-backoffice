@@ -34,6 +34,7 @@
 
 Примусове оновлення:
 
+- `GET /api/warehouse/batches?sku=…` / `?productId=…` – лише партії одного товару (фільтр по кешу, використовується карткою товару для залишку ГП/МС у рядках ШК; разом з `onlyWithStock=false`).
 - `GET /api/warehouse/batches?force=true` (+ інші query як зараз) — ігнорує `listCache`, знову тягне Dilovod і ШК з БД.
 - Кнопка на UI викликає той самий запит з `force=true` і оновлює кеш React Query.
 - `listCache` скидається також при створенні партії та реєстрації ШК партії (`clearListCache()`).

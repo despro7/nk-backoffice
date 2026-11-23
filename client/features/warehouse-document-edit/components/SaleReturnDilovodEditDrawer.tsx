@@ -6,6 +6,7 @@ import type { WarehouseDocumentEditContextResponse } from '@shared/types/warehou
 import { useWarehouseReturns } from '@/pages/Warehouse/WarehouseReturns/useWarehouseReturns';
 import WarehouseDetails from '@/pages/Warehouse/shared/WarehouseDetails';
 import useWarehouseParams from '@/pages/Warehouse/shared/useWarehouseParams';
+import DocumentDrawerFooter from './DocumentDrawerFooter';
 import DilovodDocumentViewSections from './DilovodDocumentViewSections';
 import type { ReturnHistoryItem, ReturnHistoryRecord } from '@/pages/Warehouse/WarehouseReturns/WarehouseReturnsTypes';
 import { ReturnsItemRow } from '@/pages/Warehouse/WarehouseReturns/components/ReturnsItemRow';
@@ -62,6 +63,7 @@ interface SaleReturnDilovodEditDrawerProps {
   loading: boolean;
   error: string | null;
   onClose: () => void;
+  onDeleted?: () => void;
 }
 
 export default function SaleReturnDilovodEditDrawer({
@@ -71,6 +73,7 @@ export default function SaleReturnDilovodEditDrawer({
   loading,
   error,
   onClose,
+  onDeleted,
 }: SaleReturnDilovodEditDrawerProps) {
   const returns = useWarehouseReturns();
   const { storages, selectedStorage, setSelectedStorage } = useWarehouseParams({ returns });
@@ -196,7 +199,18 @@ export default function SaleReturnDilovodEditDrawer({
       minWidth={640}
       maxWidth={1200}
       resizeAriaLabel="Змінити ширину панелі документа"
-      footer={<Button variant="light" onPress={onClose}>Закрити</Button>}
+      footer={
+        <DocumentDrawerFooter
+          kind="saleReturn"
+          localId={context?.local.returnHistoryId}
+          onDeleted={() => {
+            onDeleted?.();
+            onClose();
+          }}
+        >
+          <Button variant="light" size="md" onPress={onClose}>Закрити</Button>
+        </DocumentDrawerFooter>
+      }
     >
       {body}
     </ResizableAppDrawer>

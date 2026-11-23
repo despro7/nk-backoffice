@@ -160,6 +160,7 @@ export default function ProductMovementsDrawer({
         loading={loading || metaLoading}
         hasGenerated={hasGenerated}
         compact
+        onDocumentDeleted={generatedFilters ? () => generate(generatedFilters, meta) : undefined}
       />
     </ResizableAppDrawer>
   );

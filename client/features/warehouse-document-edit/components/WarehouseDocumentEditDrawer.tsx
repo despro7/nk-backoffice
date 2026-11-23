@@ -62,7 +62,7 @@ function ShipmentReadOnlyDrawer({
       minWidth={MIN_WIDTH}
       maxWidth={MAX_WIDTH}
       resizeAriaLabel="Змінити ширину панелі документа"
-      footer={<Button variant="light" onPress={onClose}>Закрити</Button>}
+      footer={<Button variant="light" size="md" onPress={onClose}>Закрити</Button>}
     >
       {body}
     </ResizableAppDrawer>
@@ -130,6 +130,7 @@ export default function WarehouseDocumentEditDrawer({
     return (
       <MovementV2DilovodEditDrawer
         isOpen={isOpen}
+        onDeleted={params.onDeleted}
         title={title}
         dilovodDocumentId={params.dilovodDocumentId}
         onClose={onClose}
@@ -141,6 +142,7 @@ export default function WarehouseDocumentEditDrawer({
     return (
       <GoodDocumentDilovodEditDrawer
         isOpen={isOpen}
+        onDeleted={params?.onDeleted}
         title={title}
         variant="writeOff"
         context={context}
@@ -155,6 +157,7 @@ export default function WarehouseDocumentEditDrawer({
     return (
       <GoodDocumentDilovodEditDrawer
         isOpen={isOpen}
+        onDeleted={params?.onDeleted}
         title={title}
         variant="surplus"
         context={context}
@@ -169,6 +172,7 @@ export default function WarehouseDocumentEditDrawer({
     return (
       <ReleaseDilovodEditDrawer
         isOpen={isOpen}
+        onDeleted={params?.onDeleted}
         title={title}
         context={context}
         loading={loading}
@@ -182,6 +186,7 @@ export default function WarehouseDocumentEditDrawer({
     return (
       <SaleReturnDilovodEditDrawer
         isOpen={isOpen}
+        onDeleted={params?.onDeleted}
         title={title}
         context={context}
         loading={loading}
@@ -219,7 +224,7 @@ export default function WarehouseDocumentEditDrawer({
       minWidth={MIN_WIDTH}
       maxWidth={MAX_WIDTH}
       resizeAriaLabel="Змінити ширину панелі документа"
-      footer={<Button variant="light" onPress={onClose}>Закрити</Button>}
+      footer={<Button variant="light" size="md" onPress={onClose}>Закрити</Button>}
     >
       {loading ? (
         <Spinner label="Завантаження..." className="py-16" />

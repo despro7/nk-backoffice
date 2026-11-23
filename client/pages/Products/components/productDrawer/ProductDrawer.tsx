@@ -847,6 +847,36 @@ export function ProductDrawer({
     ((opts?: { closeAfter?: boolean; pushStorefrontAfter?: boolean; specComment?: string }) => Promise<void>) | null
   >(null);
 
+  const [stockRefreshing, setStockRefreshing] = useState(false);
+  const handleRefreshStock = useCallback(async () => {
+    const goodId = detail?.id;
+    if (!goodId) return;
+    setStockRefreshing(true);
+    try {
+      const res = await fetch(`/api/catalog/goods/${encodeURIComponent(goodId)}/stock/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.success === false) throw new Error(json?.error || `HTTP ${res.status}`);
+      const fresh = await fetchCatalogGoodDetail(goodId, { livePull: false });
+      // Лише залишки: решта картки може мати незбережені зміни у формі
+      queryClient.setQueryData<CatalogGoodDetailDto>(['catalog', 'good', goodId], (prev) =>
+        prev ? { ...prev, stock: fresh.stock } : fresh,
+      );
+      void queryClient.invalidateQueries({ queryKey: ['product-batch-stock'] });
+      ToastService.show({ title: 'Залишки оновлено з Dilovod', color: 'success' });
+    } catch (err) {
+      ToastService.show({
+        title: 'Не вдалося оновити залишки',
+        description: err instanceof Error ? err.message : undefined,
+        color: 'danger',
+      });
+    } finally {
+      setStockRefreshing(false);
+    }
+  }, [detail?.id, queryClient]);
+
   const handleStorefrontPullApplied = useCallback((): Promise<void> => {
     if (!detail?.id) return Promise.resolve();
     return fetchCatalogGoodDetail(detail.id, { livePull: false }).then(async (fresh) => {
@@ -1986,6 +2016,7 @@ export function ProductDrawer({
                               : undefined
                           }
                           isReadOnly={readOnly}
+                          showBatchStock={detail?.stock?.branch === 'finished'}
                         />
                         {isEdit && detail?.id && isOther && (
                           <UsedInSection
@@ -2055,6 +2086,7 @@ export function ProductDrawer({
               {!readOnly && (isDebugMode ||
                 (isTrashed && detail && onRestore) ||
                 (isEdit && !isFolder && detail?.sku && onSyncFromDilovod) ||
+                (isEdit && !isFolder && detail?.stock?.branch) ||
                 (canPullStorefront && isEdit && !isFolder && detail?.sku) ||
                 (canPushStorefront && isEdit && !isFolder && detail?.sku) ||
                 (isAdmin && isEdit && detail) ||
@@ -2082,6 +2114,9 @@ export function ProductDrawer({
                             break;
                           case 'syncDilovod':
                             if (detail && onSyncFromDilovod) onSyncFromDilovod(detail.id);
+                            break;
+                          case 'refreshStock':
+                            void handleRefreshStock();
                             break;
                           case 'storefrontInspect':
                             void handleStorefrontInspect();
@@ -2130,6 +2165,18 @@ export function ProductDrawer({
                         startContent={<DynamicIcon name="cloud-download" size={16} className="shrink-0" />}
                       >
                         Синхронізувати з Dilovod
+                      </DropdownItem>
+                      <DropdownItem
+                        key="refreshStock"
+                        className={
+                          isEdit && !isFolder && detail?.stock?.branch
+                            ? 'text-default-700 data-[hover=true]:bg-default-100'
+                            : 'hidden'
+                        }
+                        isDisabled={stockRefreshing}
+                        startContent={<DynamicIcon name="refresh-cw" size={16} className="shrink-0" />}
+                      >
+                        Оновити залишки
                       </DropdownItem>
                       <DropdownItem
                         key="openStorefront"
