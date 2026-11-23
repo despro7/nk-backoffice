@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-11-23 – Узгодження з WooCommerce: хибна відмінність короткого опису
+
+**Files:** `shared/utils/catalogHtmlCompare.ts` (+ `catalogHtmlCompare.spec.ts`)
+
+- **Причина:** WordPress (wptexturize) на виході міняє « - » на `&#8211;` і обгортає текст у `<p>`; порівняння не декодувало HTML-сутності, тому короткий опис BO і WC вічно «відрізнявся», а узгодження (push BO → WC) не допомагало.
+- **Порівняння:** `catalogPlainTextForCompare` декодує HTML-сутності (`&#8211;`, `&amp;`, `&nbsp;`, лапки, `&#8230;`); `catalogHtmlEquivalent` додатково згортає типографіку WP (дефіс між пробілами = «–», розумні лапки = звичайні, «…» = «...»). Дефіс усередині слова лишається значущим.
+- Повний текст у модалці узгодження показує WC-текст без сутностей.
+
+**Документація:** –
+
+---
+
 ## 2026-11-23 – Видалення документа з drawer рухів, менші кнопки, залишок по партії в рядках ШК, «Оновити залишки» в картці товару
 
 **Files:** `client/features/warehouse-document-edit/**` (`hooks/useWarehouseDocumentDelete.ts`, `components/DocumentDrawerFooter.tsx`, drawer-и видів документів, `types.ts`), `client/pages/Warehouse/WarehouseReleaseSets/components/ActionsBar.tsx`, `client/features/product-movements/components/ProductMovementsTable.tsx`, `.../ProductMovementsDrawer.tsx`, `client/pages/Reports/ReportsProductMovements/index.tsx`, `client/pages/Products/components/productDrawer/BarcodesSection.tsx`, `.../useProductBatchStock.ts`, `.../ProductDrawer.tsx`, `server/modules/Warehouse/WarehouseBatchesService.ts` (+ `WarehouseBatchesService.filter.spec.ts`), `server/modules/Warehouse/WarehouseController.ts`, `server/modules/Products/ProductsController.ts`, `server/services/dilovod/DilovodService.ts` (+ `DilovodService.refreshStock.spec.ts`)
