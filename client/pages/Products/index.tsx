@@ -104,6 +104,7 @@ export default function ProductsPage() {
   const [syncReport, setSyncReport] = useState<CatalogSyncReport | null>(null);
   const syncStartedAtRef = useRef(0);
   const [syncConfirmIds, setSyncConfirmIds] = useState<string[] | null>(null);
+  const [dilovodSyncNonce, setDilovodSyncNonce] = useState(0);
   const [pushStorefrontConfirmIds, setPushStorefrontConfirmIds] = useState<string[] | null>(null);
   const [pushStorefrontLoading, setPushStorefrontLoading] = useState(false);
   const [pullStorefrontIds, setPullStorefrontIds] = useState<string[] | null>(null);
@@ -1109,6 +1110,7 @@ export default function ProductsPage() {
         onRestore={(id) => requestRestoreFromTrash(id)}
         catalogSearch={catalogSearch}
         onSyncFromDilovod={(id) => requestSyncFromDilovod([id])}
+        dilovodSyncNonce={dilovodSyncNonce}
         readOnly={drawerReadOnly}
       />
 
@@ -1354,7 +1356,11 @@ export default function ProductsPage() {
         onConfirm={() => {
           const ids = syncConfirmIds;
           setSyncConfirmIds(null);
-          if (ids?.length) catalog.syncSelectedMutation.mutate(ids);
+          if (ids?.length) {
+            catalog.syncSelectedMutation.mutate(ids, {
+              onSuccess: () => setDilovodSyncNonce((n) => n + 1),
+            });
+          }
         }}
       />
 

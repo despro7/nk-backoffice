@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-11-23 – Банер узгодження: повторна перевірка після збереження, push і синхронізації
+
+**Files:** `client/pages/Products/components/productDrawer/ProductDrawer.tsx`, `.../productDrawerTypes.ts`, `client/pages/Products/index.tsx`
+
+- Банер «Дані товару відрізняються від Dilovod або WooCommerce» перевіряється заново (`dilovod-preview` + `woo/pull-preview`) не лише при відкритті картки і після «Застосувати», а й після «Зберегти» (без закриття), кожного успішного push на WooCommerce і «Синхронізувати з Dilovod» (проп `dilovodSyncNonce`).
+- Кілька подій поспіль зливаються в одну перевірку (600 мс); відповіді для закритої / іншої картки або застарілого запиту ігноруються.
+
+**Документація:** –
+
+---
+
 ## 2026-11-23 – Узгодження з WooCommerce: хибна відмінність короткого опису
 
 **Files:** `shared/utils/catalogHtmlCompare.ts` (+ `catalogHtmlCompare.spec.ts`)

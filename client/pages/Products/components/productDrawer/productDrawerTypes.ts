@@ -36,6 +36,8 @@ export interface ProductDrawerProps {
     opts?: { underFolderName?: string }
   ) => Promise<CatalogSearchHit[]>;
   onSyncFromDilovod?: (id: string) => void;
+  /** Зростає після успішної «Синхронізувати з Dilovod» – drawer перевіряє банер узгодження заново. */
+  dilovodSyncNonce?: number;
   /** Глибина вкладеного drawer (GTM-стек) */
   stackLevel?: number;
   /** Id карток у відкритому стеку — щоб не відкривати ту саму двічі */

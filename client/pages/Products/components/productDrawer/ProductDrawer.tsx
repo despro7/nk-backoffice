@@ -252,6 +252,7 @@ export function ProductDrawer({
   onRestore,
   catalogSearch,
   onSyncFromDilovod,
+  dilovodSyncNonce = 0,
   stackLevel = 0,
   stackGoodIds = [],
   readOnly = false,
@@ -814,14 +815,21 @@ export function ProductDrawer({
     });
   }, [open, wooIntegrationEnabled]);
 
+  const bannerGoodIdRef = useRef<string | null>(null);
+  bannerGoodIdRef.current = open && isEdit ? detail?.id ?? null : null;
+
+  const bannerRequestSeqRef = useRef(0);
   const refreshCatalogSyncBanner = useCallback(
     (goodId: string) => {
+      const seq = ++bannerRequestSeqRef.current;
       void Promise.all([
         catalogApi.fetchDilovodPreview(goodId).catch(() => null),
         canPullStorefront
           ? storefrontApi.pullPreview(goodId).catch(() => null)
           : Promise.resolve(null),
       ]).then(([dilovod, woo]) => {
+        // Картку закрили / перемкнули або вже стартувала новіша перевірка
+        if (bannerGoodIdRef.current !== goodId || seq !== bannerRequestSeqRef.current) return;
         const dilovodConflicts = dilovod?.conflicts?.length ?? 0;
         const wooConflicts =
           woo && woo.wcCompareEnabled !== false ? woo.conflicts.length : 0;
@@ -830,6 +838,36 @@ export function ProductDrawer({
     },
     [canPullStorefront],
   );
+
+  /** Повторна перевірка банера після save / push / sync; кілька подій поспіль = один запит. */
+  const bannerRecheckTimerRef = useRef<number | null>(null);
+  const scheduleCatalogSyncRecheck = useCallback(
+    (goodId: string) => {
+      if (bannerGoodIdRef.current !== goodId) return;
+      if (bannerRecheckTimerRef.current != null) window.clearTimeout(bannerRecheckTimerRef.current);
+      bannerRecheckTimerRef.current = window.setTimeout(() => {
+        bannerRecheckTimerRef.current = null;
+        refreshCatalogSyncBanner(goodId);
+      }, 600);
+    },
+    [refreshCatalogSyncBanner],
+  );
+  const scheduleCatalogSyncRecheckRef = useRef(scheduleCatalogSyncRecheck);
+  scheduleCatalogSyncRecheckRef.current = scheduleCatalogSyncRecheck;
+
+  useEffect(
+    () => () => {
+      if (bannerRecheckTimerRef.current != null) window.clearTimeout(bannerRecheckTimerRef.current);
+    },
+    [],
+  );
+
+  const lastDilovodSyncNonceRef = useRef(dilovodSyncNonce);
+  useEffect(() => {
+    if (dilovodSyncNonce === lastDilovodSyncNonceRef.current) return;
+    lastDilovodSyncNonceRef.current = dilovodSyncNonce;
+    if (detail?.id && !detail.isGroup && detail.sku) scheduleCatalogSyncRecheck(detail.id);
+  }, [dilovodSyncNonce, detail?.id, detail?.isGroup, detail?.sku, scheduleCatalogSyncRecheck]);
 
   useEffect(() => {
     if (!open || !isEdit || !detail?.id || detail.isGroup || !detail.sku) return;
@@ -1003,6 +1041,7 @@ export function ProductDrawer({
         setPushRetryOpen(false);
         setPushRetryError(null);
         setPushRetryGoodId(null);
+        scheduleCatalogSyncRecheckRef.current(goodId);
         return { ok: true as const, result };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -1194,6 +1233,9 @@ export function ProductDrawer({
           await pushGoodToStorefront(detail.id);
         } else if (shouldAutoPush) {
           await pushGoodToStorefront(detail.id, { silent: true, showRetryOnFail: true });
+        }
+        if (!opts?.closeAfter && !detail.isGroup && detail.sku) {
+          scheduleCatalogSyncRecheckRef.current(detail.id);
         }
         return;
       }
