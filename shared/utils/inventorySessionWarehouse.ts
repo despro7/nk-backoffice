@@ -1,5 +1,6 @@
 import type { InventoryWarehouseScope } from '../types/inventoryWarehouse.js';
 import { parseInventoryWarehouseScope } from '../types/inventoryWarehouse.js';
+import { totalPortionsGp, totalPortionsMs } from './inventoryDeviation.js';
 
 type InventoryItemLike = {
   unit?: string;
@@ -11,24 +12,6 @@ type InventoryItemLike = {
   systemBalanceGp?: number;
   isOutdated?: boolean;
 };
-
-function portionsPerBoxOf(item: InventoryItemLike): number {
-  return (item as { portionsPerBox?: number }).portionsPerBox ?? 1;
-}
-
-function totalPortionsMs(item: InventoryItemLike): number | null {
-  if (item.unit !== 'portions') return item.actualCount ?? null;
-  if (item.boxCount == null && item.actualCount == null) return null;
-  const ppb = portionsPerBoxOf(item);
-  return ((item.boxCount ?? 0) * ppb) + (item.actualCount ?? 0);
-}
-
-function totalPortionsGp(item: InventoryItemLike): number | null {
-  if (item.unit !== 'portions') return item.actualCountGp ?? null;
-  if (item.boxCountGp == null && item.actualCountGp == null) return null;
-  const ppb = portionsPerBoxOf(item);
-  return ((item.boxCountGp ?? 0) * ppb) + (item.actualCountGp ?? 0);
-}
 
 function hasMsFact(item: InventoryItemLike): boolean {
   if (item.boxCount != null || item.actualCount != null) {

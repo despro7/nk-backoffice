@@ -4,6 +4,7 @@ import { BoxSettingsManager } from '../components/BoxSettingsManager';
 import { OrderAssemblySettings } from '../components/OrderAssemblySettings';
 import { OrderSoundSettingsCard } from '@/components/OrderSoundSettingsCard';
 import { ShippingProvidersManager } from '../components/ShippingProvidersManager';
+import { InventoryHistoryCacheSettings } from '../components/InventoryHistoryCacheSettings';
 
 const SettingsOrderAssembly: React.FC = () => {
   return (
@@ -13,6 +14,7 @@ const SettingsOrderAssembly: React.FC = () => {
         <div className="space-y-8">
           <WeightToleranceSettings />
           <OrderSoundSettingsCard />
+          <InventoryHistoryCacheSettings />
         </div>
       </div>
 

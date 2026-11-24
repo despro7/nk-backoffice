@@ -53,6 +53,7 @@ import {
   type InventoryProductHistorySessionInput,
 } from '../../../shared/utils/mergeProductHistoryEntriesByDay.js';
 import { computeInventoryProductHistoryDayMovements } from './inventoryProductHistoryMovements.js';
+import { analyzeInventoryDeviations } from './inventoryDeviationAnalyzer/index.js';
 import { resolveSnapshotCatalogMeta } from './stockSnapshotCatalog.js';
 
 const router = Router();
@@ -3226,6 +3227,25 @@ router.get('/inventory/product-history', authenticateToken, async (req, res) => 
   } catch (error) {
     console.error('🚨 [Inventory] Error fetching product history:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/warehouse/inventory/:id/deviation-hints
+// Rule-based ймовірні причини відхилень інвентаризації (комплектації, відвантаження, переміщення)
+router.get('/inventory/:id/deviation-hints', authenticateToken, async (req, res) => {
+  try {
+    const sessionId = Number.parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(sessionId)) {
+      return res.status(400).json({ success: false, error: 'Invalid inventory id' });
+    }
+    const result = await analyzeInventoryDeviations(sessionId);
+    if (!result) {
+      return res.status(404).json({ success: false, error: 'Inventory not found' });
+    }
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('🚨 [Inventory] Error analyzing deviations:', error);
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Internal server error' });
   }
 });
 

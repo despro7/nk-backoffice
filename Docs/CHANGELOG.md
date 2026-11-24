@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-11-24 – Інвентаризація: аналізатор ймовірних причин відхилень, кеш історії товару
+
+**Files:** `shared/types/inventoryDeviationHints.ts`, `shared/types/inventoryHistoryCache.ts` (+ spec), `shared/utils/inventoryDeviation.ts`, `shared/utils/inventorySessionWarehouse.ts`, `server/modules/Warehouse/inventoryDeviationAnalyzer/` (`deviationVector`, `scoreHypotheses`, `collectCandidates`, `kitSwapCandidates`, `returnCandidates`, `movementLineCandidates`, `chronicSkus`, `previousSessions`, `index` + spec), `server/modules/Warehouse/inventoryOperationParsing.ts`, `server/modules/Warehouse/inventoryProductHistoryMovements.ts`, `server/modules/Warehouse/inventoryHistoryCacheSettings.ts`, `server/modules/Warehouse/WarehouseController.ts`, `server/routes/settings.ts`, `server/services/orderDatabaseService.ts`, `server/services/shipmentEvents.ts`, `client/components/InventoryHistoryCacheSettings.tsx`, `client/pages/SettingsOrderAssembly.tsx`, `client/pages/Warehouse/WarehouseInventory/` (`useDeviationHints.ts`, `useRowHistory.ts`, `WarehouseInventoryUtils.ts`, `components/InventoryDeviationHints.tsx`, `components/InventoryDeviationHintsBanner.tsx`, `components/InventorySessionDetailPanel.tsx`, `components/InventoryHistoryTable.tsx`, `components/InventoryTableSection.tsx`, `components/InventoryHistoryRow.tsx`)
+
+- **Аналізатор, API:** `GET /api/warehouse/inventory/:id/deviation-hints` повертає до 5 гіпотез з довірою, поясненими одиницями та залишком «не пояснено». Rule-based, без LLM і нових таблиць; вікно від попередньої завершеної сесії того ж складу до `inventoryDate` + 6 год (максимум 14 днів); жадібний скоринг з порогом 0.4 і множником `prior`.
+- **Гіпотези:** комплектація не проведена / не виконана (з прив'язкою до документа з іншою кількістю: «проведено 5, фізично 3»), пересорт у комплектуванні (`kit_swap`: не той компонент або не той набір), відвантаження не проведено / не відбулося, повернення не оприбутковано або проведено двічі (вікно 45 днів), розбіжність переміщення цілим документом або окремим рядком.
+- **Залишок:** чип «Хронічне (N з 6)» для SKU з тим самим знаком відхилення у ≥ 3 з 6 попередніх сесій, підказки за знаком (надлишки / повернення або брак), блок «Схоже на помилки підрахунку» для розкиданих ±1. Завершення інвентаризації облік не коригує, тому патерн «протилежне відхилення» не використовується.
+- **UI:** банер у warning-кольорах у деталях сесії і в розгорнутому записі вкладки «Історія» (висота запису стежить за контентом через `ResizeObserver`); замовлення відкривається в дровері; інвалідація після «Оновити облікові залишки».
+- **Швидкість:** розгортання наборів у подіях відвантаження з пакетною попередньою вибіркою каталогу замість запиту на кожен SKU (аналіз #212: з ~315 с до ~7 с); історія товару бере рухи з кешу контексту дня (перший SKU ~8 с, наступні ~1.8 с через тунель).
+- **Кеш історії товару:** TTL для сьогодні / вчора і старіших днів у «Налаштування комплектування замовлень» (`settings_base.inventory_history_cache`, типово 1 і 30 хв), кнопка «Очистити кеш зараз» там же і сіра кнопка «Скинути кеш» під історією товару для всіх.
+- **Рефакторинг:** математика відхилень (порції / коробки / штуки, МС і ГП) винесена в `shared/`; парсери відвантажень, комплектацій і переміщень винесені з `inventoryProductHistoryMovements.ts` у `inventoryOperationParsing.ts` без зміни поведінки.
+
+**Документація:** `Docs/features/warehouse-inventory.md` (розділи «Аналізатор ймовірних причин», «Кеш історії товару», API)
+
+---
+
 ## 2026-11-23 – Залишки по партіях у рядках ШК: мобільна версія
 
 **Files:** `client/pages/Products/components/productDrawer/BarcodesSection.tsx`

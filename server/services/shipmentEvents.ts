@@ -1,5 +1,5 @@
 import { prisma } from '../lib/utils.js';
-import { orderDatabaseService } from './orderDatabaseService.js';
+import { orderDatabaseService, type ProductLookupCache } from './orderDatabaseService.js';
 import { ordersCacheService } from './ordersCacheService.js';
 import { getShipmentSummaryItems } from './orderShipments.js';
 import { monolithicSkusToLegacyPayload, readMonolithicSkus } from '../../shared/utils/shipmentRecord.js';
@@ -143,9 +143,17 @@ export async function loadShipmentEvents(filters: {
   const orderCaches = await ordersCacheService.getMultipleOrderCaches(
     [...new Set(events.filter((event) => !event.cycleItems).map((event) => event.externalId))],
   );
+  // Один пакетний прохід по каталогу для всіх циклів, далі розгортання з кешу
+  const productCache: ProductLookupCache = new Map();
+  const cycleSkus = events.flatMap((event) =>
+    Array.isArray(event.cycleItems) ? (event.cycleItems as Array<{ sku?: unknown }>).map((item) => String(item?.sku ?? '')) : [],
+  );
+  if (cycleSkus.length > 0) {
+    await orderDatabaseService.prefetchProductsForExpansion(cycleSkus, productCache);
+  }
   for (const event of events) {
     if (event.cycleItems) {
-      const expanded = await orderDatabaseService.expandOrderItemsForReport(event.cycleItems as any[], event.reportKey);
+      const expanded = await orderDatabaseService.expandOrderItemsForReport(event.cycleItems as any[], event.reportKey, productCache);
       caches.set(event.reportKey, { processedItems: JSON.stringify(expanded) });
     } else {
       caches.set(event.reportKey, { processedItems: orderCaches.get(event.externalId)?.processedItems ?? null });

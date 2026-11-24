@@ -3,6 +3,7 @@ import {
   normalizeInventoryItemForScope,
   shouldKeepInventoryItemForScope,
 } from '@shared/utils/inventorySessionWarehouse';
+import { totalPortionsMs, totalPortionsGp as totalPortionsGpShared } from '@shared/utils/inventoryDeviation';
 import type { InventoryProduct, InventoryStatus } from './WarehouseInventoryTypes';
 
 export { shouldKeepInventoryItemForScope };
@@ -11,21 +12,13 @@ export { shouldKeepInventoryItemForScope };
 // Обчислює загальну кількість порцій для продукту
 // ---------------------------------------------------------------------------
 
-export const totalPortions = (p: InventoryProduct): number | null => {
-  if (p.unit !== 'portions') return p.actualCount;
-  if (p.boxCount === null && p.actualCount === null) return null;
-  return ((p.boxCount ?? 0) * p.portionsPerBox) + (p.actualCount ?? 0);
-};
+export const totalPortions = (p: InventoryProduct): number | null => totalPortionsMs(p);
 
 // ---------------------------------------------------------------------------
 // Обчислює загальну кількість порцій для продукту по складу ГП (готова продукція)
 // ---------------------------------------------------------------------------
 
-export const totalPortionsGp = (p: InventoryProduct): number | null => {
-  if (p.unit !== 'portions') return p.actualCountGp;
-  if (p.boxCountGp === null && p.actualCountGp === null) return null;
-  return ((p.boxCountGp ?? 0) * p.portionsPerBox) + (p.actualCountGp ?? 0);
-};
+export const totalPortionsGp = (p: InventoryProduct): number | null => totalPortionsGpShared(p);
 
 /** Переносить legacy-факти з полів МС у поля ГП, якщо сесія ГП збережена в старому форматі. */
 export const normalizeInventoryProductForScope = (

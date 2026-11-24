@@ -42,6 +42,9 @@ export interface OrderUpdateData extends Partial<OrderBaseData> {
   dilovodExportDate?: Date;
 }
 
+/** Кеш товарів (у форматі `getProductBySku`) для розгортання позицій у межах одного виклику. */
+export type ProductLookupCache = Map<string, any | null>;
+
 export class OrderDatabaseService {
   /**
    * Smart-перевірка змін у замовленні
@@ -1588,6 +1591,29 @@ export class OrderDatabaseService {
 
 
   /**
+   * Пакетно завантажує товари і всі вкладені компоненти наборів у кеш для `expandOrderItemsForReport`.
+   * Кілька запитів (по рівню вкладеності) замість окремого запиту на кожен SKU.
+   */
+  async prefetchProductsForExpansion(skus: Iterable<string>, cache: ProductLookupCache): Promise<void> {
+    let pending = [...new Set([...skus].map((s) => String(s ?? '').trim()).filter((s) => s && !cache.has(s)))];
+    for (let round = 0; pending.length > 0 && round <= 10; round++) {
+      const found = await catalogOpsLookup.getBySkus(pending);
+      const next = new Set<string>();
+      for (const sku of pending) {
+        const raw = found.get(sku) ?? found.get(sku.toLowerCase()) ?? null;
+        const product = raw ? catalogOpsLookup.toApiShape(raw) : null;
+        cache.set(sku, product);
+        const setItems = product && Array.isArray(product.set) ? product.set : [];
+        for (const setItem of setItems) {
+          const id = String((setItem as { id?: unknown } | null)?.id ?? '').trim();
+          if (id && !cache.has(id)) next.add(id);
+        }
+      }
+      pending = [...next];
+    }
+  }
+
+  /**
    * Отримує товар по SKU з парсингом JSON полів
    */
   async getProductBySku(sku: string) {
@@ -1701,7 +1727,8 @@ export class OrderDatabaseService {
     quantity: number,
     productStats: { [key: string]: { name: string; sku: string; orderedQuantity: number } },
     visitedSets: Set<string> = new Set(),
-    depth: number = 0
+    depth: number = 0,
+    productCache?: ProductLookupCache,
   ): Promise<void> {
     // Захист від нескінченної рекурсії
     const MAX_DEPTH = 10;
@@ -1717,7 +1744,10 @@ export class OrderDatabaseService {
     }
 
     try {
-      const product = await this.getProductBySku(sku);
+      const product = productCache?.has(sku)
+        ? productCache.get(sku)
+        : await this.getProductBySku(sku);
+      if (productCache && !productCache.has(sku)) productCache.set(sku, product ?? null);
       if (!product) {
         console.warn(`⚠️ Товар не знайдено: ${sku}`);
         return;
@@ -1752,7 +1782,8 @@ export class OrderDatabaseService {
             componentQuantity,
             productStats,
             new Set(visitedSets), // Копія Set для кожної гілки
-            depth + 1
+            depth + 1,
+            productCache,
           );
         }
 
@@ -1845,6 +1876,7 @@ export class OrderDatabaseService {
   async expandOrderItemsForReport(
     orderItems: any[],
     label = '',
+    productCache?: ProductLookupCache,
   ): Promise<Array<{ name: string; sku: string; orderedQuantity: number }>> {
     const productStats: { [key: string]: { name: string; sku: string; orderedQuantity: number } } = {};
 
@@ -1860,7 +1892,8 @@ export class OrderDatabaseService {
           item.quantity,
           productStats,
           new Set(), // Новий Set для кожного товару замовлення
-          0 // Починаємо з глибини 0
+          0, // Починаємо з глибини 0
+          productCache,
         );
       } catch (productError) {
         console.warn(`Error processing product ${item.sku} in order ${label}:`, productError);

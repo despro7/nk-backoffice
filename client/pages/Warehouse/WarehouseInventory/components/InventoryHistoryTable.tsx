@@ -12,6 +12,9 @@ import { ToastService } from '@/services/ToastService';
 import { StockBadge } from '@/components/StockBadge';
 import InventoryRefreshReportModal from './InventoryRefreshReportModal';
 import InventoryTableSection from './InventoryTableSection';
+import InventoryDeviationHints from './InventoryDeviationHints';
+import { useQueryClient } from '@tanstack/react-query';
+import { deviationHintsQueryKey } from '../useDeviationHints';
 import MovementMobProductEditDrawer from '@/pages/Warehouse/WarehouseMovementMob/components/MovementMobProductEditDrawer';
 import useUserNames from '@/hooks/useUserNames';
 import { kyivCalendarDayKeyFromSession } from '@shared/utils/inventoryHistoryGroups';
@@ -167,6 +170,7 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
   const [sortDirectionMat, setSortDirectionMat] = useState<SortDirection>('ascending');
   const [contentHeights, setContentHeights] = useState<Record<string, number>>({});
   const contentRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(6);
 
@@ -192,7 +196,7 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
   const displayEntries = useMemo(() => buildInventoryHistoryDisplayEntries(sessions), [sessions]);
 
   const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null);
-  const { rowHistoryCache, loadingSku, fetchHistory } = useRowHistory();
+  const { rowHistoryCache, loadingSku, fetchHistory, refreshHistory } = useRowHistory();
 
   const total = displayEntries.length;
   const pages = Math.max(1, Math.ceil(total / limit));
@@ -211,6 +215,18 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
       setContentHeights((p) => ({ ...p, [expandedSessionId]: h }));
     }
   }, [expandedSessionId, sortColumnProd, sortDirectionProd, sortColumnMat, sortDirectionMat, expandedRowKey, rowHistoryCache]);
+
+  // Вміст може рости після відкриття (асинхронний банер причин відхилень): тримаємо висоту актуальною
+  useEffect(() => {
+    if (!expandedSessionId) return;
+    const el = contentRefs.current[expandedSessionId];
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      setContentHeights((p) => (p[expandedSessionId] === el.scrollHeight ? p : { ...p, [expandedSessionId]: el.scrollHeight }));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [expandedSessionId]);
 
   if (sessions.length === 0) {
     return (
@@ -286,6 +302,7 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
       for (const id of idsToApply) {
         const res = await fetch(`/api/warehouse/inventory/${id}/refresh-balances?apply=true`, { method: 'POST', credentials: 'include' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        await queryClient.invalidateQueries({ queryKey: deviationHintsQueryKey(id) });
       }
       ToastService.show({ title: 'Оновлення застосовано', color: 'success' });
       try {
@@ -538,6 +555,15 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                   </div>
                 </div>
 
+                {expandedSessionId === entryKey && sessionsInEntry.map((sess) => (
+                  <InventoryDeviationHints
+                    key={`hints-${sess.id}`}
+                    session={sess}
+                    className="-mt-2 mb-4 rounded-lg border border-warning-200 overflow-hidden"
+                    badge={isGroup ? <StockBadge variant={resolveSessionWarehouseScope(sess) === 'gp' ? 'gp' : 'ms'} size="9px" /> : undefined}
+                  />
+                ))}
+
                 {(() => {
                   const st = detailStats;
                   const { materials: dMat, sets: dSets, products: dProd } = st;
@@ -573,6 +599,7 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                           onRowClick={handleRowClick}
                           rowHistoryCache={rowHistoryCache}
                           rowHistoryLoading={loadingSku}
+                          onRefreshRowHistory={(sku) => { void refreshHistory(sku); }}
                           setCompositionBySku={setCompositionBySku}
                           onOpenProductEdit={handleOpenProductEdit}
                           summary={{
@@ -596,6 +623,7 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                           onRowClick={handleRowClick}
                           rowHistoryCache={rowHistoryCache}
                           rowHistoryLoading={loadingSku}
+                          onRefreshRowHistory={(sku) => { void refreshHistory(sku); }}
                           setCompositionBySku={setCompositionBySku}
                           onOpenProductEdit={handleOpenProductEdit}
                           summary={{
@@ -619,6 +647,7 @@ const HistoryTable = ({ sessions, onLoadSession, onDeleteSession, onRestoreSessi
                           onRowClick={handleRowClick}
                           rowHistoryCache={rowHistoryCache}
                           rowHistoryLoading={loadingSku}
+                          onRefreshRowHistory={(sku) => { void refreshHistory(sku); }}
                           setCompositionBySku={setCompositionBySku}
                           onOpenProductEdit={handleOpenProductEdit}
                           summary={{

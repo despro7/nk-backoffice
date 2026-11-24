@@ -32,13 +32,14 @@ interface Props {
   onRowClick: (sessionId: string, sku: string) => void;
   rowHistoryCache: Record<string, ProductHistoryEntry[]>;
   rowHistoryLoading: string | null;
+  onRefreshRowHistory?: (sku: string) => void;
   setCompositionBySku: Record<string, any[]>;
   summary: Summary;
   isMaterial?: boolean;
   onOpenProductEdit?: (catalogGoodId: string) => void;
 }
 
-const InventoryTableSection = ({ title, sessionId, inventoryDate, rows, sortColumn, sortDirection, onSort, expandedRowKey, onRowClick, rowHistoryCache, rowHistoryLoading, setCompositionBySku, summary, isMaterial, onOpenProductEdit }: Props) => {
+const InventoryTableSection = ({ title, sessionId, inventoryDate, rows, sortColumn, sortDirection, onSort, expandedRowKey, onRowClick, rowHistoryCache, rowHistoryLoading, onRefreshRowHistory, setCompositionBySku, summary, isMaterial, onOpenProductEdit }: Props) => {
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2 justify-between px-3 py-2 rounded-t-md border-1 border-b-0 border-gray-200 bg-gray-200">
@@ -96,6 +97,7 @@ const InventoryTableSection = ({ title, sessionId, inventoryDate, rows, sortColu
                   expandedRowKey={expandedRowKey}
                   rowHistoryCache={rowHistoryCache}
                   rowHistoryLoading={rowHistoryLoading}
+                  onRefreshRowHistory={onRefreshRowHistory}
                   setCompositionBySku={setCompositionBySku}
                   onRowClick={onRowClick}
                   onOpenProductEdit={onOpenProductEdit}

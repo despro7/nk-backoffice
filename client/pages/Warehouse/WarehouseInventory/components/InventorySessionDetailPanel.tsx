@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Button } from '@heroui/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { formatDate } from '@/lib/formatUtils';
 import { StockBadge } from '@/components/StockBadge';
@@ -12,6 +13,8 @@ import InventoryTableSection from './InventoryTableSection';
 import MovementMobProductEditDrawer from '@/pages/Warehouse/WarehouseMovementMob/components/MovementMobProductEditDrawer';
 import InventoryRefreshReportModal from './InventoryRefreshReportModal';
 import useRowHistory from '../useRowHistory';
+import { deviationHintsQueryKey } from '../useDeviationHints';
+import InventoryDeviationHints from './InventoryDeviationHints';
 import useUserNames from '@/hooks/useUserNames';
 
 type SortColumn = 'sku' | 'name' | 'systemBalance' | 'actual' | 'deviation' | 'systemBalanceGp' | 'actualGp' | 'deviationGp';
@@ -61,7 +64,7 @@ export const InventorySessionDetailPanel = ({
   const [sortColumnMat, setSortColumnMat] = useState<SortColumn>('sku');
   const [sortDirectionMat, setSortDirectionMat] = useState<SortDirection>('ascending');
   const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null);
-  const { rowHistoryCache, loadingSku, fetchHistory } = useRowHistory();
+  const { rowHistoryCache, loadingSku, fetchHistory, refreshHistory } = useRowHistory();
   const namesMap = useUserNames([Number(session.createdBy ?? -1)]);
 
   const [isRefreshModalOpen, setIsRefreshModalOpen] = useState(false);
@@ -72,6 +75,8 @@ export const InventorySessionDetailPanel = ({
 
   const wh = resolveSessionWarehouseScope(session);
   const sectionTitlePrefix = wh === 'gp' ? 'ГП' : 'МС';
+
+  const queryClient = useQueryClient();
 
   const canAuthorEditSession = (sess: InventorySession): boolean => {
     if (!currentUserId || String(sess.createdBy) !== currentUserId) return false;
@@ -168,6 +173,7 @@ export const InventorySessionDetailPanel = ({
       const res = await fetch(`/api/warehouse/inventory/${refreshSessionId}/refresh-balances?apply=true`, { method: 'POST', credentials: 'include' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       ToastService.show({ title: 'Оновлення застосовано', color: 'success' });
+      await queryClient.invalidateQueries({ queryKey: deviationHintsQueryKey(refreshSessionId) });
       setIsRefreshModalOpen(false);
       await onHistoryRefresh?.();
     } catch (err) {
@@ -277,6 +283,8 @@ export const InventorySessionDetailPanel = ({
         </div>
       </div>
 
+      <InventoryDeviationHints session={session} />
+
       <div className="p-4">
         {dSets.length > 0 && (
           <InventoryTableSection
@@ -291,6 +299,7 @@ export const InventorySessionDetailPanel = ({
             onRowClick={handleRowClick}
             rowHistoryCache={rowHistoryCache}
             rowHistoryLoading={loadingSku}
+            onRefreshRowHistory={(sku) => { void refreshHistory(sku); }}
             setCompositionBySku={setCompositionBySku}
             onOpenProductEdit={handleOpenProductEdit}
             summary={{
@@ -314,6 +323,7 @@ export const InventorySessionDetailPanel = ({
             onRowClick={handleRowClick}
             rowHistoryCache={rowHistoryCache}
             rowHistoryLoading={loadingSku}
+            onRefreshRowHistory={(sku) => { void refreshHistory(sku); }}
             setCompositionBySku={setCompositionBySku}
             onOpenProductEdit={handleOpenProductEdit}
             summary={{
@@ -337,6 +347,7 @@ export const InventorySessionDetailPanel = ({
             onRowClick={handleRowClick}
             rowHistoryCache={rowHistoryCache}
             rowHistoryLoading={loadingSku}
+            onRefreshRowHistory={(sku) => { void refreshHistory(sku); }}
             setCompositionBySku={setCompositionBySku}
             onOpenProductEdit={handleOpenProductEdit}
             summary={{

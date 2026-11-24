@@ -11,6 +11,8 @@ import { supportReportSettingsService } from '../services/SupportReportSettingsS
 import { telegramAlertService } from '../services/TelegramAlertService.js';
 import type { SupportReportSettings } from '../../shared/types/supportReport.js';
 import { hrSettingsService } from '../modules/Hr/HrSettingsService.js';
+import { getInventoryHistoryCacheSettings, saveInventoryHistoryCacheSettings } from '../modules/Warehouse/inventoryHistoryCacheSettings.js';
+import { invalidateInventoryDayMovementsCache } from '../modules/Warehouse/inventoryProductHistoryMovements.js';
 
 const router = express.Router();
 const settingsAdmin = requirePermission('settings', 'admin', 'Змінювати адмінські налаштування');
@@ -507,6 +509,34 @@ router.put('/reporting-day-start-hour', authenticateToken, async (req, res) => {
     console.error('Error saving reporting day start hour:', error);
     res.status(500).json({ success: false, error: 'Failed to save reporting day start hour' });
   }
+});
+
+// === INVENTORY HISTORY CACHE SETTINGS ===
+// TTL кешу денних рухів для історії товару в інвентаризації
+router.get('/inventory-history-cache', authenticateToken, async (_req, res) => {
+  try {
+    res.json({ success: true, data: await getInventoryHistoryCacheSettings() });
+  } catch (error) {
+    console.error('Error getting inventory history cache settings:', error);
+    res.status(500).json({ success: false, error: 'Failed to get inventory history cache settings' });
+  }
+});
+
+router.put('/inventory-history-cache', authenticateToken, async (req, res) => {
+  try {
+    const data = await saveInventoryHistoryCacheSettings(req.body);
+    // Нові TTL діють одразу: старі записи могли бути закешовані з довшим строком
+    invalidateInventoryDayMovementsCache();
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error saving inventory history cache settings:', error);
+    res.status(500).json({ success: false, error: 'Failed to save inventory history cache settings' });
+  }
+});
+
+router.post('/inventory-history-cache/clear', authenticateToken, async (_req, res) => {
+  invalidateInventoryDayMovementsCache();
+  res.json({ success: true });
 });
 
 // === WEIGHT TOLERANCE SETTINGS ===

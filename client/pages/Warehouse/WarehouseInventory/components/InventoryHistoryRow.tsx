@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from 'react';
 import { DynamicIcon } from 'lucide-react/dynamic';
-import { Tooltip, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Popover, PopoverContent, PopoverTrigger } from '@heroui/react';
+import { Button, Tooltip, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Popover, PopoverContent, PopoverTrigger } from '@heroui/react';
 import { formatRelativeDate } from '@/lib/formatUtils';
 import { StockBadge } from '@/components/StockBadge';
 import { ToastService } from '@/services/ToastService';
@@ -38,6 +38,8 @@ interface InventoryHistoryRowProps {
   expandedRowKey: string | null;
   rowHistoryCache: Record<string, ProductHistoryEntry[]>;
   rowHistoryLoading: string | null;
+  /** Скинути кеш історії і перезавантажити (доступно всім). */
+  onRefreshRowHistory?: (sku: string) => void;
   setCompositionBySku: Record<string, any[]>;
   onRowClick: (sessionId: string, sku: string) => void;
   onOpenProductEdit?: (catalogGoodId: string) => void;
@@ -189,6 +191,7 @@ export const InventoryHistoryRow = ({
   expandedRowKey,
   rowHistoryCache,
   rowHistoryLoading,
+  onRefreshRowHistory,
   setCompositionBySku,
   onRowClick,
   onOpenProductEdit,
@@ -338,7 +341,7 @@ export const InventoryHistoryRow = ({
         <tr>
           <td colSpan={8} className="p-0 bg-gray-100 border-b border-gray-200/40 shadow-[inset_0_6px_10px_rgba(0,0,0,0.05)]">
             <div className="px-2 py-3">
-              {isRowLoading ? (
+              {isRowLoading && !historyEntries ? (
                 <div className="flex items-center justify-center gap-2 py-4 text-xs text-gray-500">
                   <DynamicIcon name="loader-2" className="w-3 h-3 animate-spin" />
                   Завантаження...
@@ -497,6 +500,20 @@ export const InventoryHistoryRow = ({
                     ))}
                   </tbody>
                 </table>
+              )}
+              {onRefreshRowHistory && !(isRowLoading && !historyEntries) && (
+                <div className="flex justify-end mt-2 pt-2.5 border-t border-gray-200">
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    className="h-6 min-w-0 px-2 gap-1 text-xs text-default-500/75 bg-white border border-gray-200 rounded-sm"
+                    isDisabled={isRowLoading}
+                    startContent={<DynamicIcon size={12} name={isRowLoading ? 'loader-2' : 'rotate-ccw'} className={`${isRowLoading ? 'animate-spin' : ''}`} />}
+                    onPress={() => onRefreshRowHistory(item.sku)}
+                  >
+                    Скинути кеш
+                  </Button>
+                </div>
               )}
             </div>
           </td>

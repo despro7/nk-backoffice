@@ -1,15 +1,21 @@
 import { prisma } from '../../lib/utils.js';
-import {
-  collectSkusFromOrders,
-  computeShippedQuantityForSku,
-  getReportProductDescriptors,
-  recomputeSetPortions,
-  sumQuantityForSku,
-} from '../../services/orderShipmentMetricsService.js';
-import { loadShipmentEvents } from '../../services/shipmentEvents.js';
-import { catalogOpsLookup } from '../Products/CatalogOpsLookup.js';
-import { kyivDayRangeExclusiveFromYmd } from '../../../shared/utils/kyivDateTime.js';
+import { computeShippedQuantityForSku, sumQuantityForSku } from '../../services/orderShipmentMetricsService.js';
+import { kyivDayRangeExclusiveFromYmd, kyivYmd } from '../../../shared/utils/kyivDateTime.js';
 import { safeParseItems } from './historyNormalize.js';
+import {
+  calcMovementItemQty,
+  collectItemSkus,
+  getComponentQtyFromRelease,
+  getReleaseOperationDate,
+  getSetNameFromRelease,
+  loadInventoryStorageIds,
+  loadPortionsPerBoxBySku,
+  loadShipmentContext,
+  resolveKitStorage,
+  type InventoryStorageIds,
+  type ShipmentContext,
+} from './inventoryOperationParsing.js';
+import { getInventoryHistoryCacheSettings } from './inventoryHistoryCacheSettings.js';
 
 export type ProductHistoryDayMovements = {
   kit: number;
@@ -42,285 +48,249 @@ const emptyMovements = (): ProductHistoryDayMovements => ({
   writtenOffGp: 0,
 });
 
-/** Рухи за календарний день Kyiv для одного SKU. */
-export async function computeInventoryProductHistoryDayMovements(
-  normalizedSku: string,
-  dayKeyYmd: string,
-): Promise<ProductHistoryDayMovements> {
+type ReleaseRow = {
+  quantity: number;
+  operationType: string;
+  createdAt: Date;
+  operDate: Date;
+  items: unknown;
+  setSku: string | null;
+  storageId: string | null;
+};
+
+/** Усі документи дня (незалежно від SKU): завантажуються один раз і кешуються. */
+type DayContext = {
+  start: Date;
+  endExclusive: Date;
+  shipments: ShipmentContext;
+  storageIds: InventoryStorageIds;
+  kitReleases: ReleaseRow[];
+  returns: Array<{ items: string }>;
+  writeoffs: Array<{ items: string; storageId: string | null }>;
+  movements: Array<{ sourceWarehouse: string; destinationWarehouse: string; items: string }> | null;
+  portionsPerBoxBySku: Map<string, number>;
+};
+
+async function loadDayContext(dayKeyYmd: string): Promise<DayContext | null> {
   const bounds = kyivDayRangeExclusiveFromYmd(dayKeyYmd);
-  if (!bounds) return emptyMovements();
+  if (!bounds) return null;
+  const { start, endExclusive } = bounds;
 
-  const { start: startOfDay, endExclusive: endOfDay } = bounds;
+  const storageIds = await loadInventoryStorageIds();
+  const { smallStorageId, mainStorageId } = storageIds;
 
-  try {
+  const [shipments, kitReleases, returns, writeoffs, movements] = await Promise.all([
     // Події відвантаження за день: кожен документ sale окремо, склад циклу (order_shipments)
-    const { orders, caches } = await loadShipmentEvents({
-      range: { start: startOfDay, end: new Date(endOfDay.getTime() - 1) },
-      status: 'all',
-      includeItems: true,
-    });
-
-    let shipped = 0;
-    if (orders.length > 0) {
-      const cachedItemsByExternalId = new Map<
-        string,
-        Array<{ sku?: string; name?: string; orderedQuantity?: number; quantity?: number }>
-      >();
-      for (const order of orders) {
-        const processedItems = caches.get(order.reportKey)?.processedItems;
-        if (!processedItems) continue;
-        try {
-          const parsed = JSON.parse(processedItems);
-          if (Array.isArray(parsed)) {
-            cachedItemsByExternalId.set(order.reportKey, parsed);
-          }
-        } catch {
-          // ignore malformed cache
-        }
-      }
-
-      // collectSkusFromOrders шукає кеш за externalId: подаємо події з ключем reportKey
-      const ordersByReportKey = orders.map((order) => ({ ...order, externalId: order.reportKey }));
-      const allSkus = collectSkusFromOrders(ordersByReportKey, cachedItemsByExternalId, true);
-      const productDescriptors = await getReportProductDescriptors(allSkus);
-      recomputeSetPortions(productDescriptors);
-
-      for (const order of orders) {
-        const cachedItems = cachedItemsByExternalId.get(order.reportKey) ?? null;
-        shipped += computeShippedQuantityForSku({ ...order, items: order.items ?? null }, cachedItems, normalizedSku, productDescriptors);
-      }
-    }
-
-    const [smallStorageSetting, mainStorageSetting] = await Promise.all([
-      prisma.settingsBase.findUnique({ where: { key: 'dilovod_small_storage_id' } }),
-      prisma.settingsBase.findUnique({ where: { key: 'dilovod_main_storage_id' } }),
-    ]);
-    const smallStorageId = smallStorageSetting?.value || '1100700000001019';
-    const mainStorageId = mainStorageSetting?.value || '1100700000001005';
-
-    const kitReleases = await prisma.warehouseReleaseSet.findMany({
+    loadShipmentContext({ start, end: new Date(endExclusive.getTime() - 1) }),
+    prisma.warehouseReleaseSet.findMany({
       where: {
         status: { not: 'deleted' },
         operationType: { in: ['kit', 'unkit'] },
         OR: [
-          { operDate: { gte: startOfDay, lt: endOfDay } },
-          { createdAt: { gte: startOfDay, lt: endOfDay } },
+          { operDate: { gte: start, lt: endExclusive } },
+          { createdAt: { gte: start, lt: endExclusive } },
         ],
       },
-      select: {
-        quantity: true,
-        operationType: true,
-        createdAt: true,
-        operDate: true,
-        items: true,
-        setSku: true,
-        storageId: true,
-      },
-    });
-
-    const getReleaseOperationDate = (release: {
-      operDate: Date | null;
-      createdAt: Date;
-      items: unknown;
-    }): Date => {
-      const items = Array.isArray(release.items) ? release.items : safeParseItems(release.items);
-      const first = items[0] as { operationDate?: string; operation_date?: string } | undefined;
-      const operationDateRaw = release.operDate || first?.operationDate || first?.operation_date || null;
-      return operationDateRaw ? new Date(operationDateRaw) : release.createdAt;
-    };
-
-    const getSetNameFromRelease = (releaseItems: unknown): string | null => {
-      const items = Array.isArray(releaseItems) ? releaseItems : safeParseItems(releaseItems);
-      const first = items[0] as { name?: string; title?: string; setName?: string } | undefined;
-      const name = first?.name ?? first?.title ?? first?.setName ?? null;
-      return name ? String(name).trim() || null : null;
-    };
-
-    const getComponentQtyFromRelease = (releaseItems: unknown, sku: string, setQuantity: number): number => {
-      const items = Array.isArray(releaseItems) ? releaseItems : safeParseItems(releaseItems);
-      let total = 0;
-      for (const setItem of items) {
-        if (!setItem || typeof setItem !== 'object') continue;
-        const quantityMode =
-          String((setItem as { components_quantity_mode?: unknown }).components_quantity_mode ?? '')
-            .toLowerCase() === 'total'
-            ? 'total'
-            : 'per_set';
-        const itemSetQty = Number((setItem as { quantity?: unknown }).quantity ?? setQuantity) || setQuantity || 0;
-        const compsRaw =
-          (setItem as { components_snapshot?: unknown; componentsSnapshot?: unknown }).components_snapshot ??
-          (setItem as { componentsSnapshot?: unknown }).componentsSnapshot ??
-          [];
-        if (!Array.isArray(compsRaw)) continue;
-        for (const component of compsRaw) {
-          if (!component || typeof component !== 'object') continue;
-          const componentSku = String(
-            (component as { sku?: unknown; id?: unknown }).sku ??
-              (component as { id?: unknown }).id ??
-              '',
-          ).trim();
-          if (componentSku !== sku) continue;
-          const rawQty = Number(
-            (component as { quantity?: unknown; qty?: unknown }).quantity ??
-              (component as { qty?: unknown }).qty ??
-              0,
-          );
-          if (!Number.isFinite(rawQty) || rawQty === 0) continue;
-          total += quantityMode === 'total' ? rawQty : rawQty * itemSetQty;
-        }
-      }
-      return total;
-    };
-
-    let kit = 0;
-    let kitGp = 0;
-    const kitDetails: ProductHistoryDayMovements['kitDetails'] = [];
-
-    const resolveKitStorage = (storageId: string | null | undefined): 'ms' | 'gp' => {
-      const resolved = storageId || mainStorageId;
-      return resolved === smallStorageId ? 'ms' : 'gp';
-    };
-
-    const addKitToStorage = (storageId: string | null | undefined, signedQty: number) => {
-      if (!signedQty) return;
-      if (resolveKitStorage(storageId) === 'ms') kit += signedQty;
-      else kitGp += signedQty;
-    };
-
-    for (const release of kitReleases) {
-      const operationDate = getReleaseOperationDate(release);
-      if (operationDate < startOfDay || operationDate >= endOfDay) continue;
-
-      const isUnkit = release.operationType === 'unkit';
-      const releaseSetSku = String(release.setSku ?? '').trim();
-
-      if (releaseSetSku === normalizedSku) {
-        const quantity = Number(release.quantity) || 0;
-        addKitToStorage(release.storageId, isUnkit ? -quantity : quantity);
-        continue;
-      }
-
-      const componentQty = getComponentQtyFromRelease(
-        release.items,
-        normalizedSku,
-        Number(release.quantity) || 0,
-      );
-      if (componentQty === 0) continue;
-      const signedQuantity = isUnkit ? componentQty : -componentQty;
-      addKitToStorage(release.storageId, signedQuantity);
-      kitDetails.push({
-        setSku: releaseSetSku || '—',
-        setName: getSetNameFromRelease(release.items),
-        operationType: isUnkit ? 'unkit' : 'kit',
-        quantity: componentQty,
-        signedQuantity,
-        storage: resolveKitStorage(release.storageId),
-      });
-    }
-
-    const returns = await prisma.warehouseReturnHistory.findMany({
+      select: { quantity: true, operationType: true, createdAt: true, operDate: true, items: true, setSku: true, storageId: true },
+    }),
+    prisma.warehouseReturnHistory.findMany({
       where: {
         OR: [
-          { returnDate: { gte: startOfDay, lt: endOfDay } },
-          { AND: [{ returnDate: null }, { createdAt: { gte: startOfDay, lt: endOfDay } }] },
+          { returnDate: { gte: start, lt: endExclusive } },
+          { AND: [{ returnDate: null }, { createdAt: { gte: start, lt: endExclusive } }] },
         ],
       },
       select: { items: true },
-    });
-
-    const writeoffs = await prisma.warehouseWriteOffHistory.findMany({
+    }),
+    prisma.warehouseWriteOffHistory.findMany({
       where: {
         OR: [
-          { writeOffDate: { gte: startOfDay, lt: endOfDay } },
-          { AND: [{ writeOffDate: null }, { createdAt: { gte: startOfDay, lt: endOfDay } }] },
+          { writeOffDate: { gte: start, lt: endExclusive } },
+          { AND: [{ writeOffDate: null }, { createdAt: { gte: start, lt: endExclusive } }] },
         ],
       },
       select: { items: true, storageId: true },
-    });
-
-    const returned = sumQuantityForSku(returns, normalizedSku);
-
-    let writtenOff = 0;
-    let writtenOffGp = 0;
-    for (const row of writeoffs) {
-      const qty = sumQuantityForSku([row], normalizedSku);
-      if (qty <= 0) continue;
-      const resolvedStorage = row.storageId || smallStorageId;
-      if (resolvedStorage === mainStorageId) writtenOffGp += qty;
-      else writtenOff += qty;
-    }
-
-    let moved = 0;
-    let movedGp = 0;
-    try {
-      const movements = await prisma.warehouseMovement.findMany({
+    }),
+    prisma.warehouseMovement
+      .findMany({
         where: {
           status: { not: 'deleted' },
-          movementDate: { gte: startOfDay, lt: endOfDay },
+          movementDate: { gte: start, lt: endExclusive },
           OR: [
             { sourceWarehouse: { in: [smallStorageId, mainStorageId] } },
             { destinationWarehouse: { in: [smallStorageId, mainStorageId] } },
           ],
         },
         select: { sourceWarehouse: true, destinationWarehouse: true, items: true },
-      });
+      })
+      // ігноруємо помилки переміщень (як і раніше)
+      .catch(() => null),
+  ]);
 
-      const movementSkus = new Set<string>();
-      for (const movement of movements) {
-        const items = safeParseItems(movement.items);
-        for (const it of items) {
-          const s = String((it as { sku?: string }).sku ?? '').trim();
-          if (s) movementSkus.add(s);
-        }
-      }
-      let portionsPerBoxBySku = new Map<string, number>();
-      if (movementSkus.size > 0) {
-        const found = await catalogOpsLookup.getBySkus([...movementSkus]);
-        portionsPerBoxBySku = new Map(
-          catalogOpsLookup.listUnique(found).map((p) => [p.sku, Number(p.portionsPerBox) || 1]),
-        );
-      }
+  let portionsPerBoxBySku = new Map<string, number>();
+  if (movements && movements.length > 0) {
+    const movementSkus = new Set<string>();
+    for (const movement of movements) {
+      for (const s of collectItemSkus(safeParseItems(movement.items))) movementSkus.add(s);
+    }
+    portionsPerBoxBySku = await loadPortionsPerBoxBySku(movementSkus).catch(() => new Map<string, number>());
+  }
 
-      const calcMovementQty = (item: Record<string, unknown>): number => {
-        const itemSku = String(item.sku ?? '').trim();
-        if (itemSku !== normalizedSku) return 0;
-        if (typeof item.totalPortions === 'number' && item.totalPortions !== 0) {
-          return item.totalPortions;
-        }
-        const ppb = portionsPerBoxBySku.get(itemSku) ?? 1;
-        const portions = Number(item.portionQuantity) || 0;
-        const boxes = Number(item.boxQuantity) || 0;
-        return portions + boxes * ppb;
-      };
+  return {
+    start,
+    endExclusive,
+    shipments,
+    storageIds,
+    kitReleases: kitReleases as ReleaseRow[],
+    returns,
+    writeoffs,
+    movements,
+    portionsPerBoxBySku,
+  };
+}
 
-      for (const movement of movements) {
-        const items = safeParseItems(movement.items);
-        let qty = 0;
-        for (const it of items) {
-          qty += calcMovementQty(it as Record<string, unknown>);
-        }
-        if (qty === 0) continue;
+/** Рухи одного SKU з уже завантаженого контексту дня (без звернень до БД). */
+export function computeSkuDayMovements(ctx: DayContext, normalizedSku: string): ProductHistoryDayMovements {
+  const { start, endExclusive, storageIds } = ctx;
+  const { smallStorageId, mainStorageId } = storageIds;
+  const { orders, cachedItemsByExternalId, productDescriptors } = ctx.shipments;
 
-        if (movement.destinationWarehouse === smallStorageId) moved += qty;
-        if (movement.sourceWarehouse === smallStorageId) moved -= qty;
-        if (movement.destinationWarehouse === mainStorageId) movedGp += qty;
-        if (movement.sourceWarehouse === mainStorageId) movedGp -= qty;
-      }
-    } catch {
-      // ігноруємо помилки переміщень
+  let shipped = 0;
+  for (const order of orders) {
+    const cachedItems = cachedItemsByExternalId.get(order.reportKey) ?? null;
+    shipped += computeShippedQuantityForSku({ ...order, items: order.items ?? null }, cachedItems, normalizedSku, productDescriptors);
+  }
+
+  let kit = 0;
+  let kitGp = 0;
+  const kitDetails: ProductHistoryDayMovements['kitDetails'] = [];
+  const addKitToStorage = (storageId: string | null | undefined, signedQty: number) => {
+    if (!signedQty) return;
+    if (resolveKitStorage(storageId, storageIds) === 'ms') kit += signedQty;
+    else kitGp += signedQty;
+  };
+
+  for (const release of ctx.kitReleases) {
+    const operationDate = getReleaseOperationDate(release);
+    if (operationDate < start || operationDate >= endExclusive) continue;
+
+    const isUnkit = release.operationType === 'unkit';
+    const releaseSetSku = String(release.setSku ?? '').trim();
+
+    if (releaseSetSku === normalizedSku) {
+      const quantity = Number(release.quantity) || 0;
+      addKitToStorage(release.storageId, isUnkit ? -quantity : quantity);
+      continue;
     }
 
-    return {
-      kit,
-      kitGp,
-      kitDetails,
-      shipped,
-      moved,
-      movedGp,
-      returned,
-      writtenOff,
-      writtenOffGp,
-    };
+    const componentQty = getComponentQtyFromRelease(release.items, normalizedSku, Number(release.quantity) || 0);
+    if (componentQty === 0) continue;
+    const signedQuantity = isUnkit ? componentQty : -componentQty;
+    addKitToStorage(release.storageId, signedQuantity);
+    kitDetails.push({
+      setSku: releaseSetSku || '–',
+      setName: getSetNameFromRelease(release.items),
+      operationType: isUnkit ? 'unkit' : 'kit',
+      quantity: componentQty,
+      signedQuantity,
+      storage: resolveKitStorage(release.storageId, storageIds),
+    });
+  }
+
+  const returned = sumQuantityForSku(ctx.returns, normalizedSku);
+
+  let writtenOff = 0;
+  let writtenOffGp = 0;
+  for (const row of ctx.writeoffs) {
+    const qty = sumQuantityForSku([row], normalizedSku);
+    if (qty <= 0) continue;
+    const resolvedStorage = row.storageId || smallStorageId;
+    if (resolvedStorage === mainStorageId) writtenOffGp += qty;
+    else writtenOff += qty;
+  }
+
+  let moved = 0;
+  let movedGp = 0;
+  for (const movement of ctx.movements ?? []) {
+    let qty = 0;
+    for (const it of safeParseItems(movement.items)) {
+      const item = it as Record<string, unknown>;
+      if (String(item.sku ?? '').trim() !== normalizedSku) continue;
+      qty += calcMovementItemQty(item, ctx.portionsPerBoxBySku);
+    }
+    if (qty === 0) continue;
+    if (movement.destinationWarehouse === smallStorageId) moved += qty;
+    if (movement.sourceWarehouse === smallStorageId) moved -= qty;
+    if (movement.destinationWarehouse === mainStorageId) movedGp += qty;
+    if (movement.sourceWarehouse === mainStorageId) movedGp -= qty;
+  }
+
+  return { kit, kitGp, kitDetails, shipped, moved, movedGp, returned, writtenOff, writtenOffGp };
+}
+
+// ---------------------------------------------------------------------------
+// Кеш контексту дня: перший рядок історії вантажить день, наступні рядки беруть з памʼяті.
+// Свіжі дні (сьогодні, вчора) живуть коротко, бо документи ще проводяться.
+// TTL налаштовується в «Налаштування комплектування замовлень» (`inventory_history_cache`).
+// ---------------------------------------------------------------------------
+
+const MAX_CACHED_DAYS = 120;
+
+const dayContextCache = new Map<string, { expiresAt: number; promise: Promise<DayContext | null> }>();
+
+function isRecentDay(dayKeyYmd: string): boolean {
+  const yesterday = kyivYmd(new Date(Date.now() - 24 * 60 * 60 * 1000));
+  return dayKeyYmd >= yesterday;
+}
+
+async function getDayContext(dayKeyYmd: string): Promise<DayContext | null> {
+  const now = Date.now();
+  const cached = dayContextCache.get(dayKeyYmd);
+  if (cached && cached.expiresAt > now) return cached.promise;
+
+  const settings = await getInventoryHistoryCacheSettings();
+  const ttlMinutes = isRecentDay(dayKeyYmd) ? settings.recentDayTtlMinutes : settings.pastDayTtlMinutes;
+  // Повторна перевірка: поки читали налаштування, паралельний запит міг уже почати завантаження
+  const raced = dayContextCache.get(dayKeyYmd);
+  if (raced && raced.expiresAt > Date.now()) return raced.promise;
+
+  const promise = loadDayContext(dayKeyYmd);
+  // TTL 0: кеш вимкнено, але паралельні запити того самого дня все одно ділять одне завантаження
+  const ttlMs = ttlMinutes > 0 ? ttlMinutes * 60 * 1000 : 0;
+  dayContextCache.set(dayKeyYmd, { expiresAt: ttlMs > 0 ? now + ttlMs : Number.POSITIVE_INFINITY, promise });
+  if (ttlMs === 0) {
+    void promise.finally(() => {
+      if (dayContextCache.get(dayKeyYmd)?.promise === promise) dayContextCache.delete(dayKeyYmd);
+    }).catch(() => undefined);
+  }
+  // Помилку не кешуємо: наступний запит спробує ще раз
+  promise.catch(() => {
+    if (dayContextCache.get(dayKeyYmd)?.promise === promise) dayContextCache.delete(dayKeyYmd);
+  });
+
+  if (dayContextCache.size > MAX_CACHED_DAYS) {
+    for (const [key, entry] of dayContextCache) {
+      if (entry.expiresAt <= now || dayContextCache.size > MAX_CACHED_DAYS) dayContextCache.delete(key);
+      if (dayContextCache.size <= MAX_CACHED_DAYS) break;
+    }
+  }
+  return promise;
+}
+
+/** Скинути кеш (усі дні або один `YYYY-MM-DD`), напр. після проведення документа. */
+export function invalidateInventoryDayMovementsCache(dayKeyYmd?: string): void {
+  if (dayKeyYmd) dayContextCache.delete(dayKeyYmd);
+  else dayContextCache.clear();
+}
+
+/** Рухи за календарний день Kyiv для одного SKU. */
+export async function computeInventoryProductHistoryDayMovements(
+  normalizedSku: string,
+  dayKeyYmd: string,
+): Promise<ProductHistoryDayMovements> {
+  try {
+    const ctx = await getDayContext(dayKeyYmd);
+    return ctx ? computeSkuDayMovements(ctx, normalizedSku) : emptyMovements();
   } catch {
     return emptyMovements();
   }
