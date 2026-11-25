@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-11-25 – Деплой однією командою: `npm run deploy`
+
+**Files:** `scripts/deploy.sh`, `package.json`
+
+- Скрипт замінює ручний флоу (ssh → `sudo -i` → `git pull` → `npm run build:prod` → `pm2 reload all`): перевіряє, що локальний `master` чистий і запушений, заходить на `netcup` через `ssh -t` + `sudo -i` (пароль sudo вводиться в терміналі), робить pull, збірку, `pm2 reload`, health check `/api/health` і показує підсумок `DEPLOY OK` / `DEPLOY FAILED`.
+- `npm ci` лише при зміні `package*.json`. Нові Prisma-міграції автоматично не застосовуються: попередження, або `npm run deploy -- --migrate`.
+
+**Документація:** `Docs/guides/deploy.md`
+
+---
+
 ## 2026-11-25 – Специфікація: перевірка збереження складу при затвердженні чернетки
 
 **Files:** `server/modules/Products/CatalogSpecService.ts`

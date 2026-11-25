@@ -25,6 +25,7 @@
     "build:server": "tsc -p tsconfig.server.json",
     "build:prod": "npm run db:generate && npm run build",
     "start": "node dist/server/index.js",
+    "deploy": "bash scripts/deploy.sh",
     "cron:status": "node dist/server/scripts/check-cron-status.js",
     "orders:reconcile-external-ids": "tsx server/scripts/reconcile-order-external-ids.ts",
     "orders:reconcile-external-ids:apply": "tsx server/scripts/reconcile-order-external-ids.ts --apply",
