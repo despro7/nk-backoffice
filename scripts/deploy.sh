@@ -46,6 +46,19 @@ started="$(date +%s)"
 # password in this terminal (ssh -t). The script is passed base64-encoded to keep quoting safe.
 read -r -d '' REMOTE_SCRIPT <<'REMOTE' || true
 set -euo pipefail
+
+# Under `sudo -i` node/npm/pm2 come from nvm, which only an interactive shell loads: source it.
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+  set +u
+  . "$NVM_DIR/nvm.sh"
+  set -u
+fi
+for tool in npm pm2; do
+  command -v "$tool" >/dev/null 2>&1 || { echo "$tool not found in PATH ($PATH)"; exit 1; }
+done
+echo "node $(node -v), npm $(npm -v)"
+
 cd "$APP_DIR"
 
 old_head="$(git rev-parse HEAD)"
@@ -62,8 +75,8 @@ fi
 
 changed="$(git diff --name-only "$old_head" "$new_head" || true)"
 
-if echo "$changed" | grep -qE '^package(-lock)?\.json$'; then
-  echo "-- dependencies changed: npm ci"
+if echo "$changed" | grep -qE '^package-lock\.json$'; then
+  echo "-- package-lock.json changed: npm ci"
   npm ci
 fi
 
