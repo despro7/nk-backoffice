@@ -14,7 +14,7 @@ npm run deploy -- --migrate # додатково `prisma migrate deploy`, якщ
 2. **Вхід:** `ssh -t netcup`, далі `sudo -i`. Пароль sudo вводиться в тому ж терміналі (скрипт його не зберігає й не передає).
 3. **На сервері** (`/home/backoffice.nk-food.shop/app`):
    - `git pull --ff-only` і список нових комітів;
-   - `npm ci`, лише якщо змінились `package.json` / `package-lock.json`;
+   - `npm ci`, лише якщо змінився `package-lock.json`;
    - нові `prisma/migrations/`: без `--migrate` лише попередження, з `--migrate` виконується `npm run db:migrate:prod`;
    - `npm run build:prod`, `pm2 reload all`, `pm2 status`;
    - health check `http://127.0.0.1:3001/api/health` (до 10 спроб по 3 с); при збої показує останні помилки pm2 і завершується з кодом 1.
@@ -26,5 +26,6 @@ npm run deploy -- --migrate # додатково `prisma migrate deploy`, якщ
 
 ## Нотатки
 
+- Під `sudo -i` node/npm/pm2 не в PATH (nvm завантажується лише в інтерактивній оболонці), тому скрипт підтягує `$HOME/.nvm/nvm.sh` і перевіряє наявність `npm` і `pm2` до початку.
 - Міграції навмисно не застосовуються автоматично: деякі потребують дампу таблиці перед запуском.
 - Пароль sudo вводить користувач. Без пароля можливо лише через окреме правило sudoers на сервері (рішення про безпеку сервера, у скрипті не передбачено).

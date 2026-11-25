@@ -10,7 +10,7 @@
 **Files:** `scripts/deploy.sh`, `package.json`
 
 - Скрипт замінює ручний флоу (ssh → `sudo -i` → `git pull` → `npm run build:prod` → `pm2 reload all`): перевіряє, що локальний `master` чистий і запушений, заходить на `netcup` через `ssh -t` + `sudo -i` (пароль sudo вводиться в терміналі), робить pull, збірку, `pm2 reload`, health check `/api/health` і показує підсумок `DEPLOY OK` / `DEPLOY FAILED`.
-- `npm ci` лише при зміні `package*.json`. Нові Prisma-міграції автоматично не застосовуються: попередження, або `npm run deploy -- --migrate`.
+- Під `sudo -i` скрипт підтягує nvm (інакше `npm: command not found`). `npm ci` лише при зміні `package-lock.json`. Нові Prisma-міграції автоматично не застосовуються: попередження, або `npm run deploy -- --migrate`.
 
 **Документація:** `Docs/guides/deploy.md`
 
