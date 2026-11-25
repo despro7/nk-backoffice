@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-11-25 – Специфікація: перевірка збереження складу при затвердженні чернетки
+
+**Files:** `server/modules/Products/CatalogSpecService.ts`
+
+- **Причина:** для 03004 (25.11) і 01006 (24.11) «Затвердити» чернетку створювало версію і сповіщення, але склад у `catalog_good_components` не змінювався (у журналі `spec_approved` немає diff складу). Версія писалась із запитаного `content`, тож історія показувала склад, якого в каталозі не було; змінилось лише після ручного збереження картки.
+- **Зміна:** `applyContent` (затвердження чернетки і відкат версії) після `updateGood` перечитує склад із БД і порівнює з запитаним (id компонентів, кількість, `specQty`; одиниці й втрати не порівнюються). При розбіжності: лог `[catalog-spec] applyContent: saved spec differs from requested` (`goodId`, користувач, очікуваний і фактичний склад), помилка затверджувачу, версія і сповіщення не створюються, чернетка лишається.
+- Версія тепер пишеться з реально збереженого складу, а не із запитаного.
+- Першопричину збою запису не усунуто, лише зроблено видимим: потрібні логи сервера (`[ProductsLocalSync] syncGood failed`, `local sync after update failed`) при наступному випадку.
+
+**Документація:** `Docs/features/products-catalog-2.0.md` («Перевірка збереження специфікації»)
+
+---
+
 ## 2026-11-25 – Дублі в складі комплекту: заборона і зрозуміла помилка комплектування
 
 **Files:** `shared/utils/catalogKitDuplicates.ts` (+ spec), `shared/utils/catalogCardAttention.ts`, `shared/types/catalog.ts`, `server/modules/Products/ProductsCatalogService.ts`, `server/modules/Products/catalogListAttentionEnrichment.ts`, `server/modules/Warehouse/SetReleaseController.ts`, `client/pages/Products/components/productDrawer/BomSection.tsx`, `client/pages/Products/components/productDrawer/ProductDrawer.tsx`, `client/pages/Products/components/CatalogTable.tsx`, `client/pages/Warehouse/WarehouseReleaseSets/ReleaseSetsMainFlow.tsx`, `client/pages/Warehouse/WarehouseReleaseSets/components/ReleaseKitDuplicateAlert.tsx`

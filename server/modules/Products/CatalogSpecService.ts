@@ -101,6 +101,29 @@ function snapshotContent(snapshot: CatalogGoodAuditSnapshot | null): CatalogSpec
   };
 }
 
+/**
+ * Груба перевірка «записане = запитане»: склад (id + кількість) і specQty.
+ * Одиниці/втрати не порівнюємо: updateGood підставляє типові значення, це не збій запису.
+ */
+function describeSpecMismatch(expected: CatalogSpecContent, actual: CatalogSpecContent): string | null {
+  if (expected.components.length !== actual.components.length) {
+    return `components count ${expected.components.length} != ${actual.components.length}`;
+  }
+  const sig = (c: { componentGoodId: string; qty: number }) => `${c.componentGoodId}|${Number(c.qty).toFixed(6)}`;
+  const left = expected.components.map(sig).sort();
+  const right = actual.components.map(sig).sort();
+  const diffIdx = left.findIndex((value, idx) => value !== right[idx]);
+  if (diffIdx >= 0) return `component rows differ: ${left[diffIdx]} vs ${right[diffIdx]}`;
+  if (
+    expected.specQty != null &&
+    actual.specQty != null &&
+    Math.abs(normalizeSpecQty(expected.specQty) - normalizeSpecQty(actual.specQty)) > 1e-9
+  ) {
+    return `specQty ${expected.specQty} != ${actual.specQty}`;
+  }
+  return null;
+}
+
 function jsonSignature(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
@@ -666,9 +689,27 @@ export class CatalogSpecService {
           ...(content.specQty != null ? { specQty: content.specQty } : {}),
         }),
     );
+    // Версія й сповіщення лише після перевірки, що специфікація справді збереглась у каталозі.
+    const persisted = await this.readApprovedContent(goodId);
+    const mismatch = describeSpecMismatch(content, persisted);
+    if (mismatch) {
+      logServer('[catalog-spec] applyContent: saved spec differs from requested', {
+        goodId,
+        source: options.source,
+        userId: options.userId,
+        auditAction: options.auditAction,
+        mismatch,
+        expected: content.components.map((c) => ({ id: c.componentGoodId, qty: c.qty })),
+        actual: persisted.components.map((c) => ({ id: c.componentGoodId, qty: c.qty })),
+      });
+      throw new CatalogSpecError(
+        'Специфікацію не вдалося зберегти: після запису склад у каталозі не збігається із запитаним. Чернетку збережено, спробуйте затвердити ще раз або перевірте журнал сервера.',
+        500,
+      );
+    }
     return this.createVersion({
       goodId,
-      content,
+      content: persisted,
       source: options.source,
       comment: options.comment,
       authorId: options.authorId,
