@@ -143,6 +143,8 @@ export interface CatalogGoodDto {
   isFinishedProduct?: boolean;
   /** Ймовірно некоректний «Розрахунок на» (лише продукція). */
   specQtySuspicious?: boolean;
+  /** SKU компонентів, продубльованих у складі комплекту (лише комплекти). */
+  kitDuplicateSkus?: string[];
   /** Локальні зображення каталогу (не Dilovod); 0 для груп */
   imageCount?: number;
   /** Головне зображення для tooltip у списку */

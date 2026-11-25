@@ -4,6 +4,7 @@ import PageTabs from '@/components/PageTabs';
 import useReleaseSets from './useReleaseSets';
 import SetSearchPanel from './components/SetSearchPanel';
 import ReleaseItemsPanel from './components/ReleaseItemsPanel';
+import ReleaseKitDuplicateAlert, { getKitReleaseDuplicateMessage } from './components/ReleaseKitDuplicateAlert';
 import ReleaseHistoryTab from './components/ReleaseHistoryTab';
 import { ReleaseHistoryToolbarFilters } from './components/ReleaseHistoryToolbarFilters';
 import { formatReleaseInternalDocDisplayNumber } from '@shared/utils/releaseHistoryDisplayDocNumber';
@@ -195,7 +196,13 @@ export function ReleaseSetsMainFlow({
     return warnings;
   }, [rs.previewComponents]);
 
+  const kitDuplicateMessage = React.useMemo(() => {
+    const first = rs.items[0];
+    return first ? getKitReleaseDuplicateMessage(first.name || first.setSku, first.componentsSnapshot) : null;
+  }, [rs.items]);
+
   const sendDisabled = !rs.areComponentBatchesComplete
+    || kitDuplicateMessage != null
     || (sendMode === 'correctionUnkit' && rs.correctionUnkitDiff.shortage > 0)
     || (sendMode === 'kit' && isKitBatchPreviewLoading);
 
@@ -662,6 +669,10 @@ export function ReleaseSetsMainFlow({
             dateStateKey="operDate"
             dateLabel={releaseDateLabel}
           />
+
+          {kitDuplicateMessage && rs.items[0] && (
+            <ReleaseKitDuplicateAlert message={kitDuplicateMessage} setSku={rs.items[0].setSku} />
+          )}
 
           {rs.items.length > 0 && (
             <ReleaseItemsPanel

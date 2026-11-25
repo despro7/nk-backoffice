@@ -187,6 +187,17 @@ Dilovod повертає `description: { uk, ru }`. Раніше `String(obj)` �
 - Create/update пишуть `tpGoods` у Dilovod (з `remark` з `note`, slice 150) і замінюють локальний BOM.
 - `ProductsLocalSync`: якщо sync payload **без** `note`, існуючі локальні примітки зберігаються (merge).
 
+### Дублі в складі комплекту (2026-11-25)
+
+Лише для комплектів (`CATALOG_ACC_POLICY_KIT`). У специфікації товару один інгредієнт на різних етапах техкарти допустимий.
+
+- `shared/utils/catalogKitDuplicates.ts`: `findKitDuplicateComponents` (за id, інакше за SKU) і всі тексти повідомлень.
+- Картка: товар, який уже є в складі, у пошуку неактивний з міткою «вже додано», повторне додавання відхиляється тостом. Рядки-дублі підсвічуються, під «Склад комплекту» показується «У складі є дублі: … Обʼєднайте рядки».
+- Сервер: `createGood` / `updateGood` не зберігають комплект із дублями (`assertNoKitDuplicateComponents`). `updateGood` перевіряє лише при явній зміні складу, щоб інші правки наявного кривого комплекту не блокувались.
+- Синхронізація з Dilovod (`ProductsLocalSync`) дублі не блокує, лише віддзеркалює дані.
+- Каталог: мітка уваги «Склад комплекту: дублі (SKU)» (`computeKitDuplicateSkusByGoodId` у `catalogListAttentionEnrichment.ts`, поле `kitDuplicateSkus`).
+- Комплектування такого набору заблоковано з поясненням: `Docs/features/warehouse-release-sets.md` → «Дублі в складі набору».
+
 ### Зворотний BOM (`GET /goods/:id/used-in`)
 
 - Запит по `componentGoodId` у `catalog_good_components`; відповідь — `CatalogGoodUsedInDto[]` (унікальні батьки, `qty` = сума рядків, `rowCount`).

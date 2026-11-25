@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { newRowKey } from '@shared/utils/catalogRowKey';
+import { findKitDuplicateComponents, kitDuplicatesWarning } from '@shared/utils/catalogKitDuplicates';
 import {
   Button,
   Chip,
@@ -212,6 +213,23 @@ export function BomSection({
   const isSpecReadOnly = isReadOnly || !canEditSpec;
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>(BOM_MANUAL_SORT);
   const [listSortEnabled, setListSortEnabled] = useState(false);
+  const kitDuplicates = useMemo(
+    () =>
+      isKit
+        ? findKitDuplicateComponents(
+            components.map((c) => ({ id: c.componentGoodId, sku: c.componentSku, name: c.componentName }))
+          )
+        : [],
+    [isKit, components]
+  );
+  const kitDuplicateIds = useMemo(
+    () => new Set(kitDuplicates.map((d) => d.id).filter((id): id is string => !!id)),
+    [kitDuplicates]
+  );
+  const kitComponentIds = useMemo(
+    () => (isKit ? new Set(components.map((c) => c.componentGoodId)) : new Set<string>()),
+    [isKit, components]
+  );
 
   const sortedEntries = useMemo(
     () => sortBomEntries(components, sortDescriptor, units),
@@ -767,6 +785,12 @@ export function BomSection({
             </div>
           )}
         </div>
+        {kitDuplicates.length > 0 && (
+          <span className="flex items-start gap-1 text-xs text-danger" role="alert">
+            <DynamicIcon name="alert-triangle" size={14} className="shrink-0" />
+            {kitDuplicatesWarning(kitDuplicates)}
+          </span>
+        )}
         <div className="flex flex-col gap-1 mb-4 md:mb-0">
           <Input
             aria-label="Додати компонент"
@@ -787,18 +811,24 @@ export function BomSection({
           />
           {bomSuggestions.length > 0 && (
             <div className="max-h-46 overflow-y-auto rounded-sm border border-default-200">
-              {bomSuggestions.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  disabled={isSpecReadOnly}
-                  className="grid grid-cols-[auto_40px] gap-2 w-full items-center justify-between px-3 py-2 text-left text-sm leading-tight hover:bg-default-200/50 [&:not(:last-child)]:border-b border-default-200/50 disabled:cursor-not-allowed disabled:opacity-50"
-                  onClick={() => onAddComponent(s)}
-                >
-                  <span>{s.name}</span>
-                  <span className="font-mono text-xs text-default-400">{s.sku}</span>
-                </button>
-              ))}
+              {bomSuggestions.map((s) => {
+                const alreadyAdded = isKit && kitComponentIds.has(s.id);
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    disabled={isSpecReadOnly || alreadyAdded}
+                    className="grid grid-cols-[auto_40px] gap-2 w-full items-center justify-between px-3 py-2 text-left text-sm leading-tight hover:bg-default-200/50 [&:not(:last-child)]:border-b border-default-200/50 disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={() => onAddComponent(s)}
+                  >
+                    <span>
+                      {s.name}
+                      {alreadyAdded && <span className="ml-2 text-xs text-default-400">вже додано</span>}
+                    </span>
+                    <span className="font-mono text-xs text-default-400">{s.sku}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -898,7 +928,7 @@ export function BomSection({
                         <div
                           ref={dragProvided.innerRef}
                           {...dragProvided.draggableProps}
-                          className={`flex flex-col gap-1.5 [&:not(:last-child)]:border-b border-default-200/60 pt-2 pb-3 sm:pb-2 ${snapshot.isDragging ? 'bg-default-100 shadow-sm rounded-md' : undefined}`}
+                          className={`flex flex-col gap-1.5 [&:not(:last-child)]:border-b border-default-200/60 pt-2 pb-3 sm:pb-2 ${snapshot.isDragging ? 'bg-default-100 shadow-sm rounded-md' : kitDuplicateIds.has(entry.row.componentGoodId) ? 'bg-danger-50 px-1.5 -mx-1.5' : ''}`}
                         >
                           {renderBomRow(
                             entry,

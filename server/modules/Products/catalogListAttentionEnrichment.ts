@@ -6,6 +6,7 @@ import {
 } from '../../../shared/types/catalog.js';
 import { getCatalogCardAttentionLabels } from '../../../shared/utils/catalogCardAttention.js';
 import { isSuspiciousSpecQty } from '../../../shared/utils/catalogBomWeight.js';
+import { findKitDuplicateComponents } from '../../../shared/utils/catalogKitDuplicates.js';
 import { isKitAccPolicy } from './ProductsTypes.js';
 import { getFinishedProductsFolderIds } from './catalogFinishedProductsFolder.js';
 
@@ -66,6 +67,31 @@ export async function computeSpecQtySuspiciousByGoodId(
   return out;
 }
 
+/** Комплекти з продубльованими компонентами: kitId -> SKU дублів (один батч-запит). */
+export async function computeKitDuplicateSkusByGoodId(kitIds: string[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (kitIds.length === 0) return out;
+  const rows = await prisma.catalogGoodComponent.findMany({
+    where: { parentGoodId: { in: kitIds } },
+    select: {
+      parentGoodId: true,
+      componentGoodId: true,
+      componentGood: { select: { sku: true, name: true } },
+    },
+  });
+  const byKit = new Map<string, Array<{ id: string; sku: string | null; name: string }>>();
+  for (const r of rows) {
+    const list = byKit.get(r.parentGoodId) ?? [];
+    list.push({ id: r.componentGoodId, sku: r.componentGood?.sku ?? null, name: r.componentGood?.name ?? '' });
+    byKit.set(r.parentGoodId, list);
+  }
+  for (const [kitId, list] of byKit) {
+    const dups = findKitDuplicateComponents(list);
+    if (dups.length > 0) out.set(kitId, dups.map((d) => d.sku || d.name).filter(Boolean));
+  }
+  return out;
+}
+
 export async function enrichCatalogListDtos(
   dtos: CatalogGoodDto[],
   rows: ListRowWithPrices[],
@@ -73,6 +99,7 @@ export async function enrichCatalogListDtos(
     kitPortionById: Map<string, number>;
     units: CatalogUnitDto[];
     specQtySuspiciousById: Map<string, boolean>;
+    kitDuplicateSkusById?: Map<string, string[]>;
   },
 ): Promise<CatalogGoodDto[]> {
   const pricesById = new Map(rows.map((row) => [row.id, row.prices ?? []]));
@@ -85,6 +112,7 @@ export async function enrichCatalogListDtos(
       !dto.isGroup && !!dto.parentId && finishedFolderIds.has(dto.parentId);
     const kitPortionCount = dto.isKit ? options.kitPortionById.get(dto.id) ?? 0 : undefined;
     const specQtySuspicious = options.specQtySuspiciousById.get(dto.id) ?? false;
+    const kitDuplicateSkus = dto.isKit ? options.kitDuplicateSkusById?.get(dto.id) : undefined;
     const catalogAttentionLabels = getCatalogCardAttentionLabels({
       isGroup: dto.isGroup,
       isFinishedProduct,
@@ -101,6 +129,7 @@ export async function enrichCatalogListDtos(
       kitPortionCount,
       specQty: dto.specQty,
       specQtySuspicious,
+      kitDuplicateSkus,
     });
 
     return {
@@ -108,6 +137,7 @@ export async function enrichCatalogListDtos(
       ...(dto.isGroup ? {} : { isFinishedProduct }),
       ...(dto.isKit ? { kitPortionCount: kitPortionCount ?? 0 } : {}),
       ...(specQtySuspicious ? { specQtySuspicious: true } : {}),
+      ...(kitDuplicateSkus?.length ? { kitDuplicateSkus } : {}),
       ...(catalogAttentionLabels.length > 0 ? { catalogAttentionLabels } : {}),
     };
   });

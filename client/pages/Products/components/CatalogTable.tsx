@@ -192,6 +192,7 @@ function resolveCatalogAttentionLabels(row: CatalogGoodDto): string[] {
     kitPortionCount: row.kitPortionCount,
     specQty: row.specQty,
     specQtySuspicious: row.specQtySuspicious,
+    kitDuplicateSkus: row.kitDuplicateSkus,
   });
 }
 

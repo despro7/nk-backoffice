@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-11-25 – Дублі в складі комплекту: заборона і зрозуміла помилка комплектування
+
+**Files:** `shared/utils/catalogKitDuplicates.ts` (+ spec), `shared/utils/catalogCardAttention.ts`, `shared/types/catalog.ts`, `server/modules/Products/ProductsCatalogService.ts`, `server/modules/Products/catalogListAttentionEnrichment.ts`, `server/modules/Warehouse/SetReleaseController.ts`, `client/pages/Products/components/productDrawer/BomSection.tsx`, `client/pages/Products/components/productDrawer/ProductDrawer.tsx`, `client/pages/Products/components/CatalogTable.tsx`, `client/pages/Warehouse/WarehouseReleaseSets/ReleaseSetsMainFlow.tsx`, `client/pages/Warehouse/WarehouseReleaseSets/components/ReleaseKitDuplicateAlert.tsx`
+
+- **Причина:** у «Тиждень під ключ» (07148) «Каша гречана з печерицями» (03007) стояла двома рядками. Сервер сумував рядки (2 шт. на набір), UI брав перший (1 шт.): кнопка «Створити комплектування» неактивна без пояснення, `/send` повертав `422 "SKU 03007: обрано 1 порцій, потрібно 2"`.
+- **Картка комплекту:** товар, який уже є в складі, не додається вдруге (у пошуку «вже додано», тост); рядки-дублі підсвічуються з попередженням під «Склад комплекту».
+- **Сервер:** `createGood` / `updateGood` не зберігають комплект із дублями. Синхронізація з Dilovod не блокується.
+- **Каталог:** мітка уваги «Склад комплекту: дублі (SKU)».
+- **Комплектування:** над компонентами помилка «Комплектування неможливе: у складі набору … вказано двічі» з кнопкою «Відкрити картку товару», відправка заблокована; `/send` і `/preview` перевіряють дублі до валідації партій і повертають той самий текст.
+
+**Документація:** `Docs/features/products-catalog-2.0.md` («Дублі в складі комплекту»), `Docs/features/warehouse-release-sets.md` («Дублі в складі набору»)
+
+---
+
 ## 2026-11-24 – Інвентаризація: аналізатор ймовірних причин відхилень, кеш історії товару
 
 **Files:** `shared/types/inventoryDeviationHints.ts`, `shared/types/inventoryHistoryCache.ts` (+ spec), `shared/utils/inventoryDeviation.ts`, `shared/utils/inventorySessionWarehouse.ts`, `server/modules/Warehouse/inventoryDeviationAnalyzer/` (`deviationVector`, `scoreHypotheses`, `collectCandidates`, `kitSwapCandidates`, `returnCandidates`, `movementLineCandidates`, `chronicSkus`, `previousSessions`, `index` + spec), `server/modules/Warehouse/inventoryOperationParsing.ts`, `server/modules/Warehouse/inventoryProductHistoryMovements.ts`, `server/modules/Warehouse/inventoryHistoryCacheSettings.ts`, `server/modules/Warehouse/WarehouseController.ts`, `server/routes/settings.ts`, `server/services/orderDatabaseService.ts`, `server/services/shipmentEvents.ts`, `client/components/InventoryHistoryCacheSettings.tsx`, `client/pages/SettingsOrderAssembly.tsx`, `client/pages/Warehouse/WarehouseInventory/` (`useDeviationHints.ts`, `useRowHistory.ts`, `WarehouseInventoryUtils.ts`, `components/InventoryDeviationHints.tsx`, `components/InventoryDeviationHintsBanner.tsx`, `components/InventorySessionDetailPanel.tsx`, `components/InventoryHistoryTable.tsx`, `components/InventoryTableSection.tsx`, `components/InventoryHistoryRow.tsx`)

@@ -13,6 +13,7 @@ import {
   getMissingRequiredCatalogFields,
   type CatalogRequiredFieldsInput,
 } from './catalogRequiredFields.js';
+import { kitDuplicatesAttentionLabel } from './catalogKitDuplicates.js';
 import { isEffectivelyEmptyHtml } from './storefrontDescriptionParser.js';
 
 export type CatalogCardAttentionInput = CatalogRequiredFieldsInput & {
@@ -30,6 +31,8 @@ export type CatalogCardAttentionInput = CatalogRequiredFieldsInput & {
   kitPortionCount?: number | null;
   specQty?: number | null;
   specQtySuspicious?: boolean;
+  /** SKU компонентів, продубльованих у складі комплекту. */
+  kitDuplicateSkus?: string[];
 };
 
 function nutritionHasValue(value: ProductNutritionJson | null | undefined): boolean {
@@ -103,6 +106,11 @@ export function getCatalogCardAttentionLabels(input: CatalogCardAttentionInput):
   const isGood = !input.isGroup && (!input.accPolicyId || input.accPolicyId === CATALOG_ACC_POLICY_GOOD);
   if (isGood && input.specQtySuspicious) {
     labels.push(`Розрахунок на (${resolveSpecQty(input.specQty)})`);
+  }
+
+  const isKit = input.isKit ?? input.accPolicyId === CATALOG_ACC_POLICY_KIT;
+  if (!input.isGroup && isKit && input.kitDuplicateSkus?.length) {
+    labels.push(kitDuplicatesAttentionLabel(input.kitDuplicateSkus));
   }
 
   return labels;

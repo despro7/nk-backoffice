@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 import { prisma, logServer } from '../../lib/utils.js';
 import type { CatalogLossEntry } from '../../../shared/types/production.js';
 import { normalizeLossEntries, resolveCookingLossPercent } from '../../../shared/utils/catalogLoss.js';
+import { findKitDuplicateComponents, kitDuplicatesServerError } from '../../../shared/utils/catalogKitDuplicates.js';
 import { isRowKey } from '../../../shared/utils/catalogRowKey.js';
 import { DEFAULT_BATCH_PORTIONS, normalizeQtyFormula } from '../../../shared/utils/catalogQtyFormula.js';
 import { normalizeTechCardPayload } from '../../../shared/utils/techCardPayload.js';
@@ -48,6 +49,7 @@ import {
   collectListAttentionGoodIds,
   collectListKitIds,
   computeSpecQtySuspiciousByGoodId,
+  computeKitDuplicateSkusByGoodId,
   enrichCatalogListDtos,
 } from './catalogListAttentionEnrichment.js';
 import { computeKitPortionCountsByGoodId } from './computeKitPortionCountsByGoodId.js';
@@ -353,10 +355,12 @@ export class ProductsCatalogService {
     const specGoodIds = collectListAttentionGoodIds(dtos);
     const specQtySuspiciousById = await computeSpecQtySuspiciousByGoodId(specGoodIds, units);
 
+    const kitDuplicateSkusById = await computeKitDuplicateSkusByGoodId(kitIds);
     return enrichCatalogListDtos(dtos, rows, {
       kitPortionById,
       units,
       specQtySuspiciousById,
+      kitDuplicateSkusById,
     });
   }
 
@@ -768,10 +772,12 @@ export class ProductsCatalogService {
     const units = await this.getUnits();
     const specGoodIds = collectListAttentionGoodIds(dtos);
     const specQtySuspiciousById = await computeSpecQtySuspiciousByGoodId(specGoodIds, units);
+    const kitDuplicateSkusById = await computeKitDuplicateSkusByGoodId(kitIdsFromDtos);
     return enrichCatalogListDtos(dtos, rows, {
       kitPortionById,
       units,
       specQtySuspiciousById,
+      kitDuplicateSkusById,
     });
   }
 
@@ -1496,6 +1502,28 @@ export class ProductsCatalogService {
     };
   }
 
+  /** Комплект не може містити один товар двічі (захист від ручного збереження; Dilovod sync не блокується). */
+  private async assertNoKitDuplicateComponents(
+    components: ReadonlyArray<{ componentGoodId: string }>,
+  ): Promise<void> {
+    if (components.length < 2) return;
+    const ids = [...new Set(components.map((c) => c.componentGoodId))];
+    if (ids.length === components.length) return;
+    const goods = await prisma.catalogGood.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, sku: true, name: true },
+    });
+    const byId = new Map(goods.map((g) => [g.id, g]));
+    const dups = findKitDuplicateComponents(
+      components.map((c) => ({
+        id: c.componentGoodId,
+        sku: byId.get(c.componentGoodId)?.sku ?? null,
+        name: byId.get(c.componentGoodId)?.name ?? null,
+      })),
+    );
+    if (dups.length > 0) throw new Error(kitDuplicatesServerError(dups));
+  }
+
   async createGood(input: CatalogCreateGoodInput): Promise<CatalogGoodDetailDto> {
     const isGroup = Boolean(input.isGroup);
     const name = String(input.name || '').trim();
@@ -1505,6 +1533,9 @@ export class ProductsCatalogService {
     const accPolicyId =
       input.accPolicyId ||
       (hasComponents ? CATALOG_ACC_POLICY_KIT : CATALOG_ACC_POLICY_GOOD);
+    if (!isGroup && hasComponents && isKitAccPolicy(accPolicyId)) {
+      await this.assertNoKitDuplicateComponents(input.components ?? []);
+    }
     const mainUnitId = input.mainUnitId || CATALOG_DEFAULT_MAIN_UNIT_ID;
     const parentId = input.parentId ?? null;
 
@@ -1780,6 +1811,10 @@ export class ProductsCatalogService {
       : input.accPolicyId ??
         (existing.accPolicyId ||
           (hasComponents ? CATALOG_ACC_POLICY_KIT : CATALOG_ACC_POLICY_GOOD));
+    // Лише при явній зміні складу: інші правки (назва тощо) наявного кривого комплекту не блокуємо.
+    if (hasComponents && input.components && isKitAccPolicy(accPolicyId)) {
+      await this.assertNoKitDuplicateComponents(components);
+    }
 
     let sku: string | null = null;
     if (!isGroup) {

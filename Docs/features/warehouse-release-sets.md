@@ -204,6 +204,13 @@ Switch у шапці сторінки. Двокроковий wizard:
 
 - Відповідь містить `sendError` (`message` + `raw` / JSON Dilovod) — модалка `ReleaseSendConfirmModal` показує обидва явно.
 - Fail (відповідь Dilovod або exception) → запис у `meta_logs` через `logSetReleaseSendFailure` (`logMetaDilovodExport`, category `dilovod`).
+
+### Дублі в складі набору (2026-11-25)
+
+- Набір, у складі якого той самий товар вказано двома рядками, комплектувати не можна. Сервер сумує рядки (2 шт. на набір), а UI бере кількість з першого рядка (1 шт.), тому раніше кнопка «Створити комплектування» просто ставала неактивною, а `/send` повертав `422 "SKU …: обрано 1 порцій, потрібно 2"`.
+- Тепер `findReleaseSetDuplicate` (`SetReleaseController.ts`) перевіряє склад кожного набору до агрегації (`components_snapshot`, інакше `set` з каталогу): `/send` повертає 422 з текстом «Комплектування неможливе: у складі набору «…» товар «…» (SKU) вказано двічі. Обʼєднайте рядки в картці товару.» ще до перевірки партій, `/preview` додає цей текст першим у `validation.errors`.
+- UI: `ReleaseKitDuplicateAlert` показує цю помилку над компонентами з кнопкою «Відкрити картку товару», відправка заблокована. Тексти й пошук дублів: `shared/utils/catalogKitDuplicates.ts`.
+- Виправлення даних: обʼєднати рядки в картці набору (див. `Docs/features/products-catalog-2.0.md` → «Дублі в складі комплекту»).
 | GET | `/api/warehouse/releases/last-kit-batches` | Партії останнього kit |
 | GET | `/api/warehouse/releases/batch-correction/search-sets` | Пошук наборів для correction |
 | GET | `/api/warehouse/releases/batch-correction/open-kit` | Створений, але нерозкомплектований kit сесії/набору (повернення на крок 1) |

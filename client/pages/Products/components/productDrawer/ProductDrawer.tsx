@@ -55,6 +55,7 @@ import { useRolePreview } from '@/contexts/role-preview-context';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { PERMISSIONS } from '@shared/constants/permissions';
 import { ToastService } from '@/services/ToastService';
+import { KIT_DUPLICATE_ADD_REFUSED } from '@shared/utils/catalogKitDuplicates';
 import { sanitizeStoredBatchName } from '@shared/utils/dilovodBatchId';
 import { BatchNumbersAutocomplete } from '@/pages/Warehouse/WarehouseMovement/components/BatchNumbersAutocomplete';
 import {
@@ -1979,6 +1980,10 @@ export function ProductDrawer({
                             onFormChange={setForm}
                             onBomQueryChange={setBomQuery}
                             onAddComponent={(hit) => {
+                              if (isKit && components.some((c) => c.componentGoodId === hit.id)) {
+                                ToastService.show({ title: KIT_DUPLICATE_ADD_REFUSED, color: 'warning' });
+                                return;
+                              }
                               const addRow = (prev: BomRow[]) => [
                                 ...prev,
                                 newBomRowFromSearch(hit, form.mainUnitId),
