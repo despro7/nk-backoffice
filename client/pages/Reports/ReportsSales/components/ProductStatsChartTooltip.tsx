@@ -2,6 +2,7 @@ interface ProductStatsChartTooltipEntry {
   value: number;
   color: string;
   name: string;
+  dataKey: string;
   payload: {
     date: string;
     fullDate: string;
@@ -31,9 +32,10 @@ export function ProductStatsChartTooltip({
     <div className="bg-white p-4 border border-gray-200 rounded-lg shadow-lg max-w-xs">
       <p className="font-semibold text-gray-900">{data.date}</p>
       <p className="text-sm text-gray-600">{data.fullDate}</p>
-      <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+      <div className="mt-2 space-y-1">
         {payload
-          .slice()
+          // Товарів у категорії багато: нульові лише захаращують підказку
+          .filter((entry) => !String(entry.dataKey).startsWith("product_") || entry.value > 0)
           .sort((first, second) => second.value - first.value)
           .map((entry, index) => (
             <div key={`${entry.name}-${index}`} className="flex items-center justify-between gap-4">

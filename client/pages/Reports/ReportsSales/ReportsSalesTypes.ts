@@ -114,6 +114,13 @@ export interface ProductStatsResponse {
   };
 }
 
+export interface ProductStatsChartCategoryProduct {
+  sku: string;
+  name: string;
+  portions: number;
+  amount: number;
+}
+
 export interface ProductStatsChartProps {
   className?: string;
 }

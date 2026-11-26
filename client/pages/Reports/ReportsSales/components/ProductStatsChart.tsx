@@ -36,6 +36,7 @@ import type {
   ProductChartGroupBy,
   ProductStatsAvailableSeries,
   ProductStats,
+  ProductStatsChartCategoryProduct,
   ProductStatsChartProps,
   ProductStatsResponse,
   ProductStatsSortDescriptor,
@@ -47,6 +48,7 @@ import {
 } from "../ReportsSalesUtils";
 import { ProductStatsChartFilters } from "./ProductStatsChartFilters";
 import { ProductStatsChartTooltip } from "./ProductStatsChartTooltip";
+import { ProductStatsChartTopProducts } from "./ProductStatsChartTopProducts";
 
 type ChartDataPoint = Record<string, string | number>;
 
@@ -54,6 +56,7 @@ type ProductStatsCacheEntry = {
   data: unknown;
   timestamp: number;
   availableSeries?: ProductStatsAvailableSeries;
+  categoryProducts?: ProductStatsChartCategoryProduct[];
 };
 
 function buildFallbackAvailableSeries(products: ProductStats[]): ProductStatsAvailableSeries {
@@ -101,6 +104,7 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
   const [productStats, setProductStats] = useState<ProductStats[]>([]);
   const [availableSeries, setAvailableSeries] = useState<ProductStatsAvailableSeries | null>(null);
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
+  const [categoryProducts, setCategoryProducts] = useState<ProductStatsChartCategoryProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [sortDescriptor, setSortDescriptor] = useState<ProductStatsSortDescriptor>({
     column: "orderedQuantity",
@@ -123,6 +127,23 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
 
 
+
+  // Лінії, приховані кліком по легенді
+  const [hiddenLineKeys, setHiddenLineKeys] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setHiddenLineKeys(new Set());
+  }, [selectedProducts]);
+
+  const toggleLine = useCallback((lineKey: string) => {
+    setHiddenLineKeys((current) => {
+      const next = new Set(current);
+      if (!next.delete(lineKey)) {
+        next.add(lineKey);
+      }
+      return next;
+    });
+  }, []);
 
   // Групування даних
   const [groupBy, setGroupBy] = useState<ProductChartGroupBy>("day");
@@ -180,6 +201,7 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
   const fetchChartData = useCallback(async (force?: boolean) => {
     if (!dateRange?.start || !dateRange?.end) {
       setChartData([]);
+      setCategoryProducts([]);
       return;
     }
 
@@ -197,6 +219,7 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
     // Перевіряємо клієнтський кеш для поточних фільтрів
     if (!force && cache[cacheKey] && (now - cache[cacheKey].timestamp) < CACHE_DURATION) {
       setChartData((cache[cacheKey].data as ChartDataPoint[]) ?? []);
+      setCategoryProducts(cache[cacheKey].categoryProducts ?? []);
       return;
     }
 
@@ -232,20 +255,25 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
       if (data.success) {
         const validatedData = Array.isArray(data.data) ? (data.data as ChartDataPoint[]) : [];
 
+        const nextCategoryProducts: ProductStatsChartCategoryProduct[] = data.metadata?.categoryProducts ?? [];
+
         setChartData(validatedData);
+        setCategoryProducts(nextCategoryProducts);
 
         // Зберігаємо в клієнтський кеш
-        setCacheEntry(cacheKey, { data: validatedData, timestamp: now });
+        setCacheEntry(cacheKey, { data: validatedData, timestamp: now, categoryProducts: nextCategoryProducts });
 
         // Оновлюємо час останнього оновлення кешу
         markCacheUpdated();
       } else {
         console.error('Помилка API графіка статистики:', data.error);
         setChartData([]);
+        setCategoryProducts([]);
       }
     } catch (error) {
       console.error('Помилка завантаження даних графіка:', error);
       setChartData([]);
+      setCategoryProducts([]);
     } finally {
       setLoading(false);
     }
@@ -393,7 +421,7 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
       return "Порції, середній чек та замовлення";
     }
 
-    return selectedProducts.size === 1 ? "Агрегована лінія категорії" : "Порівняння категорій";
+    return selectedProducts.size === 1 ? "Порції по товарах категорії" : "Порівняння категорій";
   }, [selectedProducts]);
 
   const renderedLineKeys = useMemo(() => {
@@ -406,7 +434,8 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
         return false;
       }
 
-      return key === "ordersCount" || key === "portionsCount" || key === "averageCheck" || key.startsWith("category_");
+      return key === "ordersCount" || key === "portionsCount" || key === "averageCheck"
+        || key.startsWith("category_") || key.startsWith("product_");
     });
   }, [chartData]);
 
@@ -459,6 +488,10 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
     "hsl(45, 85%, 55%)",  // Жовтий
     "hsl(195, 70%, 50%)", // Блакитний
   ];
+
+  // Легенда з багатьма товарами не має стискати область графіка (≈3 позиції в рядку)
+  const productLineCount = renderedLineKeys.filter((key) => key.startsWith("product_")).length;
+  const chartHeight = 384 + Math.ceil(productLineCount / 3) * 24;
 
   // Опції групування
   const groupByOptions = PRODUCT_CHART_GROUP_BY_OPTIONS;
@@ -542,7 +575,7 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
               </div>
             </div>
           ) : (
-            <div className="h-96 w-full">
+            <div className="w-full" style={{ height: chartHeight }}>
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
                   data={chartData}
@@ -587,7 +620,8 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
                   />
                   <Tooltip content={<ProductStatsChartTooltip />} />
                   <Legend
-                    wrapperStyle={{ paddingTop: '20px' }}
+                    wrapperStyle={{ paddingTop: '20px', cursor: 'pointer' }}
+                    onClick={(entry) => toggleLine(String(entry.dataKey))}
                   />
                   {renderedLineKeys.map((lineKey, index) => {
                     const lineName = String(chartData[0]?.[`${lineKey}_name`] || lineKey);
@@ -597,7 +631,9 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
                         ? "hsl(25, 85%, 55%)"
                       : lineKey === "portionsCount"
                         ? "hsl(210, 70%, 50%)"
-                        : colors[index % colors.length];
+                        : index < colors.length
+                          ? colors[index]
+                          : `hsl(${Math.round((index * 137.5) % 360)}, 65%, 48%)`;
 
                     return (
                       <Area
@@ -608,6 +644,7 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
                         stroke={color}
                         fill="none"
                         strokeWidth={lineKey === "ordersCount" || lineKey === "portionsCount" || lineKey === "averageCheck" ? 3 : 2}
+                        hide={hiddenLineKeys.has(lineKey)}
                         name={lineName.length > 28 ? `${lineName.slice(0, 28)}...` : lineName}
                       />
                     );
@@ -648,6 +685,14 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
           </div>
         </CardFooter>
       </Card>
+
+      {selectedProducts.size === 1 && categoryProducts.length > 0 && (
+        <ProductStatsChartTopProducts
+          categoryLabel={availableSeries?.categories.find((item) => selectedProducts.has(item.key))?.label}
+          products={categoryProducts}
+          loading={loading}
+        />
+      )}
 
       {/* Інформація про результати та кеш із кнопками */}
       <div className="flex justify-between items-center text-sm text-gray-600 mt-4">

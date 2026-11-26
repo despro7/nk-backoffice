@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-11-26 – Звіт продажів: сума по категорії, графік і топ товарів категорії
+
+**Files:** `server/modules/Reports/{categoryOrderAmount.ts,categoryOrderAmount.spec.ts}`, `server/routes/orders.ts`, `client/pages/Reports/ReportsSales/ReportsSalesTypes.ts`, `client/pages/Reports/ReportsSales/components/{ProductStatsChart.tsx,ProductStatsChartTooltip.tsx,ProductStatsChartTopProducts.tsx}`
+
+- **Причина завищеної суми:** у `/api/orders/sales/report` з фільтром категорії замовлення потрапляло у звіт, якщо мало хоч одну позицію категорії, але в `totalPrice`, `priceBySource` і `priceWithDiscountReason` додавався весь `order.totalPrice`.
+- Новий `categoryOrderAmount`: сума позицій категорії з рядків `order.items` (`price × quantity`). Рядок комплекту ділиться між листовими стравами пропорційно порціям. Результат масштабується на `order.totalPrice / сума рядків`, щоб урахувати знижки й доставку. Якщо в рядках немає цін, сума ділиться за часткою порцій. Без фільтра цифри не змінюються. Кеш `stats-report-v4`.
+- `/api/orders/products/chart`: якщо обрана одна категорія, віддаються серії `product_<sku>` на кожен товар категорії, а в `metadata.categoryProducts` підсумки по товарах (порції, сума), кеш `stats-chart-v3`. Для кількох категорій залишається порівняння категорій.
+- Під графіком таблиця «Топ продажів за період»: місце, товар, порції, частка в категорії, сума ₴, жирний рядок «Разом по категорії». Лінії ховаються кліком по легенді.
+
+**Документація:** –
+
+---
+
 ## 2026-11-26 – Сесії: пропозиція перезайти для старих сесій, без тосту на сторінці входу
 
 **Files:** `client/components/sessions/LegacySessionPrompt.tsx`, `client/components/Layout.tsx`, `client/contexts/{AuthContext.tsx,auth-context.ts}`, `server/routes/auth.ts`, `server/services/{authService.ts,authService.spec.ts}`

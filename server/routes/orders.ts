@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { salesDriveService } from '../services/salesDriveService.js';
-import { orderDatabaseService } from '../services/orderDatabaseService.js';
+import { orderDatabaseService, type ProductLookupCache } from '../services/orderDatabaseService.js';
+import { getCategoryOrderAmount, getOrderLeafAmounts } from '../modules/Reports/categoryOrderAmount.js';
 import { ordersCacheService } from '../services/ordersCacheService.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { formatKyivDateTime, addDaysToYmd, kyivDayRangeExclusiveFromYmd, parseKyivDateTime, todayKyivYmd } from '../../shared/utils/kyivDateTime.js';
@@ -2495,7 +2496,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
     const dayStartHour = await getReportingDayStartHour();
 
     const productsKey = Array.isArray(products) ? [...products].sort().join(',') : products || 'all';
-    const cacheKey = `stats-chart-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${groupBy}-${productsKey}-${dayStartHour}`;
+    const cacheKey = `stats-chart-v3-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${groupBy}-${productsKey}-${dayStartHour}`;
 
     if (sync !== 'true') {
       const cached = statsCache.get(cacheKey);
@@ -2561,6 +2562,8 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
         : [];
     const selectedCategoryKeys = new Set(selectedSeriesKeys.filter((item) => item.startsWith('category_')));
     const hasCategoryFilters = selectedCategoryKeys.size > 0;
+    // Одна категорія: окрема лінія на кожен її товар
+    const isPerProductMode = selectedCategoryKeys.size === 1;
 
     // Отримуємо всі externalId для bulk-запиту до кешу
     const orderExternalIds = filteredOrders.map(order => order.externalId);
@@ -2597,7 +2600,9 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
       portionsCount: number;
       totalRevenue: number;
       categories: Record<string, { label: string; quantity: number }>;
+      products: Record<string, number>;
     }>();
+    const categoryProducts = new Map<string, { name: string; quantity: number }>();
     const soldProductsForCategories = new Map<string, Set<string>>();
 
     for (const order of filteredOrders) {
@@ -2609,6 +2614,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
           portionsCount: 0,
           totalRevenue: 0,
           categories: {},
+          products: {},
         };
 
         bucket.ordersCount += 1;
@@ -2640,6 +2646,16 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
                 quantity: 0,
               };
               bucket.categories[descriptor.categoryKey].quantity += quantity;
+
+              if (isPerProductMode) {
+                bucket.products[item.sku] = (bucket.products[item.sku] ?? 0) + quantity;
+                const total = categoryProducts.get(item.sku) ?? {
+                  name: item.name || descriptor.name || item.sku,
+                  quantity: 0,
+                };
+                total.quantity += quantity;
+                categoryProducts.set(item.sku, total);
+              }
             }
           }
         }
@@ -2662,6 +2678,43 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
       })
       .sort((first, second) => first.label.localeCompare(second.label, 'uk-UA'));
 
+    // Суми по товарах категорії за весь період, та сама атрибуція, що й у звіті по продажам
+    const productAmounts = new Map<string, number>();
+    if (isPerProductMode && categoryProducts.size > 0) {
+      const productCache: ProductLookupCache = new Map();
+      await orderDatabaseService.prefetchProductsForExpansion(
+        filteredOrders.flatMap((order) => (order.items ?? []).map((item: { sku?: string }) => item?.sku ?? '')),
+        productCache,
+      );
+      const lookupProduct = async (sku: string) => {
+        if (!productCache.has(sku)) {
+          productCache.set(sku, await orderDatabaseService.getProductBySku(sku));
+        }
+        return productCache.get(sku);
+      };
+
+      for (const order of filteredOrders) {
+        if (!processedItemsByOrder.get(order.externalId)?.some((item) => categoryProducts.has(item?.sku))) {
+          continue;
+        }
+
+        const leafAmounts = await getOrderLeafAmounts({
+          items: order.items,
+          totalPrice: order.totalPrice,
+          lookup: lookupProduct,
+        });
+        for (const [sku, leaf] of leafAmounts) {
+          if (categoryProducts.has(sku)) {
+            productAmounts.set(sku, (productAmounts.get(sku) ?? 0) + leaf.amount);
+          }
+        }
+      }
+    }
+
+    // Порядок ключів у точках задає порядок легенди на клієнті
+    const sortedCategoryProducts = Array.from(categoryProducts.entries())
+      .sort(([, first], [, second]) => second.quantity - first.quantity || first.name.localeCompare(second.name, 'uk-UA'));
+
     // Конвертуємо в масив для відповіді
     const chartDataArray = Array.from(chartData.entries())
       .map(([dateKey, bucket]) => {
@@ -2681,7 +2734,13 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
           result.ordersCount_name = 'Замовлення';
         }
 
-        if (hasCategoryFilters) {
+        if (isPerProductMode) {
+          // Кожна точка містить усі товари категорії (0, якщо продажів не було)
+          for (const [sku, product] of sortedCategoryProducts) {
+            result[`product_${sku}`] = bucket.products[sku] ?? 0;
+            result[`product_${sku}_name`] = product.name;
+          }
+        } else if (hasCategoryFilters) {
           // Кожна точка має містити всі обрані категорії (0, якщо продажів не було),
           // інакше клієнт не побачить лінію, відсутню в першій точці
           for (const category of categoryOptions) {
@@ -2700,7 +2759,7 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
     // Підраховуємо реальну кількість ліній у даних (товари + групи)
     const actualProductCount = chartDataArray.length > 0
       ? Object.keys(chartDataArray[0]).filter(key =>
-        (key.startsWith('category_') || key === 'ordersCount' || key === 'portionsCount' || key === 'averageCheck') &&
+        (key.startsWith('category_') || key.startsWith('product_') || key === 'ordersCount' || key === 'portionsCount' || key === 'averageCheck') &&
         !key.endsWith('_name') &&
         key !== 'rawDate'
       ).length
@@ -2729,6 +2788,12 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
           },
           categories: categoryOptions,
         },
+        categoryProducts: sortedCategoryProducts.map(([sku, product]) => ({
+          sku,
+          name: product.name,
+          portions: product.quantity,
+          amount: Math.round((productAmounts.get(sku) ?? 0) * 100) / 100,
+        })),
         fetchedAt: new Date().toISOString()
       }
     };
@@ -2759,7 +2824,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
 
     const productsKey = Array.isArray(products) ? [...products].sort().join(',') : products || 'all';
     const singleDayKey = singleDay === 'true' ? 'single' : 'range';
-    const cacheKey = `stats-report-v3-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${productsKey}-${dayStartHour}-${singleDayKey}`;
+    const cacheKey = `stats-report-v4-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${productsKey}-${dayStartHour}-${singleDayKey}`;
 
     if (sync !== 'true') {
       const cached = statsCache.get(cacheKey);
@@ -2820,6 +2885,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
       sortBy: 'orderDate',
       sortOrder: 'asc',
       includeRaw: true, // Потрібно для читання vidskoduvanna / vidskoduvannaGrn
+      includeItems: true, // Ціни рядків для суми по відфільтрованих товарах
       // Додаємо фільтр по даті в запит до БД
       dateRange: {
         start: start,
@@ -2869,6 +2935,8 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
       filterProducts = individualProducts;
       filterGroups = groupFilters.map(g => g.replace('group_', ''));
     }
+
+    const hasProductFilter = filterProducts.length > 0 || filterGroups.length > 0 || filterCategories.length > 0;
 
     // Отримуємо все externalId для bulk-запиту до кешу
     const orderExternalIds = filteredOrders.map(order => order.externalId);
@@ -2940,6 +3008,33 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
       });
       statusHistoryByOrderId.set(entry.orderId, list);
     }
+
+    const isReportItemIncluded = (sku: string, name?: string): boolean => {
+      // Немає фільтрів - включаємо всі товари
+      if (!hasProductFilter) return true;
+
+      if (filterProducts.includes(sku)) return true;
+
+      const categoryKey = productDescriptors.get(sku)?.categoryKey;
+      if (categoryKey && filterCategories.includes(categoryKey)) return true;
+
+      return filterGroups.length > 0 && filterGroups.includes(getProductGroup(name || sku));
+    };
+
+    // Товари для розкладання комплектів при розрахунку суми по фільтру
+    const productCache: ProductLookupCache = new Map();
+    if (hasProductFilter) {
+      await orderDatabaseService.prefetchProductsForExpansion(
+        filteredOrders.flatMap((order) => (order.items ?? []).map((item: { sku?: string }) => item?.sku ?? '')),
+        productCache,
+      );
+    }
+    const lookupProduct = async (sku: string) => {
+      if (!productCache.has(sku)) {
+        productCache.set(sku, await orderDatabaseService.getProductBySku(sku));
+      }
+      return productCache.get(sku);
+    };
 
     // Збираємо дані по днях (використовуючи звітні дати)
     const salesData: {
@@ -3018,47 +3113,29 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
           const cachedStats = JSON.parse(cacheData.processedItems);
           if (Array.isArray(cachedStats)) {
             for (const item of cachedStats) {
-              if (item && item.sku && item.orderedQuantity > 0) {
-                let shouldInclude = false;
-
-                if (filterProducts.length === 0 && filterGroups.length === 0 && filterCategories.length === 0) {
-                  // Немає фільтрів - включаємо всі товари
-                  shouldInclude = true;
-                } else {
-                  // Перевіряємо індивідуальні товари
-                  if (filterProducts.includes(item.sku)) {
-                    shouldInclude = true;
-                  }
-
-                  // Перевіряємо категорії товарів
-                  const categoryKey = productDescriptors.get(item.sku)?.categoryKey;
-                  if (categoryKey && filterCategories.includes(categoryKey)) {
-                    shouldInclude = true;
-                  }
-
-                  // Перевіряємо групи товарів
-                  if (filterGroups.length > 0) {
-                    const productGroup = getProductGroup(item.name || item.sku);
-                    if (filterGroups.includes(productGroup)) {
-                      shouldInclude = true;
-                    }
-                  }
-                }
-
-                if (shouldInclude) {
-                  orderPortions += item.orderedQuantity;
-                  shouldIncludeOrder = true;
-                }
+              if (item && item.sku && item.orderedQuantity > 0 && isReportItemIncluded(item.sku, item.name)) {
+                orderPortions += item.orderedQuantity;
+                shouldIncludeOrder = true;
               }
             }
           }
         }
 
         if (shouldIncludeOrder) {
+          // З фільтром по товарах рахуємо лише частку суми замовлення, що припадає на них
+          const orderAmount = hasProductFilter
+            ? await getCategoryOrderAmount({
+                items: order.items,
+                totalPrice: order.totalPrice,
+                lookup: lookupProduct,
+                isIncluded: isReportItemIncluded,
+              })
+            : Number(order.totalPrice) || 0;
+
           // Додаємо замовлення до статистики дня
           salesData[dateKey].ordersCount += 1;
           salesData[dateKey].portionsCount += orderPortions;
-          salesData[dateKey].totalPrice += Number(order.totalPrice) || 0;
+          salesData[dateKey].totalPrice += orderAmount;
 
           // Статистика по статусам
           const ordStatus = order.status;
@@ -3080,13 +3157,13 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
           }
           salesData[dateKey].ordersBySource[sourceName] += 1;
           salesData[dateKey].portionsBySource[sourceName] += orderPortions;
-          salesData[dateKey].priceBySource[sourceName] += Number(order.totalPrice) || 0;
+          salesData[dateKey].priceBySource[sourceName] += orderAmount;
 
           // Статистика по pricinaZnizki (причина знижки)
           if (order.pricinaZnizki && order.pricinaZnizki.trim() !== '') {
             salesData[dateKey].ordersWithDiscountReason += 1;
             salesData[dateKey].portionsWithDiscountReason += orderPortions;
-            salesData[dateKey].priceWithDiscountReason += Number(order.totalPrice) || 0;
+            salesData[dateKey].priceWithDiscountReason += orderAmount;
 
             // Визначаємо причину знижки
             if (order.pricinaZnizki === '33') {
@@ -3136,7 +3213,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
             externalId: order.externalId,
             status: order.status,
             source: getOrderSourceDetailed(order.sajt || '', sourceMaps.detailed),
-            totalPrice: order.totalPrice != null ? Number(order.totalPrice) : undefined,
+            totalPrice: order.totalPrice != null ? orderAmount : undefined,
             hasDiscount: !!(order.pricinaZnizki && String(order.pricinaZnizki).trim() !== ''),
             discountReasonCode: order.pricinaZnizki ? String(order.pricinaZnizki) : null,
             vidskoduvanna,
