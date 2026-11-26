@@ -60,7 +60,7 @@ const targetIds = (target: PendingRevoke): string[] | null => {
 };
 
 const TABLE_CLASS_NAMES = {
-  table: 'table-fixed min-w-[36rem]',
+  table: 'table-fixed min-w-[40rem]',
   th: 'bg-transparent border-b border-default-200 text-default-500 font-medium',
   tr: 'border-b border-default-100 last:border-b-0',
   td: 'align-middle',
@@ -317,63 +317,86 @@ export function UserSessionsTable({ source }: UserSessionsTableProps) {
           </ul>
 
           <div className="hidden overflow-x-auto @2xl:block">
-            <Table
-              aria-label="Пристрої, на яких виконано вхід"
-              removeWrapper
-              classNames={TABLE_CLASS_NAMES}
-              selectionMode={isAdmin ? 'multiple' : 'none'}
-              selectedKeys={selected}
-              onSelectionChange={setSelected}
-              disabledKeys={isAdmin ? ended.map((session) => session.id) : []}
-              disabledBehavior="selection"
-            >
+            {/* Власна колонка вибору: вбудований selectionMode HeroUI у table-fixed не має ширини і налазить на першу колонку */}
+            <Table aria-label="Пристрої, на яких виконано вхід" removeWrapper classNames={TABLE_CLASS_NAMES}>
               <TableHeader>
-                <TableColumn className="w-[30%]">Пристрій</TableColumn>
-                <TableColumn className="w-[20%]">Місцезнаходження</TableColumn>
-                <TableColumn className="w-[15%]">Час входу</TableColumn>
-                <TableColumn className="w-[22%]">Остання активність</TableColumn>
-                <TableColumn aria-label="Дії" className="w-20">{' '}</TableColumn>
+                {[
+                  ...(isAdmin ? [
+                    <TableColumn key="select" className="w-10">
+                      <Checkbox
+                        size="sm"
+                        aria-label="Вибрати всі активні сесії"
+                        isDisabled={active.length === 0}
+                        isSelected={active.length > 0 && selectedIds.length === active.length}
+                        isIndeterminate={selectedIds.length > 0 && selectedIds.length < active.length}
+                        onValueChange={(checked) => setSelected(new Set(checked ? active.map((session) => session.id) : []))}
+                      />
+                    </TableColumn>,
+                  ] : []),
+                  <TableColumn key="device">Пристрій</TableColumn>,
+                  <TableColumn key="location" className="w-32 @4xl:w-56">Місцезнаходження</TableColumn>,
+                  <TableColumn key="created" className="w-32">Час входу</TableColumn>,
+                  <TableColumn key="last" className="w-36">Остання активність</TableColumn>,
+                  <TableColumn key="actions" aria-label="Дії" className="w-24">{' '}</TableColumn>,
+                ]}
               </TableHeader>
               <TableBody emptyContent="–">
-                {[...active, ...ended].map((session) => (
-                  <TableRow key={session.id} className={session.isActive ? undefined : 'opacity-60'}>
-                    <TableCell>
-                      <DeviceCell
-                        deviceType={session.deviceType}
-                        label={deviceLabel(session.browser, session.os)}
-                        badge={session.isCurrent && session.isActive && (
-                          <Chip size="sm" variant="flat" color="success" className="h-5">Поточний</Chip>
-                        )}
-                      />
-                    </TableCell>
-                    <TableCell><LocationCell session={session} /></TableCell>
-                    <TableCell><DateCell value={session.createdAt} /></TableCell>
-                    <TableCell>
-                      {session.isActive ? (
-                        <DateCell value={session.lastUsedAt} />
-                      ) : (
-                        <span className="text-sm text-default-500">
-                          Завершено {formatShortDate(session.revokedAt)}
-                          {' · '}
-                          {session.revokedReason ? REVOKED_REASON_LABELS[session.revokedReason] : '–'}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {session.isActive && !session.isCurrent && (
-                        <Button
-                          size="sm"
-                          variant="light"
-                          color="danger"
-                          startContent={<DynamicIcon name="log-out" size={14} />}
-                          onPress={() => setPending({ kind: 'one', session })}
-                        >
-                          Вийти
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {[...active, ...ended].map((session) => {
+                  const isSelected = selected === 'all' ? session.isActive : selected.has(session.id);
+                  return (
+                    <TableRow key={session.id} className={session.isActive ? undefined : 'opacity-60'}>
+                      {[
+                        ...(isAdmin ? [
+                          <TableCell key="select">
+                            <Checkbox
+                              size="sm"
+                              aria-label="Вибрати сесію"
+                              isDisabled={!session.isActive}
+                              isSelected={isSelected}
+                              onValueChange={(checked) => toggleSelected(session.id, checked)}
+                            />
+                          </TableCell>,
+                        ] : []),
+                        <TableCell key="device">
+                          <DeviceCell
+                            deviceType={session.deviceType}
+                            label={deviceLabel(session.browser, session.os)}
+                            badge={session.isCurrent && session.isActive && (
+                              <Chip size="sm" variant="flat" color="success" className="h-5">Поточний</Chip>
+                            )}
+                          />
+                        </TableCell>,
+                        <TableCell key="location"><LocationCell session={session} /></TableCell>,
+                        <TableCell key="created"><DateCell value={session.createdAt} /></TableCell>,
+                        <TableCell key="last">
+                          {session.isActive ? (
+                            <DateCell value={session.lastUsedAt} />
+                          ) : (
+                            <div className="leading-tight">
+                              <DateCell value={session.revokedAt} />
+                              <div className="text-xs text-default-400">
+                                Завершено · {session.revokedReason ? REVOKED_REASON_LABELS[session.revokedReason] : '–'}
+                              </div>
+                            </div>
+                          )}
+                        </TableCell>,
+                        <TableCell key="actions" className="text-right">
+                          {session.isActive && !session.isCurrent && (
+                            <Button
+                              size="sm"
+                              variant="light"
+                              color="danger"
+                              startContent={<DynamicIcon name="log-out" size={14} />}
+                              onPress={() => setPending({ kind: 'one', session })}
+                            >
+                              Вийти
+                            </Button>
+                          )}
+                        </TableCell>,
+                      ]}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

@@ -16,7 +16,7 @@ export function FailedAttempts({ attempts, hasMore, isLoadingMore, onLoadMore }:
     <div className="space-y-1 pt-2">
       <SectionTitle icon="shield-alert" level="sub">Невдалі спроби входу</SectionTitle>
       {attempts.length === 0 ? (
-        <p className="text-sm text-default-500">–</p>
+        <p className="text-sm text-default-500">Невдалих спроб немає</p>
       ) : (
         <ul className="divide-y divide-default-100">
           {attempts.map((attempt) => (
