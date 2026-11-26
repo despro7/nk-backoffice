@@ -440,9 +440,17 @@ export class ProductsLocalSync {
       where: { goodId, barcodeKind: { not: 'box' } },
     });
     if (barcodes.length === 0) return;
+    // Коробкові рядки лишились у таблиці: той самий code+goodPart повторно не вставляємо.
+    const boxRows = await tx.catalogGoodBarcode.findMany({
+      where: { goodId, barcodeKind: 'box' },
+      select: { code: true, goodPart: true },
+    });
+    const taken = new Set(boxRows.map((r) => `${r.code}|${r.goodPart}`));
+    const portion = barcodes.filter((b) => !taken.has(`${b.code}|${b.goodPart?.trim() || ''}`));
+    if (portion.length === 0) return;
     const now = new Date();
     await tx.catalogGoodBarcode.createMany({
-      data: barcodes.map((b) => ({
+      data: portion.map((b) => ({
         goodId,
         code: b.code,
         activity: b.activity,

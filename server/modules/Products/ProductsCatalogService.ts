@@ -1885,9 +1885,12 @@ export class ProductsCatalogService {
         price: p.price,
         currency: p.currency,
       }));
+    // Коробкові ШК – внутрішні (не Dilovod) і не перезаписуються разом із порційними:
+    // інакше unique(goodId, code, goodPart) валить транзакцію локального sync разом зі складом.
+    const existingPortionBarcodes = existing.barcodes.filter((b) => b.barcodeKind !== 'box');
     const barcodes =
       input.barcodes ??
-      existing.barcodes.map((b) => ({
+      existingPortionBarcodes.map((b) => ({
         code: b.code,
         activity: b.activity,
         goodPart: b.goodPart,
@@ -1950,7 +1953,7 @@ export class ProductsCatalogService {
         const goodPart = b.goodPart?.trim() || null;
         const activity = b.activity !== false;
         const existingBarcode = matchExistingBarcode(
-          existing.barcodes,
+          existingPortionBarcodes,
           code,
           goodPart,
           usedBarcodeKeys
@@ -2002,7 +2005,7 @@ export class ProductsCatalogService {
         });
       }
 
-      for (const prev of existing.barcodes) {
+      for (const prev of existingPortionBarcodes) {
         const key = catalogBarcodeRowKey(prev);
         if (usedBarcodeKeys.has(key)) continue;
         try {
@@ -2023,7 +2026,7 @@ export class ProductsCatalogService {
       }
     } else if (!isGroup) {
       savedBarcodes.push(
-        ...existing.barcodes.map((b) => ({
+        ...existingPortionBarcodes.map((b) => ({
           code: b.code,
           activity: b.activity,
           dilovodRegisterId: b.dilovodRegisterId,

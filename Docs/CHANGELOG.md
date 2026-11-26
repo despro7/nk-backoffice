@@ -31,6 +31,18 @@
 
 ---
 
+## 2026-11-26 – Специфікація не зберігалась у товарів із коробковими ШК
+
+**Files:** `server/modules/Products/ProductsCatalogService.ts`, `server/modules/Products/ProductsLocalSync.ts` (+ `ProductsLocalSync.spec.ts`)
+
+- **Першопричина:** затвердження чернетки викликає `updateGood` без `barcodes`, і запасний набір брався з усіх ШК картки разом із коробковими (`barcodeKind=box`). `replaceBarcodes` видаляє лише порційні та вставляв коробкові повторно: `Unique constraint ... catalog_good_barcodes_goodId_code_goodPart_key`. Транзакція локального sync відкочувалась разом зі складом, а запасний `refreshFromDilovod` склад не замінює. У Dilovod новий склад при цьому вже був записаний.
+- **Зміна:** `updateGood` без явних `barcodes` працює лише з порційними ШК (перезапис і видалення з Dilovod); `replaceBarcodes` пропускає рядки, що збігаються з наявними коробковими (покриває й інші шляхи синхронізації).
+- Після деплою невдалі чернетки достатньо затвердити повторно.
+
+**Документація:** `Docs/features/products-catalog-2.0.md` («Перевірка збереження специфікації»)
+
+---
+
 ## 2026-11-25 – Деплой однією командою: `npm run deploy`
 
 **Files:** `scripts/deploy.sh`, `package.json`
