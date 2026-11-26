@@ -664,7 +664,8 @@ export class CatalogSpecService {
     const approved = await this.readApprovedContent(goodId);
     await this.ensureBaseline(goodId, approved);
     const nextVersion = ((await this.currentVersion(goodId)) ?? 0) + 1;
-    await catalogGoodAuditService.track(
+    // Перевірка всередині track(): при збої запис «затверджено / відновлено» в історію не потрапляє.
+    const persisted = await catalogGoodAuditService.track(
       {
         action: options.auditAction,
         ids: [goodId],
@@ -673,8 +674,8 @@ export class CatalogSpecService {
         always: true,
         meta: { ...options.auditMeta, specVersion: nextVersion },
       },
-      () =>
-        productsCatalogService.updateGood(goodId, {
+      async () => {
+        await productsCatalogService.updateGood(goodId, {
           components: content.components.map((c) => ({
             componentGoodId: c.componentGoodId,
             qty: c.qty,
@@ -687,26 +688,28 @@ export class CatalogSpecService {
             qtyFormula: c.qtyFormula ?? null,
           })),
           ...(content.specQty != null ? { specQty: content.specQty } : {}),
-        }),
+        });
+        // Версія й сповіщення лише після перевірки, що специфікація справді збереглась у каталозі.
+        const saved = await this.readApprovedContent(goodId);
+        const mismatch = describeSpecMismatch(content, saved);
+        if (mismatch) {
+          logServer('[catalog-spec] applyContent: saved spec differs from requested', {
+            goodId,
+            source: options.source,
+            userId: options.userId,
+            auditAction: options.auditAction,
+            mismatch,
+            expected: content.components.map((c) => ({ id: c.componentGoodId, qty: c.qty })),
+            actual: saved.components.map((c) => ({ id: c.componentGoodId, qty: c.qty })),
+          });
+          throw new CatalogSpecError(
+            'Специфікацію не вдалося зберегти: після запису склад у каталозі не збігається із запитаним. Чернетку збережено, спробуйте затвердити ще раз або перевірте журнал сервера.',
+            500,
+          );
+        }
+        return saved;
+      },
     );
-    // Версія й сповіщення лише після перевірки, що специфікація справді збереглась у каталозі.
-    const persisted = await this.readApprovedContent(goodId);
-    const mismatch = describeSpecMismatch(content, persisted);
-    if (mismatch) {
-      logServer('[catalog-spec] applyContent: saved spec differs from requested', {
-        goodId,
-        source: options.source,
-        userId: options.userId,
-        auditAction: options.auditAction,
-        mismatch,
-        expected: content.components.map((c) => ({ id: c.componentGoodId, qty: c.qty })),
-        actual: persisted.components.map((c) => ({ id: c.componentGoodId, qty: c.qty })),
-      });
-      throw new CatalogSpecError(
-        'Специфікацію не вдалося зберегти: після запису склад у каталозі не збігається із запитаним. Чернетку збережено, спробуйте затвердити ще раз або перевірте журнал сервера.',
-        500,
-      );
-    }
     return this.createVersion({
       goodId,
       content: persisted,

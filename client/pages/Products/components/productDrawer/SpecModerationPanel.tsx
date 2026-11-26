@@ -500,6 +500,18 @@ export function SpecModerationPanel({
                   const lines = expanded
                     ? buildCatalogAuditLines(diffSpecContent(goodId, approvedContent, specContentFromDetail(v)), dictionaries)
                     : [];
+                  // Для чинної версії зміни відносно попередньої видно одразу, без кнопки.
+                  const previous = isCurrent
+                    ? versions
+                        .filter((row) => row.version < v.version)
+                        .reduce<CatalogSpecVersionDto | null>((best, row) => (!best || row.version > best.version ? row : best), null)
+                    : null;
+                  const changeLines = previous
+                    ? buildCatalogAuditLines(
+                        diffSpecContent(goodId, specContentFromDetail(previous), specContentFromDetail(v)),
+                        dictionaries,
+                      )
+                    : [];
                   const people = [
                     v.authorName,
                     v.approvedByName && v.approvedByName !== v.authorName ? `затв. ${v.approvedByName}` : null,
@@ -528,6 +540,12 @@ export function SpecModerationPanel({
                         </p>
                         {v.comment ? <p className="mt-0.5 text-base text-default-800">{v.comment}</p> : null}
                         <p className="text-xs text-default-400">{contentSummary(v)}</p>
+                        {previous ? (
+                          <div className="mt-2 rounded-md border border-default-200 bg-default-50 p-2.5 text-sm">
+                            <p className="mb-1 text-sm text-default-500">Що змінено порівняно з v{previous.version}:</p>
+                            {changeLines.length > 0 ? <CatalogAuditLineList lines={changeLines} /> : <p>Відмінностей немає.</p>}
+                          </div>
+                        ) : null}
                         {expanded ? (
                           <div className="mt-2 rounded-md border border-default-200 bg-default-50 p-2.5 text-sm">
                             <p className="mb-1 text-sm text-default-500">Що зміниться при відновленні:</p>

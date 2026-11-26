@@ -5,6 +5,15 @@
 
 ---
 
+## 2026-11-26 – Специфікація: зміни чинної версії в історії, чесний журнал при збої
+
+**Files:** `client/pages/Products/components/productDrawer/SpecModerationPanel.tsx`, `server/modules/Products/CatalogSpecService.ts`
+
+- **Історія версій:** під чинною версією одразу показано «Що змінено порівняно з vN-1» (без кнопки). Блок «Що зміниться при відновленні» у старих версіях без змін.
+- **Журнал товару:** перевірка збереження складу тепер виконується всередині `track()`, тож при невдалому затвердженні чи відкаті запис «затверджено» / «відновлено» не створюється. Старі такі записи лишаються.
+
+---
+
 ## 2026-11-26 – Звіти по продажам: фільтр категорій у таблиці, виправлено пустий графік
 
 **Files:** `server/routes/orders.ts`, `client/pages/Reports/ReportsSales/useReportsSalesTableData.ts`, `client/pages/Reports/ReportsSales/components/SalesReportTable.tsx`, `client/pages/Reports/ReportsSales/components/SalesReportTableFilters.tsx`
