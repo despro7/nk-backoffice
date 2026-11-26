@@ -92,6 +92,13 @@ PDF-етикетки **100×100 мм** для партій готової про
 `server/routes/label-templates.ts` — CRUD, дефолти, preview PDF, `preview-inputs`, override по товарах.  
 Клієнт: `client/services/LabelTemplateService.ts`.
 
+| Метод | Шлях | Опис |
+|-------|------|------|
+| GET / PUT | `/api/label-templates/weight-spacing` | Спільні пробіли в масі нетто (PUT – ADMIN / BOSS) |
+| POST | `/api/label-templates/apply-field` | Перенести поле (геометрія / шрифт / вміст / усе) в обрані шаблони однією транзакцією, за потреби видалити `estimated_svg` |
+
+Деталі шаблону (`GET /:id`) повертають `weightSpacingOverride` і фінальні `weightSpacing`; `POST` / `PUT` приймають `weightSpacingOverride` (`null` – успадковувати). `resolve-template` товару теж віддає `weightSpacing`.
+
 ---
 
 ## UI — картка товару (`ProductLabelsTab`)
@@ -103,12 +110,22 @@ PDF-етикетки **100×100 мм** для партій готової про
 5. Під превʼю — `formatProductLabelHistoryCaption` (збережено / згенеровано, автор, партія); accordion **«Текстові поля»** автоматично **розгортається** лише в режимі редагування (`!readOnly && !viewingVersion`).
 6. **Дії:** зберегти чернетку · синхронізувати з картки (`seed`) · **згенерувати PDF** (активна, якщо немає PDF або поточний зміст **≠** останній PDF — не плутати з «незбережені зміни в формі») · завантажити / друк (браузер) лише для обраного **PDF** · «Редагувати як чернетку» (клон з PDF). Під час дії кнопки з іконкою: `isLoading` + `startContent={loading ? null : icon}` (спінер замість іконки, не між іконкою й текстом).
 
-**Локальні правки чернетки** (`LABEL_EDITABLE_KEYS`): заголовок (2 рядки), **маса нетто** (`net_weight`). Формат ваги на наліпці: число + одиниця **без пробілу** (`400г`, `1кг`) — `formatNetWeightLabel` у `shared/utils/productLabel.ts`.
+**Локальні правки чернетки** (`LABEL_EDITABLE_KEYS`): заголовок (2 рядки), **маса нетто** (`net_weight`). На порції під масою вкладки «℮ Без похибки / ± Похибка» (`label/LabelNetWeightField.tsx`): похибка зберігається в `net_weight_tolerance`. Жовте попередження про БЖВ стоїть над спойлером «Текстові поля». Текст маси в картці (`formatNetWeightLabel`) лишається без пробілу (`400г`); на друк пробіли ставляться за налаштуваннями, див. **Маса нетто: ℮, похибка, пробіли**.
 
 Превʼю: `label/LabelPdfmeViewer.tsx` — шаблон з БД проходить `hydrateLabelTemplateContent`, потім `resolvePdfmeInputs` (див. **SVG і pdfme inputs** нижче).
 
 - **Опублікована версія** (обрано `vN`, не «Редагувати як чернетку»): `ProductLabelService.fetchPdfBase64` → PDF іде в Viewer як `basePdf` (без schemas), тобто превʼю = файл, що друкується, навіть якщо пресет змінили після генерації. Поки PDF вантажиться – спінер; помилка завантаження → фолбек на рендер з `payload.inputs` версії.
 - Контейнер `aspect-[5/5.6]`, панель масштабу pdfme притиснута до низу (`bottom-2!` поверх inline `bottom: 6%`), стартовий масштаб `zoomLevel: 1.25`.
+
+---
+
+## Маса нетто: ℮, похибка, пробіли
+
+- **Лише порція** (`labelKind === 'portion'`, продукція й комплекти): до `net_weight` дописується «℮» або похибка – «380 г ℮», «380 г ± 8%». Коробка друкує лише масу. Ознака передається як `netWeightSuffix` у `resolvePdfmeInputs` / `generateLabelPdfBuffer` / `LabelPdfmeViewer`.
+- **Знак ℮** друкується текстом (U+212E) у тому самому полі, тож стоїть на одній лінії з вагою. Старе SVG-поле `estimated_svg` під час рендера порції ховається порожнім SVG (`prepareLabelTemplateForRender` знімає `readOnly`); його можна прибрати з шаблонів. Ширину поля `net_weight` задають у Designer, автопідбір шрифту – `dynamicFontSize`.
+- **Похибка** – ключ `net_weight_tolerance`: `5%` або `20г`, друкується в тих самих одиницях (`formatNetWeightToleranceLabel`).
+- **Пробіли** (`shared/utils/labelWeightSpacing.ts`): вага–одиниця, вага–℮/±, ±–похибка. Варіанти: без, волосяний U+200A, тонкий U+2009, звичайний U+00A0, широкий U+2002 (лише вага–℮/±). Дефолт: волосяний · звичайний · волосяний. Пробіл у старих чернетках («300 г») нормалізується під час друку (`tightenWeightUnitSpacing`). У DaysOne немає U+200A.
+- **Зберігання:** `settings_base` ключ `label_weight_spacing` (`{ defaults, overrides: { [templateId]: часткові } }`), сервіс `LabelWeightSpacingService`. Перевизначення копіюється при дублюванні шаблону.
 
 ---
 
@@ -133,6 +150,14 @@ PDF-етикетки **100×100 мм** для партій готової про
 `client/pages/SettingsLabelTemplates.tsx` — список пресетів, pdfme Designer (100×100 мм), матриця дефолтів (3 комірки: good×portion/box, kit×portion), overrides по товарах, живий preview.
 
 **Живі дані в Designer:** `LabelTemplatePreviewProductPicker` — пошук лише **активних** товарів ГП (без архіву / `delMark`, як `isWarehouseProductArchived`); партія → `GET …/preview-inputs`. Підстановка в макет: `resolvePdfmeInputs` + `applyLabelPreviewInputsToTemplate` — **статичні** поля (кастомне ім’я, `readOnly`, текст без MVT) не затираються; SVG-слоти — через `labelTemplateSvgAssets` (див. секцію **SVG і pdfme inputs**); toast про невідомі імена — лише для **динамічних** слотів (`unknownDynamicSchemaNames`).
+
+**Mock-дані:** значення змінних MVT, змінені в Designer, зберігаються в шаблоні (`hydrateLabelTemplateContent` бере збережені, дефолт лише для нових). Поки обрано живий товар, mock-вміст перекритих полів тримається окремо й повертається при збереженні та очищенні вибору.
+
+**Маса в макеті:** `net_weight` показується так, як друкується (`labelNetWeightPreview.ts`), поки в макеті немає окремого поля ℮. Перемикач «℮ Без похибки / ± Похибка» в рядку з товаром і партією (`LabelMockNetWeightControl`) зберігається в `template.sampledata[0]` (`net_weight_suffix_mode`, `net_weight_tolerance`); у шаблон пишеться чистий mock маси без суфікса.
+
+**Пробіли в масі нетто:** розділ акордеону – спільні значення (кнопка «Зберегти пробіли») і перемикач «Власні» для шаблону (зберігається з шаблоном), превʼю «380 г ℮ / 380 г ± 8%».
+
+**Застосувати поле до інших шаблонів:** виділити одне поле → модалка `LabelApplyFieldModal`: що переносити, які шаблони (фільтри аудиторія / слот), опційно видалити `estimated_svg`, превʼю «замінено / додано / видалено ℮». Логіка – `shared/pdfme/applyLabelFieldToTemplate.ts`.
 
 Допоміжні модулі: `client/pages/Settings/labelTemplates/*`, `shared/pdfme/*`, `shared/utils/labelTemplateInputs.ts`.
 

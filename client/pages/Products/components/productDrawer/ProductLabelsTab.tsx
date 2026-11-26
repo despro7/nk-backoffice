@@ -56,6 +56,8 @@ import {
 } from '@shared/pdfme/builtInLabelTemplates';
 import { loadLabelDesignerAssets } from '@/pages/Settings/labelTemplates/labelPdfmeFonts';
 import { LabelPdfmeViewer } from './label/LabelPdfmeViewer';
+import type { LabelWeightSpacing } from '@shared/types/labelWeightSpacing';
+import { LabelNetWeightField } from './label/LabelNetWeightField';
 import {
   isLabelTemplateSlotEnabled,
   labelTemplateKindsForAudience,
@@ -91,6 +93,8 @@ export function ProductLabelsTab({
   const [overrides, setOverrides] = useState<Partial<LabelInputMap>>({});
   const [energyManual, setEnergyManual] = useState(false);
   const [templateId, setTemplateId] = useState<string | null>(null);
+  /** Пробіли маси нетто обраного шаблону (спільні + перевизначення). */
+  const [weightSpacing, setWeightSpacing] = useState<LabelWeightSpacing | undefined>(undefined);
   const [template, setTemplate] = useState<Template | null>(null);
   const [presetOptions, setPresetOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [historyEntries, setHistoryEntries] = useState<ProductLabelHistoryEntry[]>([]);
@@ -188,6 +192,7 @@ export function ProductLabelsTab({
     async (id: string | null, kind: ProductLabelKind) => {
       const assets = await loadLabelDesignerAssets();
       const applyResolved = (resolved: Awaited<ReturnType<typeof ProductLabelService.resolveTemplate>>) => {
+        setWeightSpacing(resolved.weightSpacing);
         if (!resolved.template) {
           setTemplate(null);
           return;
@@ -200,6 +205,7 @@ export function ProductLabelsTab({
       if (id) {
         try {
           const detailTemplate = await LabelTemplateService.get(id);
+          setWeightSpacing(detailTemplate.weightSpacing);
           setTemplate(
             hydrateLabelTemplateContent(toLabelPdfmeTemplate(detailTemplate.template), assets) as Template,
           );
@@ -540,6 +546,7 @@ export function ProductLabelsTab({
       await ProductLabelService.setTemplateOverride(detail.id, labelKind, nextId);
       const resolved = await ProductLabelService.resolveTemplate(detail.id, labelKind);
       setTemplateId(resolved.templateId);
+      setWeightSpacing(resolved.weightSpacing);
       if (resolved.template) {
         const assets = await loadLabelDesignerAssets();
         setTemplate(
@@ -874,7 +881,13 @@ export function ProductLabelsTab({
           ) : selectedBatch ? (
             <div className="flex w-full flex-col items-center gap-2">
               {previewPdfReady ? (
-                <LabelPdfmeViewer template={template} inputs={inputs} pdfBase64={previewPdfBase64} />
+                <LabelPdfmeViewer
+                  template={template}
+                  inputs={inputs}
+                  pdfBase64={previewPdfBase64}
+                  netWeightSuffix={labelKind === 'portion'}
+                  weightSpacing={weightSpacing}
+                />
               ) : (
                 <div className="flex aspect-[5/5.6] w-full max-w-[640px] items-center justify-center">
                   <Spinner label="Завантаження PDF…" />
@@ -884,6 +897,9 @@ export function ProductLabelsTab({
                 <p className="text-center text-xs text-secondary">
                   {formatProductLabelHistoryCaption(selectedHistoryEntry)}
                 </p>
+              ) : null}
+              {nutritionErrors[0] && !viewingVersion ? (
+                <p className="text-xs text-warning-600">{nutritionErrors[0]}</p>
               ) : null}
               <Accordion
                 variant="light"
@@ -907,24 +923,35 @@ export function ProductLabelsTab({
                   }}
                 >
                   <div className="grid md:grid-cols-2 gap-3 max-h-[min(40vh,320px)] overflow-y-auto">
-                    {LABEL_EDITABLE_KEYS.map((key) => (
-                      <Input
-                        key={key}
-                        size="sm"
-                        label={LABEL_INPUT_LABELS[key]}
-                        labelPlacement="outside"
-                        classNames={{
-                          label: 'text-xs text-foreground-400! font-normal',
-                          input: 'text-sm text-default-700',
-                        }}
-                        value={inputs[key] || ''}
-                        isReadOnly={readOnly || viewingVersion}
-                        onValueChange={(value) => patchInput(key, value)}
-                      />
-                    ))}
-                    {nutritionErrors[0] && !viewingVersion ? (
-                      <p className="text-xs text-warning-600">{nutritionErrors[0]}</p>
-                    ) : null}
+                    {LABEL_EDITABLE_KEYS.map((key) =>
+                      key === 'net_weight' ? (
+                        <LabelNetWeightField
+                          key={key}
+                          label={LABEL_INPUT_LABELS[key]}
+                          value={inputs[key] || ''}
+                          tolerance={inputs.net_weight_tolerance || ''}
+                          withSuffix={labelKind === 'portion'}
+                          weightSpacing={weightSpacing}
+                          isReadOnly={readOnly || viewingVersion}
+                          onValueChange={(value) => patchInput(key, value)}
+                          onToleranceChange={(spec) => patchInput('net_weight_tolerance', spec)}
+                        />
+                      ) : (
+                        <Input
+                          key={key}
+                          size="sm"
+                          label={LABEL_INPUT_LABELS[key]}
+                          labelPlacement="outside"
+                          classNames={{
+                            label: 'text-xs text-foreground-400! font-normal',
+                            input: 'text-sm text-default-700',
+                          }}
+                          value={inputs[key] || ''}
+                          isReadOnly={readOnly || viewingVersion}
+                          onValueChange={(value) => patchInput(key, value)}
+                        />
+                      ),
+                    )}
                   </div>
                 </AccordionItem>
               </Accordion>

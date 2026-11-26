@@ -51,10 +51,36 @@ import {
   isLabelTemplateSlotEnabled,
   labelTemplateDefaultSlots,
 } from '@shared/utils/labelTemplateDefaults';
-import { applyLabelPreviewInputsToTemplate } from '@shared/pdfme/applyLabelPreviewInputsToTemplate';
+import {
+  applyLabelPreviewInputsToTemplate,
+  extractOverwrittenLabelContents,
+  restoreLabelTemplateContents,
+} from '@shared/pdfme/applyLabelPreviewInputsToTemplate';
 import { preserveSchemaOnTypeChange } from '@shared/pdfme/preserveSchemaOnTypeChange';
+import { hasEstimatedSignField } from '@shared/pdfme/prepareLabelTemplate';
 import type { LabelInputMap } from '@shared/constants/labelInputKeys';
 import { LabelTemplatePreviewProductPicker } from './Settings/labelTemplates/LabelTemplatePreviewProductPicker';
+import { LabelWeightSpacingFields } from './Settings/labelTemplates/LabelWeightSpacingFields';
+import { LabelMockNetWeightControl } from './Settings/labelTemplates/LabelMockNetWeightControl';
+import { LabelApplyFieldModal } from './Settings/labelTemplates/LabelApplyFieldModal';
+import {
+  applyNetWeightSuffixPreview,
+  DEFAULT_LABEL_MOCK_NET_WEIGHT,
+  mockToleranceSpec,
+  readLabelMockNetWeight,
+  readNetWeightContent,
+  stripNetWeightSuffixPreview,
+  writeLabelMockNetWeight,
+  type LabelMockNetWeight,
+} from '@shared/pdfme/labelNetWeightPreview';
+import type {
+  LabelWeightSpacing,
+  LabelWeightSpacingOverride,
+} from '@shared/types/labelWeightSpacing';
+import {
+  DEFAULT_LABEL_WEIGHT_SPACING,
+  resolveLabelWeightSpacing,
+} from '@shared/utils/labelWeightSpacing';
 import {
   readLabelDesignerHideFieldOutlines,
   writeLabelDesignerHideFieldOutlines,
@@ -76,6 +102,9 @@ export default function SettingsLabelTemplates() {
   const designerRef = useRef<Designer | null>(null);
   const templateDraftRef = useRef<LabelPdfmeTemplate | null>(null);
   const selectedSchemasRef = useRef<DesignerSelectedSchemaRef[]>([]);
+  /** Дзеркало selectedSchemasRef.length для стану кнопки «Застосувати поле». */
+  const [selectedFieldCount, setSelectedFieldCount] = useState(0);
+  const [fieldToApply, setFieldToApply] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [templates, setTemplates] = useState<LabelTemplateDto[]>([]);
@@ -83,6 +112,23 @@ export default function SettingsLabelTemplates() {
   const [name, setName] = useState('Порція');
   const [audience, setAudience] = useState<LabelTemplateAudience>('good');
   const [labelKind, setLabelKind] = useState<ProductLabelKind>('portion');
+  const labelKindRef = useRef<ProductLabelKind>('portion');
+  const [weightSpacingDefaults, setWeightSpacingDefaults] = useState<LabelWeightSpacing>(
+    DEFAULT_LABEL_WEIGHT_SPACING,
+  );
+  const [weightSpacingOverride, setWeightSpacingOverride] = useState<LabelWeightSpacingOverride | null>(
+    null,
+  );
+  const effectiveWeightSpacing = useMemo(
+    () => resolveLabelWeightSpacing(weightSpacingDefaults, weightSpacingOverride),
+    [weightSpacingDefaults, weightSpacingOverride],
+  );
+  const weightSpacingRef = useRef<LabelWeightSpacing>(DEFAULT_LABEL_WEIGHT_SPACING);
+  /** Зразок маси в макеті (℮ / ± похибка): зберігається в sampledata шаблону. */
+  const [mockNetWeight, setMockNetWeight] = useState<LabelMockNetWeight>(DEFAULT_LABEL_MOCK_NET_WEIGHT);
+  const mockNetWeightRef = useRef<LabelMockNetWeight>(DEFAULT_LABEL_MOCK_NET_WEIGHT);
+  /** Текст маси, показаний у Designer (з суфіксом), щоб розпізнати ручну правку mock. */
+  const shownNetWeightRef = useRef<string | null>(null);
   const [isDeletionLocked, setIsDeletionLocked] = useState(false);
   const [iconKey, setIconKey] = useState<string | null>(DEFAULT_LABEL_TEMPLATE_ICON);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -97,6 +143,8 @@ export default function SettingsLabelTemplates() {
   const [previewInputs, setPreviewInputs] = useState<LabelInputMap | null>(null);
   const [hideFieldOutlines, setHideFieldOutlines] = useState(() => readLabelDesignerHideFieldOutlines());
   const previewInputsRef = useRef<LabelInputMap | null>(null);
+  /** Mock-значення полів, тимчасово перекритих живими даними перегляду. */
+  const mockContentsRef = useRef<Record<string, string>>({});
   const designerAssetsRef = useRef<Partial<Record<string, string>>>({});
   const designerTypeChangeGuardRef = useRef(false);
 
@@ -140,6 +188,15 @@ export default function SettingsLabelTemplates() {
   }, [templates]);
 
   useEffect(() => {
+    void LabelTemplateService.getWeightSpacing()
+      .then(setWeightSpacingDefaults)
+      .catch((err: unknown) => {
+        ToastService.show({
+          title: 'Пробіли в масі нетто',
+          description: err instanceof Error ? err.message : undefined,
+          color: 'danger',
+        });
+      });
     void reload()
       .then((rows) => {
         if (rows[0]) setSelectedId(rows[0].id);
@@ -159,24 +216,49 @@ export default function SettingsLabelTemplates() {
     setGoodOverrideCount(0);
     setOverridesTableKey((k) => k + 1);
     setPreviewInputs(null);
+    mockContentsRef.current = {};
   }, [selectedId]);
 
   useEffect(() => {
     previewInputsRef.current = previewInputs;
   }, [previewInputs]);
 
+  useEffect(() => {
+    labelKindRef.current = labelKind;
+  }, [labelKind]);
+
   const applyDesignerPreviewContent = useCallback(() => {
     const designer = designerRef.current;
     if (!designer) return;
-    const base = templateDraftRef.current ?? toLabelPdfmeTemplate(designer.getTemplate());
+    const draft = templateDraftRef.current ?? toLabelPdfmeTemplate(designer.getTemplate());
+    const base = restoreLabelTemplateContents(draft, mockContentsRef.current);
     const inputs = previewInputsRef.current;
-    const next = inputs
-      ? applyLabelPreviewInputsToTemplate(
+    // Поки в макеті є окреме поле ℮, знак у тексті маси не дублюємо.
+    const withSuffix = labelKindRef.current === 'portion' && !hasEstimatedSignField(base);
+    const toleranceSpec = mockToleranceSpec(mockNetWeightRef.current);
+    let next: LabelPdfmeTemplate;
+    if (inputs) {
+      next = applyLabelPreviewInputsToTemplate(
+        base,
+        resolvePdfmeInputs(
           base,
-          resolvePdfmeInputs(base, inputs),
-          designerAssetsRef.current,
-        )
-      : hydrateLabelTemplateContent(base, designerAssetsRef.current);
+          { ...inputs, net_weight_tolerance: toleranceSpec },
+          { netWeightSuffix: withSuffix, weightSpacing: weightSpacingRef.current },
+        ),
+        designerAssetsRef.current,
+      );
+      mockContentsRef.current = extractOverwrittenLabelContents(base, next);
+    } else {
+      // Без живого товару: mock маси показуємо так, як він друкується («380 г ℮» / «380 г ± 8%»).
+      const hydrated = hydrateLabelTemplateContent(base, designerAssetsRef.current);
+      const mockWeight = readNetWeightContent(hydrated);
+      next = withSuffix
+        ? applyNetWeightSuffixPreview(hydrated, toleranceSpec, weightSpacingRef.current)
+        : hydrated;
+      mockContentsRef.current =
+        withSuffix && mockWeight != null && mockWeight.trim() ? { net_weight: mockWeight } : {};
+    }
+    shownNetWeightRef.current = readNetWeightContent(next);
     templateDraftRef.current = next;
     designer.updateTemplate(next as Template);
   }, []);
@@ -184,6 +266,12 @@ export default function SettingsLabelTemplates() {
   useEffect(() => {
     applyDesignerPreviewContent();
   }, [previewInputs, applyDesignerPreviewContent]);
+
+  useEffect(() => {
+    weightSpacingRef.current = effectiveWeightSpacing;
+    mockNetWeightRef.current = mockNetWeight;
+    applyDesignerPreviewContent();
+  }, [effectiveWeightSpacing, mockNetWeight, labelKind, applyDesignerPreviewContent]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -204,16 +292,23 @@ export default function SettingsLabelTemplates() {
         setLabelKind(detail.labelKind);
         setIsDeletionLocked(detail.isDeletionLocked);
         setIconKey(detail.iconKey ?? DEFAULT_LABEL_TEMPLATE_ICON);
+        setWeightSpacingOverride(detail.weightSpacingOverride ?? null);
+        labelKindRef.current = detail.labelKind;
       } else {
         setIsDeletionLocked(false);
         setIconKey(DEFAULT_LABEL_TEMPLATE_ICON);
+        setWeightSpacingOverride(null);
       }
+      const mock = readLabelMockNetWeight(detail?.template ?? null);
+      mockNetWeightRef.current = mock;
+      setMockNetWeight(mock);
       const template = hydrateLabelTemplateContent(
         toLabelPdfmeTemplate(detail?.template ?? buildPortionLabelTemplate()),
         assets,
       );
       designerRef.current?.destroy();
       selectedSchemasRef.current = [];
+      setSelectedFieldCount(0);
 
       const designer = new Designer({
         domContainer: hostEl,
@@ -226,6 +321,7 @@ export default function SettingsLabelTemplates() {
           name: row.name,
           pageIndex: row.pageIndex,
         }));
+        setSelectedFieldCount(selectedSchemasRef.current.length);
       });
       designer.onChangeTemplate((next) => {
         const nextTpl = toLabelPdfmeTemplate(next);
@@ -237,6 +333,26 @@ export default function SettingsLabelTemplates() {
         const prev = templateDraftRef.current;
         const { template: preserved, changed } = preserveSchemaOnTypeChange(prev, nextTpl);
         templateDraftRef.current = preserved;
+        // Масу змінили в Designer, поки показано суфікс: новий mock = текст без «℮ / ± N».
+        const mockWeight = mockContentsRef.current.net_weight;
+        const shown = readNetWeightContent(preserved);
+        if (
+          !previewInputsRef.current &&
+          mockWeight !== undefined &&
+          shown != null &&
+          shown !== shownNetWeightRef.current
+        ) {
+          mockContentsRef.current = {
+            ...mockContentsRef.current,
+            net_weight: stripNetWeightSuffixPreview(
+              shown,
+              mockWeight,
+              mockToleranceSpec(mockNetWeightRef.current),
+              weightSpacingRef.current,
+            ),
+          };
+          shownNetWeightRef.current = shown;
+        }
         if (changed) {
           designerTypeChangeGuardRef.current = true;
           designer.updateTemplate(preserved as Template);
@@ -290,7 +406,30 @@ export default function SettingsLabelTemplates() {
     const host = hostRef.current;
     if (!designer || !host) return null;
     const base = templateDraftRef.current ?? toLabelPdfmeTemplate(designer.getTemplate());
-    return syncLabelTemplateFromDesignerDom(host, base);
+    // Живі дані перегляду й суфікс маси не мають потрапляти в збережений шаблон.
+    return writeLabelMockNetWeight(
+      syncLabelTemplateFromDesignerDom(host, restoreLabelTemplateContents(base, mockContentsRef.current)),
+      mockNetWeightRef.current,
+    );
+  };
+
+  const handleOpenApplyField = () => {
+    const selection = selectedSchemasRef.current[0];
+    const template = captureTemplateForSave();
+    if (!selection || !template) return;
+    // Індекс сторінки з Designer може не збігатися, тому запасний пошук по всіх сторінках.
+    const field =
+      template.schemas[selection.pageIndex]?.find((row) => row.name === selection.name) ??
+      template.schemas.flat().find((row) => row.name === selection.name);
+    if (!field) {
+      ToastService.show({
+        title: 'Поле не знайдено',
+        description: 'Виділіть поле в макеті ще раз.',
+        color: 'warning',
+      });
+      return;
+    }
+    setFieldToApply(field);
   };
 
   const handleSave = async () => {
@@ -325,6 +464,7 @@ export default function SettingsLabelTemplates() {
         template,
         isDeletionLocked,
         iconKey,
+        weightSpacingOverride,
       });
       const assets = await loadLabelDesignerAssets();
       const hydrated = hydrateLabelTemplateContent(toLabelPdfmeTemplate(saved.template), assets);
@@ -332,6 +472,7 @@ export default function SettingsLabelTemplates() {
       setSelectedId(saved.id);
       setIsDeletionLocked(saved.isDeletionLocked);
       setIconKey(saved.iconKey ?? DEFAULT_LABEL_TEMPLATE_ICON);
+      setWeightSpacingOverride(saved.weightSpacingOverride ?? null);
       await reload();
       ToastService.show({ title: 'Шаблон збережено', color: 'success' });
     } catch (err) {
@@ -430,6 +571,23 @@ export default function SettingsLabelTemplates() {
     }
   };
 
+  const handleSaveWeightSpacing = async () => {
+    setSaving(true);
+    try {
+      const saved = await LabelTemplateService.saveWeightSpacing(weightSpacingDefaults);
+      setWeightSpacingDefaults(saved);
+      ToastService.show({ title: 'Пробіли збережено', color: 'success' });
+    } catch (err) {
+      ToastService.show({
+        title: 'Не вдалося зберегти пробіли',
+        description: err instanceof Error ? err.message : undefined,
+        color: 'danger',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -481,6 +639,7 @@ export default function SettingsLabelTemplates() {
                   setSelectedId(null);
                   setName('Новий шаблон');
                   setIconKey(DEFAULT_LABEL_TEMPLATE_ICON);
+                  setWeightSpacingOverride(null);
                   setDeleteConfirm(false);
                 }}
                 isDisabled={saving}
@@ -543,6 +702,7 @@ export default function SettingsLabelTemplates() {
                 className="xl:col-span-4"
                 label="Шаблон"
                 labelPlacement="outside"
+                maxListboxHeight={320}
                 classNames={{ label: 'font-semibold text-sm' }}
                 selectedKeys={selectedId ? [selectedId] : []}
                 onSelectionChange={(keys) => {
@@ -657,7 +817,7 @@ export default function SettingsLabelTemplates() {
             selectedKeys={accordionKeys}
             onSelectionChange={(keys) => {
               if (keys === 'all') {
-                setAccordionKeys(new Set(['defaults', 'overrides', 'fields']));
+                setAccordionKeys(new Set(['defaults', 'overrides', 'weight-spacing', 'fields']));
                 return;
               }
               setAccordionKeys(new Set(Array.from(keys).map(String)));
@@ -767,6 +927,84 @@ export default function SettingsLabelTemplates() {
             </AccordionItem>
 
             <AccordionItem
+              key="weight-spacing"
+              aria-label="Пробіли в масі нетто"
+              title={
+                <span className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                  <DynamicIcon name="space" size={16} className="text-gray-600" />
+                  Пробіли в масі нетто
+                  {weightSpacingOverride ? (
+                    <Chip size="sm" variant="flat" color="primary">
+                      власні для шаблону
+                    </Chip>
+                  ) : null}
+                </span>
+              }
+            >
+              <div className="grid gap-4 pb-2 lg:grid-cols-2">
+                <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">Для всіх шаблонів</p>
+                    <p className="text-xs text-default-500">
+                      Діє на всі наліпки, якщо шаблон не має власних пробілів.
+                    </p>
+                  </div>
+                  <LabelWeightSpacingFields
+                    value={weightSpacingDefaults}
+                    isDisabled={saving}
+                    onChange={(slot, width) =>
+                      setWeightSpacingDefaults((prev) => ({ ...prev, [slot]: width }))
+                    }
+                  />
+                  <Button
+                    size="sm"
+                    variant="flat"
+                    className="self-start"
+                    data-btn-tone="primary-blue-solid"
+                    onPress={() => void handleSaveWeightSpacing()}
+                    isDisabled={saving}
+                  >
+                    Зберегти пробіли
+                  </Button>
+                </div>
+                <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">Для цього шаблону</p>
+                      <p className="text-xs text-default-500">
+                        Зберігається кнопкою «Зберегти шаблон» угорі.
+                      </p>
+                    </div>
+                    <Switch
+                      size="sm"
+                      isSelected={weightSpacingOverride != null}
+                      isDisabled={saving}
+                      onValueChange={(on) =>
+                        setWeightSpacingOverride(on ? { ...weightSpacingDefaults } : null)
+                      }
+                    >
+                      Власні
+                    </Switch>
+                  </div>
+                  {weightSpacingOverride ? (
+                    <LabelWeightSpacingFields
+                      value={effectiveWeightSpacing}
+                      inherited={weightSpacingDefaults}
+                      isDisabled={saving}
+                      onChange={(slot, width) =>
+                        setWeightSpacingOverride((prev) => ({ ...(prev ?? {}), [slot]: width }))
+                      }
+                    />
+                  ) : (
+                    <p className="text-xs text-default-500">
+                      Успадковує спільні пробіли. Увімкніть «Власні», щоб задати інші для цього макета.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </AccordionItem>
+
+            <AccordionItem
               key="fields"
               aria-label="Поля та змінні"
               title={
@@ -819,28 +1057,56 @@ export default function SettingsLabelTemplates() {
                 перегляду
               </p>
             </div>
-            <Tooltip
-              content="Пунктирні outline-рамки навколо полів у pdfme Designer. Виділення активного поля лишається."
-              placement="top"
-            >
-              <Switch
-                size="sm"
-                isSelected={hideFieldOutlines}
-                onValueChange={(value) => {
-                  setHideFieldOutlines(value);
-                  writeLabelDesignerHideFieldOutlines(value);
-                }}
+            <div className="flex flex-wrap items-center gap-3">
+              {selectedId ? (
+                <Tooltip content="Виділіть у макеті рівно одне поле" placement="top" isDisabled={selectedFieldCount === 1}>
+                  <span className="inline-flex">
+                    <Button
+                      size="sm"
+                      variant="flat"
+                      data-btn-tone="primary-blue-solid"
+                      startContent={<DynamicIcon name="copy-check" size={16} />}
+                      isDisabled={saving || selectedFieldCount !== 1}
+                      onPress={handleOpenApplyField}
+                    >
+                      Застосувати поле до інших шаблонів
+                    </Button>
+                  </span>
+                </Tooltip>
+              ) : null}
+              <Tooltip
+                content="Пунктирні outline-рамки навколо полів у pdfme Designer. Виділення активного поля лишається."
+                placement="top"
               >
-                Приховати рамки полів
-              </Switch>
-            </Tooltip>
+                <Switch
+                  size="sm"
+                  isSelected={hideFieldOutlines}
+                  onValueChange={(value) => {
+                    setHideFieldOutlines(value);
+                    writeLabelDesignerHideFieldOutlines(value);
+                  }}
+                >
+                  Приховати рамки полів
+                </Switch>
+              </Tooltip>
+            </div>
           </div>
-          <div className="w-full sm:max-w-2xl">
+          <div className="w-full">
             <LabelTemplatePreviewProductPicker
               previewInputs={previewInputs}
               onPreviewInputsChange={setPreviewInputs}
               labelKind={labelKind}
               disabled={saving}
+              trailing={
+                labelKind === 'portion' ? (
+                  <LabelMockNetWeightControl
+                    key={selectedId ?? 'new'}
+                    value={mockNetWeight}
+                    onChange={setMockNetWeight}
+                    isDisabled={saving}
+                  />
+                ) : null
+              }
             />
           </div>
         </CardHeader>
@@ -854,6 +1120,14 @@ export default function SettingsLabelTemplates() {
           />
         </CardBody>
       </Card>
+
+      <LabelApplyFieldModal
+        field={fieldToApply}
+        sourceTemplateId={selectedId}
+        templates={templates}
+        onClose={() => setFieldToApply(null)}
+        onApplied={reload}
+      />
 
       <MovementMobProductEditDrawer
         catalogGoodId={productDrawerId}

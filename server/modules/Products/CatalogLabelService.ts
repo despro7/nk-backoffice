@@ -26,6 +26,7 @@ import {
 import { CATALOG_ACC_POLICY_KIT } from '../../../shared/types/catalog.js';
 import { applyLabelOverrides, resolveLabelBaseInputs } from './LabelInputResolver.js';
 import { labelTemplateService } from './LabelTemplateService.js';
+import { labelWeightSpacingService } from './LabelWeightSpacingService.js';
 import { generateLabelPdfBuffer } from './pdfme/labelPdfmeRuntime.js';
 import type { LabelInputMap } from '../../../shared/constants/labelInputKeys.js';
 
@@ -332,7 +333,10 @@ export class CatalogLabelService {
       payload.inputs as LabelInputMap,
       payload.overrides,
     );
-    return generateLabelPdfBuffer(template.template as never, inputs);
+    return generateLabelPdfBuffer(template.template as never, inputs, {
+      netWeightSuffix: template.labelKind === 'portion',
+      weightSpacing: template.weightSpacing,
+    });
   }
 
   async getPublishedPdfBuffer(labelId: number): Promise<{ buffer: Buffer; fileName: string }> {
@@ -412,7 +416,10 @@ export class CatalogLabelService {
     const version = (last?.version ?? 0) + 1;
     const pdfFileName = buildPdfFileName(batch.labelKind, version, batch.batchId);
     await ensureLabelsDir(goodId);
-    const pdfBuffer = await generateLabelPdfBuffer(template as never, inputs);
+    const pdfBuffer = await generateLabelPdfBuffer(template as never, inputs, {
+      netWeightSuffix: batch.labelKind === 'portion',
+      weightSpacing: await labelWeightSpacingService.resolve(templateId),
+    });
     await fs.writeFile(labelPdfPath(goodId, pdfFileName), pdfBuffer);
 
     const row = await prisma.catalogProductLabel.create({

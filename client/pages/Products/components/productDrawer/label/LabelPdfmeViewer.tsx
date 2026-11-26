@@ -6,6 +6,7 @@ import type { LabelPdfmeTemplate } from '@shared/types/labelTemplate';
 import { createLabelPdfmePlugins } from '@shared/pdfme/labelPdfmePlugins';
 import { prepareLabelTemplateForRender } from '@shared/pdfme/prepareLabelTemplate';
 import { resolvePdfmeInputs } from '@shared/utils/labelTemplateInputs';
+import type { LabelWeightSpacing } from '@shared/types/labelWeightSpacing';
 import { loadClientLabelFonts } from '@/pages/Settings/labelTemplates/labelPdfmeFonts';
 import { ensurePdfjsPdfmeConverter } from './pdfjsPdfmeConverter';
 
@@ -17,9 +18,20 @@ interface LabelPdfmeViewerProps {
   inputs: Record<string, string>;
   /** Збережений PDF (base64): показується як є, без рендеру шаблону. */
   pdfBase64?: string | null;
+  /** Порційна наліпка: до маси нетто дописується «℮» або похибка «± N». */
+  netWeightSuffix?: boolean;
+  /** Пробіли в масі нетто з налаштувань шаблону. */
+  weightSpacing?: LabelWeightSpacing;
 }
 
-export function LabelPdfmeViewer({ template, inputs, pdfBase64 }: LabelPdfmeViewerProps) {
+export function LabelPdfmeViewer({
+  template,
+  inputs,
+  pdfBase64,
+  netWeightSuffix = false,
+  weightSpacing,
+}: LabelPdfmeViewerProps) {
+  const weightSpacingKey = weightSpacing ? JSON.stringify(weightSpacing) : '';
   const hostRef = useRef<HTMLDivElement>(null);
   const inputsKey = JSON.stringify(inputs);
   const renderTemplate = useMemo((): Template | null => {
@@ -33,8 +45,15 @@ export function LabelPdfmeViewer({ template, inputs, pdfBase64 }: LabelPdfmeView
   const pdfmeInputsKey = useMemo(() => {
     if (!renderTemplate) return '';
     if (pdfBase64) return '{}';
-    return JSON.stringify(resolvePdfmeInputs(renderTemplate as LabelPdfmeTemplate, inputs as LabelInputMap));
-  }, [renderTemplate, pdfBase64, inputsKey]);
+    return JSON.stringify(
+      resolvePdfmeInputs(renderTemplate as LabelPdfmeTemplate, inputs as LabelInputMap, {
+        netWeightSuffix,
+        weightSpacing: weightSpacingKey
+          ? (JSON.parse(weightSpacingKey) as LabelWeightSpacing)
+          : undefined,
+      }),
+    );
+  }, [renderTemplate, pdfBase64, inputsKey, netWeightSuffix, weightSpacingKey]);
 
   useEffect(() => {
     const host = hostRef.current;

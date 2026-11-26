@@ -2,9 +2,16 @@ import { LABEL_INPUT_KEY_SET, type LabelInputKey, LabelInputMap } from '../const
 import { PORTION_LABEL_STATIC } from '../constants/productLabelPortionStatic.js';
 import { LABEL_MVT_VARIABLE_SET } from '../constants/labelMvtVariables.js';
 import type { LabelPdfmeTemplate } from '../types/labelTemplate.js';
+import type { LabelWeightSpacing } from '../types/labelWeightSpacing.js';
+import { DEFAULT_LABEL_WEIGHT_SPACING } from './labelWeightSpacing.js';
 import { isStoredLabelSvgContentMissing } from '../pdfme/labelTemplateSvgAssets.js';
 import { unknownTemplateSchemaNames } from '../pdfme/validateTemplateSchemaNames.js';
 import { emptyLabelInputs } from './labelInputs.js';
+import {
+  formatNetWeightForLabel,
+  formatNetWeightToleranceLabel,
+  formatNetWeightWithSuffix,
+} from './productLabel.js';
 import {
   buildLabelMvtVariableMapFromInputs,
   fieldPlaceholderTemplate,
@@ -15,6 +22,10 @@ import {
 } from './labelMvtVariables.js';
 
 type SchemaField = Record<string, unknown>;
+
+/** Прозорий SVG: ховає поле без зміни геометрії шаблону. */
+export const LABEL_EMPTY_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" viewBox="0 0 1 1"></svg>';
 
 function schemaType(field: SchemaField): string {
   return typeof field.type === 'string' ? field.type : 'text';
@@ -60,10 +71,20 @@ function valueForCatalogTextField(
   field: SchemaField,
   key: LabelInputKey,
   merged: LabelInputMap,
+  withNetWeightSuffix: boolean,
+  weightSpacing: LabelWeightSpacing,
 ): string {
   const raw = merged[key] ?? '';
   const staticText = fieldStaticText(field).toLowerCase();
 
+  if (key === 'net_weight') {
+    return withNetWeightSuffix
+      ? formatNetWeightWithSuffix(raw, merged.net_weight_tolerance, weightSpacing)
+      : formatNetWeightForLabel(raw, weightSpacing);
+  }
+  if (key === 'net_weight_tolerance') {
+    return formatNetWeightToleranceLabel(raw, weightSpacing);
+  }
   if (key === 'expires_at') {
     return stripLabelTextPrefix(raw, PORTION_LABEL_STATIC.expiryLabel);
   }
@@ -76,6 +97,16 @@ function valueForCatalogTextField(
   return raw;
 }
 
+export interface ResolvePdfmeInputsOptions {
+  /**
+   * Дописувати до маси нетто знак «℮» або похибку «± N» і ховати окреме SVG-поле знака ℮.
+   * Вмикається для порційних наліпок (`labelKind === 'portion'`).
+   */
+  netWeightSuffix?: boolean;
+  /** Пробіли в масі нетто (спільні + перевизначення шаблону); дефолт – поточний вигляд. */
+  weightSpacing?: LabelWeightSpacing;
+}
+
 /**
  * Перетворює логічні inputs наліпки (ключ = канонічне поле) у запис для pdfme `generate`.
  * Поля `text` / barcode / svg — рядок як раніше; `multiVariableText` — JSON зі змінними.
@@ -83,10 +114,13 @@ function valueForCatalogTextField(
 export function resolvePdfmeInputs(
   template: LabelPdfmeTemplate,
   logical: Partial<LabelInputMap>,
+  options: ResolvePdfmeInputsOptions = {},
 ): Record<string, string> {
   const merged = { ...emptyLabelInputs(), ...logical };
   const variables = buildLabelMvtVariableMapFromInputs(merged);
   const pdfmeInputs: Record<string, string> = {};
+  const withNetWeightSuffix = options.netWeightSuffix === true;
+  const weightSpacing = options.weightSpacing ?? DEFAULT_LABEL_WEIGHT_SPACING;
 
   for (const page of template.schemas ?? []) {
     for (const raw of page) {
@@ -106,6 +140,11 @@ export function resolvePdfmeInputs(
       }
 
       if (schemaType(field) === 'svg' || schemaType(field) === 'image') {
+        // Знак ℮ / похибка «± N» друкуються текстом у полі маси нетто (одна базова лінія).
+        if (name === 'estimated_svg' && withNetWeightSuffix) {
+          pdfmeInputs[name] = LABEL_EMPTY_SVG;
+          continue;
+        }
         const content = typeof field.content === 'string' ? field.content.trim() : '';
         if (content && !isStoredLabelSvgContentMissing(content)) {
           pdfmeInputs[name] = content;
@@ -123,7 +162,13 @@ export function resolvePdfmeInputs(
         continue;
       }
 
-      pdfmeInputs[name] = valueForCatalogTextField(field, name as LabelInputKey, merged);
+      pdfmeInputs[name] = valueForCatalogTextField(
+        field,
+        name as LabelInputKey,
+        merged,
+        withNetWeightSuffix,
+        weightSpacing,
+      );
     }
   }
 

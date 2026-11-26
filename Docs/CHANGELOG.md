@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-11-26 – Наліпки: маса нетто з ℮ / ±, пробіли, mock-дані шаблону, застосування поля
+
+**Files:** `shared/utils/{productLabel.ts,labelInputs.ts,labelTemplateInputs.ts,labelWeightSpacing.ts}`, `shared/types/{labelTemplate.ts,labelWeightSpacing.ts}`, `shared/constants/labelInputKeys.ts`, `shared/pdfme/{builtInLabelTemplates.ts,prepareLabelTemplate.ts,applyLabelPreviewInputsToTemplate.ts,labelNetWeightPreview.ts,applyLabelFieldToTemplate.ts}` (+ spec), `server/modules/Products/{LabelTemplateService.ts,LabelWeightSpacingService.ts,CatalogLabelService.ts,ProductLabelsController.ts}`, `server/modules/Products/pdfme/labelPdfmeRuntime.ts`, `server/routes/label-templates.ts`, `client/services/LabelTemplateService.ts`, `client/pages/SettingsLabelTemplates.tsx`, `client/pages/Settings/labelTemplates/{LabelWeightSpacingFields,LabelMockNetWeightControl,LabelApplyFieldModal,LabelTemplatePreviewProductPicker}.tsx`, `client/pages/Products/components/productDrawer/{ProductLabelsTab.tsx,label/LabelNetWeightField.tsx,label/LabelPdfmeViewer.tsx}`
+
+- **Mock-дані шаблону:** `hydrateLabelTemplateContent` більше не перезаписує збережені значення змінних MVT. Живі дані перегляду не потрапляють у збережений шаблон (`extractOverwrittenLabelContents` / `restoreLabelTemplateContents`).
+- **Маса нетто на порційних наліпках:** друкується одним рядком «380 г ℮» або «380 г ± 8%» (`formatNetWeightWithSuffix`, ознака `netWeightSuffix` для `labelKind === 'portion'`). Знак ℮ набирається текстом (U+212E). Старе поле `estimated_svg` під час рендера ховається, його можна прибрати з шаблонів. Коробка без змін.
+- **Похибка:** новий ключ `net_weight_tolerance` (`5%` / `20г`) у правках чернетки. У `ProductLabelsTab` вкладки «℮ Без похибки / ± Похибка», значення не губиться при перемиканні. Жовте попередження про БЖВ винесено над спойлером «Текстові поля».
+- **Пробіли в масі нетто:** вага–одиниця, вага–℮/±, ±–похибка, варіанти без / волосяний / тонкий / звичайний / широкий. Спільні значення плюс перевизначення шаблону зберігаються в `settings_base` `label_weight_spacing`, API `GET/PUT /api/label-templates/weight-spacing`. Пробіл у старих чернетках «300 г» нормалізується під час друку.
+- **Макет шаблону:** маса одразу показується так, як друкується. Перемикач ℮ / ± у рядку з товаром і партією зберігається в `sampledata` шаблону. Бейдж «Живі дані» біля підпису, вищий список шаблонів.
+- **`POST /api/label-templates/apply-field`:** перенесення положення, шрифту, вмісту або всього поля в обрані шаблони, за потреби з видаленням `estimated_svg`.
+
+**Документація:** `Docs/features/product-labels.md` (новий розділ «Маса нетто: ℮, похибка, пробіли», оновлено розділи про налаштування шаблонів і API шаблонів)
+
+---
+
 ## 2026-11-26 – Звіт продажів: мобільна верстка, перетягування фільтра, «Що нового»
 
 **Files:** `client/components/whats-new/WhatsNewModal.tsx`, `client/pages/Reports/shared/ReportRefreshCacheActions.tsx`, `client/pages/Reports/ReportsSales/components/{ProductStatsChart.tsx,ProductStatsChartFilters.tsx,SalesFiltersBar.tsx,SalesReportTable.tsx,SalesReportTableFilters.tsx,SalesReportTableFooter.tsx,SalesReportTableTotalsRow.tsx,SalesSetsReportTable.tsx,useDraggableFilterBubble.ts}`

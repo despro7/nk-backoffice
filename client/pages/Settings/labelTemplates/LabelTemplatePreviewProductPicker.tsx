@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { Autocomplete, AutocompleteItem, Chip, Input, Spinner } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import type { LabelInputMap } from '@shared/constants/labelInputKeys';
@@ -21,6 +21,8 @@ interface LabelTemplatePreviewProductPickerProps {
   onPreviewInputsChange: (inputs: LabelInputMap | null) => void;
   labelKind?: ProductLabelKind;
   disabled?: boolean;
+  /** Додатковий контрол у тому ж рядку після поля «Партія» (вигляд маси в макеті). */
+  trailing?: ReactNode;
 }
 
 export function LabelTemplatePreviewProductPicker({
@@ -28,6 +30,7 @@ export function LabelTemplatePreviewProductPicker({
   onPreviewInputsChange,
   labelKind = 'portion',
   disabled,
+  trailing,
 }: LabelTemplatePreviewProductPickerProps) {
   const [product, setProduct] = useState<CatalogHit | null>(null);
   const [productQuery, setProductQuery] = useState('');
@@ -112,13 +115,28 @@ export function LabelTemplatePreviewProductPicker({
     };
   }, [product, selectedBatch, labelKind, onPreviewInputsChange]);
 
+  const statusBadge = loadingInputs ? (
+    <Spinner size="sm" />
+  ) : previewInputs && product ? (
+    <Chip size="sm" variant="flat" color="success" className="py-0 px-1 h-5 leading-0" startContent={<DynamicIcon name="check" size={12} />}>
+      Живі дані
+    </Chip>
+  ) : product && !selectedBatch ? (
+    <Chip size="sm" variant="flat" color="default">Зразок</Chip>
+  ) : null;
+
   return (
     <>
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         <div className="min-w-[220px] flex-1 sm:max-w-md">
           <Autocomplete
             aria-label="Товар для перегляду"
-            label="Дані для перегляду"
+            label={
+              <span className="inline-flex items-center gap-2">
+                Дані для перегляду
+                {statusBadge}
+              </span>
+            }
             labelPlacement="outside"
             placeholder="Пошук товару за назвою або SKU"
             isDisabled={disabled}
@@ -180,16 +198,8 @@ export function LabelTemplatePreviewProductPicker({
           {batchesError ? <p className="mt-1 text-xs text-danger">{batchesError}</p> : null}
         </div>
 
-        <div className="flex items-center gap-2 pb-1 sm:pb-0">
-          {loadingInputs ? <Spinner size="sm" /> : null}
-          {previewInputs && product ? (
-            <Chip size="sm" variant="flat" color="success" startContent={<DynamicIcon name="check" size={12} />}>
-              Живі дані
-            </Chip>
-          ) : product && !selectedBatch ? (
-            <Chip size="sm" variant="flat" color="default">Зразок</Chip>
-          ) : null}
-        </div>
+        {trailing ? <div className="flex items-center pb-1 sm:pb-0">{trailing}</div> : null}
+
       </div>
 
       <BatchNumbersAutocomplete

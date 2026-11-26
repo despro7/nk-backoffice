@@ -7,6 +7,7 @@ import { authenticateToken, requirePermission, requireRole } from '../middleware
 import { ROLES } from '../../shared/constants/roles.js';
 import { logServer } from '../lib/utils.js';
 import { labelTemplateService } from '../modules/Products/LabelTemplateService.js';
+import { labelWeightSpacingService } from '../modules/Products/LabelWeightSpacingService.js';
 import { resolveLabelBaseInputs } from '../modules/Products/LabelInputResolver.js';
 import { prisma } from '../lib/utils.js';
 import type { LabelTemplateDefaults } from '../../shared/types/labelTemplate.js';
@@ -57,6 +58,25 @@ router.put('/defaults', ...authOnly, templateEditors, async (req, res) => {
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'PUT defaults');
+  }
+});
+
+// Пробіли в масі нетто: спільні значення для всіх шаблонів.
+router.get('/weight-spacing', ...authOnly, catalogManage, async (_req, res) => {
+  try {
+    const data = await labelWeightSpacingService.getDefaults();
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'GET weight-spacing');
+  }
+});
+
+router.put('/weight-spacing', ...authOnly, templateEditors, async (req, res) => {
+  try {
+    const data = await labelWeightSpacingService.setDefaults(req.body);
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'PUT weight-spacing');
   }
 });
 
@@ -148,6 +168,8 @@ router.post('/', ...authOnly, templateEditors, async (req, res) => {
         isDeletionLocked:
           req.body?.isDeletionLocked != null ? Boolean(req.body.isDeletionLocked) : undefined,
         iconKey: req.body?.iconKey !== undefined ? req.body.iconKey : undefined,
+        weightSpacingOverride:
+          req.body?.weightSpacingOverride !== undefined ? req.body.weightSpacingOverride : undefined,
       },
       req.user?.userId ?? null,
     );
@@ -169,12 +191,23 @@ router.put('/:id', ...authOnly, templateEditors, async (req, res) => {
         isDeletionLocked:
           req.body?.isDeletionLocked != null ? Boolean(req.body.isDeletionLocked) : undefined,
         iconKey: req.body?.iconKey !== undefined ? req.body.iconKey : undefined,
+        weightSpacingOverride:
+          req.body?.weightSpacingOverride !== undefined ? req.body.weightSpacingOverride : undefined,
       },
       req.user?.userId ?? null,
     );
     res.json({ success: true, data });
   } catch (error) {
     handleError(res, error, 'PUT');
+  }
+});
+
+router.post('/apply-field', ...authOnly, templateEditors, async (req, res) => {
+  try {
+    const data = await labelTemplateService.applyField(req.body, req.user?.userId ?? null);
+    res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error, 'POST apply-field');
   }
 });
 

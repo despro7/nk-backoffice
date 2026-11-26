@@ -1,4 +1,6 @@
 import type { ProductLabelPayload } from '../types/productLabel.js';
+import type { LabelWeightSpacing } from '../types/labelWeightSpacing.js';
+import { DEFAULT_LABEL_WEIGHT_SPACING, LABEL_SPACE_CHARS } from './labelWeightSpacing.js';
 import { PORTION_LABEL_STATIC } from '../constants/productLabelPortionStatic.js';
 import { isMissingDilovodDate } from './dilovodBatchId.js';
 import { ensureNutritionText } from './productLabelNutrition.js';
@@ -99,6 +101,81 @@ export function formatNetWeightRangeLabel(minKg: number, maxKg: number): string 
     return `${formatWeightDecimalUk(minGrams / 1000)}-${formatWeightDecimalUk(maxGrams / 1000)}кг`;
   }
   return `${minGrams}-${maxGrams}г`;
+}
+
+export type NetWeightToleranceUnit = 'pct' | 'g';
+
+export interface NetWeightTolerance {
+  value: number;
+  unit: NetWeightToleranceUnit;
+}
+
+/** Похибка з чернетки наліпки: «5%» / «20г» (також «20 г», «5,5 %»); null, якщо не задано. */
+export function parseNetWeightTolerance(spec: string | null | undefined): NetWeightTolerance | null {
+  const match = spec?.trim().replace(/^±\s*/, '').match(/^(\d+(?:[.,]\d+)?)\s*(%|г)$/);
+  if (!match) return null;
+  const value = Number(match[1].replace(',', '.'));
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return { value, unit: match[2] === '%' ? 'pct' : 'g' };
+}
+
+export function formatNetWeightToleranceSpec(tolerance: NetWeightTolerance): string {
+  const value = formatWeightDecimalUk(tolerance.value);
+  return tolerance.unit === 'pct' ? `${value}%` : `${value}г`;
+}
+
+/** Волосяний пробіл (U+200A, 0,1 em): дефолт між числом і одиницею та між «±» і похибкою. */
+export const LABEL_WEIGHT_HAIR_SPACE = LABEL_SPACE_CHARS.hair;
+
+/**
+ * «380г» / «300 г» / «1,2 кг» → число й одиниця через заданий пробіл (лише для друку наліпки).
+ * Слова на «г» («3 гриби») не чіпає.
+ */
+export function tightenWeightUnitSpacing(label: string, gap: string = LABEL_WEIGHT_HAIR_SPACE): string {
+  return label.replace(/(\d)\s*(кг|г)(?![\p{L}])/gu, `$1${gap}$2`);
+}
+
+/**
+ * Напис похибки для наліпки в одиницях, які задано: «± 8%» або «± 30 г».
+ * Пробіли з налаштувань шаблону (`tolerance`, `unit`). Порожній рядок, якщо похибку не задано.
+ */
+export function formatNetWeightToleranceLabel(
+  spec: string | null | undefined,
+  spacing: LabelWeightSpacing = DEFAULT_LABEL_WEIGHT_SPACING,
+): string {
+  const tolerance = parseNetWeightTolerance(spec);
+  if (!tolerance) return '';
+  const value = tightenWeightUnitSpacing(
+    formatNetWeightToleranceSpec(tolerance),
+    LABEL_SPACE_CHARS[spacing.unit],
+  );
+  return `±${LABEL_SPACE_CHARS[spacing.tolerance]}${value}`;
+}
+
+/** Знак орієнтовної кількості (U+212E), друкується текстом поруч із масою. */
+export const ESTIMATED_SIGN = '℮';
+
+/** Маса нетто для друку: пробіл між числом і одиницею з налаштувань шаблону. */
+export function formatNetWeightForLabel(
+  netWeight: string | null | undefined,
+  spacing: LabelWeightSpacing = DEFAULT_LABEL_WEIGHT_SPACING,
+): string {
+  return tightenWeightUnitSpacing(netWeight?.trim() ?? '', LABEL_SPACE_CHARS[spacing.unit]);
+}
+
+/**
+ * Маса нетто для наліпки з суфіксом: «380 г ℮» або «380 г ± 8%».
+ * Порожня маса лишається порожньою.
+ */
+export function formatNetWeightWithSuffix(
+  netWeight: string | null | undefined,
+  toleranceSpec: string | null | undefined,
+  spacing: LabelWeightSpacing = DEFAULT_LABEL_WEIGHT_SPACING,
+): string {
+  const weight = formatNetWeightForLabel(netWeight, spacing);
+  if (!weight) return '';
+  const suffix = formatNetWeightToleranceLabel(toleranceSpec, spacing) || ESTIMATED_SIGN;
+  return `${weight}${LABEL_SPACE_CHARS[spacing.suffix]}${suffix}`;
 }
 
 export type BomIngredientRow = {

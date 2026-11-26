@@ -1,4 +1,6 @@
 import type {
+  LabelFieldApplyInput,
+  LabelFieldApplyResultDto,
   LabelTemplateDefaults,
   LabelTemplateDetailDto,
   LabelTemplateDto,
@@ -6,6 +8,10 @@ import type {
   LabelTemplatePreviewInputsDto,
 } from '@shared/types/labelTemplate';
 import type { LabelPdfmeTemplate } from '@shared/types/labelTemplate';
+import type {
+  LabelWeightSpacing,
+  LabelWeightSpacingOverride,
+} from '@shared/types/labelWeightSpacing';
 
 type ApiResult<T> = { success: boolean; data?: T; error?: string };
 
@@ -46,11 +52,22 @@ export class LabelTemplateService {
       template?: LabelPdfmeTemplate;
       isDeletionLocked?: boolean;
       iconKey?: string | null;
+      /** null – успадковувати спільні пробіли; не передано – не змінювати. */
+      weightSpacingOverride?: LabelWeightSpacingOverride | null;
     },
   ): Promise<LabelTemplateDetailDto> {
     const url = id ? `/api/label-templates/${encodeURIComponent(id)}` : '/api/label-templates';
     return fetch(url, {
       method: id ? 'PUT' : 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }).then((res) => parseJson(res));
+  }
+
+  static applyField(input: LabelFieldApplyInput): Promise<LabelFieldApplyResultDto> {
+    return fetch('/api/label-templates/apply-field', {
+      method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
@@ -88,6 +105,22 @@ export class LabelTemplateService {
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(matrix),
+    }).then((res) => parseJson(res));
+  }
+
+  /** Спільні пробіли в масі нетто для всіх шаблонів. */
+  static getWeightSpacing(): Promise<LabelWeightSpacing> {
+    return fetch('/api/label-templates/weight-spacing', { credentials: 'include' }).then((res) =>
+      parseJson(res),
+    );
+  }
+
+  static saveWeightSpacing(spacing: LabelWeightSpacing): Promise<LabelWeightSpacing> {
+    return fetch('/api/label-templates/weight-spacing', {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(spacing),
     }).then((res) => parseJson(res));
   }
 

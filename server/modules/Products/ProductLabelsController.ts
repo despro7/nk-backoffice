@@ -8,6 +8,7 @@ import { ROLES } from '../../../shared/constants/roles.js';
 import { prisma, logServer } from '../../lib/utils.js';
 import { catalogLabelService } from './CatalogLabelService.js';
 import { labelTemplateService } from './LabelTemplateService.js';
+import { labelWeightSpacingService } from './LabelWeightSpacingService.js';
 import type { ProductLabelPayloadV2 } from '../../../shared/types/labelTemplate.js';
 import { LABEL_INPUTS_SCHEMA_VERSION } from '../../../shared/constants/labelInputKeys.js';
 import { CATALOG_AUDIT_ACTIONS } from '../../../shared/types/catalogAudit.js';
@@ -96,6 +97,7 @@ router.get('/:goodId/labels/resolve-template', ...authOnly, catalogManage, async
         audience: data.audience,
         labelKind: data.labelKind,
         template: data.template,
+        weightSpacing: await labelWeightSpacingService.resolve(data.templateId),
       },
     });
   } catch (error) {

@@ -8,6 +8,9 @@ import { CATALOG_ACC_POLICY_KIT } from '../../../shared/types/catalog.js';
 import type { ProductLabelKind } from '../../../shared/types/productLabel.js';
 import { isProductLabelKind } from '../../../shared/utils/productLabel.js';
 import type {
+  LabelFieldApplyInput,
+  LabelFieldApplyPart,
+  LabelFieldApplyResultDto,
   LabelPdfmeTemplate,
   LabelTemplateAudience,
   LabelTemplateDefaults,
@@ -17,12 +20,15 @@ import type {
   ResolvedLabelTemplateDto,
 } from '../../../shared/types/labelTemplate.js';
 import { upgradeLabelTemplatePlaceholders } from '../../../shared/pdfme/upgradeLabelTemplatePlaceholders.js';
+import { applyLabelFieldToTemplate } from '../../../shared/pdfme/applyLabelFieldToTemplate.js';
 import { assertTemplateSchemaNames } from '../../../shared/pdfme/validateTemplateSchemaNames.js';
 import {
   buildBoxLabelTemplate,
   buildPortionLabelTemplate,
 } from '../../../shared/pdfme/builtInLabelTemplates.js';
 import { generateLabelPdfBuffer } from './pdfme/labelPdfmeRuntime.js';
+import { labelWeightSpacingService } from './LabelWeightSpacingService.js';
+import { resolveLabelWeightSpacing } from '../../../shared/utils/labelWeightSpacing.js';
 import {
   DEFAULT_LABEL_TEMPLATE_ICON,
   isLabelTemplateIconKey,
@@ -70,6 +76,40 @@ function parseTemplate(raw: unknown): LabelPdfmeTemplate {
   if (!Array.isArray(template.schemas)) throw new Error('У шаблоні немає schemas');
   assertTemplateSchemaNames(template);
   return template;
+}
+
+const FIELD_APPLY_PARTS: readonly LabelFieldApplyPart[] = ['geometry', 'font', 'content', 'all'];
+
+function parseFieldApplyInput(raw: unknown): LabelFieldApplyInput {
+  const body = (raw ?? {}) as Record<string, unknown>;
+  const sourceTemplateId = String(body.sourceTemplateId || '');
+  if (!sourceTemplateId) throw new Error('sourceTemplateId обовʼязковий');
+  const field = body.field;
+  if (!field || typeof field !== 'object' || Array.isArray(field)) {
+    throw new Error('field обовʼязковий');
+  }
+  const { name, type } = field as Record<string, unknown>;
+  if (typeof name !== 'string' || !name.trim() || typeof type !== 'string' || !type) {
+    throw new Error('У поля мають бути name і type');
+  }
+  const parts = Array.isArray(body.parts) ? (body.parts as LabelFieldApplyPart[]) : [];
+  if (parts.length === 0 || parts.some((part) => !FIELD_APPLY_PARTS.includes(part))) {
+    throw new Error('Некоректний перелік parts');
+  }
+  const targetTemplateIds = Array.isArray(body.targetTemplateIds)
+    ? [...new Set(body.targetTemplateIds.map(String).filter(Boolean))]
+    : [];
+  if (targetTemplateIds.length === 0) throw new Error('Не обрано жодного шаблону');
+  if (targetTemplateIds.includes(sourceTemplateId)) {
+    throw new Error('Шаблон-джерело не може бути серед цільових');
+  }
+  return {
+    sourceTemplateId,
+    field: field as Record<string, unknown>,
+    parts,
+    targetTemplateIds,
+    removeEstimatedSign: body.removeEstimatedSign === true,
+  };
 }
 
 function toDto(row: {
@@ -195,10 +235,14 @@ export class LabelTemplateService {
   async get(id: string): Promise<LabelTemplateDetailDto> {
     const row = await prisma.catalogLabelTemplate.findUnique({ where: { id } });
     if (!row) throw new Error('Шаблон не знайдено');
+    const spacing = await labelWeightSpacingService.getSettings();
+    const weightSpacingOverride = spacing.overrides[row.id] ?? null;
     return {
       ...toDto(row),
       template: row.templateJson as unknown as LabelPdfmeTemplate,
       basePdfMeta: row.basePdfMeta,
+      weightSpacingOverride,
+      weightSpacing: resolveLabelWeightSpacing(spacing.defaults, weightSpacingOverride),
     };
   }
 
@@ -210,6 +254,8 @@ export class LabelTemplateService {
       template: unknown;
       isDeletionLocked?: boolean;
       iconKey?: string | null;
+      /** undefined – не змінювати; null – успадковувати спільні пробіли. */
+      weightSpacingOverride?: unknown;
     },
     updatedBy: number | null,
   ): Promise<LabelTemplateDetailDto> {
@@ -236,6 +282,9 @@ export class LabelTemplateService {
         updatedBy,
       },
     });
+    if (input.weightSpacingOverride !== undefined) {
+      await labelWeightSpacingService.setOverride(row.id, input.weightSpacingOverride);
+    }
     return this.get(row.id);
   }
 
@@ -248,6 +297,8 @@ export class LabelTemplateService {
       template?: unknown;
       isDeletionLocked?: boolean;
       iconKey?: string | null;
+      /** undefined – не змінювати; null – успадковувати спільні пробіли. */
+      weightSpacingOverride?: unknown;
     },
     updatedBy: number | null,
   ): Promise<LabelTemplateDetailDto> {
@@ -275,6 +326,9 @@ export class LabelTemplateService {
         updatedBy,
       },
     });
+    if (input.weightSpacingOverride !== undefined) {
+      await labelWeightSpacingService.setOverride(id, input.weightSpacingOverride);
+    }
     return this.get(id);
   }
 
@@ -287,9 +341,48 @@ export class LabelTemplateService {
         audience: source.audience,
         template: source.template,
         iconKey: source.iconKey,
+        weightSpacingOverride: source.weightSpacingOverride,
       },
       updatedBy,
     );
+  }
+
+  /** Переносить одне поле в кілька шаблонів: або всі зберігаються, або жоден. */
+  async applyField(raw: unknown, updatedBy: number | null): Promise<LabelFieldApplyResultDto> {
+    const input = parseFieldApplyInput(raw);
+    const rows = await prisma.catalogLabelTemplate.findMany({
+      where: { id: { in: input.targetTemplateIds }, isArchived: false },
+    });
+    if (rows.length !== input.targetTemplateIds.length) {
+      throw new Error('Деякі шаблони не знайдено або їх видалено. Оновіть сторінку.');
+    }
+
+    const changes = rows.map((row) => {
+      try {
+        const result = applyLabelFieldToTemplate(
+          row.templateJson as unknown as LabelPdfmeTemplate,
+          input.field,
+          { parts: input.parts, removeEstimatedSign: input.removeEstimatedSign },
+        );
+        return { row, action: result.action, template: parseTemplate(result.template) };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Шаблон «${row.name}»: ${message}`);
+      }
+    });
+
+    await prisma.$transaction(
+      changes.map(({ row, template }) =>
+        prisma.catalogLabelTemplate.update({
+          where: { id: row.id },
+          data: { templateJson: template as unknown as Prisma.InputJsonValue, updatedBy },
+        }),
+      ),
+    );
+
+    return {
+      updated: changes.map(({ row, action }) => ({ id: row.id, name: row.name, action })),
+    };
   }
 
   async listGoodOverrides(templateId: string): Promise<LabelTemplateGoodOverrideLink[]> {
@@ -421,7 +514,10 @@ export class LabelTemplateService {
 
   async preview(templateId: string, inputs: Record<string, string>): Promise<Buffer> {
     const detail = await this.get(templateId);
-    return generateLabelPdfBuffer(detail.template as never, inputs);
+    return generateLabelPdfBuffer(detail.template as never, inputs, {
+      netWeightSuffix: detail.labelKind === 'portion',
+      weightSpacing: detail.weightSpacing,
+    });
   }
 
   async resolveForGood(

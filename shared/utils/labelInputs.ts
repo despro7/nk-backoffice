@@ -98,6 +98,7 @@ export function buildLabelInputs(source: LabelInputSource): LabelInputMap {
     expires_full: source.expiresFull?.trim() ?? '',
     net_weight: formatNetWeightLabel(source.weightKg),
     net_weight_label: PORTION_LABEL_STATIC.netWeightLabel,
+    net_weight_tolerance: '',
     main_product_weight: formatNetWeightLabel(source.mainProductWeightKg),
     portions_per_box: formatPortionsPerBox(source.portionsPerBox),
     barcode: source.barcode,

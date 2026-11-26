@@ -1,4 +1,5 @@
 import type { ProductLabelKind } from './productLabel.js';
+import type { LabelWeightSpacing, LabelWeightSpacingOverride } from './labelWeightSpacing.js';
 import type { LABEL_INPUTS_SCHEMA_VERSION, LabelInputKey } from '../constants/labelInputKeys.js';
 
 export type LabelTemplateAudience = 'good' | 'kit';
@@ -28,12 +29,33 @@ export interface LabelTemplateDto {
 export interface LabelTemplateDetailDto extends LabelTemplateDto {
   template: LabelPdfmeTemplate;
   basePdfMeta: unknown;
+  /** Власні пробіли маси нетто шаблону (null – успадковує спільні). */
+  weightSpacingOverride: LabelWeightSpacingOverride | null;
+  /** Фінальні пробіли: спільні + перевизначення. */
+  weightSpacing: LabelWeightSpacing;
 }
 
 export type LabelTemplateDefaults = Record<
   LabelTemplateAudience,
   Record<ProductLabelKind, string | null>
 >;
+
+/** Що переносити з поля при застосуванні до інших шаблонів. */
+export type LabelFieldApplyPart = 'geometry' | 'font' | 'content' | 'all';
+
+export type LabelFieldApplyAction = 'replaced' | 'added';
+
+export interface LabelFieldApplyInput {
+  sourceTemplateId: string;
+  field: Record<string, unknown>;
+  parts: LabelFieldApplyPart[];
+  targetTemplateIds: string[];
+  removeEstimatedSign?: boolean;
+}
+
+export interface LabelFieldApplyResultDto {
+  updated: Array<{ id: string; name: string; action: LabelFieldApplyAction }>;
+}
 
 /** Прямий override пресета наліпки на картці товару (один рядок = один слот). */
 export interface LabelTemplateGoodOverrideLink {
@@ -65,6 +87,8 @@ export interface ProductLabelPayloadV2 {
 
 export interface ResolvedLabelTemplateDto {
   templateId: string | null;
+  /** Фінальні пробіли маси нетто для обраного шаблону. */
+  weightSpacing?: LabelWeightSpacing;
   templateName: string | null;
   source: 'override' | 'default' | 'none';
   audience: LabelTemplateAudience;

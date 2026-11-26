@@ -251,8 +251,25 @@ export function toLabelPdfmeTemplate(raw: Template | LabelPdfmeTemplate): LabelP
   return out;
 }
 
+/** Збережені в шаблоні mock-значення змінних MVT (`content` = JSON). */
+function parseStoredMvtContent(content: string): Record<string, string> {
+  if (!content) return {};
+  try {
+    const parsed: unknown = JSON.parse(content);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value === 'string') out[key] = value;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 /**
  * Підставляє зразковий текст і SVG-ассети, якщо в збереженому шаблоні content порожній.
+ * Для MVT зберігає вже задані mock-значення змінних, дефолт лише для відсутніх.
  * Уже збережений SVG (кастомне зображення в Designer) не перезаписує.
  */
 export function hydrateLabelTemplateContent(
@@ -279,7 +296,14 @@ export function hydrateLabelTemplateContent(
           const varNames = parseMvtVariableNames(text);
           if (varNames.length > 0) {
             next.variables = varNames;
-            const payload = pickMvtVariablePayload(varNames, LABEL_MVT_DESIGNER_SAMPLE);
+            const sampleValues = pickMvtVariablePayload(varNames, LABEL_MVT_DESIGNER_SAMPLE);
+            const stored = parseStoredMvtContent(current);
+            const payload: Record<string, string> = {};
+            for (const varName of varNames) {
+              payload[varName] = Object.prototype.hasOwnProperty.call(stored, varName)
+                ? stored[varName]
+                : sampleValues[varName];
+            }
             next.content = JSON.stringify(payload);
           } else if (!current) {
             next.content = '{}';
