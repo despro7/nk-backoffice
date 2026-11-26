@@ -14,6 +14,20 @@
 
 ---
 
+## 2026-11-26 – «Що нового» для користувачів і автоматичні версії
+
+**Files:** `shared/releaseNotes.json`, `shared/types/releaseNotes.ts`, `shared/utils/releaseNotes.ts`, `scripts/{release.cjs,release-notes-lib.cjs,release.spec.ts,deploy.sh,generate-version.cjs}`, `client/components/whats-new/*`, `client/components/{Sidebar,UpdateNotificationBanner,ReportProblemFab}.tsx`, `client/hooks/useVersionCheck.ts`, `package.json`, `CLAUDE.md`
+
+- Рядок «Що нового» з версією в бічному меню і вікно з релізами («Нове», «Покращено», «Виправлено»). Пункти фільтруються за правами; після оновлення вікно відкривається один раз.
+- Банер оновлення отримав посилання «Що змінилось»; `version.json` містить версію та останні релізи.
+- Бокова вкладка «Повідомити про проблему» піднята вище, щоб не накривати новий рядок меню.
+- `npm run release` (`--major`, `--dry-run`): версія, коміт, тег. `npm run deploy` пропонує реліз перед деплоєм і не запускає `npm ci`, якщо в lockfile змінилась лише версія застосунку.
+- Історію з 2026-11-09 перенесено в `shared/releaseNotes.json` простою мовою, версії `1.0.0`–`1.3.1`. Версія застосунку `0.4.1` → `1.3.1` (застосунок давно в продакшені), наступний реліз `1.4.0`.
+
+**Документація:** `Docs/release-notes.md`
+
+---
+
 ## 2026-11-26 – Звіти по продажам: фільтр категорій у таблиці, виправлено пустий графік
 
 **Files:** `server/routes/orders.ts`, `client/pages/Reports/ReportsSales/useReportsSalesTableData.ts`, `client/pages/Reports/ReportsSales/components/SalesReportTable.tsx`, `client/pages/Reports/ReportsSales/components/SalesReportTableFilters.tsx`

@@ -2,7 +2,7 @@
 # Deploy to the production server over SSH: pull, build, reload pm2, health check.
 # Usage: npm run deploy [-- --migrate] [-- --yes]
 #   --migrate  run `prisma migrate deploy` when new migrations came with the pull
-#   --yes      skip the confirmation prompt
+#   --yes      skip the confirmation prompts, release and push unreleased notes automatically
 set -euo pipefail
 
 SSH_HOST="${DEPLOY_SSH_HOST:-netcup}"
@@ -31,6 +31,25 @@ git fetch origin "$BRANCH" --quiet
 local_head="$(git rev-parse HEAD)"
 remote_head="$(git rev-parse "origin/$BRANCH")"
 [ "$local_head" = "$remote_head" ] || fail "local $BRANCH differs from origin/$BRANCH, push (or pull) first"
+
+# Unreleased "What's new" items: offer to cut a version before deploying.
+unreleased_count="$(node -p "require('./shared/releaseNotes.json').unreleased.length")"
+if [ "$unreleased_count" -gt 0 ]; then
+  echo "Unreleased notes in shared/releaseNotes.json: $unreleased_count"
+  do_release="$ASSUME_YES"
+  if [ "$do_release" -ne 1 ]; then
+    printf 'Run "npm run release" and push it now? [y/N] '
+    read -r answer
+    if [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then do_release=1; fi
+  fi
+  if [ "$do_release" -eq 1 ]; then
+    npm run release || fail "release failed"
+    git push --follow-tags origin "$BRANCH" \
+      || fail "release is committed but not pushed, run: git push --follow-tags origin $BRANCH"
+  else
+    echo "Skipping release: these notes stay hidden from users until the next release."
+  fi
+fi
 echo "HEAD: $(git log --oneline -1)"
 
 if [ "$ASSUME_YES" -ne 1 ]; then
@@ -75,7 +94,11 @@ fi
 
 changed="$(git diff --name-only "$old_head" "$new_head" || true)"
 
-if echo "$changed" | grep -qE '^package-lock\.json$'; then
+# A release bumps only the app's own "version" lines in the lockfile: that alone needs no npm ci.
+lock_changes="$(git diff -U0 "$old_head" "$new_head" -- package-lock.json \
+  | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' || true)"
+# No `grep -q` in a pipe here: with pipefail an early exit can hide a match on a large diff.
+if [ -n "$(echo "$lock_changes" | grep -vE '^[+-][[:space:]]*"version":' || true)" ]; then
   echo "-- package-lock.json changed: npm ci"
   npm ci
 fi

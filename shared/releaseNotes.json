@@ -1,0 +1,302 @@
+{
+  "unreleased": [
+    {
+      "type": "new",
+      "text": "Розділ «Що нового»: короткий список змін після кожного оновлення. Відкривається кнопкою внизу бічного меню."
+    }
+  ],
+  "releases": [
+    {
+      "version": "1.3.1",
+      "date": "2026-11-26",
+      "items": [
+        {
+          "type": "improved",
+          "text": "У звіті по продажам зʼявився вибір категорій страв для таблиці.",
+          "permission": "page.reports.sales"
+        },
+        {
+          "type": "improved",
+          "text": "Фільтри у звіті по продажам стали компактнішими, а вікно з деталями дня зручніше читати, особливо з телефона.",
+          "permission": "page.reports.sales"
+        },
+        {
+          "type": "fixed",
+          "text": "Графік проданих порцій більше не буває порожнім після вибору категорії.",
+          "permission": "page.reports.sales"
+        },
+        {
+          "type": "fixed",
+          "text": "Склад товару з коробковими штрихкодами тепер зберігається після затвердження.",
+          "permission": "page.main.products"
+        }
+      ]
+    },
+    {
+      "version": "1.3.0",
+      "date": "2026-11-25",
+      "items": [
+        {
+          "type": "improved",
+          "text": "У картці набору не можна додати той самий товар двічі, а вже наявні повтори підсвічуються.",
+          "permission": "page.main.products"
+        },
+        {
+          "type": "fixed",
+          "text": "Якщо комплектування неможливе через повтор у складі набору, тепер видно зрозуміле пояснення.",
+          "permission": "page.warehouse.releases"
+        },
+        {
+          "type": "fixed",
+          "text": "Якщо новий склад товару не зберігся під час затвердження, система покаже помилку і залишить чернетку.",
+          "permission": "action.products.approveSpec"
+        }
+      ]
+    },
+    {
+      "version": "1.2.6",
+      "date": "2026-11-24",
+      "items": [
+        {
+          "type": "new",
+          "text": "Інвентаризація підказує ймовірні причини відхилень: непроведене комплектування, пересорт, повернення чи переміщення.",
+          "permission": "page.warehouse.inventory"
+        },
+        {
+          "type": "improved",
+          "text": "Історія товару в інвентаризації відкривається помітно швидше.",
+          "permission": "page.warehouse.inventory"
+        }
+      ]
+    },
+    {
+      "version": "1.2.5",
+      "date": "2026-11-23",
+      "items": [
+        {
+          "type": "new",
+          "text": "Прямо з вікна документа складу тепер можна його видалити.",
+          "permission": "action.warehouse.history.delete"
+        },
+        {
+          "type": "new",
+          "text": "У картці товару біля штрихкодів видно залишок по партії, а в меню «Дії» зʼявилась кнопка «Оновити залишки».",
+          "permission": "page.main.products"
+        },
+        {
+          "type": "improved",
+          "text": "Попередження про відмінності даних товару оновлюється одразу після збереження та синхронізації.",
+          "permission": "page.main.products"
+        },
+        {
+          "type": "fixed",
+          "text": "Короткий опис товару більше не вважається відмінним від сайту через дрібниці в тире та лапках.",
+          "permission": "action.storefront.push"
+        }
+      ]
+    },
+    {
+      "version": "1.2.4",
+      "date": "2026-11-21",
+      "items": [
+        {
+          "type": "new",
+          "text": "Під час коригування партій можна повернутися на перший крок і виправити вже створений набір.",
+          "permission": "page.warehouse.releases"
+        },
+        {
+          "type": "improved",
+          "text": "Після проведення документ звіряється з Dilovod, і про розбіжність зʼявляється попередження.",
+          "permission": "page.warehouse.releases"
+        },
+        {
+          "type": "fixed",
+          "text": "Під час редагування проведеного документа залишки партій більше не показуються як нуль.",
+          "permission": "page.warehouse.releases"
+        }
+      ]
+    },
+    {
+      "version": "1.2.3",
+      "date": "2026-11-20",
+      "items": [
+        {
+          "type": "new",
+          "text": "У відомості по складу можна зберігати власні набори налаштувань і ділитися ними.",
+          "permission": "page.reports.warehouseStatement"
+        },
+        {
+          "type": "new",
+          "text": "Натисніть на назву товару у відомості, щоб побачити графік його залишку, приходу та витрати.",
+          "permission": "page.reports.warehouseStatement"
+        },
+        {
+          "type": "fixed",
+          "text": "Цифри у відомості по складу тепер збігаються з Dilovod.",
+          "permission": "page.reports.warehouseStatement"
+        }
+      ]
+    },
+    {
+      "version": "1.2.2",
+      "date": "2026-11-18",
+      "items": [
+        {
+          "type": "new",
+          "text": "Коли склад товару змінюють без погодження, інші відповідальні отримують сповіщення.",
+          "permission": "action.products.approveSpec"
+        },
+        {
+          "type": "fixed",
+          "text": "Нарахування за повний місяць більше не губить копійки через округлення по тижнях.",
+          "permission": "page.hr.payroll"
+        }
+      ]
+    },
+    {
+      "version": "1.2.1",
+      "date": "2026-11-17",
+      "items": [
+        {
+          "type": "new",
+          "text": "Режим економії коробок: система враховує реальний обʼєм порцій і рідше ділить замовлення на дві коробки.",
+          "permission": "page.main.orders"
+        },
+        {
+          "type": "improved",
+          "text": "Довгі назви страв на наліпках гарніше переносяться на два рядки.",
+          "permission": "page.settings.labelTemplates"
+        },
+        {
+          "type": "fixed",
+          "text": "Звітний день у звітах рахується за київським часом.",
+          "permission": "page.reports.sales"
+        },
+        {
+          "type": "fixed",
+          "text": "Під час розкомплектування знову можна додати партію після її видалення.",
+          "permission": "page.warehouse.releases"
+        }
+      ]
+    },
+    {
+      "version": "1.2.0",
+      "date": "2026-11-16",
+      "items": [
+        {
+          "type": "new",
+          "text": "Новий розділ рахунків: створення рахунку та акта, архів і огляд обліку часу.",
+          "permission": "action.settings.admin"
+        },
+        {
+          "type": "new",
+          "text": "Фото товарів автоматично стискаються під час завантаження, а назви файлів стають зрозумілими.",
+          "permission": "page.main.products"
+        },
+        {
+          "type": "improved",
+          "text": "Склад страви можна вставляти одним рядком через кому, а інгредієнти перетягувати мишею.",
+          "permission": "page.main.products"
+        },
+        {
+          "type": "improved",
+          "text": "Зміни з бекофісу можна одразу відправити на сайт із вікна синхронізації товару.",
+          "permission": "action.storefront.push"
+        },
+        {
+          "type": "fixed",
+          "text": "Прибрано хибні повідомлення про відмінності між бекофісом і сайтом.",
+          "permission": "action.storefront.push"
+        }
+      ]
+    },
+    {
+      "version": "1.1.2",
+      "date": "2026-11-14",
+      "items": [
+        {
+          "type": "new",
+          "text": "На шаблонах наліпок можна вивести повну дату «Вжити до».",
+          "permission": "page.settings.labelTemplates"
+        },
+        {
+          "type": "fixed",
+          "text": "Перегляд опублікованої наліпки тепер точно відповідає файлу для друку.",
+          "permission": "page.main.products"
+        }
+      ]
+    },
+    {
+      "version": "1.1.1",
+      "date": "2026-11-13",
+      "items": [
+        {
+          "type": "new",
+          "text": "Партію зі штрихкодом можна створити прямо з картки товару.",
+          "permission": "action.products.edit"
+        },
+        {
+          "type": "new",
+          "text": "Чернетку складу товару можна редагувати одразу, без окремого відкриття (вмикається в налаштуваннях виробництва).",
+          "permission": "action.products.editSpec"
+        },
+        {
+          "type": "improved",
+          "text": "Коли хтось виконав спільну задачу, сповіщення про неї зникає в усіх."
+        },
+        {
+          "type": "fixed",
+          "text": "Під час створення товару знову видно кнопки «Скасувати» та «Створити».",
+          "permission": "action.products.edit"
+        },
+        {
+          "type": "fixed",
+          "text": "Блоки в повному описі товару вставляються і перетягуються туди, куди ви очікуєте.",
+          "permission": "page.main.products"
+        }
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "date": "2026-11-10",
+      "items": [
+        {
+          "type": "new",
+          "text": "Зʼявився розділ «Варки»: планування, видача сировини, готування, прийом готової продукції та закриття.",
+          "permission": "page.production.batches"
+        },
+        {
+          "type": "new",
+          "text": "Акт варки можна завантажити або роздрукувати.",
+          "permission": "page.production.batches"
+        },
+        {
+          "type": "new",
+          "text": "Список «Очікує моєї дії» та сповіщення підказують, який крок за вами.",
+          "permission": "page.production.batches"
+        }
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "date": "2026-11-09",
+      "items": [
+        {
+          "type": "new",
+          "text": "Повну техкарту можна роздрукувати або зберегти в PDF.",
+          "permission": "page.production.techcards"
+        },
+        {
+          "type": "new",
+          "text": "У складі страви кількість інгредієнта може розраховуватися автоматично за формулою.",
+          "permission": "action.products.editSpec"
+        },
+        {
+          "type": "improved",
+          "text": "Техкарти зручніше переглядати з телефона, а незбережені зміни не губляться.",
+          "permission": "page.production.techcards"
+        }
+      ]
+    }
+  ]
+}

@@ -10,6 +10,7 @@ import React, { useState } from "react";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { useSidebar } from "@/contexts/SidebarContext";
 import { SidebarAdminFooter } from "@/components/SidebarAdminFooter";
+import { SidebarWhatsNew } from "@/components/whats-new/SidebarWhatsNew";
 import { useRolePreview } from "@/contexts/role-preview-context";
 import { NavBadgePill } from "@/components/NavBadgePill";
 import {
@@ -273,7 +274,12 @@ export function Sidebar({ className }: SidebarProps) {
     </nav>
   );
 
-  const footer = <SidebarAdminFooter />;
+  const footer = (
+    <>
+      <SidebarWhatsNew onOpen={handleNavigate} />
+      <SidebarAdminFooter />
+    </>
+  );
 
   // Mobile: fixed overlay + backdrop
   if (isMobile) {

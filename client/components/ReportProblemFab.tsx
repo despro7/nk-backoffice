@@ -19,7 +19,7 @@ import { useIsMobile } from '@/hooks/useTouchUi';
 const TAB_WIDTH_COLLAPSED = 16;
 const TAB_WIDTH_EXPANDED = 20;
 
-const DESKTOP_DOCK_PLACEMENT_CLASS = 'left-0 items-start bottom-24 lg:bottom-12';
+const DESKTOP_DOCK_PLACEMENT_CLASS = 'left-0 items-start bottom-24';
 
 export function ReportProblemFab() {
   const { user } = useAuth();

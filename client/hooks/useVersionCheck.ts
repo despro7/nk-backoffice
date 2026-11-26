@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { Release } from '@shared/types/releaseNotes';
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 хвилин
 const VERSION_URL = '/version.json';
@@ -6,15 +7,19 @@ const VERSION_URL = '/version.json';
 interface VersionInfo {
   hash: string;
   builtAt: number;
+  version?: string;
+  releases?: Release[];
 }
 
 /**
  * Хук для відстеження оновлень застосунку.
  * Кожні 5 хвилин звертається до /version.json і порівнює хеш білду.
- * Якщо виявлено нову версію — повертає updateAvailable=true.
+ * Якщо виявлено нову версію — повертає updateAvailable=true
+ * і останні релізи нового білду (latestReleases).
  */
 export function useVersionCheck() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [latestReleases, setLatestReleases] = useState<Release[]>([]);
   const initialHashRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -43,6 +48,7 @@ export function useVersionCheck() {
 
       if (info.hash !== initialHashRef.current) {
         setUpdateAvailable(true);
+        setLatestReleases(Array.isArray(info.releases) ? info.releases : []);
       }
     };
 
@@ -56,5 +62,5 @@ export function useVersionCheck() {
     };
   }, []);
 
-  return { updateAvailable };
+  return { updateAvailable, latestReleases };
 }

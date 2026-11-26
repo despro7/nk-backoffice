@@ -1,7 +1,7 @@
 {
   "name": "nk-backoffice-app",
   "private": true,
-  "version": "0.4.1",
+  "version": "1.3.1",
   "type": "module",
   "pkg": {
     "assets": [
@@ -26,6 +26,7 @@
     "build:prod": "npm run db:generate && npm run build",
     "start": "node dist/server/index.js",
     "deploy": "bash scripts/deploy.sh",
+    "release": "node scripts/release.cjs",
     "cron:status": "node dist/server/scripts/check-cron-status.js",
     "orders:reconcile-external-ids": "tsx server/scripts/reconcile-order-external-ids.ts",
     "orders:reconcile-external-ids:apply": "tsx server/scripts/reconcile-order-external-ids.ts --apply",
