@@ -212,6 +212,7 @@ export function ProductStatsChartFilters({
       hasActiveFilters={activeMoreCount > 0 || selectedProducts.size > 0}
       onReset={onReset}
       resetDisabled={loading}
+      positionKey="sales-chart"
     />
   );
 }

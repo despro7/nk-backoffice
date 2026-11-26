@@ -30,7 +30,7 @@ function updatesLabel(count: number): string {
   const mod10 = count % 10;
   const mod100 = count % 100;
   const word = mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? 'оновлення' : 'оновлень';
-  return `${count} ${word} за день`;
+  return `${count} ${word}`;
 }
 
 function VersionChip({ version }: { version: string }) {
@@ -101,17 +101,19 @@ export function WhatsNewModal({ isOpen, onClose, releases, overlayZClassName = '
               <section key={day.date} className="py-4 border-b border-divider last:border-b-0">
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="text-base font-semibold text-default-900">{formatReleaseDate(day.date)}</h3>
-                  {single && <VersionChip version={day.releases[0].version} />}
+                  {single ? (
+                    <VersionChip version={day.releases[0].version} />
+                  ) : (
+                    <span className="shrink-0 text-xs text-default-400">{updatesLabel(day.releases.length)}</span>
+                  )}
                 </div>
                 {day.releases.map((release, index) => (
                   <div key={release.version} className={cn(!single && (index === 0 ? 'mt-3' : 'mt-5'))}>
                     {!single && (
                       <div className="flex items-center gap-3">
+                        <span className="flex-1 border-t border-dashed border-default-300" />
                         <VersionChip version={release.version} />
                         <span className="flex-1 border-t border-dashed border-default-300" />
-                        {index === 0 && (
-                          <span className="text-xs text-default-400">{updatesLabel(day.releases.length)}</span>
-                        )}
                       </div>
                     )}
                     <ReleaseSections release={release} />

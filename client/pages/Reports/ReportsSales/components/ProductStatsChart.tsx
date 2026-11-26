@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 
 import {
+  Button,
   Card,
   CardBody,
   CardHeader,
@@ -10,6 +11,9 @@ import { useApi } from "@/hooks/useApi";
 import type { DateRange } from "@react-types/datepicker";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
+import { useIsMobile } from "@/hooks/useTouchUi";
+import { cn } from "@/lib/utils";
+import { pluralize } from "@/lib/formatUtils";
 import { createStandardDatePresets, convertCalendarRangeToReportingRange } from "@/lib/dateReportingUtils";
 import {
   CacheRefreshConfirmModal,
@@ -28,6 +32,7 @@ import {
 import { ReportCacheProgressCard } from "../../shared/ReportCacheProgressCard";
 import { ReportLoadingOverlay } from "../../shared/ReportLoadingOverlay";
 import { ReportRefreshCacheActions } from "../../shared/ReportRefreshCacheActions";
+import { filterBubbleResetSection } from "./useDraggableFilterBubble";
 import useReportStatsCacheClear from "../../shared/useReportStatsCacheClear";
 import useReportCacheValidation from "../../shared/useReportCacheValidation";
 import useReportClientCache from "../../shared/useReportClientCache";
@@ -49,6 +54,9 @@ import {
 import { ProductStatsChartFilters } from "./ProductStatsChartFilters";
 import { ProductStatsChartTooltip } from "./ProductStatsChartTooltip";
 import { ProductStatsChartTopProducts } from "./ProductStatsChartTopProducts";
+
+const formatDayMonth = (date: { day: number; month: number }) =>
+  `${String(date.day).padStart(2, "0")}.${String(date.month).padStart(2, "0")}`;
 
 type ChartDataPoint = Record<string, string | number>;
 
@@ -489,9 +497,30 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
     "hsl(195, 70%, 50%)", // Блакитний
   ];
 
+  const getLineColor = (lineKey: string, index: number) =>
+    lineKey === "ordersCount"
+      ? "hsl(142, 70%, 45%)"
+      : lineKey === "averageCheck"
+        ? "hsl(25, 85%, 55%)"
+        : lineKey === "portionsCount"
+          ? "hsl(210, 70%, 50%)"
+          : index < colors.length
+            ? colors[index]
+            : `hsl(${Math.round((index * 137.5) % 360)}, 65%, 48%)`;
+
+  const chartLines = renderedLineKeys.map((lineKey, index) => ({
+    key: lineKey,
+    name: String(chartData[0]?.[`${lineKey}_name`] || lineKey),
+    color: getLineColor(lineKey, index),
+  }));
+
+  // На телефоні легенда Recharts з'їдає всю висоту графіка: виносимо її під графік у згорнутий список
+  const isMobile = useIsMobile();
+  const [isMobileLegendOpen, setIsMobileLegendOpen] = useState(false);
+
   // Легенда з багатьма товарами не має стискати область графіка (≈3 позиції в рядку)
   const productLineCount = renderedLineKeys.filter((key) => key.startsWith("product_")).length;
-  const chartHeight = 384 + Math.ceil(productLineCount / 3) * 24;
+  const chartHeight = isMobile ? 320 : 384 + Math.ceil(productLineCount / 3) * 24;
 
   // Опції групування
   const groupByOptions = PRODUCT_CHART_GROUP_BY_OPTIONS;
@@ -619,22 +648,13 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
                     tickLine={false}
                   />
                   <Tooltip content={<ProductStatsChartTooltip />} />
-                  <Legend
-                    wrapperStyle={{ paddingTop: '20px', cursor: 'pointer' }}
-                    onClick={(entry) => toggleLine(String(entry.dataKey))}
-                  />
-                  {renderedLineKeys.map((lineKey, index) => {
-                    const lineName = String(chartData[0]?.[`${lineKey}_name`] || lineKey);
-                    const color = lineKey === "ordersCount"
-                      ? "hsl(142, 70%, 45%)"
-                      : lineKey === "averageCheck"
-                        ? "hsl(25, 85%, 55%)"
-                      : lineKey === "portionsCount"
-                        ? "hsl(210, 70%, 50%)"
-                        : index < colors.length
-                          ? colors[index]
-                          : `hsl(${Math.round((index * 137.5) % 360)}, 65%, 48%)`;
-
+                  {!isMobile && (
+                    <Legend
+                      wrapperStyle={{ paddingTop: '20px', cursor: 'pointer' }}
+                      onClick={(entry) => toggleLine(String(entry.dataKey))}
+                    />
+                  )}
+                  {chartLines.map(({ key: lineKey, name: lineName, color }) => {
                     return (
                       <Area
                         key={lineKey}
@@ -654,34 +674,82 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
             </div>
           )}
 
+          {isMobile && chartLines.length > 0 && (
+            <div className="mt-2 border-t border-divider pt-2">
+              <div className="flex items-center justify-between gap-2">
+                <Button
+                  size="sm"
+                  variant="light"
+                  className="px-2 text-default-700"
+                  onPress={() => setIsMobileLegendOpen((open) => !open)}
+                  endContent={<DynamicIcon name={isMobileLegendOpen ? "chevron-up" : "chevron-down"} size={16} />}
+                >
+                  Легенда ({chartLines.length})
+                </Button>
+                {hiddenLineKeys.size > 0 && (
+                  <Button
+                    size="sm"
+                    variant="light"
+                    className="px-2 text-default-500"
+                    onPress={() => setHiddenLineKeys(new Set())}
+                  >
+                    Показати всі
+                  </Button>
+                )}
+              </div>
+              {isMobileLegendOpen && (
+                <ul className="mt-1 flex flex-col">
+                  {chartLines.map((line) => {
+                    const isHidden = hiddenLineKeys.has(line.key);
+                    return (
+                      <li key={line.key}>
+                        <button
+                          type="button"
+                          onClick={() => toggleLine(line.key)}
+                          className={cn(
+                            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-default-700 active:bg-default-100",
+                            isHidden && "text-default-400 line-through",
+                          )}
+                        >
+                          <span
+                            className={cn("h-2.5 w-2.5 shrink-0 rounded-full", isHidden && "opacity-30")}
+                            style={{ backgroundColor: line.color }}
+                          />
+                          <span className="truncate">{line.name}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
+
           <ReportLoadingOverlay loading={loading} className="rounded-lg" />
         </CardBody>
         <CardFooter className="pt-2">
-          <div className="flex items-center justify-between w-full text-sm text-muted-foreground">
-            <div className="flex items-center gap-4">
-              <span>
-                {dateRange?.start && dateRange?.end
-                  ? `Період: ${dateRange.start.day}.${dateRange.start.month} - ${dateRange.end.day}.${dateRange.end.month}`
-                  : 'Оберіть період для аналізу'
-                }
-              </span>
-              <span>
-                {chartData.length > 0 ? `${chartData.length} точок даних` : 'Немає даних'}
-              </span>
-              <span>
-                {chartData.length > 0
-                  ? `${renderedLineKeys.length} ліні${renderedLineKeys.length === 1 ? 'я' : renderedLineKeys.length < 5 ? 'ї' : 'й'}`
-                  : ''}
-              </span>
-            </div>
-            <div className="flex items-center gap-4">
-              <span>Групування: {groupByOptions.find(opt => opt.key === groupBy)?.label}</span>
-              {chartData.length > 0 && (
-                <span>
-                  Показується: {renderedLineKeys.length} сер{renderedLineKeys.length === 1 ? 'ія' : 'ії'}
+          {/* flex-wrap: на телефоні пункти переносяться цілими, а не розриваються по словах */}
+          <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground sm:text-sm">
+            <span className="whitespace-nowrap">
+              {dateRange?.start && dateRange?.end
+                ? `Період: ${formatDayMonth(dateRange.start)} – ${formatDayMonth(dateRange.end)}`
+                : "Оберіть період для аналізу"}
+            </span>
+            {chartData.length > 0 ? (
+              <>
+                <span className="whitespace-nowrap">
+                  {chartData.length} {pluralize(chartData.length, "точка", "точки", "точок")} даних
                 </span>
-              )}
-            </div>
+                <span className="whitespace-nowrap">
+                  {renderedLineKeys.length} {pluralize(renderedLineKeys.length, "лінія", "лінії", "ліній")}
+                </span>
+              </>
+            ) : (
+              <span className="whitespace-nowrap">Немає даних</span>
+            )}
+            <span className="whitespace-nowrap sm:ml-auto">
+              Групування: {groupByOptions.find((opt) => opt.key === groupBy)?.label}
+            </span>
           </div>
         </CardFooter>
       </Card>
@@ -717,6 +785,7 @@ export default function ProductStatsChart({ className }: ProductStatsChartProps)
             onRefreshAllCache={handleRefreshAllCache}
             onRefreshPeriodCache={handleRefreshPeriodCache}
             onClearStatsCache={handleClearStatsCache}
+            compactMenuSections={[filterBubbleResetSection("sales-chart")]}
           />
           <CacheRefreshConfirmModal {...cacheModals.confirmModalProps} />
           <CachePeriodSelectModal

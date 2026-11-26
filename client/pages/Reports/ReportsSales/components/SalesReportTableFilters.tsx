@@ -32,6 +32,8 @@ interface SalesReportTableFiltersProps {
   loading: boolean;
   onReset: () => void;
   showExtraFilters?: boolean;
+  /** Ключ збереження позиції мобільної кнопки фільтра. */
+  positionKey?: string;
 }
 
 export function SalesReportTableFilters({
@@ -52,6 +54,7 @@ export function SalesReportTableFilters({
   loading,
   onReset,
   showExtraFilters = true,
+  positionKey,
 }: SalesReportTableFiltersProps) {
   const { filters, moreFilters } = useMemo(() => {
     const secondary: ReportFilterConfig[] = [
@@ -181,6 +184,7 @@ export function SalesReportTableFilters({
       onColoredToggle={onColoredToggle}
       onReset={onReset}
       resetDisabled={loading}
+      positionKey={positionKey}
     />
   );
 }

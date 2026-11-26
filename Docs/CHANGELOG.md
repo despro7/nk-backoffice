@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-11-26 – Звіт продажів: мобільна верстка, перетягування фільтра, «Що нового»
+
+**Files:** `client/components/whats-new/WhatsNewModal.tsx`, `client/pages/Reports/shared/ReportRefreshCacheActions.tsx`, `client/pages/Reports/ReportsSales/components/{ProductStatsChart.tsx,ProductStatsChartFilters.tsx,SalesFiltersBar.tsx,SalesReportTable.tsx,SalesReportTableFilters.tsx,SalesReportTableFooter.tsx,SalesReportTableTotalsRow.tsx,SalesSetsReportTable.tsx,useDraggableFilterBubble.ts}`
+
+- «Що нового»: лічильник «N оновлень» біля дати, бейдж версії по центру між пунктирами.
+- Графік на телефоні: фіксована висота, легенда Recharts замінена згорнутим списком «Легенда (N)» з приховуванням ліній. Рядок під графіком переноситься по пунктах, правильні відмінки, без дубля «Показується».
+- Підсумки таблиці продажів на телефоні: картка «Разом за період». Підсумок наборів вирівняно за реальною позицією колонки «Замовлення».
+- `ReportRefreshCacheActions`: на телефоні всі дії в меню «⋮» з розділами (`compactMenuSections`), на десктопі без змін. Це стосується всіх звітів, що його використовують.
+- Мобільна кнопка фільтра: `sticky` у межах своєї секції замість одного `fixed` на сторінку. Перетягування після утримання 1 с (`useDraggableFilterBubble`). Позиція в `localStorage` окремо для `sales-table`, `sales-sets`, `sales-chart`, скидання пунктом «Скинути положення фільтра».
+
+**Документація:** –
+
+---
+
 ## 2026-11-26 – Звіт продажів: сума по категорії, графік і топ товарів категорії
 
 **Files:** `server/modules/Reports/{categoryOrderAmount.ts,categoryOrderAmount.spec.ts}`, `server/routes/orders.ts`, `client/pages/Reports/ReportsSales/ReportsSalesTypes.ts`, `client/pages/Reports/ReportsSales/components/{ProductStatsChart.tsx,ProductStatsChartTooltip.tsx,ProductStatsChartTopProducts.tsx}`

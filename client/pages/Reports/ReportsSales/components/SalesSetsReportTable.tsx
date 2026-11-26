@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "@heroui/react";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { getValueColor } from "@/lib/utils";
 import { ReportCacheProgressCard } from "../../shared/ReportCacheProgressCard";
 import { ReportLoadingOverlay } from "../../shared/ReportLoadingOverlay";
 import { ReportRefreshCacheActions } from "../../shared/ReportRefreshCacheActions";
+import { filterBubbleResetSection } from "./useDraggableFilterBubble";
 import { ReportTableEmptyState } from "../../shared/ReportTableEmptyState";
 import type { SalesSetReportData, SalesSetsReportTableProps, SalesSortDescriptor } from "../ReportsSalesTypes";
 import { SalesReportTableFilters } from "./SalesReportTableFilters";
@@ -102,6 +103,34 @@ export default function SalesSetsReportTable({ className }: SalesSetsReportTable
     return items;
   }, [filteredSetsData, sortDescriptor]);
 
+  // Центр колонки «Замовлення» відносно блоку таблиці: для вирівнювання рядка «Разом»
+  const tableAreaRef = useRef<HTMLDivElement>(null);
+  const [ordersColumnCenter, setOrdersColumnCenter] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const area = tableAreaRef.current;
+    if (!area) {
+      return;
+    }
+
+    const measure = () => {
+      const headers = area.querySelectorAll("thead th");
+      const ordersHeader = headers[headers.length - 1];
+      if (!ordersHeader) {
+        setOrdersColumnCenter(null);
+        return;
+      }
+      const areaRect = area.getBoundingClientRect();
+      const headerRect = ordersHeader.getBoundingClientRect();
+      setOrdersColumnCenter(headerRect.left - areaRect.left + headerRect.width / 2);
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, [filteredSetsData.length, colored]);
+
   const columns = [
     { key: "name", label: "Назва набору", sortable: true, className: "w-8/12" },
     { key: "sku", label: "SKU", sortable: true, className: "w-2/12" },
@@ -111,6 +140,7 @@ export default function SalesSetsReportTable({ className }: SalesSetsReportTable
   return (
     <div className={`space-y-4 ${className}`}>
       <SalesReportTableFilters
+        positionKey="sales-sets"
         statusFilter={statusFilter}
         onStatusFilterChange={setStatusFilter}
         datePresetKey={datePresetKey}
@@ -140,7 +170,7 @@ export default function SalesSetsReportTable({ className }: SalesSetsReportTable
 
       <ReportCacheProgressCard progress={cacheProgress} />
 
-      <div className="relative">
+      <div ref={tableAreaRef} className="relative">
         <Table
           key={String(colored)}
           aria-label="Звіт продажів по наборах"
@@ -194,17 +224,15 @@ export default function SalesSetsReportTable({ className }: SalesSetsReportTable
         </Table>
 
         {filteredSetsData.length > 0 && (
-          <div className="border-t-1 border-gray-200 py-2">
-            <div className="flex items-center justify-between text-center font-bold text-sm text-gray-800">
-              <div className="w-8/12"></div>
-              <div className="w-2/12"></div>
-							<div className="w-2/12">{totals.ordersCount}</div>
-              {/* <div className="w-2/12">{totals.sourceWebsite}</div> */}
-              {/* <div className="w-2/12">{totals.sourceRozetka}</div> */}
-              {/* <div className="w-2/12">{totals.sourceProm}</div> */}
-              {/* <div className="w-2/12">{totals.sourceChat}</div> */}
-              {/* <div className="w-2/12">{totals.discountReason}</div> */}
-            </div>
+          <div className="relative h-9 border-t-1 border-gray-200 text-sm font-bold text-gray-800">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2">Разом</span>
+            {/* Ширини колонок HeroUI залежать від вмісту, тож ставимо число під реальну колонку «Замовлення» */}
+            <span
+              className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 tabular-nums"
+              style={{ left: ordersColumnCenter ?? undefined, right: ordersColumnCenter == null ? 0 : undefined }}
+            >
+              {totals.ordersCount}
+            </span>
           </div>
         )}
 
@@ -224,6 +252,7 @@ export default function SalesSetsReportTable({ className }: SalesSetsReportTable
             onRefreshAllCache={handleRefreshAllCache}
             onRefreshPeriodCache={handleRefreshPeriodCache}
             onClearStatsCache={handleClearStatsCache}
+            compactMenuSections={[filterBubbleResetSection("sales-sets")]}
           />
           <CacheRefreshConfirmModal {...cacheModals.confirmModalProps} />
           <CachePeriodSelectModal {...cacheModals.periodModalProps} cacheLoading={cacheLoading} />

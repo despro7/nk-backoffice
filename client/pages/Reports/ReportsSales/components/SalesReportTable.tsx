@@ -154,6 +154,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
   return (
     <div className={`space-y-4 ${className}`}>
       <SalesReportTableFilters
+        positionKey="sales-table"
         statusFilter={statusFilter}
         onStatusFilterChange={setStatusFilter}
         datePresetKey={datePresetKey}

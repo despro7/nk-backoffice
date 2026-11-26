@@ -7,6 +7,7 @@ import {
 } from "@heroui/react";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { ReportRefreshCacheActions } from "../../shared/ReportRefreshCacheActions";
+import { filterBubbleResetSection } from "./useDraggableFilterBubble";
 
 interface SalesReportTableFooterProps {
   salesDaysCount: number;
@@ -38,7 +39,7 @@ export function SalesReportTableFooter({
   onExportToTxt,
 }: SalesReportTableFooterProps) {
   return (
-    <div className="flex justify-between items-center text-sm text-gray-600 mt-4">
+    <div className="flex justify-between items-center gap-3 text-sm text-gray-600 mt-4">
       <div className="flex items-center gap-4">
         <span className="font-medium">
           Звіт: {salesDaysCount > 0 ? `${salesDaysCount} днів` : "Немає даних"}
@@ -56,6 +57,17 @@ export function SalesReportTableFooter({
           onRefreshAllCache={onRefreshAllCache}
           onRefreshPeriodCache={onRefreshPeriodCache}
           onClearStatsCache={onClearStatsCache}
+          compactMenuSections={[
+            {
+              key: "export",
+              title: "Експорт",
+              actions: [
+                { key: "export-excel", label: "Експорт в Excel", icon: "file-spreadsheet", onPress: onExportToExcel },
+                { key: "export-txt", label: "Експорт в TXT", icon: "file", onPress: onExportToTxt },
+              ],
+            },
+            filterBubbleResetSection("sales-table"),
+          ]}
           trailingActions={
             <Dropdown>
               <DropdownTrigger>
