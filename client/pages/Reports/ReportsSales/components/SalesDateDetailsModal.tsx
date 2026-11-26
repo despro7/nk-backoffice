@@ -1,7 +1,8 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Button,
   Chip,
+  type SortDescriptor,
   Modal,
   ModalBody,
   ModalContent,
@@ -17,6 +18,39 @@ import { DynamicIcon } from "lucide-react/dynamic";
 import { formatDateLong, formatWeekdayOnly, getStatusLabel } from "@/lib";
 import { OrderStatusChip } from "@/components/OrderStatusChip";
 import type { SalesData } from "../ReportsSalesTypes";
+
+type DayOrder = SalesData["orders"][number];
+
+const ORDER_COLUMNS = [
+  { key: "orderNumber", label: "№" },
+  { key: "orderDate", label: "Дата оформлення" },
+  { key: "portionsCount", label: "Порцій" },
+  { key: "source", label: "Джерело" },
+  { key: "totalPrice", label: "Сума" },
+  { key: "discount", label: "Знижка" },
+  { key: "status", label: "Статус" },
+];
+
+function orderSortValue(order: DayOrder, column: string): string | number {
+  switch (column) {
+    case "orderNumber":
+      return order.orderNumber;
+    case "orderDate":
+      return order.orderDateIso ? new Date(order.orderDateIso).getTime() : 0;
+    case "portionsCount":
+      return order.portionsCount || 0;
+    case "source":
+      return order.source || "";
+    case "totalPrice":
+      return Number(order.totalPrice) || 0;
+    case "discount":
+      return order.hasDiscount || order.discountReasonCode ? 1 : 0;
+    case "status":
+      return getStatusLabel(order.status);
+    default:
+      return 0;
+  }
+}
 
 interface SalesDateDetailsModalProps {
   isOpen: boolean;
@@ -36,6 +70,26 @@ export function SalesDateDetailsModal({
   dateItems = [],
   onNavigate,
 }: SalesDateDetailsModalProps) {
+  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor>({
+    column: "orderDate",
+    direction: "ascending",
+  });
+
+  const sortedOrders = useMemo(() => {
+    const column = String(sortDescriptor.column);
+    const sign = sortDescriptor.direction === "descending" ? -1 : 1;
+
+    return [...(details?.orders ?? [])].sort((first, second) => {
+      const a = orderSortValue(first, column);
+      const b = orderSortValue(second, column);
+      const cmp =
+        typeof a === "number" && typeof b === "number"
+          ? a - b
+          : String(a).localeCompare(String(b), "uk-UA", { numeric: true });
+      return cmp * sign;
+    });
+  }, [details, sortDescriptor]);
+
   const chronologicalItems = useMemo(
     () =>
       [...dateItems].sort(
@@ -77,9 +131,9 @@ export function SalesDateDetailsModal({
       isOpen={isOpen}
       onOpenChange={onOpenChange}
       size="4xl"
-      scrollBehavior="outside"
+      scrollBehavior="inside"
       classNames={{
-        base: "rounded-xl overflow-visible",
+        base: "rounded-xl overflow-visible max-h-[calc(100dvh-5rem)]",
         wrapper: "overflow-visible",
       }}
     >
@@ -92,7 +146,7 @@ export function SalesDateDetailsModal({
               aria-label="Попередня дата"
               isDisabled={!prevItem}
               onPress={() => prevItem && onNavigate(prevItem)}
-              className={`absolute -left-14 top-1/2 z-20 hidden h-30 w-10 -translate-y-1/2 rounded-full ${prevItem ? "bg-white" : "bg-white/25"} shadow-md sm:flex`}
+              className={`absolute -left-14 top-1/2 z-20 hidden h-30 w-10 -translate-y-1/2 rounded-full ${prevItem ? "bg-white" : "bg-white/25"} shadow-md min-[1040px]:flex`}
             >
               <DynamicIcon name="chevron-left" size={28} />
             </Button>
@@ -102,13 +156,13 @@ export function SalesDateDetailsModal({
               aria-label="Наступна дата"
               isDisabled={!nextItem}
               onPress={() => nextItem && onNavigate(nextItem)}
-              className={`absolute -right-14 top-1/2 z-20 hidden h-30 w-10 -translate-y-1/2 rounded-full ${nextItem ? "bg-white" : "bg-white/25"} shadow-md sm:flex`}
+              className={`absolute -right-14 top-1/2 z-20 hidden h-30 w-10 -translate-y-1/2 rounded-full ${nextItem ? "bg-white" : "bg-white/25"} shadow-md min-[1040px]:flex`}
             >
               <DynamicIcon name="chevron-right" size={28} />
             </Button>
           </>
         )}
-        <ModalHeader className="flex items-center gap-2 pr-10">
+        <ModalHeader className="flex items-center gap-2 pr-10 text-base sm:text-lg">
           {onNavigate && (
             <Button
               isIconOnly
@@ -117,7 +171,7 @@ export function SalesDateDetailsModal({
               aria-label="Попередня дата"
               isDisabled={!prevItem}
               onPress={() => prevItem && onNavigate(prevItem)}
-              className="sm:hidden"
+              className="min-[1040px]:hidden"
             >
               <DynamicIcon name="chevron-left" size={18} />
             </Button>
@@ -139,27 +193,28 @@ export function SalesDateDetailsModal({
               aria-label="Наступна дата"
               isDisabled={!nextItem}
               onPress={() => nextItem && onNavigate(nextItem)}
-              className="sm:hidden"
+              className="min-[1040px]:hidden"
             >
               <DynamicIcon name="chevron-right" size={18} />
             </Button>
           )}
         </ModalHeader>
-        <ModalBody>
+        <div className="pointer-events-none absolute -top-8 left-1/2 hidden -translate-x-1/2 whitespace-nowrap text-xs text-gray-100 lg:block">Підказка: використовуйте кнопки <span className="bg-gray-100 text-black px-1 py-0.5 inline-block leading-none rounded">←</span> та <span className="bg-gray-100 text-black px-1 py-0.5 inline-block leading-none rounded">→</span> для навігації по днях</div>
+        <ModalBody className="min-h-0 px-3 pt-0 sm:px-6">
           {details && (
-            <div className="space-y-4 pb-4">
-              <div className="grid grid-cols-4 gap-4">
+            <div className="space-y-4 pt-2 pb-4">
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-4">
                 <div className="p-3 bg-blue-50 rounded-lg text-center border border-blue-100">
                   <div className="text-sm text-blue-700 font-medium">Замовлень</div>
-                  <div className="text-3xl font-bold text-blue-700">{details.ordersCount}</div>
+                  <div className="text-2xl md:text-3xl font-bold text-blue-700">{details.ordersCount}</div>
                 </div>
                 <div className="p-3 bg-green-50 rounded-lg text-center border border-green-200/75">
                   <div className="text-sm text-green-700 font-medium">Порцій</div>
-                  <div className="text-3xl font-bold text-green-700">{details.portionsCount}</div>
+                  <div className="text-2xl md:text-3xl font-bold text-green-700">{details.portionsCount}</div>
                 </div>
                 <div className="p-3 bg-yellow-50 rounded-lg text-center border border-yellow-200">
                   <div className="text-sm text-yellow-700 font-medium">Загальна сума</div>
-                  <div className="text-3xl font-bold text-yellow-700">
+                  <div className="text-2xl md:text-3xl font-bold text-yellow-700">
                     {details.totalPrice !== undefined
                       ? details.totalPrice
                           .toLocaleString("uk-UA", {
@@ -173,7 +228,7 @@ export function SalesDateDetailsModal({
                 </div>
                 <div className="p-3 bg-fuchsia-50 rounded-lg text-center border border-fuchsia-200/75">
                   <div className="text-sm text-fuchsia-700 font-medium">Середній чек</div>
-                  <div className="text-3xl font-bold text-fuchsia-700">
+                  <div className="text-2xl md:text-3xl font-bold text-fuchsia-700">
                     {details.totalPrice !== undefined
                       ? (details.totalPrice / (details.ordersCount || 1))
                           .toLocaleString("uk-UA", {
@@ -188,7 +243,7 @@ export function SalesDateDetailsModal({
               </div>
 
               {(details.vidskoduvannaTotal || 0) > 0 && (
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-3 gap-2 md:gap-4">
                   <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg text-center">
                     <div className="text-xs text-orange-700 font-medium mb-1">Замовлень з відшкодуванням</div>
                     <div className="text-2xl font-bold text-orange-700">{details.vidskoduvannaTotal}</div>
@@ -206,7 +261,7 @@ export function SalesDateDetailsModal({
                 </div>
               )}
 
-              <div className="flex gap-4">
+              <div className="flex flex-col gap-4 pt-1 sm:flex-row">
                 <div className="flex flex-1 flex-col gap-4">
                   <div className="flex-1 border-1 border-neutral-200 rounded-lg p-3 relative">
                     <h4 className="text-[11px] font-medium uppercase mb-2 text-neutral-400 absolute -top-2 left-1/2 -translate-x-1/2">
@@ -271,26 +326,29 @@ export function SalesDateDetailsModal({
               {details.orders && details.orders.length > 0 && (
                 <div className="mt-6">
                   <h4 className="text-lg font-semibold mb-3 text-neutral-700">Замовлення за день</h4>
-                  <div className="border border-neutral-200 rounded-lg overflow-hidden">
+                  <div className="border border-neutral-200 rounded-lg overflow-hidden md:overflow-visible">
+                    {/* На md+ шапка липне до прокрутки модалки, на вужчих таблиця має власну (є горизонтальна) */}
                     <Table
                       isHeaderSticky
+                      sortDescriptor={sortDescriptor}
+                      onSortChange={setSortDescriptor}
                       aria-label="Замовлення за день"
                       classNames={{
-                        wrapper: "min-h-0 max-h-120 overflow-auto p-3",
+                        wrapper: "min-h-0 max-h-[60dvh] overflow-auto p-2 sm:p-3 md:max-h-none md:overflow-visible",
                         table: "min-w-full",
-                        th: ["first:rounded-s-sm", "last:rounded-e-sm"],
+                        thead: "[&>tr]:first:shadow-none",
+                        th: ["first:rounded-s-sm", "last:rounded-e-sm", "whitespace-nowrap"],
+                        td: "whitespace-nowrap",
                       }}
                     >
-                      <TableHeader>
-                        <TableColumn className="text-sm font-medium">№</TableColumn>
-                        <TableColumn className="text-sm font-medium">Дата оформлення</TableColumn>
-                        <TableColumn className="text-sm font-medium">Порцій</TableColumn>
-                        <TableColumn className="text-sm font-medium">Джерело</TableColumn>
-                        <TableColumn className="text-sm font-medium">Сума</TableColumn>
-                        <TableColumn className="text-sm font-medium">Знижка</TableColumn>
-                        <TableColumn className="text-sm font-medium">Статус</TableColumn>
+                      <TableHeader columns={ORDER_COLUMNS}>
+                        {(column) => (
+                          <TableColumn key={column.key} allowsSorting className="text-sm font-medium">
+                            {column.label}
+                          </TableColumn>
+                        )}
                       </TableHeader>
-                      <TableBody items={details.orders} emptyContent="Немає замовлень за цей день">
+                      <TableBody items={sortedOrders} emptyContent="Немає замовлень за цей день">
                         {(order) => (
                           <TableRow key={order.externalId}>
                               <TableCell className="font-medium text-sm">{order.orderNumber}</TableCell>
@@ -336,7 +394,6 @@ export function SalesDateDetailsModal({
                   </div>
                 </div>
               )}
-              <div className="text-xs text-gray-100 absolute -top-8 left-1/2 -translate-x-1/2">Підказка: використовуйте кнопки <span className="bg-gray-100 text-black px-1 py-0.5 inline-block leading-none rounded">←</span> та <span className="bg-gray-100 text-black px-1 py-0.5 inline-block leading-none rounded">→</span> для навігації по днях</div>
             </div>
           )}
         </ModalBody>

@@ -10,7 +10,7 @@ import {
   convertCalendarRangeToReportingRange,
   createStandardDatePresets,
 } from "@/lib";
-import type { SalesData } from "./ReportsSalesTypes";
+import type { ProductStatsCategorySeriesOption, SalesData } from "./ReportsSalesTypes";
 import {
   buildSalesReportCacheKey,
   getSalesTableDefaultDatePreset,
@@ -32,8 +32,10 @@ export default function useReportsSalesTableData() {
   const [loading, setLoading] = useState(false);
   const { cache, clearCache, invalidateCacheKey, setCacheEntry } = useReportClientCache<{
     data: SalesData[];
+    categories: ProductStatsCategorySeriesOption[];
     timestamp: number;
   }>();
+  const [categoryOptions, setCategoryOptions] = useState<ProductStatsCategorySeriesOption[]>([]);
   const datePresets = useMemo(() => createStandardDatePresets(), []);
   const defaultDatePreset = useMemo(
     () => getSalesTableDefaultDatePreset(datePresets),
@@ -77,6 +79,16 @@ export default function useReportsSalesTableData() {
     consoleErrorLabel: "Помилка очищення серверного кешу статистики продажів:",
   });
 
+  // Оновлює список категорій і прибирає з вибору ті, яких немає в поточному періоді
+  const applyCategoryOptions = useCallback((categories: ProductStatsCategorySeriesOption[]) => {
+    setCategoryOptions(categories);
+    setSelectedProducts((current) => {
+      const validKeys = new Set(categories.map((category) => category.key));
+      const next = Array.from(current).filter((key) => validKeys.has(key));
+      return next.length === current.size ? current : new Set(next);
+    });
+  }, []);
+
   const fetchSalesData = useCallback(
     async (force?: boolean) => {
       if (firstLoadRef.current) {
@@ -94,6 +106,7 @@ export default function useReportsSalesTableData() {
 
       if (!force && cache[cacheKey] && now - cache[cacheKey].timestamp < CACHE_DURATION) {
         setSalesData(cache[cacheKey].data);
+        applyCategoryOptions(cache[cacheKey].categories);
         return;
       }
 
@@ -125,8 +138,10 @@ export default function useReportsSalesTableData() {
 
         if (data.success) {
           const validatedData = Array.isArray(data.data) ? data.data : [];
+          const categories: ProductStatsCategorySeriesOption[] = data.metadata?.availableSeries?.categories ?? [];
           setSalesData(validatedData);
-          setCacheEntry(cacheKey, { data: validatedData, timestamp: now });
+          applyCategoryOptions(categories);
+          setCacheEntry(cacheKey, { data: validatedData, categories, timestamp: now });
           markCacheUpdated();
         } else {
           console.error("❌ Sales report API returned error:", data.error);
@@ -139,7 +154,7 @@ export default function useReportsSalesTableData() {
         setLoading(false);
       }
     },
-    [apiCall, cache, datePresetKey, dateRange, dayStartHour, markCacheUpdated, selectedProducts, setCacheEntry, statusFilter],
+    [apiCall, applyCategoryOptions, cache, datePresetKey, dateRange, dayStartHour, markCacheUpdated, selectedProducts, setCacheEntry, statusFilter],
   );
 
   const handleRefreshData = useCallback(() => {
@@ -312,6 +327,7 @@ export default function useReportsSalesTableData() {
     cacheLoading,
     cacheModals,
     cacheProgress,
+    categoryOptions,
     clearStatsCacheLoading,
     datePresetKey,
     datePresets,

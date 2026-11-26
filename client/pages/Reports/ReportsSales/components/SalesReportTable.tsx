@@ -40,6 +40,7 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
     cacheLoading,
     cacheModals,
     cacheProgress,
+    categoryOptions,
     clearStatsCacheLoading,
     datePresetKey,
     datePresets,
@@ -171,6 +172,9 @@ export default function SalesReportTable({ className }: SalesReportTableProps) {
           setDateRange(value);
           setDatePresetKey(null);
         }}
+        categoryOptions={categoryOptions}
+        selectedCategories={selectedProducts}
+        onSelectedCategoriesChange={setSelectedProducts}
         extraFilters={extraFilters}
         onExtraFiltersChange={setExtraFilters}
         colored={colored}

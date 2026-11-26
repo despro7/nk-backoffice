@@ -2682,9 +2682,14 @@ router.get('/products/chart', authenticateToken, async (req, res) => {
         }
 
         if (hasCategoryFilters) {
-          for (const [categoryKey, categoryData] of Object.entries(bucket.categories)) {
-            result[categoryKey] = categoryData.quantity;
-            result[`${categoryKey}_name`] = categoryData.label;
+          // Кожна точка має містити всі обрані категорії (0, якщо продажів не було),
+          // інакше клієнт не побачить лінію, відсутню в першій точці
+          for (const category of categoryOptions) {
+            if (!selectedCategoryKeys.has(category.key)) {
+              continue;
+            }
+            result[category.key] = bucket.categories[category.key]?.quantity ?? 0;
+            result[`${category.key}_name`] = category.label;
           }
         }
 
@@ -2754,7 +2759,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
 
     const productsKey = Array.isArray(products) ? [...products].sort().join(',') : products || 'all';
     const singleDayKey = singleDay === 'true' ? 'single' : 'range';
-    const cacheKey = `stats-report-v2-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${productsKey}-${dayStartHour}-${singleDayKey}`;
+    const cacheKey = `stats-report-v3-${status || 'all'}-${startDate || 'none'}-${endDate || 'none'}-${productsKey}-${dayStartHour}-${singleDayKey}`;
 
     if (sync !== 'true') {
       const cached = statsCache.get(cacheKey);
@@ -2847,6 +2852,7 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
     // Обробляємо фільтр за товарами
     let filterProducts: string[] = [];
     let filterGroups: string[] = [];
+    let filterCategories: string[] = [];
 
     if (products) {
       if (Array.isArray(products)) {
@@ -2855,8 +2861,9 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
         filterProducts = [products as string];
       }
 
-      // Поділяємо на групи та індивідуальні товари
-      const individualProducts = filterProducts.filter(p => !p.startsWith('group_'));
+      // Поділяємо на категорії, групи та індивідуальні товари
+      filterCategories = filterProducts.filter(p => p.startsWith('category_'));
+      const individualProducts = filterProducts.filter(p => !p.startsWith('group_') && !p.startsWith('category_'));
       const groupFilters = filterProducts.filter(p => p.startsWith('group_'));
 
       filterProducts = individualProducts;
@@ -2868,6 +2875,38 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
 
     // Отримуємо всі кеші одним запитом
     const orderCaches = await ordersCacheService.getMultipleOrderCaches(orderExternalIds);
+
+    // Категорії проданих товарів: для фільтра та списку опцій на клієнті
+    const soldSkus = new Set<string>();
+    for (const cacheData of orderCaches.values()) {
+      if (!cacheData?.processedItems) {
+        continue;
+      }
+      try {
+        const parsedItems = JSON.parse(cacheData.processedItems);
+        if (Array.isArray(parsedItems)) {
+          for (const item of parsedItems) {
+            if (item?.sku && item.orderedQuantity > 0) {
+              soldSkus.add(item.sku);
+            }
+          }
+        }
+      } catch {
+        // Пошкоджений кеш: замовлення пропускається нижче
+      }
+    }
+    const productDescriptors = await getReportProductDescriptors(soldSkus);
+    const categoryOptions = buildCategorySeriesOptions(
+      Array.from(soldSkus).map((sku) => {
+        const descriptor = productDescriptors.get(sku);
+        return {
+          sku,
+          categoryKey: descriptor?.categoryKey ?? null,
+          categoryId: descriptor?.categoryId ?? null,
+          categoryName: descriptor?.categoryLabel ?? null,
+        };
+      }),
+    );
 
     const sourceMaps = await getOrderSourceMaps();
 
@@ -2982,12 +3021,18 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
               if (item && item.sku && item.orderedQuantity > 0) {
                 let shouldInclude = false;
 
-                if (filterProducts.length === 0 && filterGroups.length === 0) {
+                if (filterProducts.length === 0 && filterGroups.length === 0 && filterCategories.length === 0) {
                   // Немає фільтрів - включаємо всі товари
                   shouldInclude = true;
                 } else {
                   // Перевіряємо індивідуальні товари
                   if (filterProducts.includes(item.sku)) {
+                    shouldInclude = true;
+                  }
+
+                  // Перевіряємо категорії товарів
+                  const categoryKey = productDescriptors.get(item.sku)?.categoryKey;
+                  if (categoryKey && filterCategories.includes(categoryKey)) {
                     shouldInclude = true;
                   }
 
@@ -3140,10 +3185,18 @@ router.get('/sales/report', authenticateToken, async (req, res) => {
           dateRange: { startDate, endDate },
           products: filterProducts,
           groups: filterGroups,
+          categories: filterCategories,
           dayStartHour
         },
         totalDays: salesDataArray.length,
         totalOrders: filteredOrders.length,
+        availableSeries: {
+          default: {
+            key: 'all_categories',
+            label: 'Всі категорії',
+          },
+          categories: categoryOptions,
+        },
         fetchedAt: new Date().toISOString()
       }
     };

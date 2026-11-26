@@ -4,9 +4,7 @@ import {
   createActionButtonFilterConfig,
   createDateRangeFilterConfig,
   createPeriodFilterConfig,
-  createResetFilterConfig,
   createStatusFilterConfig,
-  ReportsFilterBuilder,
   type ReportFilterConfig,
 } from "../../shared/filters";
 import type {
@@ -17,6 +15,7 @@ import {
   PRODUCT_CHART_GROUP_BY_OPTIONS,
   PRODUCT_CHART_STATUS_OPTIONS,
 } from "../ReportsSalesUtils";
+import { SalesFiltersBar } from "./SalesFiltersBar";
 
 interface DatePresetOption {
   key: string;
@@ -79,17 +78,23 @@ export function ProductStatsChartFilters({
     [allFilterOptions],
   );
 
-  const filters = useMemo<ReportFilterConfig[]>(() => {
-    const nextFilters: ReportFilterConfig[] = [
+  const moreFilters = useMemo<ReportFilterConfig[]>(
+    () => [
       createStatusFilterConfig({
         selectedKey: statusFilter === "all" ? null : statusFilter,
         onChange: (selectedKey) => {
           onStatusFilterChange(selectedKey ?? "all");
         },
         options: PRODUCT_CHART_STATUS_OPTIONS,
-        className: "w-40 shrink-0",
+        className: "w-48",
         popoverClassName: "w-auto min-w-full",
       }),
+    ],
+    [onStatusFilterChange, statusFilter],
+  );
+
+  const filters = useMemo<ReportFilterConfig[]>(() => {
+    const nextFilters: ReportFilterConfig[] = [
       createPeriodFilterConfig({
         selectedKey: datePresetKey,
         onChange: (selectedKey) => {
@@ -105,7 +110,7 @@ export function ProductStatsChartFilters({
           }
         },
         options: datePresets,
-        className: "w-48 shrink-0",
+        className: "min-w-0 flex-1 max-w-48",
         popoverClassName: "w-auto min-w-full",
       }),
       createDateRangeFilterConfig({
@@ -125,7 +130,7 @@ export function ProductStatsChartFilters({
         },
         options: PRODUCT_CHART_GROUP_BY_OPTIONS,
         iconName: "bar-chart-3",
-        className: "w-44 shrink-0",
+        className: "min-w-0 flex-1 max-w-44",
         popoverClassName: "w-auto min-w-full",
       }),
       {
@@ -137,7 +142,7 @@ export function ProductStatsChartFilters({
         onChange: onSelectedProductsChange,
         options: categoryOptions,
         iconName: "package",
-        className: "w-56 shrink-0",
+        className: "min-w-0 flex-1 max-w-48",
         popoverClassName: "w-auto min-w-full",
         compactTrigger: true,
       },
@@ -180,14 +185,6 @@ export function ProductStatsChartFilters({
       );
     }
 
-    nextFilters.push(
-      createResetFilterConfig({
-        onPress: onReset,
-        disabled: loading,
-        className: "h-10 px-3 gap-2 ml-auto shrink-0 bg-transparent border-1.5 border-neutral-200 hover:bg-red-100 hover:border-red-200 hover:text-red-500",
-      }),
-    );
-
     return nextFilters;
   }, [
     categoryOptions,
@@ -195,19 +192,26 @@ export function ProductStatsChartFilters({
     datePresets,
     dateRange,
     groupBy,
-    loading,
     onDatePresetChange,
     onDateRangeChange,
     onGroupByChange,
-    onReset,
     onSelectedProductsChange,
     onSortDescriptorChange,
-    onStatusFilterChange,
     selectedProducts,
     sortDescriptor,
     sortOptions,
-    statusFilter,
   ]);
 
-  return <ReportsFilterBuilder filters={filters} />;
+  const activeMoreCount = statusFilter !== "all" ? 1 : 0;
+
+  return (
+    <SalesFiltersBar
+      filters={filters}
+      moreFilters={moreFilters}
+      activeMoreCount={activeMoreCount}
+      hasActiveFilters={activeMoreCount > 0 || selectedProducts.size > 0}
+      onReset={onReset}
+      resetDisabled={loading}
+    />
+  );
 }

@@ -2,18 +2,17 @@ import { useMemo } from "react";
 import type { DateRange } from "@react-types/datepicker";
 import { ORDER_STATUSES } from "@/lib";
 import {
-  ReportsFilterBuilder,
   type ReportFilterConfig,
 } from "../../shared/filters";
 import {
-  createActionButtonFilterConfig,
   createDateRangeFilterConfig,
   createPeriodFilterConfig,
-  createResetFilterConfig,
   createStatusFilterConfig,
 } from "../../shared/filters/ReportFilterPresets";
 import type { ReportDatePreset } from "../../shared/ReportsSharedTypes";
+import type { ProductStatsCategorySeriesOption } from "../ReportsSalesTypes";
 import { SALES_EXTRA_FILTER_OPTIONS } from "../ReportsSalesUtils";
+import { SalesFiltersBar } from "./SalesFiltersBar";
 
 interface SalesReportTableFiltersProps {
   statusFilter: string;
@@ -23,6 +22,9 @@ interface SalesReportTableFiltersProps {
   onDatePresetChange: (value: string | null) => void;
   dateRange: DateRange | null;
   onDateRangeChange: (value: DateRange | null) => void;
+  categoryOptions?: ProductStatsCategorySeriesOption[];
+  selectedCategories?: Set<string>;
+  onSelectedCategoriesChange?: (value: Set<string>) => void;
   extraFilters: Set<string>;
   onExtraFiltersChange: (value: Set<string>) => void;
   colored: boolean;
@@ -40,6 +42,9 @@ export function SalesReportTableFilters({
   onDatePresetChange,
   dateRange,
   onDateRangeChange,
+  categoryOptions,
+  selectedCategories,
+  onSelectedCategoriesChange,
   extraFilters,
   onExtraFiltersChange,
   colored,
@@ -48,8 +53,8 @@ export function SalesReportTableFilters({
   onReset,
   showExtraFilters = true,
 }: SalesReportTableFiltersProps) {
-  const filters = useMemo<ReportFilterConfig[]>(() => {
-    const result: ReportFilterConfig[] = [
+  const { filters, moreFilters } = useMemo(() => {
+    const secondary: ReportFilterConfig[] = [
       createStatusFilterConfig({
         selectedKey: statusFilter === "all" ? null : statusFilter,
         onChange: (selectedKey) => {
@@ -64,9 +69,11 @@ export function SalesReportTableFilters({
           onStatusFilterChange(found ? found.key : selectedKey);
         },
         options: ORDER_STATUSES,
-        className: "w-40 shrink-0",
+        className: "w-48",
         popoverClassName: "w-auto min-w-full",
       }),
+    ];
+    const primary: ReportFilterConfig[] = [
       createPeriodFilterConfig({
         selectedKey: datePresetKey,
         onChange: (selectedKey) => {
@@ -82,7 +89,7 @@ export function SalesReportTableFilters({
           }
         },
         options: datePresets,
-        className: "w-48 shrink-0",
+        className: "min-w-0 flex-1 max-w-48",
         popoverClassName: "w-auto min-w-full",
       }),
       createDateRangeFilterConfig({
@@ -92,8 +99,27 @@ export function SalesReportTableFilters({
       }),
     ];
 
+    if (categoryOptions && selectedCategories && onSelectedCategoriesChange) {
+      primary.push({
+        type: "multiSelect",
+        key: "categoryFilter",
+        ariaLabel: "Фільтр категорій",
+        placeholder: "Всі категорії",
+        selectedKeys: selectedCategories,
+        onChange: onSelectedCategoriesChange,
+        options: categoryOptions.map((category) => ({
+          key: category.key,
+          label: `${category.label} (${category.count})`,
+        })),
+        iconName: "package",
+        className: "min-w-0 flex-1 max-w-48",
+        popoverClassName: "w-auto min-w-full",
+        compactTrigger: true,
+      });
+    }
+
     if (showExtraFilters) {
-      result.push({
+      secondary.push({
         type: "multiSelect",
         key: "extraFilters",
         ariaLabel: "Додаткові фільтри",
@@ -113,50 +139,48 @@ export function SalesReportTableFilters({
         },
         options: SALES_EXTRA_FILTER_OPTIONS,
         iconName: "filter",
-        className: "w-56 shrink-0",
+        className: "w-56",
         popoverClassName: "w-auto min-w-full",
         compactTrigger: true,
       });
     }
 
-    result.push(
-      createActionButtonFilterConfig({
-        key: "colored",
-        onPress: onColoredToggle,
-        iconName: "palette",
-        isIconOnly: true,
-        className: `h-10 px-3 gap-2 shrink-0 ml-auto border-1.5 transition-colors ${
-          colored
-            ? "bg-lime-100 border-lime-500/50 text-lime-600/70 hover:bg-lime-100"
-            : "bg-transparent border-neutral-200 text-neutral-400 hover:bg-neutral-100"
-        }`,
-      }),
-      createResetFilterConfig({
-        onPress: onReset,
-        disabled: loading,
-        className: "h-10 px-3 gap-2 bg-transparent border-1.5 border-neutral-200 hover:bg-red-100 hover:border-red-200 hover:text-red-500",
-      }),
-    );
+    // Без додаткових фільтрів ховати нічого: статус лишається в основному рядку
+    if (!showExtraFilters) {
+      const status = secondary.map((filter) => ({ ...filter, className: "min-w-0 flex-1 max-w-48" }));
+      return { filters: [...status, ...primary], moreFilters: [] };
+    }
 
-    return result;
+    return { filters: primary, moreFilters: secondary };
   }, [
-    colored,
+    categoryOptions,
     datePresetKey,
     datePresets,
     dateRange,
     extraFilters,
-    loading,
-    onColoredToggle,
     onDatePresetChange,
     onDateRangeChange,
     onExtraFiltersChange,
-    onReset,
+    onSelectedCategoriesChange,
     onStatusFilterChange,
+    selectedCategories,
     showExtraFilters,
     statusFilter,
   ]);
 
+  const activeMoreCount =
+    (statusFilter !== "all" ? 1 : 0) + (showExtraFilters && extraFilters.size > 0 ? 1 : 0);
+
   return (
-    <ReportsFilterBuilder filters={filters} />
+    <SalesFiltersBar
+      filters={filters}
+      moreFilters={moreFilters}
+      activeMoreCount={activeMoreCount}
+      hasActiveFilters={activeMoreCount > 0 || Boolean(selectedCategories?.size)}
+      colored={colored}
+      onColoredToggle={onColoredToggle}
+      onReset={onReset}
+      resetDisabled={loading}
+    />
   );
 }
