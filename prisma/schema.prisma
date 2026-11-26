@@ -31,8 +31,55 @@ model User {
   catalogProductLabels             CatalogProductLabel[]
   catalogProductLabelDraftsUpdated CatalogProductLabelDraft[]
   catalogLabelTemplatesUpdated     CatalogLabelTemplate[]
+  sessions                         UserSession[]
 
   @@map("users")
+}
+
+// Per-device auth session. Replaces User.refreshToken / refreshTokenExpiresAt.
+// Rows are marked revoked, not deleted: they double as login history.
+model UserSession {
+  id              String    @id @default(cuid())
+  userId          Int
+  tokenHash       String    @unique
+  prevTokenHash   String?
+  rotatedAt       DateTime?
+  expiresAt       DateTime
+  createdAt       DateTime  @default(now())
+  lastUsedAt      DateTime  @default(now())
+  userAgent       String?   @db.VarChar(255)
+  ip              String?
+  lastIp          String?
+  city            String?   @db.VarChar(96)
+  region          String?   @db.VarChar(96)
+  country         String?   @db.VarChar(8)
+  deviceType      String?   @db.VarChar(16)
+  browser         String?   @db.VarChar(64)
+  os              String?   @db.VarChar(64)
+  revokedAt       DateTime?
+  revokedReason   String?   @db.VarChar(32)
+  revokedByUserId Int?
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([prevTokenHash])
+  @@map("user_sessions")
+}
+
+model AuthLoginAttempt {
+  id        Int      @id @default(autoincrement())
+  email     String
+  userId    Int?
+  ip        String?
+  userAgent String?  @db.VarChar(255)
+  success   Boolean
+  reason    String?  @db.VarChar(32)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("auth_login_attempts")
 }
 
 model Role {

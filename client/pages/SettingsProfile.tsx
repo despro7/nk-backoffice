@@ -4,6 +4,8 @@ import { useApi } from "@/hooks/useApi";
 import { Input, Button, Alert, Accordion, AccordionItem } from "@heroui/react";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { formatDateOnly } from "@/lib/formatUtils";
+import { SectionTitle } from "@/components/SectionTitle";
+import { UserSessionsTable } from "@/components/sessions/UserSessionsTable";
 
 interface ProfileFormData {
   name: string;
@@ -217,47 +219,47 @@ export default function Profile() {
         </Alert>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
         {/* Информация о профиле */}
         <div>
-          <h2 className="text-xl font-semibold mb-4">Інформація профілю</h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-gray-50 rounded-lg p-4 shadow-inner-md">
-              <div className="flex items-center gap-3 mb-3">
-                <DynamicIcon name="hash" size={20} className="text-gray-500" />
-                <span className="text-sm font-medium text-gray-700">ID користувача</span>
+          <SectionTitle icon="id-card" size="compact" className="mb-3">Інформація профілю</SectionTitle>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div className="bg-gray-50 rounded-lg p-3 shadow-inner-md">
+              <div className="flex items-center gap-2 mb-2">
+                <DynamicIcon name="hash" size={16} className="text-gray-500" />
+                <span className="text-xs font-medium text-gray-700">ID користувача</span>
               </div>
-              <div className="text-lg font-semibold text-gray-900">
+              <div className="text-base font-semibold text-gray-900">
                 {profileData?.id}
               </div>
             </div>
             
-            <div className="bg-gray-50 rounded-lg p-4 shadow-inner-md">
-              <div className="flex items-center gap-3 mb-3">
-                <DynamicIcon name="shield" size={20} className="text-gray-500" />
-                <span className="text-sm font-medium text-gray-700">Роль</span>
+            <div className="bg-gray-50 rounded-lg p-3 shadow-inner-md">
+              <div className="flex items-center gap-2 mb-2">
+                <DynamicIcon name="shield" size={16} className="text-gray-500" />
+                <span className="text-xs font-medium text-gray-700">Роль</span>
               </div>
-              <div className="text-lg font-semibold text-gray-900">
+              <div className="text-base font-semibold text-gray-900">
                 {profileData?.roleName}
               </div>
             </div>
             
-            <div className="bg-gray-50 rounded-lg p-4 shadow-inner-md">
-              <div className="flex items-center gap-3 mb-3">
-                <DynamicIcon name="calendar" size={20} className="text-gray-500" />
-                <span className="text-sm font-medium text-gray-700">Дата створення</span>
+            <div className="bg-gray-50 rounded-lg p-3 shadow-inner-md">
+              <div className="flex items-center gap-2 mb-2">
+                <DynamicIcon name="calendar" size={16} className="text-gray-500" />
+                <span className="text-xs font-medium text-gray-700">Дата створення</span>
               </div>
-              <div className="text-lg font-semibold text-gray-900">
+              <div className="text-base font-semibold text-gray-900">
                 {profileData?.createdAt ? formatDateOnly(profileData.createdAt) : '-'}
               </div>
             </div>
             
-            <div className="bg-gray-50 rounded-lg p-4 shadow-inner-md">
-              <div className="flex items-center gap-3 mb-3">
-                <DynamicIcon name="clock" size={20} className="text-gray-500" />
-                <span className="text-sm font-medium text-gray-700">Останнє оновлення</span>
+            <div className="bg-gray-50 rounded-lg p-3 shadow-inner-md">
+              <div className="flex items-center gap-2 mb-2">
+                <DynamicIcon name="clock" size={16} className="text-gray-500" />
+                <span className="text-xs font-medium text-gray-700">Останнє оновлення</span>
               </div>
-              <div className="text-lg font-semibold text-gray-900">
+              <div className="text-base font-semibold text-gray-900">
                 {profileData?.updatedAt ? formatDateOnly(profileData.updatedAt) : '-'}
               </div>
             </div>
@@ -266,12 +268,12 @@ export default function Profile() {
 
         {/* Форма редактирования */}
         <div>
-          <h2 className="text-xl font-semibold mb-4">Редагування профілю</h2>
+          <SectionTitle icon="user-pen" size="compact" className="mb-3">Редагування профілю</SectionTitle>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <Input
               label="Ім'я"
               labelPlacement="outside"
-              size="lg"
+              size="md"
               name="name"
               value={formData.name}
               onChange={handleInputChange}
@@ -279,13 +281,13 @@ export default function Profile() {
               isInvalid={!!errors.name}
               errorMessage={errors.name}
               // variant="bordered"
-              startContent={<DynamicIcon name="user" size={20} className="text-gray-400" />}
+              startContent={<DynamicIcon name="user" size={16} className="text-gray-400" />}
             />
 
             <Input
               label="Email"
               labelPlacement="outside"
-              size="lg"
+              size="md"
               name="email"
               type="email"
               value={formData.email}
@@ -294,7 +296,7 @@ export default function Profile() {
               isInvalid={!!errors.email}
               errorMessage={errors.email}
               // variant="bordered"
-              startContent={<DynamicIcon name="mail" size={20} className="text-gray-400" />}
+              startContent={<DynamicIcon name="mail" size={16} className="text-gray-400" />}
             />
 
             <Accordion 
@@ -306,45 +308,46 @@ export default function Profile() {
                 key="password-change"
                 aria-label="Зміна паролю"
                 title="Зміна паролю"
-                startContent={<DynamicIcon name="lock" size={20} className="text-gray-400" />}
+                startContent={<DynamicIcon name="lock" size={16} className="text-gray-400" />}
                 className="px-0"
+                classNames={{ title: 'text-sm' }}
               >
                 <div className="flex flex-col gap-4 pt-2 pb-4">
                   <Input
                     label="Поточний пароль"
                     labelPlacement="outside"
-                    size="lg"
+                    size="md"
                     name="currentPassword"
                     type="password"
                     value={formData.currentPassword}
                     onChange={handleInputChange}
-                    startContent={<DynamicIcon name="lock" size={20} className="text-gray-400" />}
+                    startContent={<DynamicIcon name="lock" size={16} className="text-gray-400" />}
                   />
 
                   <Input
                     label="Новий пароль"
                     labelPlacement="outside"
-                    size="lg"
+                    size="md"
                     name="newPassword"
                     type="password"
                     value={formData.newPassword}
                     onChange={handleInputChange}
                     isInvalid={!!errors.newPassword}
                     errorMessage={errors.newPassword}
-                    startContent={<DynamicIcon name="key-round" size={20} className="text-gray-400" />}
+                    startContent={<DynamicIcon name="key-round" size={16} className="text-gray-400" />}
                   />
 
                   <Input
                     label="Підтвердження нового паролю"
                     labelPlacement="outside"
-                    size="lg"
+                    size="md"
                     name="confirmPassword"
                     type="password"
                     value={formData.confirmPassword}
                     onChange={handleInputChange}
                     isInvalid={!!errors.confirmPassword}
                     errorMessage={errors.confirmPassword}
-                    startContent={<DynamicIcon name="key-round" size={20} className="text-gray-400" />}
+                    startContent={<DynamicIcon name="key-round" size={16} className="text-gray-400" />}
                   />
                 </div>
               </AccordionItem>
@@ -355,16 +358,21 @@ export default function Profile() {
                 type="submit"
                 color="primary"
                 variant="solid"
-                size="lg"
+                size="md"
                 className="w-full"
                 isLoading={saving}
-                startContent={!saving && <DynamicIcon name="save" size={20} />}
+                startContent={!saving && <DynamicIcon name="save" size={16} />}
               >
                 {saving ? 'Збереження...' : 'Зберегти зміни'}
               </Button>
             </div>
           </form>
         </div>
+      </div>
+
+      <div className="mt-16">
+        {/* key: після зміни паролю інші сесії завершені, перечитуємо список */}
+        <UserSessionsTable key={profileData?.updatedAt} source="self" />
       </div>
     </div>
   );

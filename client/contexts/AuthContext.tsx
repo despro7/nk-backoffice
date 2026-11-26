@@ -10,6 +10,27 @@ import { ClientLogBuffer } from '@/services/ClientLogBuffer';
 import { ReportProblemService } from '@/services/ReportProblemService';
 import { hasPermission, PERMISSIONS } from '@shared/constants/permissions';
 
+// Один refresh на вкладку: паралельні виклики чекають той самий проміс
+let refreshInFlight: Promise<boolean> | null = null;
+const REFRESH_LOCK_NAME = 'nk-auth-refresh';
+const REFRESHED_AT_KEY = 'nk-auth-refreshed-at';
+
+const readRefreshedAt = (): number => {
+  try {
+    return Number(localStorage.getItem(REFRESHED_AT_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+};
+
+const markRefreshed = () => {
+  try {
+    localStorage.setItem(REFRESHED_AT_KEY, String(Date.now()));
+  } catch {
+    // без localStorage інші вкладки просто зроблять власний refresh
+  }
+};
+
 interface AuthProviderProps {
   children: ReactNode;
 }
@@ -148,7 +169,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           // Якщо налаштування завантажені, плануємо з реальними значеннями
           LoggingService.authLog(`👤 Користувач авторизований і налаштування успішно завантажені! 
 🔄 clientAutoRefresh: ${authSettings.clientAutoRefreshEnabled ? 'ON (за ' + authSettings.clientRefreshThresholdMinutes + ' хвилин до закінчення)' : 'OFF'}
-🔄 middlewareRefresh: ${authSettings.middlewareAutoRefreshEnabled ? 'ON (за ' + authSettings.middlewareRefreshThresholdSeconds + ' сек до закінчення)' : 'OFF'}
 🔄 expiresIn: ${Math.floor(user.expiresIn / 60) > 0 && (Math.floor(user.expiresIn / 60) + 'хв')} ${user.expiresIn % 60} сек`);
         }
         
@@ -204,7 +224,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, [user]);
 
-  const checkAuthStatus = async () => {
+  // Віддалене завершення сесії помічаємо, щойно вкладку знову відкрили
+  useEffect(() => {
+    if (!user) return;
+    const checkRevoked = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const response = await fetch('/api/auth/profile', { credentials: 'include' });
+        if (response.status !== 401) return;
+        const data = await response.json().catch(() => ({}));
+        if (data.code === 'SESSION_REVOKED') forceLogout();
+      } catch {
+        // мережевий збій не є причиною для виходу
+      }
+    };
+    const onVisible = () => void checkRevoked();
+    window.addEventListener('focus', onVisible);
+    return () => window.removeEventListener('focus', onVisible);
+  }, [user?.id]);
+
+  const checkAuthStatus = async (isRetry = false): Promise<void> => {
     // LoggingService.authLog('🔍 [AuthContext] checkAuthStatus called');
 
     // Перевіряємо кеш профілю
@@ -288,82 +327,113 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         
       } else {
         // Якщо отримали 401, пробуємо оновити токен
-        if (response.status === 401) {
+        const failure = response.status === 401 ? await response.json().catch(() => ({})) : {};
+        if (failure.code === 'SESSION_REVOKED') {
+          forceLogout();
+        } else if (response.status === 401 && !isRetry) {
           LoggingService.authLog('⚠️ [AuthContext] checkAuthStatus: Got 401, attempting token refresh');
           const refreshResult = await refreshToken();
           if (refreshResult) {
             LoggingService.authLog('✅ [AuthContext] checkAuthStatus: Token refreshed successfully');
             // Після успішного оновлення токена, рекурсивно викликаємо checkAuthStatus
             // щоб оновити стан користувача
-            return checkAuthStatus();
+            return checkAuthStatus(true);
           } else {
-            console.error('❌ [AuthContext] checkAuthStatus: Token refresh failed, logging out');
-            setUser(null);
+            // Вихід, якщо сесія справді мертва, робить сам refreshToken (forceLogout)
+            console.error('❌ [AuthContext] checkAuthStatus: Token refresh failed');
           }
-        } else {
-          console.error(`❌ [AuthContext] checkAuthStatus: Error ${response.status}, logging out`);
+        } else if (response.status === 401) {
           setUser(null);
+        } else {
+          console.error(`❌ [AuthContext] checkAuthStatus: Error ${response.status}`);
         }
       }
     } catch (error) {
+      // Мережева помилка не є причиною для виходу
       console.error('❌ Ошибка проверки статуса аутентификации:', error);
-      setUser(null);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const refreshToken = async (): Promise<boolean> => {
-    // log('🔄 Починаємо оновлення токена...');
+  const applyExpiresIn = (expiresIn?: number) => {
+    if (!expiresIn) return;
+    setUser(prev => (prev ? { ...prev, expiresIn } : prev));
+  };
+
+  // Повертає профіль, якщо access токен чинний; status потрібен, щоб відрізнити 401 від збою
+  const probeProfile = async (): Promise<{ status: number; expiresIn?: number }> => {
+    const response = await fetch('/api/auth/profile', { credentials: 'include' });
+    if (!response.ok) return { status: response.status };
+    const data = await response.json();
+    return { status: response.status, expiresIn: data.expiresIn };
+  };
+
+  const performRefresh = async (requestedAt: number): Promise<boolean> => {
     try {
+      // Поки чекали на lock, інша вкладка могла вже оновити токен
+      if (readRefreshedAt() >= requestedAt) {
+        const profile = await probeProfile();
+        if (profile.status === 200) {
+          applyExpiresIn(profile.expiresIn);
+          return true;
+        }
+      }
+
       const response = await fetch('/api/auth/refresh', {
         method: 'POST',
         credentials: 'include'
       });
 
-      // log(`📡 Відповідь на оновлення токена: ${response.status} ${response.statusText}`);
-
       if (response.ok) {
         const data = await response.json();
         LoggingService.authLog('✅ Токен успішно оновлено');
-
-        // Перевіряємо, чи було автоматичне оновлення токена в middleware
-        const tokenRefreshed = response.headers.get('X-Token-Refreshed');
-        const userEmail = response.headers.get('X-User-Email');
-
-        if (tokenRefreshed === 'true' && userEmail) {
-          ToastService.tokenRefreshed(userEmail);
-        }
-
-        // Оновлюємо інформацію про час життя токена
-        if (data.expiresIn && user) {
-          const updatedUser = {
-            ...user,
-            expiresIn: data.expiresIn
-          };
-          setUser(updatedUser);
-        }
-
-        // Токен успішно оновлено, useEffect автоматично перепланує оновлення під час setUser
-
+        markRefreshed();
+        // useEffect автоматично перепланує оновлення під час setUser
+        applyExpiresIn(data.expiresIn);
         return true;
-      } else {
-        const error = await response.json();
-        console.error('❌ Помилка оновлення токена', error);
-        
-        if (error.message.includes('застарів') || error.message.includes('неактивний')) {
-          console.error('❌ Токен застарів або неактивний, виходимо з системи');
-          ToastService.refreshError();
-          forceLogout();
-          return false;
-        }
-        return false;
       }
+
+      const error = await response.json().catch(() => ({}));
+      console.error('❌ Помилка оновлення токена', error);
+
+      if (error.code !== 'USER_BLOCKED') {
+        // Збій сервера чи БД: сесія може бути чинною, не виходимо
+        if (response.status >= 500) return false;
+
+        const profile = await probeProfile();
+        if (profile.status === 200) {
+          applyExpiresIn(profile.expiresIn);
+          return true;
+        }
+        if (profile.status !== 401) return false;
+      }
+
+      ToastService.refreshError();
+      forceLogout();
+      return false;
     } catch (error) {
-      console.error('❌ Помилка оновлення токена:', error);
       console.error('❌ Мережева помилка при оновленні токена', error);
       return false;
     }
+  };
+
+  const refreshToken = (): Promise<boolean> => {
+    if (refreshInFlight) return refreshInFlight;
+
+    const requestedAt = Date.now();
+    const run = async (): Promise<boolean> => {
+      // Web Locks серіалізує refresh між вкладками (лише HTTPS або localhost)
+      if (typeof navigator !== 'undefined' && navigator.locks) {
+        return await navigator.locks.request(REFRESH_LOCK_NAME, () => performRefresh(requestedAt));
+      }
+      return performRefresh(requestedAt);
+    };
+
+    refreshInFlight = run().finally(() => {
+      refreshInFlight = null;
+    });
+    return refreshInFlight;
   };
 
   const login = async (credentials: LoginRequest): Promise<boolean> => {

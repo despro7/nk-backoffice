@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { SectionTitle } from '@/components/SectionTitle';
 import { Button, Input, Switch } from '@heroui/react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { DilovodDictAutocomplete } from '@/pages/BankStatementImport/components/DilovodDictAutocomplete';
@@ -204,7 +205,7 @@ export function DilovodUserEmailFields({
     <div className="flex flex-col gap-6">
       <section className="space-y-4">
         {showStepControls ? (
-          <p className="text-sm font-semibold text-default-900">1. Привʼязка до Dilovod (необовʼязково)</p>
+          <SectionTitle icon="link" level="sub">1. Привʼязка до Dilovod (необовʼязково)</SectionTitle>
         ) : null}
 
         <div className="space-y-2">
@@ -319,7 +320,7 @@ export function DilovodUserEmailFields({
       ) : null}
 
       {stepComplete ? (
-        <p className="text-sm font-semibold text-default-900">2. Заповніть основні дані</p>
+        <SectionTitle icon="user" level="sub">2. Заповніть основні дані</SectionTitle>
       ) : null}
 
       {showEmailField && (variant === 'edit' || stepComplete) ? (

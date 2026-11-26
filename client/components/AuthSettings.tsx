@@ -196,8 +196,9 @@ export const AuthSettings: React.FC = () => {
                   min="60"
                   max="3600"
                   size="sm"
+                  isDisabled
                 />
-                <p className="text-xs text-gray-500 mt-1">За сколько секунд до истечения обновлять в middleware</p>
+                <p className="text-xs text-gray-500 mt-1">Не використовується: токени оновлює лише клієнт</p>
               </div>
 
               <div>
@@ -255,10 +256,11 @@ export const AuthSettings: React.FC = () => {
                 isSelected={settings.middlewareAutoRefreshEnabled}
                 onValueChange={(checked) => setSettings({...settings, middlewareAutoRefreshEnabled: checked})}
                 className="mt-1"
+                isDisabled
               />
               <div className="flex-1">
                 <div className="font-medium text-sm">Автообновление в middleware</div>
-                <div className="text-xs text-gray-400">Обновление токенов на сервере</div>
+                <div className="text-xs text-gray-400">Не використовується</div>
               </div>
               </div>
 

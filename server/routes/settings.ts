@@ -931,7 +931,11 @@ router.get('/:key', async (req, res) => {
       }
 
       try {
-        jwt.verify(token, jwtSecret);
+        const payload = jwt.verify(token, jwtSecret) as { sid?: string };
+        if (payload.sid) {
+          const { isSessionActive } = await import('../services/authSessionService.js');
+          if (!(await isSessionActive(payload.sid))) throw new Error('Session revoked');
+        }
       } catch (error) {
         return res.status(401).json({
           success: false,

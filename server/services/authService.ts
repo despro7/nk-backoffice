@@ -3,8 +3,9 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { Request, Response } from 'express';
-import { UserType, LoginRequest, RegisterRequest, UpdateProfileRequest, AuthResponse, RefreshTokenRequest, RefreshTokenResponse, sanitizeUser } from "../types/auth.js";
+import { UserType, LoginRequest, RegisterRequest, UpdateProfileRequest, AuthResponse, RefreshTokenRequest, RefreshTokenResponse, SessionMeta, AuthError, sanitizeUser } from "../types/auth.js";
 import { AuthSettingsService } from './authSettingsService.js';
+import { parseUserAgent, purgeAuthHistory, recordLoginAttempt, revokeSessions } from './authSessionService.js';
 
 // Импорт настроек логирования с сервера
 let loggingSettings: any = {
@@ -30,6 +31,9 @@ export function updateLoggingSettings(newSettings: any) {
   loggingSettings = newSettings;
 }
 
+
+// Скільки після ротації старий refresh токен ще видає access (паралельні запити, вкладки)
+export const REFRESH_ROTATION_GRACE_MS = 60_000;
 
 export class AuthService {
   // Получаем настройки из БД
@@ -79,8 +83,6 @@ export class AuthService {
         roleName: userData.roleName || role.name,
         dilovodUserId,
         isActive: true,
-        refreshToken: null,
-        refreshTokenExpiresAt: null,
       },
     });
 
@@ -92,7 +94,7 @@ export class AuthService {
     };
   }
 
-  static async login(credentials: LoginRequest): Promise<AuthResponse> {
+  static async login(credentials: LoginRequest, meta: SessionMeta = {}): Promise<AuthResponse> {
     const user = await prisma.user.findUnique({
       where: {
         email: credentials.email
@@ -100,34 +102,51 @@ export class AuthService {
     });
 
     if (!user) {
+      await recordLoginAttempt(credentials.email, meta, { reason: 'unknown_email' });
       throw new Error('Невірні облікові дані');
     }
 
     const isValidPassword = await bcrypt.compare(credentials.password, user.password);
     if (!isValidPassword) {
+      await recordLoginAttempt(credentials.email, meta, { userId: user.id, reason: 'bad_password' });
       throw new Error('Невірні облікові дані');
     }
 
     // Проверяем, не заблокирован ли пользователь
     if (!user.isActive) {
+      await recordLoginAttempt(credentials.email, meta, { userId: user.id, reason: 'user_blocked' });
       throw new Error('Користувач заблокований');
     }
 
-    const { accessToken, refreshToken, expiresIn } = await this.generateTokenPair(user as UserType);
+    const sessionId = crypto.randomUUID();
+    const { accessToken, refreshToken, expiresIn } = await this.generateTokenPair(user as UserType, sessionId);
+    const now = new Date();
 
-    // Обновляем время последнего входа, активности и refresh token
-    const refreshExpiryDate = new Date(Date.now() + await this.getRefreshTokenExpiryMs());
-    await prisma.user.update({
-      where: { id: user.id },
+    // Принагідно прибираємо стару історію входів
+    await purgeAuthHistory(user.id);
+
+    await prisma.userSession.create({
       data: {
-        lastLoginAt: new Date(),
-        lastActivityAt: new Date(),
-        refreshToken: this.hashToken(refreshToken),
-        refreshTokenExpiresAt: refreshExpiryDate,
+        id: sessionId,
+        userId: user.id,
+        tokenHash: this.hashToken(refreshToken),
+        expiresAt: new Date(now.getTime() + await this.getRefreshTokenExpiryMs()),
+        lastUsedAt: now,
+        userAgent: meta.userAgent?.slice(0, 255) || null,
+        ip: meta.ip || null,
+        lastIp: meta.ip || null,
+        city: meta.city ?? null,
+        region: meta.region ?? null,
+        country: meta.country ?? null,
+        ...parseUserAgent(meta.userAgent),
       }
     });
+    await recordLoginAttempt(credentials.email, meta, { userId: user.id });
 
-    // Компактное логирование установки refresh токена
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: now, lastActivityAt: now }
+    });
 
     return { 
       token: accessToken, 
@@ -137,91 +156,96 @@ export class AuthService {
     };
   }
 
-  static async refreshToken(refreshTokenData: RefreshTokenRequest): Promise<RefreshTokenResponse> {
-    try {
-      // Находим пользователя по refresh токену
-      const hashedToken = this.hashToken(refreshTokenData.refreshToken);
+  static async refreshToken(refreshTokenData: RefreshTokenRequest, meta: SessionMeta = {}): Promise<RefreshTokenResponse> {
+    const hashedToken = this.hashToken(refreshTokenData.refreshToken);
+    const now = new Date();
 
-      // Ищем пользователя с валидным токеном
-      const user = await prisma.user.findFirst({
-        where: {
-          refreshToken: hashedToken,
-          refreshTokenExpiresAt: { gt: new Date() }
+    const session = await prisma.userSession.findFirst({
+      where: { tokenHash: hashedToken, revokedAt: null, expiresAt: { gt: now } },
+      include: { user: true }
+    });
+
+    if (session) {
+      await this.assertUserMayRefresh(session.user);
+
+      const { accessToken, refreshToken, expiresIn } = await this.generateTokenPair(session.user as UserType, session.id);
+
+      // Атомарна ротація: умова по старому хешу пропускає лише один з паралельних запитів
+      const { count } = await prisma.userSession.updateMany({
+        where: { id: session.id, tokenHash: hashedToken, revokedAt: null },
+        data: {
+          tokenHash: this.hashToken(refreshToken),
+          prevTokenHash: hashedToken,
+          rotatedAt: now,
+          lastUsedAt: now,
+          // Нова IP: переписуємо й місцезнаходження
+          ...(meta.ip && meta.ip !== session.lastIp
+            ? { lastIp: meta.ip, city: meta.city ?? null, region: meta.region ?? null, country: meta.country ?? null }
+            : {}),
+          expiresAt: new Date(now.getTime() + await this.getRefreshTokenExpiryMs()),
         }
       });
 
-      if (!user) {
-        throw new Error('Невірний або застарілий refresh токен');
+      if (count === 1) {
+        return { token: accessToken, refreshToken, expiresIn };
       }
+    }
 
-      // console.log('🔍 [RefreshToken] Пользователь найден:', user.email);
-      // console.log('🔍 [RefreshToken] Пользователь активен:', user.isActive);
-      // console.log('🔍 [RefreshToken] refreshTokenExpiresAt:', user.refreshTokenExpiresAt);
+    return this.refreshWithinGrace(hashedToken);
+  }
 
-      if (!user.isActive) {
-        console.log('❌ [RefreshToken] Пользователь заблокирован');
-        throw new Error('Користувач заблокований');
-      }
+  // Токен щойно ротовано іншим запитом: видаємо лише access, refresh cookie вже нова
+  private static async refreshWithinGrace(hashedToken: string): Promise<RefreshTokenResponse> {
+    const now = Date.now();
+    const session = await prisma.userSession.findFirst({
+      where: {
+        prevTokenHash: hashedToken,
+        revokedAt: null,
+        rotatedAt: { gte: new Date(now - REFRESH_ROTATION_GRACE_MS) },
+        expiresAt: { gt: new Date(now) }
+      },
+      include: { user: true }
+    });
 
-      const settings = await this.getSettings();
+    if (!session) {
+      throw new AuthError('REFRESH_INVALID', 'Невірний або застарілий refresh токен');
+    }
 
-      // Проверяем, не слишком ли давно пользователь был активен
-      const lastActivity = user.lastActivityAt || user.lastLoginAt || user.createdAt;
-      const timeSinceLastActivity = Date.now() - lastActivity.getTime();
-      const userActivityThresholdMs = settings.userActivityThresholdDays * 24 * 60 * 60 * 1000;
+    await this.assertUserMayRefresh(session.user);
 
-      // console.log('🔍 [RefreshToken] Последняя активность:', lastActivity);
-      // console.log('🔍 [RefreshToken] Дней с последней активности:', daysSinceLastActivity);
-      // console.log('🔍 [RefreshToken] Порог неактивности (дней):', settings.userActivityThresholdDays);
+    const { accessToken, expiresIn } = await this.generateTokenPair(session.user as UserType, session.id);
 
-      if (timeSinceLastActivity > userActivityThresholdMs) {
-        console.log('❌ [RefreshToken] Пользователь заблокирован через неактивность');
-        // Пользователь неактивен больше месяца, блокируем
-        await prisma.user.update({
-          where: { id: user.id },
-          data: {
-            isActive: false,
-            refreshToken: null,
-            refreshTokenExpiresAt: null
-          }
-        });
-        throw new Error('Користувач заблокований через неактивність');
-      }
+    return { token: accessToken, refreshToken: null, expiresIn };
+  }
 
-      // Генерируем новую пару токенов
-      const { accessToken, refreshToken, expiresIn } = await this.generateTokenPair(user as UserType);
+  private static async assertUserMayRefresh(user: UserType): Promise<void> {
+    if (!user.isActive) {
+      throw new AuthError('USER_BLOCKED', 'Користувач заблокований');
+    }
 
-      // Обновляем refresh token в базе
-      const refreshExpiryDate = new Date(Date.now() + await this.getRefreshTokenExpiryMs());
+    const settings = await this.getSettings();
+
+    // Проверяем, не слишком ли давно пользователь был активен
+    const lastActivity = user.lastActivityAt || user.lastLoginAt || user.createdAt;
+    const timeSinceLastActivity = Date.now() - lastActivity.getTime();
+    const userActivityThresholdMs = settings.userActivityThresholdDays * 24 * 60 * 60 * 1000;
+
+    if (timeSinceLastActivity > userActivityThresholdMs) {
+      console.log('❌ [RefreshToken] Пользователь заблокирован через неактивность');
       await prisma.user.update({
         where: { id: user.id },
-        data: {
-          refreshToken: this.hashToken(refreshToken),
-          refreshTokenExpiresAt: refreshExpiryDate,
-        }
+        data: { isActive: false }
       });
-
-      // Компактное логирование установки refresh токена
-
-      return { token: accessToken, refreshToken, expiresIn };
-      
-    } catch (error) {
-      console.error('❌ Ошибка в refreshToken:', error);
-      throw error;
+      await revokeSessions(user.id, { reason: 'inactivity' });
+      throw new AuthError('USER_BLOCKED', 'Користувач заблокований через неактивність');
     }
   }
 
-  static async logout(userId: number): Promise<void> {
-    // Очищаем refresh токен пользователя
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        refreshToken: null,
-        refreshTokenExpiresAt: null
-      }
-    });
+  // Без sid (токен, виданий до появи сесій) виходимо на всіх пристроях
+  static async logout(userId: number, sid?: string): Promise<void> {
+    await revokeSessions(userId, { reason: 'logout', byUserId: userId, sessionIds: sid ? [sid] : undefined });
 
-    console.log(`✅ [AuthService] Токены успешно удалены для пользователя ${userId}`);
+    console.log(`✅ [AuthService] Сесію завершено для користувача ${userId}`);
   }
 
   static async updateUserActivity(userId: number): Promise<void> {
@@ -232,7 +256,7 @@ export class AuthService {
     });
   }
 
-  private static async generateTokenPair(user: UserType): Promise<{ accessToken: string, refreshToken: string, expiresIn: number }> {
+  private static async generateTokenPair(user: UserType, sid: string): Promise<{ accessToken: string, refreshToken: string, expiresIn: number }> {
     const secret = process.env.JWT_SECRET || 'fallback_secret';
 
     if (!secret) {
@@ -252,7 +276,8 @@ export class AuthService {
         email: user.email,
         name: user.name,
         roleName: user.roleName,
-        tokenType: 'access'
+        tokenType: 'access',
+        sid
       },
       secret,
       { expiresIn: settings.accessTokenExpiresIn }
@@ -266,10 +291,12 @@ export class AuthService {
         email: user.email,
         name: user.name,
         roleName: user.roleName,
-        tokenType: 'refresh'
+        tokenType: 'refresh',
+        sid
       },
       secret,
-      { expiresIn: settings.refreshTokenExpiresIn }
+      // jwtid: інакше два токени, видані в одну секунду, були б однаковими
+      { expiresIn: settings.refreshTokenExpiresIn, jwtid: crypto.randomUUID() }
     );
 
     // Вычисляем время жизни access токена в секундах
@@ -316,7 +343,7 @@ export class AuthService {
     return user as UserType;
   }
 
-  static async updateProfile(userId: number, updateData: UpdateProfileRequest): Promise<Omit<UserType, "password">> {
+  static async updateProfile(userId: number, updateData: UpdateProfileRequest, currentSid?: string): Promise<Omit<UserType, "password">> {
     const user = await prisma.user.findUnique({
       where: { id: userId }
     });
@@ -368,10 +395,14 @@ export class AuthService {
       data: updateFields
     });
 
+    if (updateData.newPassword) {
+      await revokeSessions(userId, { reason: 'password_change', byUserId: userId, exceptSid: currentSid });
+    }
+
     return sanitizeUser(updatedUser) as Omit<UserType, "password">;
   }
 
-  static async setAuthCookies(res: Response, accessToken: string, refreshToken: string) {
+  static async setAuthCookies(res: Response, accessToken: string, refreshToken: string | null) {
     // Определяем настройки для текущего окружения
     const isProduction = process.env.NODE_ENV === 'production';
     const isHTTPS = process.env.HTTPS === 'true' || isProduction;
@@ -393,6 +424,8 @@ export class AuthService {
       ...cookieOptions,
       maxAge: accessTokenMaxAge,
     });
+
+    if (!refreshToken) return;
 
     // Устанавливаем refresh token cookie (используем то же время что и в JWT токене)
     const refreshTokenMaxAge = AuthSettingsService.parseExpiryTimeMs(settings.refreshTokenExpiresIn);

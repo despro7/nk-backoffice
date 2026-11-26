@@ -45,7 +45,8 @@ export interface RefreshTokenRequest {
 
 export interface RefreshTokenResponse {
   token: string;
-  refreshToken: string;
+  /** null: повтор щойно ротованого токена, refresh cookie не чіпаємо */
+  refreshToken: string | null;
   expiresIn: number;
 }
 
@@ -56,11 +57,30 @@ export interface JwtPayload {
   name: PrismaUser["name"];
   roleName: PrismaUser["roleName"];
   tokenType: 'access' | 'refresh'; // Тип токена
+  sid?: string; // ID сесії (user_sessions)
   exp?: number; // Час закінчення терміну дії токена (стандартне поле JWT)
   iat?: number; // Час створення токена (стандартное JWT поле)
   expiresIn?: number; // Залишковий час існування токена у секундах (розраховується у middleware)
   /** Оригінальна роль з JWT, якщо на запит застосовано X-Role-Preview */
   realRole?: PrismaUser["role"];
+}
+
+export interface SessionMeta {
+  userAgent?: string | null;
+  ip?: string | null;
+  city?: string | null;
+  region?: string | null;
+  /** ISO 3166-1 alpha-2 */
+  country?: string | null;
+}
+
+export type AuthErrorCode = 'REFRESH_INVALID' | 'USER_BLOCKED';
+
+export class AuthError extends Error {
+  constructor(public readonly code: AuthErrorCode, message: string) {
+    super(message);
+    this.name = 'AuthError';
+  }
 }
 
 export function sanitizeUser(user: UserType): Omit<UserType, "password" | "refreshToken" | "refreshTokenExpiresAt"> {

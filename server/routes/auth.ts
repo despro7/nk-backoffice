@@ -2,8 +2,14 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/utils.js';
 import { AuthService } from '../services/authService.js';
 import { authenticateToken, requirePermission } from '../middleware/auth.js';
-import { LoginRequest, RegisterRequest, UpdateProfileRequest, RefreshTokenRequest } from '../types/auth.js';
+import { LoginRequest, RegisterRequest, UpdateProfileRequest, AuthError } from '../types/auth.js';
 import { RoleError, roleService } from '../services/RoleService.js';
+import {
+  getSessionMeta,
+  listLoginAttempts,
+  listSessions,
+  revokeSessions,
+} from '../services/authSessionService.js';
 import { ROLE_LABELS, type RoleValue } from '../../shared/constants/roles.js';
 
 
@@ -61,12 +67,7 @@ router.post('/register', authenticateToken, usersManage, async (req: Request<{},
 // Логин
 router.post('/login', async (req: Request, res: Response) => {
   try {
-    console.log('🔍 Login request body:', req.body);
-    console.log('🔍 Login request body type:', typeof req.body);
-    console.log('🔍 Login request body keys:', Object.keys(req.body));
-    console.log('🔍 Login request body email:', req.body.email);
-    
-    const result = await AuthService.login(req.body);
+    const result = await AuthService.login(req.body, getSessionMeta(req));
     
     // Устанавливаем cookies
     await AuthService.setAuthCookies(res, result.token, result.refreshToken);
@@ -88,11 +89,11 @@ router.post('/refresh', async (req: Request, res: Response) => {
     // Получаем refresh token из cookies
     const { refreshToken } = await AuthService.getTokenFromCookies(req);
     if (!refreshToken) {
-      return res.status(401).json({ message: 'Refresh token not found' });
+      return res.status(401).json({ message: 'Refresh token not found', code: 'REFRESH_INVALID' });
     }
 
     // Обновляем токен используя refresh token из cookies
-    const result = await AuthService.refreshToken({ refreshToken });
+    const result = await AuthService.refreshToken({ refreshToken }, getSessionMeta(req));
     
     // Устанавливаем новые cookies
     await AuthService.setAuthCookies(res, result.token, result.refreshToken);
@@ -103,14 +104,20 @@ router.post('/refresh', async (req: Request, res: Response) => {
       message: 'Token successfully refreshed'
     });
   } catch (error) {
-    res.status(401).json({ message: error instanceof Error ? error.message : 'Failed to refresh token' });
+    if (error instanceof AuthError) {
+      const status = error.code === 'USER_BLOCKED' ? 403 : 401;
+      return res.status(status).json({ message: error.message, code: error.code });
+    }
+    // Збій БД тощо: не 401, щоб клієнт не розлогінював
+    console.error('❌ Refresh error:', error);
+    res.status(500).json({ message: 'Failed to refresh token' });
   }
 });
 
 // Выход из системы
 router.post('/logout', authenticateToken, async (req: Request, res: Response) => {
   try {
-    await AuthService.logout(req.user!.userId);
+    await AuthService.logout(req.user!.userId, req.user!.sid);
     
     // Очищаем cookies
     await AuthService.clearAuthCookies(res);
@@ -142,7 +149,7 @@ router.get('/profile', authenticateToken, async (req: Request, res: Response) =>
 // Обновить профиль пользователя (защищенный роут)
 router.put('/profile', authenticateToken, async (req: Request<{}, {}, UpdateProfileRequest>, res: Response) => {
   try {
-    const updatedUser = await AuthService.updateProfile(req.user!.userId, req.body);
+    const updatedUser = await AuthService.updateProfile(req.user!.userId, req.body, req.user!.sid);
     res.json({ 
       success: true, 
       message: 'Profile successfully updated',
@@ -153,6 +160,111 @@ router.put('/profile', authenticateToken, async (req: Request<{}, {}, UpdateProf
       success: false,
       message: error instanceof Error ? error.message : 'Failed to update profile' 
     });
+  }
+});
+
+/** Невідʼємне ціле з query; інакше undefined */
+function parseOffset(value: unknown): number | undefined {
+  const offset = parseInt(String(value), 10);
+  return Number.isInteger(offset) && offset >= 0 ? offset : undefined;
+}
+
+// Власні сесії
+router.get('/sessions', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    res.json(await listSessions(req.user!.userId, req.user!.sid));
+  } catch (error) {
+    console.error('Error fetching sessions:', error);
+    res.status(500).json({ message: 'Не вдалося завантажити сесії' });
+  }
+});
+
+router.post('/sessions/revoke-others', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    // Без sid не відрізнити поточну сесію: відмовляємо, щоб не вийти й тут
+    if (!req.user!.sid) {
+      return res.status(400).json({ message: 'Увійдіть заново, щоб керувати сесіями' });
+    }
+    const revoked = await revokeSessions(req.user!.userId, {
+      reason: 'self_revoke',
+      byUserId: req.user!.userId,
+      exceptSid: req.user!.sid,
+    });
+    res.json({ revoked });
+  } catch (error) {
+    console.error('Error revoking sessions:', error);
+    res.status(500).json({ message: 'Не вдалося завершити сесії' });
+  }
+});
+
+router.delete('/sessions/:id', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const revoked = await revokeSessions(req.user!.userId, {
+      reason: 'self_revoke',
+      byUserId: req.user!.userId,
+      sessionIds: [req.params.id],
+    });
+    if (revoked === 0) {
+      return res.status(404).json({ message: 'Активну сесію не знайдено' });
+    }
+    res.json({ revoked });
+  } catch (error) {
+    console.error('Error revoking session:', error);
+    res.status(500).json({ message: 'Не вдалося завершити сесію' });
+  }
+});
+
+// Сесії іншого користувача (адмін)
+router.get('/users/:id/sessions', authenticateToken, usersManage, async (req: Request, res: Response) => {
+  try {
+    const userId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(userId)) {
+      return res.status(400).json({ message: 'Некоректний id користувача' });
+    }
+    res.json(await listSessions(userId, req.user!.sid, parseOffset(req.query.endedOffset)));
+  } catch (error) {
+    console.error('Error fetching user sessions:', error);
+    res.status(500).json({ message: 'Не вдалося завантажити сесії' });
+  }
+});
+
+router.post('/users/:id/sessions/revoke', authenticateToken, usersManage, async (req: Request, res: Response) => {
+  try {
+    const userId = parseInt(req.params.id, 10);
+    const sessionIds = req.body?.sessionIds;
+    if (!Number.isInteger(userId)) {
+      return res.status(400).json({ message: 'Некоректний id користувача' });
+    }
+    // Некоректне значення не повинно перетворитись на «завершити всі»
+    if (sessionIds != null && (!Array.isArray(sessionIds) || sessionIds.some((id) => typeof id !== 'string'))) {
+      return res.status(400).json({ message: 'sessionIds має бути масивом рядків' });
+    }
+    const revoked = await revokeSessions(userId, {
+      reason: 'admin_revoke',
+      byUserId: req.user!.userId,
+      sessionIds: sessionIds?.length ? sessionIds : undefined,
+    });
+    res.json({ revoked });
+  } catch (error) {
+    console.error('Error revoking user sessions:', error);
+    res.status(500).json({ message: 'Не вдалося завершити сесії' });
+  }
+});
+
+router.get('/users/:id/login-attempts', authenticateToken, usersManage, async (req: Request, res: Response) => {
+  try {
+    const userId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(userId)) {
+      return res.status(400).json({ message: 'Некоректний id користувача' });
+    }
+    const result = await listLoginAttempts(userId, parseOffset(req.query.offset));
+    if (!result) {
+      return res.status(404).json({ message: 'Користувач не знайдений' });
+    }
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching login attempts:', error);
+    res.status(500).json({ message: 'Не вдалося завантажити історію входів' });
   }
 });
 
@@ -399,6 +511,15 @@ router.put('/users/:id', authenticateToken, usersManage, async (req: Request, re
       data: updateData,
       select: USER_LIST_SELECT,
     });
+
+    if (isActive === false || password) {
+      // Адмін, що редагує себе, лишає поточну сесію
+      await revokeSessions(userId, {
+        reason: isActive === false ? 'user_blocked' : 'password_change',
+        byUserId: req.user!.userId,
+        exceptSid: userId === req.user!.userId ? req.user!.sid : undefined,
+      });
+    }
 
     const stats = await loadUserStats([updatedUser.id]);
 

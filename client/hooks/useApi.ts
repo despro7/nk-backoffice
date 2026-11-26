@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/auth-context';
 import { LoggingService } from '../services/LoggingService';
 
 export const useApi = () => {
-  const { refreshToken, forceLogout, checkAuthStatus } = useAuth();
+  const { refreshToken, forceLogout } = useAuth();
 
   const apiCall = useCallback(async (url: string, options: RequestInit = {}) => {
     const startTime = Date.now();
@@ -24,22 +24,17 @@ export const useApi = () => {
       LoggingService.apiLog(`📨 ${method} ${url} -> Status: ${response.status}`);
       LoggingService.perfLog(`⚡ Request time: ${responseTime}ms`);
 
-      // Проверяем, был ли токен обновлен автоматически (через заголовки)
-      if (response.status === 200) {
-        const tokenRefreshed = response.headers.get('X-Token-Refreshed');
-        if (tokenRefreshed === 'true') {
-          LoggingService.apiLog('✅ Token was refreshed automatically by server');
-          // Обновляем статус аутентификации в контексте
-          await checkAuthStatus();
-          // Возвращаем оригинальный ответ (токен уже обновлен в cookies)
-          return response;
-        }
-      }
-
       // Если получили 401, пробуем обновить токен и повторить запрос
       if (response.status === 401) {
         LoggingService.apiLog(`🔐 Received 401, attempting token refresh...`);
         const errorData = await response.json().catch(() => ({}));
+
+        // Сесію відкликано: refresh не допоможе
+        if (errorData.code === 'SESSION_REVOKED') {
+          LoggingService.apiLog(`⛔ Session revoked, forcing logout`);
+          forceLogout();
+          throw new Error('Сесію завершено. Увійдіть знову.');
+        }
 
         // Если это expired токен, пробуем обновить
         if (errorData.shouldRefresh || errorData.code === 'TOKEN_EXPIRED') {
@@ -47,11 +42,7 @@ export const useApi = () => {
           const refreshSuccess = await refreshToken();
 
           if (refreshSuccess) {
-            LoggingService.apiLog(`✅ Token refreshed successfully, updating auth status...`);
-            // Обновляем статус аутентификации в контексте
-            LoggingService.debugLog(`🔄 Calling checkAuthStatus...`);
-            await checkAuthStatus();
-            LoggingService.debugLog(`🎯 checkAuthStatus completed`);
+            LoggingService.apiLog(`✅ Token refreshed successfully`);
 
             // Повторяем оригинальный запрос с новым токеном
             const retryResponse = await fetch(url, {
@@ -68,10 +59,9 @@ export const useApi = () => {
             LoggingService.perfLog(`⚡ Total retry time: ${retryTime}ms`);
             return retryResponse;
           } else {
-            // Не удалось обновить токен, выходим из системы
-            LoggingService.apiLog(`❌ Token refresh failed, forcing logout`);
-            forceLogout();
-            throw new Error('Сесія закінчилася. Будь ласка, увійдіть знову.');
+            // Вихід за мертвої сесії робить сам refreshToken; мережевий збій не розлогінює
+            LoggingService.apiLog(`❌ Token refresh failed`);
+            throw new Error('Не вдалося оновити сесію. Спробуйте ще раз.');
           }
         } else {
           // Другие 401 ошибки (неверные учетные данные)
@@ -88,7 +78,7 @@ export const useApi = () => {
       LoggingService.perfLog(`❌ Failed request time: ${errorTime}ms`);
       throw error;
     }
-  }, [checkAuthStatus, forceLogout, refreshToken]);
+  }, [forceLogout, refreshToken]);
 
   return { apiCall };
 };

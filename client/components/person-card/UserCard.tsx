@@ -7,6 +7,8 @@ import {
   DrawerFooter,
   DrawerHeader,
 } from '@heroui/react';
+import { UserSessionsTable } from '@/components/sessions/UserSessionsTable';
+import { SectionTitle } from '@/components/SectionTitle';
 import { UnsavedChangesModal } from '@/components/modals/UnsavedChangesModal';
 import { useUnsavedGuard } from '@/hooks/useUnsavedGuard';
 import { UserCardPanel, type UserCardPanelHandle } from './panels/UserCardPanel';
@@ -59,7 +61,8 @@ export function UserCard({
         isOpen={isOpen}
         onOpenChange={(open) => { if (!open) closeDrawer(); }}
         placement="right"
-        size="xl"
+        // Таблиці сесій потрібна ширша панель
+        size={user ? '3xl' : 'xl'}
         classNames={{
           wrapper: '!z-[60]',
           backdrop: '!z-[55] bg-overlay/20',
@@ -72,7 +75,7 @@ export function UserCard({
           {() => (
             <>
               <DrawerHeader className="border-b border-default-200 shrink-0">
-                {title}
+                <SectionTitle icon={isCreate ? 'user-plus' : 'user-pen'}>{title}</SectionTitle>
               </DrawerHeader>
               <DrawerBody className="gap-5 py-5 overflow-y-auto">
                 <UserCardPanel
@@ -85,6 +88,11 @@ export function UserCard({
                   onBusyChange={setIsBusy}
                   onDirtyChange={setIsDirty}
                 />
+                {user && (
+                  <div className="shrink-0 border-t border-default-200 pt-4">
+                    <UserSessionsTable key={user.id} source={user.id} />
+                  </div>
+                )}
               </DrawerBody>
               <DrawerFooter className="border-t border-default-200 shrink-0">
                 <Button variant="light" onPress={closeDrawer} isDisabled={isBusy}>

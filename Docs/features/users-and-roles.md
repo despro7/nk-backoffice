@@ -131,9 +131,43 @@ npx prisma migrate deploy
 | GET | `/api/auth/profile` | `permissions[]`, `roleMeta { slug, name, rank }` |
 | GET | `/api/auth/effective-permissions` | права **поточної** (включно з preview) ролі |
 
-`requirePermission(key)` → 403 + `X-Insufficient-Role` / `code: INSUFFICIENT_ROLE`. Cron (`userId === 0`) проходить. `requireMinRole` / `requireRole` лишились у middleware, з доменних роутів прибрані.
+`requirePermission(key)` → 403 + `X-Insufficient-Role` / `code: INSUFFICIENT_ROLE`. Системний запит (`userId === 0`, див. «Сесії та токени») проходить. `requireMinRole` / `requireRole` лишились у middleware, з доменних роутів прибрані.
 
 Права ролі кешуються в пам’яті (`slug → Set`); інвалідація після CRUD / `setPermissions`.
+
+---
+
+## Сесії та токени
+
+**Модель.** `UserSession` (`user_sessions`): одна сесія на пристрій або браузер. Поля: `tokenHash` / `prevTokenHash` (sha256 refresh token), `rotatedAt`, `expiresAt`, `lastUsedAt`, `ip` / `lastIp`, `city` / `region` / `country`, `deviceType` / `browser` / `os` (`ua-parser-js`), `revokedAt` / `revokedReason` / `revokedByUserId`. `AuthLoginAttempt` (`auth_login_attempts`): невдалі спроби входу (email, IP, user agent, причина). Старі поля `User.refreshToken*` не використовуються. Міграція: `prisma/migrations/20261126120000_user_sessions/`.
+
+**Токени.** Access і refresh JWT містять `sid`. Обидва лежать у httpOnly cookies.
+
+- `/api/auth/refresh` ротує атомарно (`updateMany` за старим `tokenHash`). Якщо той самий refresh token приходить ще раз протягом 60 с (`REFRESH_ROTATION_GRACE_MS`), видається лише новий access token, refresh cookie не змінюється. Так паралельні запити та вкладки не викидають одне одного.
+- Помилки refresh: 401 `REFRESH_INVALID`, 403 `USER_BLOCKED`.
+- Middleware автоматичного оновлення не робить. Налаштування `middlewareAutoRefreshEnabled` / `middlewareRefreshThresholdSeconds` лишились у БД, але не використовуються.
+- Middleware перевіряє, що сесію `sid` не завершено (кеш 30 с, інвалідація при завершенні в цьому ж процесі): інакше 401 `SESSION_REVOKED`, клієнт одразу виходить. `lastUsedAt` оновлюється не частіше раз на 60 с.
+
+**Клієнт** (`AuthContext`, `useApi`): один спільний `refreshInFlight` на всі запити і таймер, між вкладками `navigator.locks` (`nk-auth-refresh`). Після отримання lock спершу `/api/auth/profile`: якщо 200, інша вкладка вже оновила токен. Невдалий refresh розлогінює лише після повторного 401 від `/profile` або при `USER_BLOCKED`. Мережева помилка не розлогінює.
+
+**Завершення сесій.** Сесії не видаляються, а позначаються `revokedAt` з причиною: `logout`, `self_revoke`, `admin_revoke`, `password_change`, `user_blocked`, `inactivity`, `expired`. Блокування користувача і зміна пароля адміном завершують усі його сесії; зміна власного пароля завершує всі, крім поточної. Записи старші за 90 днів видаляються при вході.
+
+**Місцезнаходження.** Без зовнішніх сервісів: заголовки Cloudflare `cf-ipcity`, `cf-region`, `cf-ipcountry`, IP з `cf-connecting-ip`. Щоб приходили місто й регіон, у Cloudflare має бути увімкнено Managed Transforms → «Add visitor location headers». Приватні IP показуються як «Локальна мережа» (у dev завжди так).
+
+**Системні запити.** Обхід авторизації (`userId: 0`, роль admin) лише із заголовком `x-system-token`, що збігається з `SYSTEM_REQUEST_TOKEN` у `.env` (>= 32 символи, порівняння за сталий час). Без змінної обхід вимкнено. Старий `x-system-request: true` з localhost не працює: за проксі `req.ip` завжди локальний.
+
+| Метод | Шлях | Право | Дія |
+| --- | --- | --- | --- |
+| GET | `/api/auth/sessions` | вхід | власні: активні + завершені до 10 рядків, `isCurrent` |
+| DELETE | `/api/auth/sessions/:id` | вхід | завершити свою сесію |
+| POST | `/api/auth/sessions/revoke-others` | вхід | завершити всі, крім поточної |
+| GET | `/api/auth/users/:id/sessions` | `action.users.manage` | сесії користувача, пагінація по 10 |
+| POST | `/api/auth/users/:id/sessions/revoke` | `action.users.manage` | `{ sessionIds? }`, без масиву: усі |
+| GET | `/api/auth/users/:id/login-attempts` | `action.users.manage` | невдалі спроби, пагінація по 10 |
+
+**UI.** Спільний `client/components/sessions/UserSessionsTable.tsx`: у `/profile` (власні сесії) і в drawer користувача `/settings/users` (режим адміна з вибором кількох і невдалими спробами). Поточна сесія перша, з chip «Поточний». Усі дії завершення через `ConfirmModal`. Контейнер вужчий за 672 px (`@2xl`): список карток замість таблиці.
+
+Типи: `shared/types/authSessions.ts`. Тести: `server/services/authService.spec.ts`, `server/middleware/auth.spec.ts`.
 
 ---
 

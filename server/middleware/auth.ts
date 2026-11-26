@@ -1,15 +1,36 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { JwtPayload } from '../types/auth.js';
 import { AuthService } from '../services/authService.js';
-import { AuthSettingsService } from '../services/authSettingsService.js';
 import { ROLES, ROLE_SETS, hasAccess, ROLE_HIERARCHY, canApplyRolePreview, isRolePreviewExemptPath, ROLE_PREVIEW_HEADER, ROLE_PREVIEW_APPLIED_HEADER } from '../../shared/constants/roles.js';
 import type { RoleValue } from '../../shared/constants/roles.js';
 import { roleService } from '../services/RoleService.js';
+import { isSessionActive, touchSession } from '../services/authSessionService.js';
 import { requirePermission, requirePermissionKey, requireAnyPermissionKey, sendInsufficientRole } from './requirePermission.js';
 import type { HrTimesheetEditorMode } from '../../shared/types/hr.js';
 
 export { ROLES, ROLE_SETS, requirePermission, requirePermissionKey, requireAnyPermissionKey };
+
+export const SYSTEM_TOKEN_HEADER = 'x-system-token';
+const MIN_SYSTEM_TOKEN_LENGTH = 32;
+
+/**
+ * Системний запит дозволено лише коли SYSTEM_REQUEST_TOKEN задано (>= 32 символи)
+ * і заголовок `x-system-token` збігається з ним (порівняння за сталий час).
+ * Без змінної середовища обхід авторизації вимкнено повністю.
+ */
+export function isValidSystemRequest(req: Request): boolean {
+  const expected = process.env.SYSTEM_REQUEST_TOKEN;
+  if (!expected || expected.length < MIN_SYSTEM_TOKEN_LENGTH) return false;
+
+  const provided = req.get(SYSTEM_TOKEN_HEADER);
+  if (!provided) return false;
+
+  const a = crypto.createHash('sha256').update(provided).digest();
+  const b = crypto.createHash('sha256').update(expected).digest();
+  return crypto.timingSafeEqual(a, b);
+}
 
 // Розширюємо інтерфейс Request для додавання користувача
 declare global {
@@ -24,17 +45,10 @@ declare global {
 // Лічильник для відстеження перевірок токенів
 let tokenCheckCount = 0;
 
-// Глобальне блокування для запобігання паралельним оновленням токенів
-let refreshInProgress = false;
-let refreshPromise: Promise<any> | null = null;
-
 export const authenticateToken = async (req: Request, res: Response, next: NextFunction) => {
-  // Дозволяємо системні запити від локального хоста (для Cron задач)
-  const isLocalhostRequest = 
-    (req.ip === '::1' || req.ip === '127.0.0.1' || req.ip === '::ffff:127.0.0.1') &&
-    (req.headers['x-system-request'] === 'true');
-
-  if (isLocalhostRequest) {
+  // Системні запити (cron, скрипти): лише з секретом SYSTEM_REQUEST_TOKEN у заголовку
+  // `x-system-token`. Перевірка за IP небезпечна: за reverse proxy req.ip завжди локальний.
+  if (isValidSystemRequest(req)) {
     req.user = { 
       userId: 0, 
       email: 'system@cron', 
@@ -55,79 +69,6 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     // Отримуємо токени з cookies
     const { accessToken, refreshToken } = await AuthService.getTokenFromCookies(req);
 
-    if (accessToken) {
-      // Перевіряємо час закінчення терміну дії токена ДО його валідації
-      try {
-        const secret = process.env.JWT_SECRET || 'fallback_secret';
-        const decoded = jwt.decode(accessToken) as any;
-        
-        if (decoded && decoded.exp) {
-          const now = Math.floor(Date.now() / 1000);
-          const timeUntilExpiry = decoded.exp - now;
-          
-          // Отримуємо налаштування з БД
-          const settings = await AuthSettingsService.getAuthSettings();
-          
-          // Якщо автоматичне оновлення увімкнено і токен закінчується в найближчому часі
-          if (settings.middlewareAutoRefreshEnabled && timeUntilExpiry <= settings.middlewareRefreshThresholdSeconds && timeUntilExpiry > 0) {
-            console.log(`⚠️  [Middleware] Access token закінчується через ${timeUntilExpiry} секунд, оновлюємо...`);
-              
-            if (refreshToken) {
-              // Перевіряємо блокування оновлень
-              if (refreshInProgress) {
-                console.log('⏭️ [Middleware] Оновлення вже в процесі, пропускаємо цей запит (запобігаємо блокуванню пулу БД)');
-                // НЕ чекаємо - просто продовжуємо з поточным токеном
-                // Це запобігає вичерпанню пулу з'єднань з БД
-              } else {
-                // Встановлюємо блокування і починаємо оновлення
-                refreshInProgress = true;
-                console.log('🔒 [Middleware] Встановлено блокування оновлення токенів');
-                
-                refreshPromise = (async () => {
-                  try {
-                    const refreshResult = await AuthService.refreshToken({ refreshToken });
-                    
-                    // Встановлюємо нові cookies
-                    await AuthService.setAuthCookies(res, refreshResult.token, refreshResult.refreshToken);
-                    
-                    console.log('✅ [Middleware] Токен успішно оновлений автоматично');
-                    
-                    // Встановлюємо заголовок для сповіщення клієнта про оновлення
-                    res.setHeader('X-Token-Refreshed', 'true');
-                    res.setHeader('X-User-Email', decoded.email || 'unknown');
-                    
-                    return refreshResult;
-                  } catch (refreshError) {
-                    console.log('❌ [Middleware] Помилка автоматичного оновлення токена:', refreshError.message);
-                    // НЕ перекладаємо помилку — інакше буде unhandled rejection
-                    // Клієнт отримає 401 при наступному запиті і зробить явне оновлення
-                    return null;
-                  } finally {
-                    // Звільняємо блокування
-                    refreshInProgress = false;
-                    refreshPromise = null;
-                    console.log('🔓 [Middleware] Блокування оновлення токенів знято');
-                  }
-                })();
-                
-                // Додаємо обробник для запобігання unhandled rejection
-                refreshPromise.catch((error) => {
-                  console.log('❌ [Middleware] Критична помилка в фоновому оновленні токена:', error.message);
-                  // Помилка уже залогірована, просто запобігаємо падінню сервера
-                });
-                
-                // НЕ чекаємо завершення - запускаємо оновлення в фоновому режимі
-                // Продовжуємо з поточным токеном, щоб не блокувати пул БД
-              }
-            }
-          }
-        }
-      } catch (decodeError) {
-        // Якщо не вдалося декодувати токен, продовжуємо зі звичайною валідацією
-        console.log(`⚠️ [Middleware] Не вдалося декодувати токен для перевірки часу: ${decodeError.message}`);
-      }
-    }
-    
     if (!accessToken) {
       // Якщо access token відсутній, але є refresh token,
       // це сигнал для клієнта, що потрібно спробувати оновити токен.
@@ -165,6 +106,22 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
       });
     }
     
+    // Відкликана сесія не повинна жити до кінця TTL access токена
+    if (decoded.sid) {
+      // Збій БД не розлогінює: підпис і термін токена вже перевірені
+      const active = await isSessionActive(decoded.sid).catch((error) => {
+        console.error('❌ [Middleware] Не вдалося перевірити сесію:', error.message);
+        return true;
+      });
+      if (!active) {
+        return res.status(401).json({
+          message: 'Сесію завершено. Увійдіть знову.',
+          code: 'SESSION_REVOKED',
+        });
+      }
+      touchSession(decoded.sid);
+    }
+
     // Розраховуємо залишковий час існування токена
     if (decoded.exp) {
       const now = Math.floor(Date.now() / 1000);

@@ -5,6 +5,24 @@
 
 ---
 
+## 2026-11-26 – Сесії по пристроях: стабільне оновлення токенів, історія входів, завершення сесій
+
+**Files:** `prisma/schema.prisma`, `prisma/migrations/20261126120000_user_sessions/`, `server/services/{authService.ts,authService.spec.ts,authSessionService.ts}`, `server/middleware/{auth.ts,auth.spec.ts}`, `server/routes/{auth.ts,settings.ts}`, `server/types/auth.ts`, `shared/types/authSessions.ts`, `client/components/sessions/*`, `client/components/SectionTitle.tsx`, `client/components/person-card/UserCard.tsx`, `client/components/users/DilovodUserEmailFields.tsx`, `client/components/AuthSettings.tsx`, `client/contexts/AuthContext.tsx`, `client/hooks/{useApi.ts,usePermissionsRevisionCheck.ts}`, `client/pages/SettingsProfile.tsx`, `package.json`
+
+- **Причина постійних виходів:** refresh token зберігався одним полем у `users`, тож вхід з іншого браузера, з dev (dev і prod працюють з однією БД) або паралельний refresh перезаписував його і вбивав іншу сесію. Фоновий refresh у middleware ротував токен у БД, але не встигав поставити cookie.
+- Нова таблиця `user_sessions`: окрема сесія на пристрій, `sid` у JWT. Ротація атомарна; старий refresh token ще 60 с видає лише новий access token (паралельні запити й вкладки не викидають). Старі поля `User.refreshToken*` більше не використовуються, але лишаються в схемі.
+- Фоновий refresh з middleware прибрано. Клієнт оновлює токен один раз на всі запити (`refreshInFlight` + `navigator.locks` між вкладками), перед виходом ще раз перевіряє `/api/auth/profile`, мережева помилка не розлогінює.
+- Завершена сесія відкидається одразу (`code: SESSION_REVOKED`, кеш перевірки 30 с). «Остання активність» оновлюється не частіше раз на хвилину.
+- Історія входів зберігається 90 днів (`revokedAt`, `revokedReason`), невдалі спроби входу в `auth_login_attempts`. Місцезнаходження з заголовків Cloudflare (`cf-ipcity`, `cf-region`, `cf-ipcountry`), IP з `cf-connecting-ip`.
+- UI «Пристрої, на яких виконано вхід» у `/profile` і в drawer користувача `/settings/users`: активні й останні завершені сесії в одному блоці (до 10, в адмінці «Показати ще»), «Вийти» / «Вийти з усіх інших пристроїв» / «Завершити вибрані» з підтвердженням, невдалі спроби (лише адмін). На вузькому екрані список карток.
+- Заголовки секцій з іконками (`SectionTitle`), компактніша верхня частина `/profile`.
+- **Безпека:** системний обхід авторизації (`x-system-request: true` з localhost) прибрано: за проксі `req.ip` завжди локальний, тож заголовок давав admin без входу. Тепер лише `x-system-token` = `SYSTEM_REQUEST_TOKEN` (>= 32 символи), без змінної обхід вимкнено. На prod заголовок ніхто не надсилав (crontab, systemd, код перевірено). `/login` більше не пише тіло запиту з паролем у лог.
+- **Деплой:** `npm run deploy -- --migrate`. Після деплою кожен користувач один раз увійде заново. Потім `pm2 flush`, щоб прибрати старі логи з паролями. Для міста в Cloudflare увімкнути Managed Transforms → «Add visitor location headers».
+
+**Документація:** `Docs/features/users-and-roles.md` (розділ «Сесії та токени»)
+
+---
+
 ## 2026-11-26 – Специфікація: зміни чинної версії в історії, чесний журнал при збої
 
 **Files:** `client/pages/Products/components/productDrawer/SpecModerationPanel.tsx`, `server/modules/Products/CatalogSpecService.ts`

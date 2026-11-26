@@ -19,7 +19,7 @@ interface EffectivePermissionsResponse {
  * пропонує оновити сторінку (як банер після деплою).
  */
 export function usePermissionsRevisionCheck() {
-  const { user } = useAuth();
+  const { user, forceLogout } = useAuth();
   const { effectiveRole, isRealAdmin } = useRolePreview();
   const [permissionsChanged, setPermissionsChanged] = useState(false);
   const baselineRef = useRef<string | null>(null);
@@ -37,6 +37,11 @@ export function usePermissionsRevisionCheck() {
     const pull = async () => {
       try {
         const response = await fetch('/api/auth/effective-permissions', { credentials: 'include' });
+        if (response.status === 401) {
+          const failure = await response.json().catch(() => ({}));
+          if (failure.code === 'SESSION_REVOKED' && !cancelled) forceLogout();
+          return;
+        }
         if (!response.ok) return;
         const data: EffectivePermissionsResponse = await response.json();
         const fingerprint = permissionsFingerprint(data.role, data.permissions);
