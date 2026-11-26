@@ -236,12 +236,12 @@ describe('logout', () => {
     expect(db.sessions.map((s) => s.revokedReason ?? null)).toEqual(['logout', null]);
   });
 
-  it('revokes every session when sid is missing', async () => {
+  it('keeps new sessions when a legacy token without sid logs out', async () => {
     await login();
     await login();
     await AuthService.logout(1);
 
-    expect(db.sessions.every((s) => s.revokedAt)).toBe(true);
+    expect(db.sessions.every((s) => !s.revokedAt)).toBe(true);
   });
 });
 

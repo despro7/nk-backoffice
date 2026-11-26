@@ -89,7 +89,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
     // Получаем refresh token из cookies
     const { refreshToken } = await AuthService.getTokenFromCookies(req);
     if (!refreshToken) {
-      return res.status(401).json({ message: 'Refresh token not found', code: 'REFRESH_INVALID' });
+      return res.status(401).json({ message: 'Refresh token not found', code: 'REFRESH_MISSING' });
     }
 
     // Обновляем токен используя refresh token из cookies
@@ -140,6 +140,8 @@ router.get('/profile', authenticateToken, async (req: Request, res: Response) =>
     res.json({
       ...(await withRoleAccess(userWithoutPassword)),
       expiresIn: req.user!.expiresIn,
+      // Токен виданий до user_sessions: клієнт пропонує перезайти
+      legacySession: !req.user!.sid,
     });
   } catch (error) {
     res.status(500).json({ message: 'Failed to get profile' });

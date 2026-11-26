@@ -7,6 +7,7 @@ import { Footer } from "@/components/Footer";
 import { ServerStatusModal } from "@/components/modals/ServerStatusModal";
 import { useServerStatusWithModal } from "@/hooks/useServerStatusWithModal";
 import { UpdateNotificationBanner } from "@/components/UpdateNotificationBanner";
+import { LegacySessionPrompt } from "@/components/sessions/LegacySessionPrompt";
 import { Button } from "@heroui/button";
 import { DynamicIcon } from "lucide-react/dynamic";
 import { SidebarProvider } from "@/contexts/SidebarContext";
@@ -113,6 +114,8 @@ export function Layout({ children }: LayoutProps) {
         />
 
         <UpdateNotificationBanner />
+
+        <LegacySessionPrompt />
 
         <ReportProblemFab />
       </div>

@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-11-26 – Сесії: пропозиція перезайти для старих сесій, без тосту на сторінці входу
+
+**Files:** `client/components/sessions/LegacySessionPrompt.tsx`, `client/components/Layout.tsx`, `client/contexts/{AuthContext.tsx,auth-context.ts}`, `server/routes/auth.ts`, `server/services/{authService.ts,authService.spec.ts}`
+
+- Користувачі, що увійшли до появи `user_sessions`, працюють на старих access-токенах без `sid` (48 год) і не видні в списку пристроїв. `/api/auth/profile` тепер віддає `legacySession: true`, і клієнт показує вікно «Перезайдіть, будь ласка»: «Так, вийти зараз», «Нагадати пізніше» (1 год, 4 год, завтра о 9:00), «Не зараз». Вибір зберігається в `localStorage` для браузера й користувача.
+- Коли стара сесія доходить до кінця терміну, замість червоного «Помилка оновлення сесії» показується жовтий тост «Сесію завершено».
+- Вихід зі старої сесії (токен без `sid`) більше не завершує нові сесії користувача на інших пристроях.
+- Сторінка входу в новому браузері чи інкогніто більше не показує «Помилка оновлення сесії»: на `NO_TOKEN` від `/profile` клієнт refresh не пробує, а `/refresh` без cookie повертає `REFRESH_MISSING` без тосту.
+
+**Документація:** `Docs/features/users-and-roles.md` (розділ «Сесії та токени»)
+
+---
+
 ## 2026-11-26 – Сесії по пристроях: стабільне оновлення токенів, історія входів, завершення сесій
 
 **Files:** `prisma/schema.prisma`, `prisma/migrations/20261126120000_user_sessions/`, `server/services/{authService.ts,authService.spec.ts,authSessionService.ts}`, `server/middleware/{auth.ts,auth.spec.ts}`, `server/routes/{auth.ts,settings.ts}`, `server/types/auth.ts`, `shared/types/authSessions.ts`, `client/components/sessions/*`, `client/components/SectionTitle.tsx`, `client/components/person-card/UserCard.tsx`, `client/components/users/DilovodUserEmailFields.tsx`, `client/components/AuthSettings.tsx`, `client/contexts/AuthContext.tsx`, `client/hooks/{useApi.ts,usePermissionsRevisionCheck.ts}`, `client/pages/SettingsProfile.tsx`, `package.json`

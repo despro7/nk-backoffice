@@ -330,6 +330,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const failure = response.status === 401 ? await response.json().catch(() => ({})) : {};
         if (failure.code === 'SESSION_REVOKED') {
           forceLogout();
+        } else if (response.status === 401 && failure.code === 'NO_TOKEN') {
+          // Немає ні access, ні refresh cookie: користувач просто не входив, тост не потрібен
+          setUser(null);
         } else if (response.status === 401 && !isRetry) {
           LoggingService.authLog('⚠️ [AuthContext] checkAuthStatus: Got 401, attempting token refresh');
           const refreshResult = await refreshToken();
@@ -409,7 +412,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (profile.status !== 401) return false;
       }
 
-      ToastService.refreshError();
+      // REFRESH_MISSING: cookie немає взагалі (новий браузер, інкогніто), сесії не було, тост лише збиває з пантелику
+      if (profileCacheRef.current?.data?.legacySession) {
+        // Стара сесія (до user_sessions) просто доїхала до кінця терміну: це не помилка
+        ToastService.show({
+          title: 'Сесію завершено',
+          description: 'Увійдіть знову, щоб продовжити роботу.',
+          color: 'warning',
+        });
+      } else if (error.code !== 'REFRESH_MISSING') {
+        ToastService.refreshError();
+      }
       forceLogout();
       return false;
     } catch (error) {

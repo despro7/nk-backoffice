@@ -5,6 +5,8 @@ import type { EquipmentState, EquipmentActions } from '../hooks/useEquipment';
 export interface UserWithExpiry extends Omit<UserType, 'password' | 'refreshToken' | 'refreshTokenExpiresAt'> {
   expiresIn?: number;
   permissions?: string[];
+  /** Сесія з токеном, виданим до появи user_sessions (без sid) */
+  legacySession?: boolean;
 }
 
 export interface AuthContextType {

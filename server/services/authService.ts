@@ -243,7 +243,10 @@ export class AuthService {
 
   // Без sid (токен, виданий до появи сесій) виходимо на всіх пристроях
   static async logout(userId: number, sid?: string): Promise<void> {
-    await revokeSessions(userId, { reason: 'logout', byUserId: userId, sessionIds: sid ? [sid] : undefined });
+    // Токен без sid – стара сесія до user_sessions: виходимо лише з неї (cookies чистить роут),
+    // нові сесії користувача на інших пристроях не чіпаємо
+    if (!sid) return;
+    await revokeSessions(userId, { reason: 'logout', byUserId: userId, sessionIds: [sid] });
 
     console.log(`✅ [AuthService] Сесію завершено для користувача ${userId}`);
   }

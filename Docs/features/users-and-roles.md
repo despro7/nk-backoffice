@@ -144,7 +144,7 @@ npx prisma migrate deploy
 **Токени.** Access і refresh JWT містять `sid`. Обидва лежать у httpOnly cookies.
 
 - `/api/auth/refresh` ротує атомарно (`updateMany` за старим `tokenHash`). Якщо той самий refresh token приходить ще раз протягом 60 с (`REFRESH_ROTATION_GRACE_MS`), видається лише новий access token, refresh cookie не змінюється. Так паралельні запити та вкладки не викидають одне одного.
-- Помилки refresh: 401 `REFRESH_INVALID`, 403 `USER_BLOCKED`.
+- Помилки refresh: 401 `REFRESH_MISSING` (cookie немає взагалі, клієнт виходить без тосту), 401 `REFRESH_INVALID`, 403 `USER_BLOCKED`. `/api/auth/profile` без жодної cookie повертає `NO_TOKEN`, і клієнт тоді refresh не пробує.
 - Middleware автоматичного оновлення не робить. Налаштування `middlewareAutoRefreshEnabled` / `middlewareRefreshThresholdSeconds` лишились у БД, але не використовуються.
 - Middleware перевіряє, що сесію `sid` не завершено (кеш 30 с, інвалідація при завершенні в цьому ж процесі): інакше 401 `SESSION_REVOKED`, клієнт одразу виходить. `lastUsedAt` оновлюється не частіше раз на 60 с.
 
@@ -166,6 +166,8 @@ npx prisma migrate deploy
 | GET | `/api/auth/users/:id/login-attempts` | `action.users.manage` | невдалі спроби, пагінація по 10 |
 
 **UI.** Спільний `client/components/sessions/UserSessionsTable.tsx`: у `/profile` (власні сесії) і в drawer користувача `/settings/users` (режим адміна з вибором кількох і невдалими спробами). Поточна сесія перша, з chip «Поточний». Усі дії завершення через `ConfirmModal`. Контейнер вужчий за 672 px (`@2xl`): список карток замість таблиці.
+
+**Старі сесії.** Токени, видані до `user_sessions`, не мають `sid`: працюють до кінця access token, але не видні в списку пристроїв. `/api/auth/profile` віддає для них `legacySession: true`, і `LegacySessionPrompt` (у `Layout`) пропонує перезайти: «Так, вийти зараз», «Нагадати пізніше» (1 год, 4 год, завтра о 9:00), «Не зараз» (стан у `localStorage`, ключ `nk-legacy-session-prompt:<userId>`). Вихід зі старої сесії не завершує нові сесії користувача. Після кінця терміну клієнт показує жовтий тост «Сесію завершено». Коли старих токенів не лишиться (найпізніше 48 год після деплою v1.4.0), компонент і прапор можна прибрати.
 
 Типи: `shared/types/authSessions.ts`. Тести: `server/services/authService.spec.ts`, `server/middleware/auth.spec.ts`.
 
