@@ -65,6 +65,7 @@ import { LabelMockNetWeightControl } from './Settings/labelTemplates/LabelMockNe
 import { LabelApplyFieldModal } from './Settings/labelTemplates/LabelApplyFieldModal';
 import {
   applyNetWeightSuffixPreview,
+  LABEL_MOCK_WEIGHT_FIELDS,
   DEFAULT_LABEL_MOCK_NET_WEIGHT,
   mockToleranceSpec,
   readLabelMockNetWeight,
@@ -128,7 +129,7 @@ export default function SettingsLabelTemplates() {
   const [mockNetWeight, setMockNetWeight] = useState<LabelMockNetWeight>(DEFAULT_LABEL_MOCK_NET_WEIGHT);
   const mockNetWeightRef = useRef<LabelMockNetWeight>(DEFAULT_LABEL_MOCK_NET_WEIGHT);
   /** Текст маси, показаний у Designer (з суфіксом), щоб розпізнати ручну правку mock. */
-  const shownNetWeightRef = useRef<string | null>(null);
+  const shownNetWeightRef = useRef<Record<string, string | null>>({});
   const [isDeletionLocked, setIsDeletionLocked] = useState(false);
   const [iconKey, setIconKey] = useState<string | null>(DEFAULT_LABEL_TEMPLATE_ICON);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -242,7 +243,11 @@ export default function SettingsLabelTemplates() {
         base,
         resolvePdfmeInputs(
           base,
-          { ...inputs, net_weight_tolerance: toleranceSpec },
+          {
+            ...inputs,
+            net_weight_tolerance: toleranceSpec,
+            main_product_weight_tolerance: toleranceSpec,
+          },
           { netWeightSuffix: withSuffix, weightSpacing: weightSpacingRef.current },
         ),
         designerAssetsRef.current,
@@ -251,14 +256,19 @@ export default function SettingsLabelTemplates() {
     } else {
       // Без живого товару: mock маси показуємо так, як він друкується («380 г ℮» / «380 г ± 8%»).
       const hydrated = hydrateLabelTemplateContent(base, designerAssetsRef.current);
-      const mockWeight = readNetWeightContent(hydrated);
       next = withSuffix
         ? applyNetWeightSuffixPreview(hydrated, toleranceSpec, weightSpacingRef.current)
         : hydrated;
-      mockContentsRef.current =
-        withSuffix && mockWeight != null && mockWeight.trim() ? { net_weight: mockWeight } : {};
+      const mocks: Record<string, string> = {};
+      for (const field of withSuffix ? LABEL_MOCK_WEIGHT_FIELDS : []) {
+        const mockWeight = readNetWeightContent(hydrated, field);
+        if (mockWeight?.trim()) mocks[field] = mockWeight;
+      }
+      mockContentsRef.current = mocks;
     }
-    shownNetWeightRef.current = readNetWeightContent(next);
+    shownNetWeightRef.current = Object.fromEntries(
+      LABEL_MOCK_WEIGHT_FIELDS.map((field) => [field, readNetWeightContent(next, field)]),
+    );
     templateDraftRef.current = next;
     designer.updateTemplate(next as Template);
   }, []);
@@ -334,24 +344,22 @@ export default function SettingsLabelTemplates() {
         const { template: preserved, changed } = preserveSchemaOnTypeChange(prev, nextTpl);
         templateDraftRef.current = preserved;
         // Масу змінили в Designer, поки показано суфікс: новий mock = текст без «℮ / ± N».
-        const mockWeight = mockContentsRef.current.net_weight;
-        const shown = readNetWeightContent(preserved);
-        if (
-          !previewInputsRef.current &&
-          mockWeight !== undefined &&
-          shown != null &&
-          shown !== shownNetWeightRef.current
-        ) {
+        for (const field of previewInputsRef.current ? [] : LABEL_MOCK_WEIGHT_FIELDS) {
+          const mockWeight = mockContentsRef.current[field];
+          const shown = readNetWeightContent(preserved, field);
+          if (mockWeight === undefined || shown == null || shown === shownNetWeightRef.current[field]) {
+            continue;
+          }
           mockContentsRef.current = {
             ...mockContentsRef.current,
-            net_weight: stripNetWeightSuffixPreview(
+            [field]: stripNetWeightSuffixPreview(
               shown,
               mockWeight,
               mockToleranceSpec(mockNetWeightRef.current),
               weightSpacingRef.current,
             ),
           };
-          shownNetWeightRef.current = shown;
+          shownNetWeightRef.current = { ...shownNetWeightRef.current, [field]: shown };
         }
         if (changed) {
           designerTypeChangeGuardRef.current = true;

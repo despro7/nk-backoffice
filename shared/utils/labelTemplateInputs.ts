@@ -1,4 +1,9 @@
-import { LABEL_INPUT_KEY_SET, type LabelInputKey, LabelInputMap } from '../constants/labelInputKeys.js';
+import {
+  LABEL_INPUT_KEY_SET,
+  LABEL_WEIGHT_TOLERANCE_KEYS,
+  type LabelInputKey,
+  LabelInputMap,
+} from '../constants/labelInputKeys.js';
 import { PORTION_LABEL_STATIC } from '../constants/productLabelPortionStatic.js';
 import { LABEL_MVT_VARIABLE_SET } from '../constants/labelMvtVariables.js';
 import type { LabelPdfmeTemplate } from '../types/labelTemplate.js';
@@ -77,12 +82,13 @@ function valueForCatalogTextField(
   const raw = merged[key] ?? '';
   const staticText = fieldStaticText(field).toLowerCase();
 
-  if (key === 'net_weight') {
+  const toleranceKey = LABEL_WEIGHT_TOLERANCE_KEYS[key];
+  if (toleranceKey) {
     return withNetWeightSuffix
-      ? formatNetWeightWithSuffix(raw, merged.net_weight_tolerance, weightSpacing)
+      ? formatNetWeightWithSuffix(raw, merged[toleranceKey], weightSpacing)
       : formatNetWeightForLabel(raw, weightSpacing);
   }
-  if (key === 'net_weight_tolerance') {
+  if (Object.values(LABEL_WEIGHT_TOLERANCE_KEYS).includes(key)) {
     return formatNetWeightToleranceLabel(raw, weightSpacing);
   }
   if (key === 'expires_at') {
@@ -99,7 +105,7 @@ function valueForCatalogTextField(
 
 export interface ResolvePdfmeInputsOptions {
   /**
-   * Дописувати до маси нетто знак «℮» або похибку «± N» і ховати окреме SVG-поле знака ℮.
+   * Дописувати до маси нетто та маси основного продукту знак «℮» або похибку «± N» і ховати окреме SVG-поле знака ℮.
    * Вмикається для порційних наліпок (`labelKind === 'portion'`).
    */
   netWeightSuffix?: boolean;

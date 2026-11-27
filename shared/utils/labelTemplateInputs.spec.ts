@@ -220,3 +220,28 @@ describe('unknownMvtVariableNames', () => {
     expect(unknown).toEqual(['foo']);
   });
 });
+
+/** Нерозривні та тонкі пробіли шаблону зводимо до звичайних. */
+const plain = (value: string | null) => value?.replace(/\s/g, ' ');
+
+describe('resolvePdfmeInputs weight suffix', () => {
+  const template = {
+    basePdf: { width: 100, height: 100, padding: [0, 0, 0, 0] as [number, number, number, number] },
+    schemas: [[{ name: 'net_weight', type: 'text' }, { name: 'main_product_weight', type: 'text' }]],
+  };
+  const logical = {
+    net_weight: '380г',
+    main_product_weight: '270г',
+    main_product_weight_tolerance: '10%',
+  };
+
+  it('uses a separate tolerance for each weight field', () => {
+    const inputs = resolvePdfmeInputs(template, logical, { netWeightSuffix: true });
+    expect(plain(inputs.net_weight)).toBe('380 г ℮');
+    expect(plain(inputs.main_product_weight)).toBe('270 г ± 10%');
+  });
+
+  it('applies only spacing without the suffix option', () => {
+    expect(plain(resolvePdfmeInputs(template, logical).main_product_weight)).toBe('270 г');
+  });
+});

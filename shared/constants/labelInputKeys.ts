@@ -17,6 +17,7 @@ export const LABEL_INPUT_KEYS = [
   'net_weight_label',
   'net_weight_tolerance',
   'main_product_weight',
+  'main_product_weight_tolerance',
   'portions_per_box',
   'barcode',
   'manufacturer',
@@ -36,7 +37,18 @@ export type LabelInputMap = Record<LabelInputKey, string>;
 export const LABEL_INPUT_KEY_SET = new Set<string>(LABEL_INPUT_KEYS);
 
 /** Локальні правки чернетки в картці товару (решта — з картки + MVT у Designer). */
-export const LABEL_EDITABLE_KEYS: LabelInputKey[] = ['title_line1', 'title_line2', 'net_weight'];
+/** Поля маси з суфіксом «℮ / ± похибка» та ключ похибки кожного. */
+export const LABEL_WEIGHT_TOLERANCE_KEYS: Partial<Record<LabelInputKey, LabelInputKey>> = {
+  net_weight: 'net_weight_tolerance',
+  main_product_weight: 'main_product_weight_tolerance',
+};
+
+export const LABEL_EDITABLE_KEYS: LabelInputKey[] = [
+  'title_line1',
+  'title_line2',
+  'net_weight',
+  'main_product_weight',
+];
 
 export const LABEL_INPUT_LABELS: Record<LabelInputKey, string> = {
   title_line1: 'Заголовок, рядок 1',
@@ -56,6 +68,7 @@ export const LABEL_INPUT_LABELS: Record<LabelInputKey, string> = {
   net_weight_label: 'Підпис маси нетто',
   net_weight_tolerance: 'Похибка маси нетто (±)',
   main_product_weight: 'Маса основного продукту',
+  main_product_weight_tolerance: 'Похибка маси основного продукту (±)',
   portions_per_box: 'Кількість порцій у коробці',
   barcode: 'Штрихкод',
   manufacturer: 'Виробник',

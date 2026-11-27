@@ -19,6 +19,8 @@ function template(content: string, sampledata?: Array<Record<string, string>>): 
 }
 
 const spacing = DEFAULT_LABEL_WEIGHT_SPACING;
+/** Нерозривні та тонкі пробіли шаблону зводимо до звичайних. */
+const plain = (value: string | null) => value?.replace(/\s/g, ' ');
 
 describe('mock net weight in sampledata', () => {
   it('defaults to ℮ with a remembered 5% tolerance', () => {
@@ -43,6 +45,14 @@ describe('net weight preview in Designer', () => {
     expect(withSign.schemas[0][1].content).toBe('Плов');
     const withTolerance = applyNetWeightSuffixPreview(template('380 г'), '8%', spacing);
     expect(readNetWeightContent(withTolerance)).toBe('380 г ± 8%');
+  });
+
+  it('applies the same suffix to main_product_weight', () => {
+    const both = template('380 г');
+    both.schemas[0].push({ name: 'main_product_weight', type: 'text', content: '270г' });
+    const shown = applyNetWeightSuffixPreview(both, '10%', spacing);
+    expect(plain(readNetWeightContent(shown))).toBe('380 г ± 10%');
+    expect(plain(readNetWeightContent(shown, 'main_product_weight'))).toBe('270 г ± 10%');
   });
 
   it('recovers the mock when the weight was edited in Designer', () => {

@@ -1,3 +1,4 @@
+import { LABEL_WEIGHT_TOLERANCE_KEYS } from '../constants/labelInputKeys.js';
 import type { LabelPdfmeTemplate } from '../types/labelTemplate.js';
 import type { LabelWeightSpacing } from '../types/labelWeightSpacing.js';
 import { formatNetWeightForLabel, formatNetWeightWithSuffix } from '../utils/productLabel.js';
@@ -16,7 +17,9 @@ export const DEFAULT_LABEL_MOCK_NET_WEIGHT: LabelMockNetWeight = { mode: 'estima
 
 const MODE_KEY = 'net_weight_suffix_mode';
 const TOLERANCE_KEY = 'net_weight_tolerance';
-const NET_WEIGHT_FIELD = 'net_weight';
+
+/** Поля маси, яким макет показує суфікс (спільний перемикач і зразок похибки). */
+export const LABEL_MOCK_WEIGHT_FIELDS: string[] = Object.keys(LABEL_WEIGHT_TOLERANCE_KEYS);
 
 export function readLabelMockNetWeight(template: LabelPdfmeTemplate | null | undefined): LabelMockNetWeight {
   const sample = template?.sampledata?.[0] ?? {};
@@ -44,23 +47,26 @@ export function mockToleranceSpec(value: LabelMockNetWeight): string {
   return value.mode === 'tolerance' ? value.tolerance : '';
 }
 
-function isNetWeightTextField(field: Record<string, unknown>): boolean {
-  return field.name === NET_WEIGHT_FIELD && (field.type ?? 'text') === 'text';
+function isWeightTextField(field: Record<string, unknown>): boolean {
+  return LABEL_MOCK_WEIGHT_FIELDS.includes(String(field.name)) && (field.type ?? 'text') === 'text';
 }
 
-/** Mock-текст маси нетто з шаблону (без суфікса), або null, якщо поля немає. */
-export function readNetWeightContent(template: LabelPdfmeTemplate): string | null {
+/** Mock-текст поля маси з шаблону, або null, якщо поля немає. */
+export function readNetWeightContent(
+  template: LabelPdfmeTemplate,
+  fieldName = 'net_weight',
+): string | null {
   for (const page of template.schemas ?? []) {
     for (const field of page) {
-      if (isNetWeightTextField(field)) return typeof field.content === 'string' ? field.content : '';
+      if (field.name === fieldName && isWeightTextField(field)) return typeof field.content === 'string' ? field.content : '';
     }
   }
   return null;
 }
 
 /**
- * Масу нетто в макеті показує так, як на живій наліпці: «380 г ℮» / «380 г ± 8%» з пробілами шаблону.
- * Змінює лише `content` поля `net_weight`; mock без суфікса треба зберегти окремо.
+ * Маси (нетто та основного продукту) в макеті показує так, як на живій наліпці: «380 г ℮» / «380 г ± 8%» з пробілами шаблону.
+ * Змінює лише `content` полів маси; mock без суфікса треба зберегти окремо.
  */
 export function applyNetWeightSuffixPreview(
   template: LabelPdfmeTemplate,
@@ -71,7 +77,7 @@ export function applyNetWeightSuffixPreview(
     ...template,
     schemas: (template.schemas ?? []).map((page) =>
       page.map((field) => {
-        if (!isNetWeightTextField(field)) return field;
+        if (!isWeightTextField(field)) return field;
         const mock = typeof field.content === 'string' ? field.content : '';
         if (!mock.trim()) return field;
         return { ...field, content: formatNetWeightWithSuffix(mock, toleranceSpec, spacing) };

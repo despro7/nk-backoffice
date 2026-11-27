@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-11-27 – Наліпки: ℮ / ± для маси основного продукту
+
+**Files:** `shared/constants/labelInputKeys.ts`, `shared/utils/{labelInputs.ts,labelTemplateInputs.ts}`, `shared/pdfme/labelNetWeightPreview.ts` (+ spec), `client/pages/SettingsLabelTemplates.tsx`, `client/pages/Products/components/productDrawer/{ProductLabelsTab.tsx,label/LabelNetWeightField.tsx}`
+
+- `main_product_weight` на порційних наліпках друкується як «270 г ℮» або «270 г ± 10%» з пробілами шаблону, на коробці лише пробіли.
+- Власна похибка: новий ключ `main_product_weight_tolerance`. Пари поле / ключ похибки описані в `LABEL_WEIGHT_TOLERANCE_KEYS`.
+- Чернетка наліпки: у «Текстових полях» додано «Маса основного продукту» з вкладками ℮ / ±.
+- Designer: один перемикач ℮ / ± і спільний зразок похибки діють на обидва поля маси.
+
+**Документація:** лише цей запис
+
+---
+
 ## 2026-11-26 – Наліпки: маса нетто з ℮ / ±, пробіли, mock-дані шаблону, застосування поля
 
 **Files:** `shared/utils/{productLabel.ts,labelInputs.ts,labelTemplateInputs.ts,labelWeightSpacing.ts}`, `shared/types/{labelTemplate.ts,labelWeightSpacing.ts}`, `shared/constants/labelInputKeys.ts`, `shared/pdfme/{builtInLabelTemplates.ts,prepareLabelTemplate.ts,applyLabelPreviewInputsToTemplate.ts,labelNetWeightPreview.ts,applyLabelFieldToTemplate.ts}` (+ spec), `server/modules/Products/{LabelTemplateService.ts,LabelWeightSpacingService.ts,CatalogLabelService.ts,ProductLabelsController.ts}`, `server/modules/Products/pdfme/labelPdfmeRuntime.ts`, `server/routes/label-templates.ts`, `client/services/LabelTemplateService.ts`, `client/pages/SettingsLabelTemplates.tsx`, `client/pages/Settings/labelTemplates/{LabelWeightSpacingFields,LabelMockNetWeightControl,LabelApplyFieldModal,LabelTemplatePreviewProductPicker}.tsx`, `client/pages/Products/components/productDrawer/{ProductLabelsTab.tsx,label/LabelNetWeightField.tsx,label/LabelPdfmeViewer.tsx}`

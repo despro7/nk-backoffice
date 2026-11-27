@@ -38,6 +38,7 @@ import type { ProductLabelPayloadV2 } from '@shared/types/labelTemplate';
 import { CATALOG_ACC_POLICY_KIT } from '@shared/types/catalog';
 import {
   LABEL_EDITABLE_KEYS,
+  LABEL_WEIGHT_TOLERANCE_KEYS,
   LABEL_INPUT_LABELS,
   LABEL_INPUTS_SCHEMA_VERSION,
   type LabelInputKey,
@@ -923,18 +924,19 @@ export function ProductLabelsTab({
                   }}
                 >
                   <div className="grid md:grid-cols-2 gap-3 max-h-[min(40vh,320px)] overflow-y-auto">
-                    {LABEL_EDITABLE_KEYS.map((key) =>
-                      key === 'net_weight' ? (
+                    {LABEL_EDITABLE_KEYS.map((key) => {
+                      const toleranceKey = LABEL_WEIGHT_TOLERANCE_KEYS[key];
+                      return toleranceKey ? (
                         <LabelNetWeightField
                           key={key}
                           label={LABEL_INPUT_LABELS[key]}
                           value={inputs[key] || ''}
-                          tolerance={inputs.net_weight_tolerance || ''}
+                          tolerance={inputs[toleranceKey] || ''}
                           withSuffix={labelKind === 'portion'}
                           weightSpacing={weightSpacing}
                           isReadOnly={readOnly || viewingVersion}
                           onValueChange={(value) => patchInput(key, value)}
-                          onToleranceChange={(spec) => patchInput('net_weight_tolerance', spec)}
+                          onToleranceChange={(spec) => patchInput(toleranceKey, spec)}
                         />
                       ) : (
                         <Input
@@ -950,8 +952,8 @@ export function ProductLabelsTab({
                           isReadOnly={readOnly || viewingVersion}
                           onValueChange={(value) => patchInput(key, value)}
                         />
-                      ),
-                    )}
+                      );
+                    })}
                   </div>
                 </AccordionItem>
               </Accordion>

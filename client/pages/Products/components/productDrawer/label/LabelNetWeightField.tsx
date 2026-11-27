@@ -114,7 +114,7 @@ export function LabelNetWeightField({
             <Input
               size="sm"
               inputMode="decimal"
-              aria-label="Похибка маси нетто"
+              aria-label={`Похибка: ${label}`}
               placeholder="5"
               startContent={<span className="text-sm text-default-400">±</span>}
               classNames={INPUT_CLASS_NAMES}
